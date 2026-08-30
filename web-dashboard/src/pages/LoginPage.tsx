@@ -131,12 +131,12 @@ export default function LoginPage() {
         </form>
 
         {showDebugAccounts && (
-          <div className="debug-account-picker">
-            <div className="debug-account-header">
-              <span className="debug-account-title">⚡ Debug quick login</span>
+          <div className="debug-dropdown">
+            <div className="debug-dropdown-header">
+              <h3 className="debug-dropdown-title">Debug quick login</h3>
               <button
                 type="button"
-                className="debug-close-btn"
+                className="debug-dropdown-close"
                 onClick={() => setShowDebugAccounts(false)}
                 title="Close"
               >
@@ -144,28 +144,24 @@ export default function LoginPage() {
               </button>
             </div>
             {debugLoading ? (
-              <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Loading accounts…</p>
+              <p style={{ fontSize: '13px', color: '#94a3b8', margin: '8px 0' }}>Loading accounts…</p>
             ) : debugAccounts.length === 0 ? (
-              <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>No active accounts found.</p>
+              <p style={{ fontSize: '13px', color: '#94a3b8', margin: '8px 0' }}>No active accounts found.</p>
             ) : (
-              <select
-                id="debug-account-select"
-                className="form-select debug-select"
-                defaultValue=""
-                onChange={(e) => {
-                  if (e.target.value) {
-                    selectDebugAccount(e.target.value);
-                  }
-                }}
-                disabled={debugLoading}
-              >
-                <option value="" disabled>-- Select account to quick login --</option>
+              <div className="debug-dropdown-list">
                 {debugAccounts.map((account) => (
-                  <option key={account.id} value={account.id}>
-                    {account.full_name} ({account.role}) — {account.email}
-                  </option>
+                  <button
+                    type="button"
+                    key={account.id}
+                    className="debug-account-card"
+                    onClick={() => selectDebugAccount(account.id)}
+                    disabled={debugLoading}
+                  >
+                    <div className="debug-account-name">{account.full_name}</div>
+                    <div className="debug-account-meta">{account.email} · {account.role}</div>
+                  </button>
                 ))}
-              </select>
+              </div>
             )}
           </div>
         )}
