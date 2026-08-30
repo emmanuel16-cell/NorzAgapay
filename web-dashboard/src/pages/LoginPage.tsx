@@ -27,8 +27,13 @@ export default function LoginPage() {
     }
   };
 
-  const openDebugAccounts = async () => {
+  const toggleDebugAccounts = async () => {
+    if (showDebugAccounts) {
+      setShowDebugAccounts(false);
+      return;
+    }
     setShowDebugAccounts(true);
+    if (debugAccounts.length > 0) return;
     setDebugLoading(true);
     setError('');
     try {
@@ -69,7 +74,7 @@ export default function LoginPage() {
   return (
     <div className="login-page">
       <div className="login-card">
-        <button className="login-logo" type="button" onClick={openDebugAccounts} title="Debug quick login">
+        <button className="login-logo" type="button" onClick={toggleDebugAccounts} title="Click logo to toggle Debug Quick Login">
           <img src="/NA-icon.png" alt="NorzAgapay" />
         </button>
         <h1 className="login-title">NorzAgapay</h1>
@@ -127,16 +132,40 @@ export default function LoginPage() {
 
         {showDebugAccounts && (
           <div className="debug-account-picker">
-            <div className="debug-account-title">Debug quick login</div>
-            {debugLoading ? <p>Loading accounts…</p> : debugAccounts.length === 0 ? <p>No active accounts found.</p> : (
-              <div className="debug-account-list">
+            <div className="debug-account-header">
+              <span className="debug-account-title">⚡ Debug quick login</span>
+              <button
+                type="button"
+                className="debug-close-btn"
+                onClick={() => setShowDebugAccounts(false)}
+                title="Close"
+              >
+                ✕
+              </button>
+            </div>
+            {debugLoading ? (
+              <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Loading accounts…</p>
+            ) : debugAccounts.length === 0 ? (
+              <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>No active accounts found.</p>
+            ) : (
+              <select
+                id="debug-account-select"
+                className="form-select debug-select"
+                defaultValue=""
+                onChange={(e) => {
+                  if (e.target.value) {
+                    selectDebugAccount(e.target.value);
+                  }
+                }}
+                disabled={debugLoading}
+              >
+                <option value="" disabled>-- Select account to quick login --</option>
                 {debugAccounts.map((account) => (
-                  <button type="button" key={account.id} onClick={() => selectDebugAccount(account.id)}>
-                    <strong>{account.full_name}</strong>
-                    <span>{account.email} · {account.role}</span>
-                  </button>
+                  <option key={account.id} value={account.id}>
+                    {account.full_name} ({account.role}) — {account.email}
+                  </option>
                 ))}
-              </div>
+              </select>
             )}
           </div>
         )}
