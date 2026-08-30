@@ -2,17 +2,15 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useState } from 'react';
 
-const navItems = [
-  { 
-    label: 'Weather Monitoring', 
-    icon: '🌤️', 
-    expandable: true,
-    children: [
-      { path: '/weather-monitoring', icon: '🌤️', label: 'Weather Dashboard' },
-      { path: '/advisories', icon: '⚠️', label: 'Advisories' },
-      { path: '/earthquakes', icon: '🌋', label: 'Earthquakes' },
-    ]
-  },
+interface NavItem {
+  path?: string;
+  icon?: string;
+  label: string;
+  section?: boolean;
+}
+
+const navItems: NavItem[] = [
+  { path: '/weather-monitoring', icon: '🌤️', label: 'Weather Monitoring' },
   { label: 'Operations', section: true },
   { path: '/', icon: '📍', label: 'Command Center' },
   { path: '/reports', icon: '📊', label: 'Reports' },
@@ -34,15 +32,6 @@ const navItems = [
 export default function DashboardLayout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const [expandedItems, setExpandedItems] = useState<string[]>(['Weather Monitoring']);
-
-  const toggleExpand = (label: string) => {
-    setExpandedItems(prev => 
-      prev.includes(label) 
-        ? prev.filter(item => item !== label) 
-        : [...prev, label]
-    );
-  };
 
   const handleLogout = () => {
     logout();
@@ -71,34 +60,6 @@ export default function DashboardLayout() {
           {navItems.map((item, i) =>
             item.section ? (
               <div key={i} className="nav-section-label">{item.label}</div>
-            ) : item.expandable ? (
-              <div key={i}>
-                <button
-                  onClick={() => toggleExpand(item.label)}
-                  className="nav-item nav-expandable"
-                >
-                  <span className="nav-icon">{item.icon}</span>
-                  {item.label}
-                  <span className={`nav-expand-icon ${expandedItems.includes(item.label) ? 'expanded' : ''}`}>
-                    ▼
-                  </span>
-                </button>
-                {expandedItems.includes(item.label) && (
-                  <div className="nav-submenu">
-                    {item.children?.map((child) => (
-                      <NavLink
-                        key={child.path}
-                        to={child.path}
-                        end
-                        className={({ isActive }) => `nav-item nav-subitem ${isActive ? 'active' : ''}`}
-                      >
-                        <span className="nav-icon">{child.icon}</span>
-                        {child.label}
-                      </NavLink>
-                    ))}
-                  </div>
-                )}
-              </div>
             ) : (
               <NavLink
                 key={item.path}

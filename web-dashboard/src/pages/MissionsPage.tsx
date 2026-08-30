@@ -276,7 +276,7 @@ export default function MissionsPage() {
                     style={{ width: '100%', height: '100%', background:'#0B1120' }}
                   >
                     <TileLayer
-                      url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+                      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                       attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                     />
                     <MapPicker position={[form.latitude, form.longitude]} onChange={handleLocationChange} />

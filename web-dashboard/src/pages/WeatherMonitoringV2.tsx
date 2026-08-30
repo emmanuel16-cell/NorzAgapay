@@ -16,10 +16,11 @@ export default function WeatherMonitoringV2() {
       ]);
 
       if (weatherRes.data.success) setCurrentWeather(weatherRes.data.data);
-      if (forecastRes.data.success) {
+      if (forecastRes.data?.success && forecastRes.data?.data) {
+        const nowMs = Date.now();
         // Deduplicate hourly forecast by time
         const hourlyMap = new Map();
-        forecastRes.data.data.hourly.forEach((item: any) => {
+        (forecastRes.data.data.hourly || []).forEach((item: any) => {
           const timeKey = new Date(item.forecast_time).getTime();
           if (!hourlyMap.has(timeKey)) {
             hourlyMap.set(timeKey, item);
@@ -27,15 +28,28 @@ export default function WeatherMonitoringV2() {
         });
         // Deduplicate daily forecast by date
         const dailyMap = new Map();
-        forecastRes.data.data.daily.forEach((item: any) => {
+        (forecastRes.data.data.daily || []).forEach((item: any) => {
           const dateKey = new Date(item.forecast_time).toDateString();
           if (!dailyMap.has(dateKey)) {
             dailyMap.set(dateKey, item);
           }
         });
+
+        // Get upcoming hours (or all available if generated from now)
+        const allHours = Array.from(hourlyMap.values()).sort(
+          (a: any, b: any) => new Date(a.forecast_time).getTime() - new Date(b.forecast_time).getTime()
+        );
+        const upcomingHours = allHours.filter(
+          (item: any) => new Date(item.forecast_time).getTime() >= nowMs - 3600000
+        );
+
+        const allDays = Array.from(dailyMap.values()).sort(
+          (a: any, b: any) => new Date(a.forecast_time).getTime() - new Date(b.forecast_time).getTime()
+        );
+
         setForecast({
-          hourly: Array.from(hourlyMap.values()).reverse().slice(0, 24), // Reverse to newest first, limit 24
-          daily: Array.from(dailyMap.values()).reverse().slice(0, 7) // Reverse to newest first, limit 7
+          hourly: (upcomingHours.length > 0 ? upcomingHours : allHours).slice(0, 24),
+          daily: allDays.slice(0, 7)
         });
       }
       if (riverRes.data.success) {

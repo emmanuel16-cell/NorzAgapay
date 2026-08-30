@@ -17,8 +17,6 @@ import OfficersPage from './pages/OfficersPage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import ReportsPage from './pages/ReportsPage';
 import WeatherMonitoringV2 from './pages/WeatherMonitoringV2';
-import AdvisoriesPage from './pages/AdvisoriesPage';
-import EarthquakeMonitoringPage from './pages/EarthquakeMonitoringPage';
 import EvacuationCentersPage from './pages/EvacuationCentersPage';
 
 import './index.css';
@@ -46,8 +44,8 @@ function AppRoutes() {
       <Route path="/" element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
         <Route index element={<CommandCenter />} />
         <Route path="weather-monitoring" element={<WeatherMonitoringV2 />} />
-        <Route path="advisories" element={<AdvisoriesPage />} />
-        <Route path="earthquakes" element={<EarthquakeMonitoringPage />} />
+        <Route path="advisories" element={<Navigate to="/weather-monitoring" replace />} />
+        <Route path="earthquakes" element={<Navigate to="/weather-monitoring" replace />} />
         <Route path="reports" element={<ReportsPage />} />
         <Route path="missions" element={<MissionsPage />} />
         <Route path="requests" element={<ResourceRequestsPage />} />

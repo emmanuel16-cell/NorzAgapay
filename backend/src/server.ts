@@ -25,7 +25,7 @@ import officerRoutes from './routes/officers';
 import respondUnitRoutes from './routes/respondUnits';
 import volunteerDispatchRoutes from './routes/volunteerDispatch';
 import storageRoutes from './routes/storages';
-import weatherRoutes, { fetchOpenMeteoWeather, fetchEarthquakesFromPHIVOLCS, fetchPAGASAAdvisories, calculateMunicipalityRisk } from './routes/weather';
+import weatherRoutes, { fetchOpenMeteoWeather } from './routes/weather';
 import barangayRoutes from './routes/barangay';
 import evacuationCenterRoutes from './routes/evacuationCenters';
 import debugRoutes from './routes/debug';
@@ -275,69 +275,7 @@ const runScheduledUpdates = async () => {
       console.log('Weather data updated successfully from', source);
     }
 
-    // 2. Update earthquake data from PHIVOLCS
-    const eqData = await fetchEarthquakesFromPHIVOLCS();
-    if (eqData && eqData.length > 0) {
-      for (const eq of eqData) {
-        // Check if this earthquake already exists
-        const { data: existing } = await supabaseAdmin
-          .from('earthquakes')
-          .select('*')
-          .eq('magnitude', eq.magnitude)
-          .eq('latitude', eq.latitude)
-          .eq('longitude', eq.longitude)
-          .eq('occurred_at', eq.occurred_at)
-          .single();
-        
-        if (!existing) {
-          await supabaseAdmin.from('earthquakes').insert(eq);
-          
-          // Add to activity feed
-          await supabaseAdmin.from('activity_feed').insert({
-            type: 'earthquake',
-            title: 'Earthquake Detected',
-            description: `Magnitude ${eq.magnitude.toFixed(1)} earthquake near ${eq.location}`,
-            severity: eq.magnitude >= 5 ? 'critical' : eq.magnitude >= 4 ? 'high' : 'moderate',
-            data_source: 'PHIVOLCS'
-          });
-        }
-      }
-      console.log('Earthquake data updated successfully');
-    }
-
-    // 3. Update PAGASA advisories
-    const pagasaData = await fetchPAGASAAdvisories();
-    if (pagasaData && pagasaData.length > 0) {
-      for (const advisory of pagasaData) {
-        // Check if this advisory already exists
-        const { data: existing } = await supabaseAdmin
-          .from('weather_advisories')
-          .select('*')
-          .eq('title', advisory.title)
-          .eq('source', advisory.source)
-          .single();
-        
-        if (!existing) {
-          await supabaseAdmin.from('weather_advisories').insert(advisory);
-          
-          // Add to activity feed
-          await supabaseAdmin.from('activity_feed').insert({
-            type: 'advisory',
-            title: advisory.title,
-            description: advisory.message,
-            severity: advisory.level,
-            data_source: advisory.source
-          });
-        }
-      }
-      console.log('PAGASA advisories updated successfully');
-    }
-    
-    // 4. Calculate and update municipality risk level
-    const riskLevel = await calculateMunicipalityRisk();
-    console.log('Municipality risk level:', riskLevel);
-
-    // 4. Update river levels (simulate real data for now - in production, use PAGASA Hydromet)
+    // 2. Update river levels (simulate real data for now - in production, use PAGASA Hydromet)
     const { data: stations } = await supabaseAdmin.from('river_stations').select('*').eq('active', true);
     if (stations) {
       for (const station of stations) {
