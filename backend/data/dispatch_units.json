@@ -1,0 +1,14 @@
+[
+  {
+    "id": "0b4c4d7d-cd23-4393-95f5-1df1600a6576",
+    "name": "Search and Rescue Operation Unit",
+    "type": "rescue",
+    "personnel": [
+      "d780eed0-55a1-4bbf-8b9f-df9f2fdfa846",
+      "3faf5708-d534-47eb-b3c4-228a4538ec36",
+      "8d26c716-d983-464f-bf69-f376e96893ad"
+    ],
+    "status": "available",
+    "created_at": "2026-05-10T11:43:27.321Z"
+  }
+]

@@ -1,0 +1,42 @@
+# Exclude apps not meant for this repo
+barangay_app/
+mobile_app/
+resident_app/
+icon/
+
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build & compiled outputs
+dist/
+build/
+*.tsbuildinfo
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# Environment secrets
+.env
+.env.*
+.env.local
+!.env.example
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# System and Editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
