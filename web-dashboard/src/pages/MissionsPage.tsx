@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
 import L from 'leaflet';
+import { CARTO_DARK_MAP_URL, CARTO_ATTRIBUTION } from '../lib/mapConfig';
 import { missionAPI, matchingAPI, respondUnitAPI } from '../lib/api';
 import toast from 'react-hot-toast';
 
@@ -276,8 +277,8 @@ export default function MissionsPage() {
                     style={{ width: '100%', height: '100%', background:'#0B1120' }}
                   >
                     <TileLayer
-                      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                      attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                      url={CARTO_DARK_MAP_URL}
+                      attribution={CARTO_ATTRIBUTION}
                     />
                     <MapPicker position={[form.latitude, form.longitude]} onChange={handleLocationChange} />
                   </MapContainer>

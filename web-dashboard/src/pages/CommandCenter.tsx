@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
+import { CARTO_DARK_MAP_URL, CARTO_ATTRIBUTION } from '../lib/mapConfig';
 import 'leaflet/dist/leaflet.css';
 import { analyticsAPI, missionAPI, userAPI, storageAPI, socket } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
@@ -342,8 +343,8 @@ export default function CommandCenter() {
               style={{ width: '100%', height: '100%', background: '#111827' }}
             >
               <TileLayer
-                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                url={CARTO_DARK_MAP_URL}
+                attribution={CARTO_ATTRIBUTION}
               />
 
               <MapController missions={missions} responders={responders} storages={storages} filters={filters} />

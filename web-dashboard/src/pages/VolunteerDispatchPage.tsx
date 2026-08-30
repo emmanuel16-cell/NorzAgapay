@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
+import { CARTO_DARK_MAP_URL, CARTO_ATTRIBUTION } from '../lib/mapConfig';
 import 'leaflet/dist/leaflet.css';
 import { volunteerDispatchAPI, userAPI, missionAPI } from '../lib/api';
 import toast from 'react-hot-toast';
@@ -537,8 +538,8 @@ export default function VolunteerDispatchPage() {
                     style={{ width: '100%', height: '100%', background: '#111827' }}
                   >
                     <TileLayer
-                      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                      attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                      url={CARTO_DARK_MAP_URL}
+                      attribution={CARTO_ATTRIBUTION}
                     />
                     <MapClickHandler />
                     {customPin && (

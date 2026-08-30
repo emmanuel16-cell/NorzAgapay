@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
 import L from 'leaflet';
+import { CARTO_DARK_MAP_URL, CARTO_ATTRIBUTION } from '../lib/mapConfig';
 import 'leaflet/dist/leaflet.css';
 import { inventoryAPI, missionAPI, storageAPI } from '../lib/api';
 import toast from 'react-hot-toast';
@@ -385,8 +386,8 @@ export default function InventoryPage() {
                         style={{ width: '100%', height: '100%' }}
                       >
                         <TileLayer
-                          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                          url={CARTO_DARK_MAP_URL}
+                          attribution={CARTO_ATTRIBUTION}
                         />
                         <ChangeView center={mapCenter} />
                         <LocationPicker 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
+import { CARTO_DARK_MAP_URL, CARTO_ATTRIBUTION } from '../lib/mapConfig';
 import 'leaflet/dist/leaflet.css';
 import { evacuationAPI, barangayListAPI } from '../lib/api';
 import toast from 'react-hot-toast';
@@ -242,8 +243,8 @@ export default function EvacuationCentersPage() {
             zoomControl={true}
           >
             <TileLayer
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              attribution={CARTO_ATTRIBUTION}
+              url={CARTO_DARK_MAP_URL}
             />
             <MapFlyTo center={selectedCenter} />
             {centers.map((c) => (
