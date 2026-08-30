@@ -1,5 +1,8 @@
-// ESRI World Dark Gray Canvas — completely free, no API key, no registration required
-export const CARTO_DARK_MAP_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}';
+// Standard OpenStreetMap tiles - Free, public, reliable, no API key required
+export const MAP_TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+export const MAP_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors';
 
-export const CARTO_ATTRIBUTION = 'Tiles &copy; <a href="https://www.esri.com/" target="_blank">Esri</a> &mdash; Esri, DeLorme, NAVTEQ';
+// Aliases for backwards compatibility across pages
+export const CARTO_DARK_MAP_URL = MAP_TILE_URL;
+export const CARTO_ATTRIBUTION = MAP_ATTRIBUTION;
 
