@@ -519,7 +519,7 @@ router.get('/assistance-requests', authenticateBarangay, requireRole(['captain']
   try {
     const { data, error } = await supabaseAdmin
       .from('barangay_assistance_requests')
-      .select('*, requested_by_user:barangay_users!requested_by(full_name, role)')
+      .select('*, requested_by_user:barangay_users!requested_by(full_name, role), decided_by_user:barangay_users!decided_by(full_name, role)')
       .eq('barangay_id', req.barangayUser.barangayId)
       .order('created_at', { ascending: false });
 
@@ -543,7 +543,7 @@ router.get('/my-assistance-requests', authenticateBarangay, requireRole(['team_l
   try {
     const { data, error } = await supabaseAdmin
       .from('barangay_assistance_requests')
-      .select('*')
+      .select('*, requested_by_user:barangay_users!requested_by(full_name, role), decided_by_user:barangay_users!decided_by(full_name, role)')
       .eq('requested_by', req.barangayUser.userId)
       .order('created_at', { ascending: false });
 
@@ -556,6 +556,48 @@ router.get('/my-assistance-requests', authenticateBarangay, requireRole(['team_l
     res.json({ requests: data || [] });
   } catch (err) {
     console.error('Fetch my assistance requests error:', err);
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+// ─── PATCH /api/barangay/assistance-requests/:id/edit ────────────────────────
+// Team Leader edits their own assistance request
+
+router.patch('/assistance-requests/:id/edit', authenticateBarangay, requireRole(['team_leader']), async (req: any, res: Response) => {
+  try {
+    const parsed = assistanceRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Validation failed', details: parsed.error.flatten() });
+      return;
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('barangay_assistance_requests')
+      .update({
+        needs_more_manpower: parsed.data.needs_more_manpower || false,
+        needs_resources: parsed.data.needs_resources || false,
+        needs_equipment: parsed.data.needs_equipment || false,
+        beyond_barangay_capability: parsed.data.beyond_barangay_capability || false,
+        explanation: parsed.data.explanation,
+        status: 'pending',
+      })
+      .eq('id', req.params.id)
+      .eq('requested_by', req.barangayUser.userId)
+      .select('*, requested_by_user:barangay_users!requested_by(full_name, role), decided_by_user:barangay_users!decided_by(full_name, role)')
+      .single();
+
+    if (error || !data) {
+      console.error('Edit assistance request error:', error);
+      res.status(500).json({ error: 'Failed to update assistance request.' });
+      return;
+    }
+
+    // Notify captain via socket
+    io.to(`barangay:${req.barangayUser.barangayId}`).emit('assistance:new_request', { request: data });
+
+    res.json({ message: 'Assistance request updated successfully.', request: data });
+  } catch (err) {
+    console.error('Edit assistance request error:', err);
     res.status(500).json({ error: 'Internal server error.' });
   }
 });
@@ -583,7 +625,7 @@ router.patch('/assistance-requests/:id/decide', authenticateBarangay, requireRol
       })
       .eq('id', req.params.id)
       .eq('barangay_id', req.barangayUser.barangayId)
-      .select()
+      .select('*, requested_by_user:barangay_users!requested_by(full_name, role), decided_by_user:barangay_users!decided_by(full_name, role)')
       .single();
 
     if (error) {
@@ -623,7 +665,7 @@ router.patch('/assistance-requests/:id/team-action', authenticateBarangay, requi
       .update(updatePayload)
       .eq('id', req.params.id)
       .eq('requested_by', req.barangayUser.userId)
-      .select()
+      .select('*, requested_by_user:barangay_users!requested_by(full_name, role), decided_by_user:barangay_users!decided_by(full_name, role)')
       .single();
 
     if (error || !data) {
