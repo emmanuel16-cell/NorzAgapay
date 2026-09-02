@@ -536,22 +536,46 @@ router.get('/assistance-requests', authenticateBarangay, requireRole(['captain']
   }
 });
 
+// ─── GET /api/barangay/my-assistance-requests ────────────────────────────────
+// Team Leader views their own submitted requests
+
+router.get('/my-assistance-requests', authenticateBarangay, requireRole(['team_leader']), async (req: any, res: Response) => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('barangay_assistance_requests')
+      .select('*')
+      .eq('requested_by', req.barangayUser.userId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Fetch my assistance requests error:', error);
+      res.status(500).json({ error: 'Failed to fetch your assistance requests.' });
+      return;
+    }
+
+    res.json({ requests: data || [] });
+  } catch (err) {
+    console.error('Fetch my assistance requests error:', err);
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
 // ─── PATCH /api/barangay/assistance-requests/:id/decide ──────────────────────
 // Captain decides: provide_barangay_assistance or coordinate_mdrrmo
 
 router.patch('/assistance-requests/:id/decide', authenticateBarangay, requireRole(['captain']), async (req: any, res: Response) => {
   try {
     const { decision, captain_notes } = req.body;
-    const validDecisions = ['provide_barangay_assistance', 'coordinate_mdrrmo', 'dismissed'];
+    const validDecisions = ['provide_barangay_assistance', 'coordinate_mdrrmo'];
     if (!validDecisions.includes(decision)) {
-      res.status(400).json({ error: 'Invalid decision. Must be: provide_barangay_assistance, coordinate_mdrrmo, or dismissed.' });
+      res.status(400).json({ error: 'Invalid decision. Must be: provide_barangay_assistance or coordinate_mdrrmo.' });
       return;
     }
 
     const { data, error } = await supabaseAdmin
       .from('barangay_assistance_requests')
       .update({
-        status: decision === 'dismissed' ? 'dismissed' : 'actioned',
+        status: 'actioned',
         decision,
         captain_notes: captain_notes || null,
         decided_at: new Date().toISOString(),
@@ -571,9 +595,49 @@ router.patch('/assistance-requests/:id/decide', authenticateBarangay, requireRol
     // Notify team leader via socket
     io.to(`barangay:${req.barangayUser.barangayId}`).emit('assistance:decision', { request: data, decision });
 
-    res.json({ message: `Request ${decision}.`, request: data });
+    res.json({ message: `Request actioned: ${decision}.`, request: data });
   } catch (err) {
     console.error('Decide assistance request error:', err);
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+// ─── PATCH /api/barangay/assistance-requests/:id/team-action ─────────────────
+// Team Leader acknowledges or cancels their own request
+
+router.patch('/assistance-requests/:id/team-action', authenticateBarangay, requireRole(['team_leader']), async (req: any, res: Response) => {
+  try {
+    const { action } = req.body;
+    if (!['acknowledge', 'cancel'].includes(action)) {
+      res.status(400).json({ error: 'Invalid action. Must be: acknowledge or cancel.' });
+      return;
+    }
+
+    const updatePayload: Record<string, any> =
+      action === 'cancel'
+        ? { status: 'cancelled' }
+        : { team_acknowledged: true };
+
+    const { data, error } = await supabaseAdmin
+      .from('barangay_assistance_requests')
+      .update(updatePayload)
+      .eq('id', req.params.id)
+      .eq('requested_by', req.barangayUser.userId)
+      .select()
+      .single();
+
+    if (error || !data) {
+      console.error('Team action error:', error);
+      res.status(500).json({ error: 'Failed to update assistance request.' });
+      return;
+    }
+
+    // Notify barangay room
+    io.to(`barangay:${req.barangayUser.barangayId}`).emit('assistance:team_action', { request: data, action });
+
+    res.json({ message: `Request ${action}d.`, request: data });
+  } catch (err) {
+    console.error('Team action error:', err);
     res.status(500).json({ error: 'Internal server error.' });
   }
 });
