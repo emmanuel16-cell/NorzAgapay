@@ -13,7 +13,7 @@ const navItems: NavItem[] = [
   { path: '/weather-monitoring', icon: '🌤️', label: 'Weather Monitoring' },
   { label: 'Operations', section: true },
   { path: '/', icon: '📍', label: 'Command Center' },
-  { path: '/reports', icon: '📊', label: 'Reports' },
+  { path: '/reports', icon: '📊', label: 'Incidents' },
   { path: '/missions', icon: '🎯', label: 'Missions' },
   { label: 'Logistics', section: true },
   { path: '/evacuation-centers', icon: '🏕️', label: 'Evacuation Centers' },
