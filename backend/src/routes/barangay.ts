@@ -458,5 +458,125 @@ router.post('/reports/:id/close', authenticateBarangay, requireRole(['captain', 
   }
 });
 
+// ─── POST /api/barangay/assistance-requests ──────────────────────────────────
+// Team Leader submits an assistance request to the Captain
+
+const assistanceRequestSchema = z.object({
+  incident_report_id: z.string().uuid().nullable().optional(),
+  incident_title: z.string().optional(),
+  needs_more_manpower: z.boolean().optional(),
+  needs_resources: z.boolean().optional(),
+  needs_equipment: z.boolean().optional(),
+  beyond_barangay_capability: z.boolean().optional(),
+  explanation: z.string().min(10),
+});
+
+router.post('/assistance-requests', authenticateBarangay, requireRole(['team_leader']), async (req: any, res: Response) => {
+  try {
+    const parsed = assistanceRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Validation failed', details: parsed.error.flatten() });
+      return;
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('barangay_assistance_requests')
+      .insert({
+        barangay_id: req.barangayUser.barangayId,
+        requested_by: req.barangayUser.userId,
+        incident_report_id: parsed.data.incident_report_id || null,
+        incident_title: parsed.data.incident_title || null,
+        needs_more_manpower: parsed.data.needs_more_manpower || false,
+        needs_resources: parsed.data.needs_resources || false,
+        needs_equipment: parsed.data.needs_equipment || false,
+        beyond_barangay_capability: parsed.data.beyond_barangay_capability || false,
+        explanation: parsed.data.explanation,
+        status: 'pending',
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Create assistance request error:', error);
+      res.status(500).json({ error: 'Failed to submit assistance request.' });
+      return;
+    }
+
+    // Notify captain via socket
+    io.to(`barangay:${req.barangayUser.barangayId}`).emit('assistance:new_request', { request: data });
+
+    res.status(201).json({ message: 'Assistance request submitted successfully.', request: data });
+  } catch (err) {
+    console.error('Create assistance request error:', err);
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+// ─── GET /api/barangay/assistance-requests ───────────────────────────────────
+// Captain views all assistance requests for their barangay
+
+router.get('/assistance-requests', authenticateBarangay, requireRole(['captain']), async (req: any, res: Response) => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('barangay_assistance_requests')
+      .select('*, requested_by_user:barangay_users!requested_by(full_name, role)')
+      .eq('barangay_id', req.barangayUser.barangayId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Fetch assistance requests error:', error);
+      res.status(500).json({ error: 'Failed to fetch assistance requests.' });
+      return;
+    }
+
+    res.json({ requests: data || [] });
+  } catch (err) {
+    console.error('Fetch assistance requests error:', err);
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+// ─── PATCH /api/barangay/assistance-requests/:id/decide ──────────────────────
+// Captain decides: provide_barangay_assistance or coordinate_mdrrmo
+
+router.patch('/assistance-requests/:id/decide', authenticateBarangay, requireRole(['captain']), async (req: any, res: Response) => {
+  try {
+    const { decision, captain_notes } = req.body;
+    const validDecisions = ['provide_barangay_assistance', 'coordinate_mdrrmo', 'dismissed'];
+    if (!validDecisions.includes(decision)) {
+      res.status(400).json({ error: 'Invalid decision. Must be: provide_barangay_assistance, coordinate_mdrrmo, or dismissed.' });
+      return;
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('barangay_assistance_requests')
+      .update({
+        status: decision === 'dismissed' ? 'dismissed' : 'actioned',
+        decision,
+        captain_notes: captain_notes || null,
+        decided_at: new Date().toISOString(),
+        decided_by: req.barangayUser.userId,
+      })
+      .eq('id', req.params.id)
+      .eq('barangay_id', req.barangayUser.barangayId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Decide assistance request error:', error);
+      res.status(500).json({ error: 'Failed to update assistance request.' });
+      return;
+    }
+
+    // Notify team leader via socket
+    io.to(`barangay:${req.barangayUser.barangayId}`).emit('assistance:decision', { request: data, decision });
+
+    res.json({ message: `Request ${decision}.`, request: data });
+  } catch (err) {
+    console.error('Decide assistance request error:', err);
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
 export default router;
 export { authenticateBarangay };
