@@ -670,7 +670,7 @@ router.patch('/assistance-requests/:id/team-action', authenticateBarangay, requi
 
     if (error || !data) {
       console.error('Team action error:', error);
-      res.status(500).json({ error: 'Failed to update assistance request.' });
+      res.status(500).json({ error: error?.message || 'Failed to update assistance request.' });
       return;
     }
 
@@ -678,9 +678,9 @@ router.patch('/assistance-requests/:id/team-action', authenticateBarangay, requi
     io.to(`barangay:${req.barangayUser.barangayId}`).emit('assistance:team_action', { request: data, action });
 
     res.json({ message: `Request ${action}d.`, request: data });
-  } catch (err) {
+  } catch (err: any) {
     console.error('Team action error:', err);
-    res.status(500).json({ error: 'Internal server error.' });
+    res.status(500).json({ error: err?.message || 'Internal server error.' });
   }
 });
 
