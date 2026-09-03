@@ -17,7 +17,7 @@ The study aims to answer the following problems:
    2.4 Reliability; and
    2.5 Security?
 GENERAL OBJECTIVES
-The general objective of the study is to develop and evaluate NorzAgapay, an integrated web- and mobile-based Emergency Response and Crisis Management Coordination System for the MDRRMO of Norzagaray and selected participating barangays. The system aims to provide a more organized and efficient means of reporting, assessing, dispatching, monitoring, and escalating emergency incidents. It is intended to support timely sharing of incident information, coordination of available responders, monitoring of evacuation centers, and dissemination of public safety advisories among authorized personnel and residents.
+The general objective of the study is to develop and evaluate NorzAgapay: A web-based and mobile application/app Emergency Response and Crisis Management Coordination System for the Municipality of Norzagaray, Bulacan. The system aims to provide a more organized and efficient means of reporting, assessing, dispatching, monitoring, and escalating emergency incidents. It is intended to support timely sharing of incident information, coordination of available responders, monitoring of evacuation centers, and dissemination of public safety advisories among authorized personnel and residents.
 Specific Objectives
 Specifically, the study aims to:
 1. Determine the functional requirements to be incorporated into the developed system to address the identified needs in emergency response and crisis management coordination in terms of:
