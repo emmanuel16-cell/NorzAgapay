@@ -1,0 +1,36 @@
+GENERAL PROBLEM
+The general problem of the study is the difficulty of maintaining timely and coordinated emergency response and crisis management operations among the Municipal Disaster Risk Reduction and Management Office (MDRRMO) of Norzagaray and selected participating barangays. Existing procedures may rely on separate communication channels and manual reporting, which can make it difficult to receive, verify, and update incident information; identify available responders; monitor incident locations; manage evacuation-center information; and provide timely public safety advisories. These challenges may result in delayed coordination, incomplete incident records, difficulty tracking response progress, and limited situational awareness among authorized emergency-response personnel.
+Specific Problems
+The study aims to answer the following problems:
+1. What functional requirements should be incorporated into the developed system to address the identified needs in emergency response and crisis management coordination in terms of:
+   1.1 Disaster and Incident Reporting;
+   1.2 Incident Assessment and Dispatch;
+   1.3 Responder Duty Status Tracking;
+   1.4 Geolocation-Based Incident Mapping;
+   1.5 Evacuation-Center Monitoring;
+   1.6 Escalation Pipeline Management; and
+   1.7 Real-Time Notifications and Safety Advisories?
+2. What is the level of software quality of the developed system based on the applicable criteria of ISO/IEC 25010:2023 in terms of:
+   2.1 Functional Suitability;
+   2.2 Performance Efficiency;
+   2.3 Interaction Capability;
+   2.4 Reliability; and
+   2.5 Security?
+GENERAL OBJECTIVES
+The general objective of the study is to develop and evaluate NorzAgapay, an integrated web- and mobile-based Emergency Response and Crisis Management Coordination System for the MDRRMO of Norzagaray and selected participating barangays. The system aims to provide a more organized and efficient means of reporting, assessing, dispatching, monitoring, and escalating emergency incidents. It is intended to support timely sharing of incident information, coordination of available responders, monitoring of evacuation centers, and dissemination of public safety advisories among authorized personnel and residents.
+Specific Objectives
+Specifically, the study aims to:
+1. Determine the functional requirements to be incorporated into the developed system to address the identified needs in emergency response and crisis management coordination in terms of:
+   1.1 Disaster and Incident Reporting;
+   1.2 Incident Assessment and Dispatch;
+   1.3 Responder Duty Status Tracking;
+   1.4 Geolocation-Based Incident Mapping;
+   1.5 Evacuation-Center Monitoring;
+   1.6 Escalation Pipeline Management; and
+   1.7 Real-Time Notifications and Safety Advisories.
+2. Evaluate the level of software quality of the developed system based on the applicable criteria of ISO/IEC 25010:2023 in terms of:
+   2.1 Functional Suitability;
+   2.2 Performance Efficiency;
+   2.3 Interaction Capability;
+   2.4 Reliability; and
+   2.5 Security.
