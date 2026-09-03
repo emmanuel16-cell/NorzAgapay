@@ -1,0 +1,97 @@
+CHAPTER 1
+
+INTRODUCTION
+
+Internship is an important part of a student's academic experience because it allows students to apply their knowledge and skills in an actual work environment. For Field Study and Practicum students at Norzagaray College, proper monitoring is important to ensure that students complete their required activities, attendance, tasks, and other internship requirements. The study is important because it proposes a digital monitoring system that can help students, advisers, and administrators manage internship-related information in a more organized and efficient way. 
+	Several problems may occur in managing Field Study and Practicum students. Manual recording makes it difficult to monitor student attendance and daily activities consistently. Tracking student progress and submitted requirements can also be time-consuming, especially when records are kept in separate files or documents. In addition, updating and retrieving student records may be difficult, which can result in delayed monitoring, missing information, or inaccurate records. These problems can make the internship monitoring process less organized and less efficient for students, advisers, and administrators. 
+To address these problems, the proposed Internship digital monitoring system will provide a centralized platform for recording, updating, and monitoring student internship information. It can help advisers and administrators track attendance, activities, progress, evaluations, and requirements, while students can view their records and monitor their responsibilities. Through the system, the monitoring process can become more organized, accessible, and efficient.
+BACKGROUND OF THE STUDY
+        The study focuses on FieldTrack, a digital monitoring system for Field Study and Practicum students at Norzagaray College, Bulacan, which aims to improve the monitoring and management of students during their field study and practicum. The system was developed to address difficulties in the existing monitoring process based on problems identified through an initial interview with concerned advisers and personnel. These problems include difficulties in monitoring student attendance and activities, tracking progress and submitted requirements, and efficiently updating and retrieving student records.
+The proposed system will be developed based on related literature and studies (RRL) and established concepts on digital monitoring systems, which will serve as a basis for identifying appropriate features and functions. It will include features that support the management of attendance, activities, progress, evaluations, reminders, field study, internship requirements and practicum or internship opportunities. Through diagrams, tables, flowcharts, and other visual representations, the proposed system will be presented to its beneficiaries and users to provide a clear understanding of its processes and functions.
+
+The beneficiaries of the proposed system are the Field Study and Practicum students, advisers, and administrators of Norzagaray College. The system will provide functions for managing attendance, recording activities, tracking progress, reminders, monitoring evaluations, managing internship requirements and practicum or internship opportunities.. Through these functions, the beneficiaries and users will be able to monitor student participation, track progress and requirements, and manage records more efficiently, helping improve the overall monitoring process. 
+SETTING OF STUDY
+The study entitled “ FieldTrack, a digital monitoring system for Field Study and Practicum students at Norzagaray College, Bulacan,” was conducted in selected Colleges of Education within the province of Bulacan, Philippines. The study focused on field study students, Program advisers, and college administrators who are directly involved in the monitoring, assessment, and management of Field Study activities.
+
+
+
+
+
+
+
+Figure 1. Map of the Norzagaray College, Bulacan
+
+Figure 1 shows the location of the selected Norzagaray College, Bulacan,
+Philippines, which serve as the primary institutions where Field Study programs are implemented. These colleges are where field study students, supervising instructors, and administrators engage in academic and practical training activities related to Field Study courses. The selected institutions provide the appropriate setting for the implementation and evaluation of the FieldTrack system, as they are directly involved in monitoring, assessing, and managing student field study performance and requirements.
+CONCEPTUAL FRAMEWORK
+The study uses the Input-Process-Output (IPO) Model as its conceptual framework. It illustrates how the identified problems and requirements are processed through the system to produce the desired outcomes.
+Figure 2.  Conceptual Framework
+
+Figure 2 shows the Input-Process-Output (IPO) Model of the study, which presents the relationship among the inputs, processes, and outputs of the proposed system. It illustrates how the identified problems and requirements are transformed through the system to achieve the intended outcomes of the FieldTrack system.
+
+GENERAL PROBLEM
+The general problem of the study is the difficulty in monitoring Field Study and Practicum students at Norzagaray College. The existing monitoring process may require the use of manual records for attendance, student activities, progress, requirements, and evaluations. As information is recorded and updated through separate or paper-based procedures, monitoring student compliance and progress can become time-consuming and difficult. This may result in delayed information, misplaced or incomplete records, and challenges in determining the current status of students and their Field Study and Practicum requirements.
+Specific Problem
+The study aims to accomplish the following problem:
+1. What functional requirements should be incorporated into the developed system to address the identified needs in the management and monitoring of Field Study and Practicum students in terms of:
+1.1 Attendance Monitoring;
+1.2 Student Records Management;
+1.3 Requirements Tracking;
+1.4 Progress and Status Monitoring;
+1.5 Evaluation Management;
+1.6 Notifications and Reminders; and 
+1.7 Practicum/Internship Opportunity Matching
+2. What is the level of software quality of the developed system based on the applicable criteria of ISO/IEC 25010:2023 in terms of:
+3.1 Functional Suitability
+3.2 Performance Efficiency
+3.3 Interaction Capability
+3.4 Reliability
+3.5 Security
+
+GENERAL OBJECTIVES
+The general objective of the study is to develop and evaluate a digital monitoring system for Field Study and Practicum students at Norzagaray College that will help improve the monitoring and management of student attendance, activities, progress, requirements, and evaluations. The system aims to provide a more organized and efficient way of recording, updating, and accessing student information, thereby reducing difficulties associated with manual and paper-based monitoring procedures and supporting timely monitoring of student compliance and progress.
+
+Specific Objectives
+The study specifically aims to:
+1.	To determine the functional requirements that should be incorporated into the developed system to address the identified needs in the management and monitoring of Field Study and Practicum students in terms of:
+	1.1 Attendance Monitoring;
+1.2 Student Records Management;
+1.3 Requirements Tracking;
+1.4 Progress Monitoring;
+1.5 Evaluation Management;
+1.6 Notifications and Reminders; and
+1.7 Practicum/Internship Matching. 
+
+2.	To evaluate the software quality of the developed system based on the applicable criteria of ISO/IEC 25010:2023 in terms of:
+	2.1 Functional Suitability;
+	.2 Performance Efficiency;
+	2.3 Interaction Capability;
+	2.4 Reliability; and
+	2.5 Security.
+
+Scope and limitation, delimitation 
+Scope of the Study
+
+       The study focuses on the development of FieldTrack: A Digital Monitoring System for Field Study and Practicum Students at Norzagaray College, Bulacan. The system is intended for Field Study and Practicum Students, Supervising Instructors/Advisers, College Administrators, Norzagaray College, and Future Researchers as its main users and beneficiaries. Field Study and Practicum Students will use the system to record attendance, submit activities and requirements, monitor progress, receive notifications, and use the AI-assisted validation of submitted requirements; Supervising Instructors/Advisers will use the system to monitor student attendance, activities, progress, submitted requirements, and evaluations; College Administrators will manage users and records; Norzagaray College may use the system to support and improve student monitoring processes; and Future Researchers may use the study as a reference for related research and system development. The system will provide features for attendance recording, activity and requirement submission, AI-assisted requirement validation, progress monitoring, notifications, reminders, evaluation management, record updating, user account management and practicum or internship opportunities.. The system will be evaluated using ISO 9241-210 for usability and acceptability and ISO/IEC 25010:2023 for software quality and functionality, based on user feedback and evaluation results. The study will be conducted within Academic Year 2026–2027 at Norzagaray College. 
+Limitation
+      The study is limited to the use and evaluation of FieldTrack within Norzagaray College during Academic Year 2026–2027. The system will focus on Field Study and Practicum Students, Supervising Instructors/Advisers, and College Administrators and will not include parents, external agencies, or other institutions as users. The system will require an internet connection and will not include offline access or integration with external platforms. Advanced features such as predictive analytics, automated decision-making, and other functions beyond the defined system requirements will not be included. These limitations define the boundaries of the study, while the proposed system will still be developed and implemented according to its identified objectives and requirements.
+
+Delimitation
+       The study will be delimited to the features and functions identified for the FieldTrack system and will focus on the monitoring and management of Field Study and Practicum students. The system will include the identified requirements and procedures for Field Study and Practicum, including attendance recording, submission of activities and requirements, progress monitoring, evaluations, Reminders and notifications. However, features not required for the identified Field Study and Practicum processes, such as offline access, integration with external platforms, predictive analytics, and automated decision-making, will not be developed. Parents, external agencies, and other institutions will not be included as system users. These delimitations are set to keep the system focused on the specific monitoring needs of Field Study and Practicum students at Norzagaray College.
+
+SIGNIFICANCE OF THE STUDY
+
+Field Study and Practicum Students. The system will provide students with a centralized platform for recording attendance, submitting activities and requirements, monitoring progress, and receiving notifications. This may help students organize their records and manage their field study and practicum responsibilities more efficiently.
+Supervising Instructors/Advisers. The system will provide supervising instructors and advisers with tools for monitoring student attendance, activities, progress, and evaluations. This may help make student monitoring more organized and reduce the difficulties associated with manually tracking records.
+College Administrators. The system will assist administrators in managing student records and monitoring field study and practicum requirements. It may provide organized and accessible information that can support administrative monitoring and decision-making.
+Norzagaray College. The system may help improve the institution’s process for monitoring and managing field study and practicum activities by providing a centralized digital platform for relevant records and information.
+Future Researchers. The study may serve as a reference for future researchers who intend to develop or improve digital monitoring systems for field study, practicum, internship, or other student field-based programs.
+
+Definition of terms 
+
+	Artificial Intelligence (AI) -  Refers to the technology incorporated into FieldTrack to assist in validating submitted student requirements based on predefined criteria.
+AI-Assisted Requirement Validation - Refers to the use of AI to assist in checking whether submitted Field Study and Practicum requirements meet the specified criteria of the system.
+Field Study - Refers to a supervised academic experience where students gain practical knowledge and experience in an actual educational setting.
+Practicum - Refers to supervised practical training where students apply their academic knowledge and skills in an actual professional setting.
+Practicum or Internship Opportunities – refer to available placements, training programs, or work-based learning opportunities offered by companies, organizations, schools, or institutions where students can gain practical experience related to their field of study. In the context of the study, these opportunities refer to potential practicum or internship placements that students may identify and apply for through the system. 
+FieldTrack - Refers to the proposed digital monitoring system developed to support the monitoring and management of Field Study and Practicum students at Norzagaray College, Bulacan.

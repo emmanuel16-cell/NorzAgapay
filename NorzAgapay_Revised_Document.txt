@@ -1,0 +1,483 @@
+NORZAGARAY COLLEGE
+Municipal Compound, Norzagaray Bulacan
+College of Computing Studies
+
+NORZAGAPAY: AN INTEGRATED WEB AND MOBILE-BASED EMERGENCY RESPONSE AND CRISIS MANAGEMENT COORDINATION SYSTEM
+
+A Thesis
+Presented to the Faculty of College of the College of Computing Studies
+Norzagaray College, Norzagaray, Bulacan
+
+
+In Partial Fulfillment of the Requirements for the Degree 
+Bachelor of Science in Computer Science
+
+By:
+Desca, Kim Hyster L.
+Nabus, Emmanuel M.
+Ponce, Maich Richard B.
+Reminajes, Jerzon L.
+Tatoy, Jerome Rey B.
+
+
+
+
+CHAPTER 1
+THE PROBLEM AND ITS BACKGROUND
+Introduction
+The importance of coordinated and reliable disaster response continues to grow, particularly in provincial municipalities where emergency situations demand fast, accurate, and organized action. Technology can improve how disaster response units receive incident reports, dispatch first responders, and monitor incident progress in real time. In many existing practices, coordination relies heavily on phone calls, physical logbooks, and ad hoc reporting, which can result in delayed response, unverified dispatch, and difficulty tracking incident status during critical situations.
+The researchers developed an integrated system that strengthens disaster response coordination through real-time crisis management and a centralized reporting and dispatch pipeline. A centralized platform enables administrators and responders to view real-time updates, assess incident severity, coordinate the deployment of first responders, and communicate incident progress. NorzAgapay is intended to help the Municipal Disaster Risk Reduction and Management Office (MDRRMO) of Norzagaray address operational gaps associated with manual coordination and make emergency response more organized, accurate, and timely.
+Timely information on incident reports, responder duty status, and evacuation-center occupancy may help improve response times and community preparedness. Thus, the researchers developed NorzAgapay, an integrated web and mobile-based Emergency Response and Crisis Management Coordination System that facilitates disaster and incident reporting, assessment, dispatch, and coordination among the MDRRMO, Barangay Local Government Units, Barangay Tanods (first responders), and residents of the Municipality of Norzagaray. The system incorporates geolocation-based incident mapping, personnel duty-status tracking, evacuation-center monitoring, a structured escalation pipeline between barangays and the municipal headquarters, and real-time safety advisories.
+
+Background of the Study
+The study focuses on NorzAgapay, an integrated web and mobile-based Emergency Response and Crisis Management Coordination System for the MDRRMO of Norzagaray. The system was developed to address coordination difficulties identified through discussions with concerned personnel and departments. These difficulties include delayed incident reporting, limited visibility of responder availability, manual assignment of responders, informal escalation procedures, and difficulty monitoring emergencies such as floods, landslides, fires, and other incidents requiring timely and coordinated action.
+The system was developed using related literature and studies and established concepts in real-time crisis management and emergency response coordination as bases for identifying appropriate features and functions. These functions include real-time incident reporting, incident assessment and dispatch, duty-status tracking, GPS-based location monitoring, evacuation-center monitoring, barangay-to-MDRRMO escalation, and real-time notifications and safety advisories. Diagrams, tables, flowcharts, and other visual representations are used to help beneficiaries and users understand the system's processes and functions.
+The beneficiaries of the system are MDRRMO administrators and dispatchers, Barangay Administrators and BDRRMC Officials, Barangay Tanods and emergency responders, and residents of Norzagaray. Through its incident reporting, dispatch, duty-status tracking, location monitoring, evacuation-center monitoring, escalation, and communication functions, the system supports coordinated emergency-response operations.
+Settings of the Study
+The researchers conducted a study entitled "NorzAgapay: An Integrated Web and Mobile-Based Emergency Response and Crisis Management Coordination System" for the MDRRMO, Barangay Local Government Units, Barangay Tanods, and residents of the Municipality of Norzagaray, Bulacan.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Figure 1. Municipal Disaster Risk Reduction and Management Office (MDRRMO) of Norzagaray, Bulacan
+Figure 1 shows the map of Barangay Matictic, Norzagaray, Bulacan, which served as a participating coverage area of the study. The system supports coordination of disaster-response operations for incidents occurring within participating barangays in Norzagaray.
+Conceptual Framework
+The study uses the Input-Process-Output (IPO) Model as its conceptual framework. It illustrates how the identified problems and requirements are processed through the system to produce the desired outcomes.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Figure 2. Conceptual Framework using IPO Model
+
+	Figure 1 shows the Input-Process-Output (IPO) Model of the study, which presents the relationship among the inputs, processes, and outputs of the proposed system. It illustrates how the identified problems and requirements are transformed through the system to achieve the intended outcomes of the NorzAgapay system.
+
+General Problem
+	The study addresses the need for a unified and accessible platform that can further strengthen coordination among the Municipal Disaster Risk Reduction and Management Office (MDRRMO), Barangay Local Government Units, Barangay Tanods, and residents of the Municipality of Norzagaray during emergency response and crisis management operations. The platform is intended to support the timely sharing of incident information, coordinated dispatch of available responders, location-based monitoring, evacuation-center monitoring, inter-agency escalation, and public safety communication.
+
+Specific Problem
+The study aims to answer the following problems:
+1.	What functional requirements should be incorporated into the developed system to support coordinated emergency response and crisis management operations in terms of:
+1.1 Disaster and Incident Reporting;
+1.2 Incident Assessment and Dispatch;
+1.3 Responder Duty Status Tracking;
+1.4 Geolocation-based Incident Mapping;
+1.5 Escalation Pipeline Management;
+1.6 Real-time Notifications and Safety Advisories; and
+1.7 Evacuation-Center Monitoring?
+2.	What is the level of software quality of the developed system based on the applicable criteria of ISO/IEC 25010:2023 in terms of:
+2.1 Functional Suitability
+2.2 Performance Efficiency
+2.3 Interaction Capability
+2.4 Reliability
+2.5 Security
+
+General Objectives
+	The general objective of the study is to develop NorzAgapay, an integrated web and mobile-based Emergency Response and Crisis Management Coordination System that strengthens collaboration, situational awareness, and timely coordination among the MDRRMO, Barangay Local Government Units, Barangay Tanods, and residents of the Municipality of Norzagaray.
+Specific Objectives
+Specifically, the study aims to:
+1.	Determine the functional requirements to be incorporated into the developed system to address the identified needs in the emergency response and crisis management coordination process in terms of:
+1.1 Disaster and Incident Reporting;
+1.2 Incident Assessment and Dispatch;
+1.3 Responder Duty Status Tracking;
+1.4 Geolocation-based Incident Mapping;
+1.5 Escalation Pipeline Management;
+1.6 Real-time Notifications and Safety Advisories; and
+1.7 Evacuation-Center Monitoring.
+2.	Evaluate the level of software quality of the developed system based on the applicable criteria of ISO/IEC 25010:2023 in terms of:
+2.1 Functional Suitability;
+2.2 Performance Efficiency;
+2.3 Interaction Capability;
+2.4 Reliability; and
+2.5 Security.
+Scope, Limitation and Delimitation
+Scope
+The researchers developed NorzAgapay, an integrated web and mobile-based Emergency Response and Crisis Management Coordination System designed to facilitate disaster and incident reporting, assessment, dispatch, evacuation-center monitoring, and coordination among the Municipal Disaster Risk Reduction and Management Office (MDRRMO), Barangay Local Government Units, Barangay Tanods (first responders), and residents of the Municipality of Norzagaray.
+The system covers four primary user roles and their respective operational workflows. MDRRMO Administrators and Dispatchers use the web portal to monitor municipality-wide situations, view incident heatmaps and evacuation-center occupancy, approve escalations from barangays, and issue localized public safety broadcasts. Barangay Administrators or BDRRMC Officials use the mobile portal to receive and assess resident-submitted reports within their jurisdiction, assign available Barangay Tanods, monitor evacuation-center information, and escalate critical incidents to the MDRRMO when local response capacity is insufficient.
+Barangay Tanods and Emergency Responders use the mobile application to manage duty status, receive dispatch alerts, navigate to incident locations using GPS coordinates, provide real-time updates with incident documentation, and update evacuation-center occupancy information when authorized. Residents can submit geotagged emergency reports with descriptions and media attachments, track the progress of their reports, view available evacuation-center information, and receive official safety announcements and disaster advisories. Overall, the system supports real-time notifications, geolocation-based incident mapping, personnel duty tracking, evacuation-center monitoring, and a structured escalation process between barangays and the municipal headquarters.
+Delimitations
+While the system improves local crisis coordination, it is limited to the municipal jurisdiction of Norzagaray, Bulacan, including its MDRRMO and selected participating barangays. It does not integrate with national disaster management frameworks such as the NDRRMC and OCD-DRRMIS, nor with private emergency services. Barangay administrative offices are responsible for verifying and managing Barangay Tanod responder accounts.
+The system supports local caching for unsent reports and offline viewing of previously loaded advisories; however, real-time dispatching, GPS tracking, and instant notifications require an active internet or cellular data connection. It does not include resource inventory management, relief-goods distribution tracking, volunteer management, or logistics coordination. It also excludes automated disaster forecasting, AI or computer-vision damage assessment, drone integration, and automated IoT sensor data streams, such as automated water-level gauges or seismic telemetry.
+
+
+Significance of the Study
+	This study aims to develop NorzAgapay, an integrated web and mobile-based Emergency Response and Crisis Management Coordination System for the Municipal Disaster Risk Reduction and Management Office (MDRRMO), Barangay Local Government Units, Barangay Tanods, and residents of the Municipality of Norzagaray. The system is expected to support disaster and incident reporting, coordinated dispatch, responder duty-status tracking, evacuation-center monitoring, escalation management, incident documentation, and real-time situational awareness during emergency situations.
+This study will be beneficial to the following:
+	MDRRMO Administrators and Dispatchers. The system may help the MDRRMO of Norzagaray strengthen disaster-response coordination and improve its capabilities in incident and evacuation-center monitoring, escalation oversight, public safety communication, and municipality-wide situational awareness through the web portal.
+	Barangay Administrators. The system is expected to assist Barangay Administrators and BDRRMC Officials in receiving and assessing resident-submitted incident reports within their jurisdiction. It may support them in determining incident severity, assigning available Barangay Tanods to respond, monitoring incident progress and evacuation-center occupancy, and escalating critical incidents to the MDRRMO when local response capacity is insufficient.
+	Barangay Tanods and Emergency Responders. The system is expected to reduce communication delays by providing direct dispatch alerts and GPS-based navigation to incident locations. It may also provide frontline responders with a more convenient way to manage their duty status and submit real-time incident updates, such as En Route, On-Scene, and Resolved.
+	Residents and Local Communities. The system is expected to enable residents to submit real-time emergency reports with geotagged coordinates, descriptions, and media attachments; monitor the resolution status of their reports; view available evacuation-center information; and receive official safety announcements and disaster advisories. These functions may promote transparency and support more timely emergency response.
+	Future Researchers. This study may serve as a reference for future researchers interested in developing, improving, or expanding integrated emergency-response and crisis-management coordination systems for other local government units.
+Definition of Terms
+	Duty Status Tracking – The real-time monitoring and updating of responder availability, indicating whether a Barangay Tanod is currently On-Duty or Off-Duty. In this study, duty status tracking enables Barangay Administrators and the MDRRMO to determine responder availability before dispatch and prevents assignment of personnel who are not actively on shift.
+	Municipal Disaster Risk Reduction and Management Office (MDRRMO) – The local government office responsible for planning, coordinating, and implementing disaster risk reduction and management programs within a municipality's territorial jurisdiction. In this study, the MDRRMO is the primary organizational beneficiary and user of NorzAgapay, serving as the municipal command and coordination hub that monitors incident heatmaps, approves escalations, and issues public safety advisories.
+	Evacuation-Center Monitoring – The monitoring and updating of evacuation-center information, including its location, current occupancy, and capacity status. In this study, evacuation-center monitoring enables authorized personnel to view available shelter information and supports residents in identifying suitable evacuation locations.
+	NorzAgapay – The integrated web and mobile-based Emergency Response and Crisis Management Coordination System developed by the researchers for the MDRRMO, Barangay Local Government Units, Barangay Tanods, and residents of Norzagaray, Bulacan. NorzAgapay combines real-time incident reporting, duty-status tracking, geolocation-based mapping, evacuation-center monitoring, escalation pipeline management, and safety advisories into a unified platform for streamlined disaster-response coordination.
+	Real-Time Communication – The instantaneous exchange of information between system users and components without significant delay. In this study, real-time communication refers to NorzAgapay's use of WebSocket technology and push notifications to deliver dispatch alerts, incident updates, escalation approvals, and safety advisories to authorized users.
+Real-Time Monitoring – The continuous and immediate processing and display of operational data as events occur. In this study, real-time monitoring refers to the live command dashboard, automated alert system, and GPS tracking that provide MDRRMO administrators and Barangay officials with updates on responder locations and incident status.
+
+CHAPTER 2
+This chapter presents the related literature and studies relevant to the development of NorzAgapay, an integrated web and mobile-based Emergency Response and Crisis Management Coordination System for the Municipality of Norzagaray. It discusses concepts and existing studies related to disaster and incident reporting, emergency dispatch, responder coordination, geolocation-based incident mapping, escalation management, and real-time public safety communication. It also examines relevant technologies, including GPS location services, mobile and web-based platforms, real-time notifications, local data caching, and role-based access control, which support coordination among the MDRRMO, Barangay Local Government Units, Barangay Tanods, and residents.
+Theoretical
+The study is anchored on the Technology Acceptance Model (TAM), Task-Technology Fit (TTF), and the DeLone and McLean Information Systems Success Model. TAM explains how perceived usefulness and perceived ease of use influence the willingness of MDRRMO administrators, barangay officials, Barangay Tanods, and residents to adopt and use NorzAgapay. In this study, usefulness may be reflected in faster incident reporting, more organized dispatching, improved communication, and easier access to safety advisories, while ease of use concerns the accessibility and simplicity of the web and mobile interfaces for each user role.
+Task-Technology Fit supports the study by determining whether the features of NorzAgapay match the actual tasks performed during emergency-response operations. These features include geotagged incident reporting, incident assessment, responder duty-status tracking, GPS-based navigation, dispatch alerts, incident mapping, evacuation-center monitoring, barangay-to-MDRRMO escalation, and localized safety broadcasts. The DeLone and McLean Information Systems Success Model further guides the evaluation of NorzAgapay through system quality, information quality, system use, user satisfaction, and net benefits. Together, these theories provide a foundation for assessing the system’s user acceptance, suitability for emergency-response tasks, software quality, user satisfaction, and overall effectiveness in strengthening crisis coordination within Norzagaray.
+Review Literature
+Nuevas, Velarde, Javellana, and Torlao (2024) developed a real-time incident-reporting and emergency-response mobile GPS application for Abuyog, Leyte, Philippines, to address delays in reporting and responding to emergencies at the barangay level. The study built a system that allows barangay responder officers to request backup officers, rescue emergency units such as ambulances or firefighters, or transfer a report to the nearest police station, alongside a web-admin panel for tracking responder locations and generating statistical reports. The researchers found that the application was positively received and verified as functional and effective during evaluation, supporting faster and more coordinated barangay-level emergency response. The study is relevant to NorzAgapay because both systems use GPS-based location tracking and web-based dashboards to coordinate the dispatch of responders to reported incidents at the barangay level. However, Nuevas et al. (2024) focused on incident reporting and responder dispatch for a single municipality, while NorzAgapay is designed for the MDRRMO, Barangay Local Government Units, Barangay Tanods, and residents of Norzagaray. NorzAgapay also includes duty-status tracking, a structured escalation pipeline between barangays and the municipal headquarters, and localized safety advisories. Therefore, the current study addresses a functional gap by extending barangay-level incident dispatch into a multi-tiered coordination system that connects barangay response with municipal-level disaster-management operations.
+Mustafa, Han, Sarkar, and Petrova (2025) developed the Disaster Emergency Events Application (DEAPP), a secure, cross-layer mobile sensing system for real-time disaster reporting and visualization, to address the incomplete and delayed disaster information provided by traditional sources such as radio, television, and websites. The study developed a system architecture connecting a web-based backend, a cloud database, and a native Android mobile application, incorporating role-based access control, verified event publication, and caching to secure and speed up real-time data access during emergencies. The researchers found that the cross-layer architecture successfully supported secure, real-time disaster reporting and visualization, including notifications and interactive hazard mapping of affected areas. The study is relevant to NorzAgapay because both systems use a connected web and mobile architecture with real-time notifications and geolocation-based mapping to improve the speed and reliability of disaster information sharing. However, Mustafa et al. (2025) focused on the technical architecture for secure, general-purpose disaster event reporting and visualization, while NorzAgapay is designed specifically for coordinated multi-agency response among the MDRRMO, Barangay Local Government Units, Barangay Tanods, and residents of Norzagaray, and includes additional functions such as responder dispatch, duty status tracking, and an inter-agency escalation pipeline. Therefore, the current study addresses a functional gap by extending secure real-time disaster reporting into a coordinated dispatch and escalation system tailored to municipal-level emergency response operations.
+Yaneza (2025) developed the Online Emergency Response Management System for the City Disaster Risk Reduction and Management Office of Calamba City, Laguna, to address the CDRRMO's need for real-time hazard monitoring, spatial analysis, and data-driven decision-making in disaster preparedness. The study employed a developmental research design with stratified sampling, integrating Geographic Information Systems, machine learning, decision-support tools, and natural-language processing to analyze incident reports and generate recommendations for evacuation planning. The researchers found that GIS and machine-learning-based analysis of incident reports supported more informed, data-driven decision-making. The study is relevant to NorzAgapay because both systems were developed for a Philippine city or municipal DRRMO to improve real-time monitoring and decision-making during disaster-response operations. However, Yaneza (2025) focused on hazard monitoring, spatial analysis, and evacuation planning for a single CDRRMO using GIS and machine learning, while NorzAgapay is designed for the MDRRMO, Barangay Local Government Units, Barangay Tanods, and residents of Norzagaray. NorzAgapay includes responder duty-status tracking, a structured escalation pipeline between barangays and the municipal headquarters, and real-time safety advisories, without using automated forecasting or AI-based analysis. Therefore, the current study addresses a functional and contextual gap by extending single-office hazard monitoring into a multi-stakeholder coordination platform that connects municipal, barangay, and resident-level emergency-response processes.
+
+Related Technologies 
+Related technologies play an important role in the development of NorzAgapay, an integrated web- and mobile-based Emergency Response and Crisis Management Coordination System for the Municipality of Norzagaray, Bulacan. These technologies provide the components needed to develop user interfaces, process incident information, store and retrieve records, deliver real-time notifications, display geographic locations, monitor evacuation centers, and coordinate communication among MDRRMO personnel, Barangay administrators, Barangay Tanods, and residents. The appropriate use of these technologies helps ensure timely incident reporting, responder dispatch, evacuation-center monitoring, escalation management, and public-safety communication.
+
+
+
+
+
+
+HTML5, CSS, JavaScript, React, Vite, and TypeScript are used to develop the MDRRMO web portal. HTML5 organizes the content and system components of the portal, while CSS provides the visual design, layout, and responsive interface. JavaScript, React, and TypeScript support interactive functions such as viewing incident reports, monitoring responder status and evacuation-center occupancy, approving escalations, issuing safety advisories, and displaying municipality-wide incident information. Vite supports the efficient development and deployment of the web-based dashboard.
+
+
+
+
+
+Flutter and Dart are used to develop the mobile application for Barangay administrators, Barangay Tanods, and residents. The mobile application enables residents to submit emergency reports with descriptions, GPS coordinates, and media attachments. It also allows Barangay officials to assess reports, assign Tanods, and escalate critical incidents to the MDRRMO. For Tanods, the application supports duty-status management, dispatch notifications, GPS navigation, real-time incident updates, and submission of incident documentation.
+
+
+
+
+
+
+Node.js and Express.js are used for back-end processing and API development. These technologies manage user requests, authentication, role-based access, incident processing, data validation, dispatch workflows, escalation procedures, and communication between the web portal, mobile application, and database. Socket.io supports real-time communication by allowing incident updates, responder status changes, notifications, and dispatch alerts to be immediately transmitted to authorized users.
+
+
+
+
+
+Supabase is used as the primary data-management platform of NorzAgapay. Its PostgreSQL database stores user profiles, incident reports, responder duty statuses, escalation records, safety advisories, incident-status updates, and evacuation-center information. Supabase Realtime supports synchronized updates, while Supabase Storage stores uploaded photos and media documentation related to reported incidents.
+
+
+
+
+
+Leaflet.js and OpenStreetMap support the geolocation-based features of the system. These technologies allow the display of incident locations, responder positions, barangay jurisdictions, and evacuation-center locations on an interactive map. GPS data enables Barangay administrators and MDRRMO dispatchers to monitor emergency situations and responders in real time. OSRM may also be used to support route guidance for responders traveling to incident locations.
+
+
+
+
+
+
+Redis is used as a high-speed temporary data store for frequent GPS-location updates and responder tracking. This helps support the real-time monitoring of on-duty Tanods and emergency responders without overloading the primary database. Together, these technologies enable NorzAgapay to provide a centralized platform for disaster and incident reporting, assessment and dispatch, duty-status tracking, location-based monitoring, evacuation-center monitoring, barangay-to-MDRRMO escalation, and real-time safety advisories.
+
+
+
+
+
+
+
+CHAPTER 3
+This chapter presents the research methods and procedures used in the study. It describes the research design, respondents, data gathering procedures, and methods used to develop and evaluate the proposed system. 
+Project Team
+The Project Team presents the structure of the research team and shows the assigned roles and responsibilities of each member. It illustrates how the researchers work together to ensure the proper development, documentation, testing, and completion of the NorzAgapay project.
+
+
+
+
+
+
+
+
+
+
+
+Figure 3.  Project Team
+Figure 2 illustrates the structure of the project team, which is composed of five members, each assigned specific roles and responsibilities to ensure the successful development and completion of the system. Emmanuel M. Nabus serves as the Project Manager and Programmer, responsible for coordinating the team and developing and implementing the NorzAgapay system. Jerzon L. Reminajes serves as the System Analyst and Documenter, responsible for analyzing system requirements and managing the project documentation. Jerome Rey B. Tatoy, Kim Hyster L. Desca, and Maich Richard B. Ponce serve as Testers and Documenters, responsible for testing the system and assisting in the preparation of project documentation.
+HARDWARE AND SOFTWARE SPECIFICATION
+The hardware and software requirements needed for the system are essential parts of its development. For hardware, the developers will use a desktop computer or laptop and an Android smartphone. For software, they will use Visual Studio Code for coding and Supabase PostgreSQL for database management.
+Table 1
+HARDWARE REQUIREMENTS
+HARDWARE	MINIMUM REQUISITE
+Desktop / Laptop / TABLET	Intel Core i5, 4 GB RAM
+Smartphone	Quad-Core processor, 2 GB RAM
+
+	Table 1 shows the minimum hardware requirements for the NorzAgapay system. A desktop, laptop, or tablet with an Intel Core i5 processor and 4 GB RAM, and a smartphone with a quad-core processor and 2 GB RAM, may be used for development, testing, and system access.
+
+
+
+Table 2
+SOFTWARE REQUIREMENTS
+SOFTWARE CATEGORY	MINIMUM REQUISITE
+Operating System	Windows 11
+Mobile Development Framework	Flutter
+Web Development Framework	React with Vite
+Backend Framework	Node.js with Express.js
+Database Server	Supabase (PostgreSQL)
+Real-Time Communication	Socket.IO and Supabase Realtime
+Cache Service 	Upstash Redis
+File Storage 	Supabase Storage
+Programming Languages	Dart, TypeScript, JavaScript
+IDE	Visual Studio Code / Android Studio
+
+Table 2 presents the software resources required for the development and operation of the NorzAgapay, an integrated web and mobile-based Emergency Response and Crisis Management Coordination System. The system is developed on Windows 11 using Visual Studio Code as the primary development environment. Its web dashboard uses React with Vite, while the mobile applications are built with Flutter. The backend is developed using Node.js with Express.js and supports real-time communication through Socket.IO and Supabase Realtime.  
+For data management, NorzAgapay uses Supabase, which is powered by PostgreSQL, while Upstash Redis is used to cache high-frequency GPS location data. Supabase Storage manages uploaded incident photos and videos. The primary programming languages used are Dart, TypeScript, and JavaScript.
+OPERATION FEASIBILITY
+Hardware and Software Requirements
+The hardware and software requirements identify the resources needed for the proper operation of the proposed system. These requirements ensure that the system can be developed, tested, and accessed using appropriate devices and software. The specified resources support the system in performing its intended functions effectively.
+The hardware and software requirements specify the minimum resources needed to develop, operate, and maintain the proposed system. For hardware, the system requires a desktop, laptop, or tablet with at least an Intel Core i5 processor and 4 GB RAM, while smartphones should have at least a quad-core processor and 2 GB RAM. These specifications provide sufficient performance for system development, testing, and access to the proposed application.
+For software requirements, the system uses Windows 11 as the operating system and Visual Studio Code or Android Studio as the Integrated Development Environment (IDE). The mobile application is developed using Flutter, while the web application is developed using React with Vite. The backend is built using Node.js with Express.js, and Supabase PostgreSQL is used for database management. The system is developed using Dart, TypeScript, and JavaScript as programming languages, while Socket.IO and Supabase Realtime support real-time communication between the system's web-based and mobile-based functions.
+The identified hardware and software requirements were selected to provide a suitable environment for the development, testing, and operation of the proposed system. These minimum specifications ensure that the system can function properly while allowing the researchers and intended users to access its features using commonly available computing devices.
+FISHBONE DIAGRAM
+The Fishbone Diagram is used to identify and organize the possible causes of problems encountered in the current monitoring and management process. It helps the researchers determine the root causes of the identified issues and serves as a basis for developing the proposed system.
+
+
+
+
+
+
+
+
+
+
+
+Figure 3. Fishbone
+The Fishbone Diagram (Cause-and-Effect or Ishikawa Diagram) illustrates the root causes contributing to delayed and uncoordinated emergency-response and crisis-management operations in the Municipality of Norzagaray, Bulacan. The identified causes are categorized into six main operational areas: Incident Reporting, Assessment and Dispatch, Escalation and Communication, Responder Coordination, Geolocation and Monitoring, and Evacuation-Center Monitoring.
+Regarding Incident Reporting, fragmented reporting channels, incomplete location or media details, and delayed resident reports may prevent barangay officials and the MDRRMO from receiving timely and complete incident information. In terms of Assessment and Dispatch, delayed verification, the absence of standardized severity assessment, and manual responder assignment may slow the deployment of appropriate Barangay Tanods and emergency responders.
+Escalation and Communication are affected by informal barangay-to-MDRRMO escalation procedures, delayed inter-agency notifications, and separate communication channels. These may create coordination gaps when an incident exceeds a barangay’s available capacity. Responder Coordination is affected by unknown Tanod duty availability, delayed field-status updates, and limited centralized dispatch visibility, making it difficult to identify and monitor available frontline responders.
+Lastly, Geolocation and Monitoring are affected by the absence of real-time incident maps, limited responder GPS visibility, and lack of shared resolution tracking, which may reduce situational awareness for Barangay administrators and MDRRMO dispatchers. Evacuation-Center Monitoring is affected by incomplete information on evacuation-center locations, capacity, and occupancy, which may make it difficult for officials and residents to identify available shelter space during emergencies.
+These causes provide the basis for developing NorzAgapay: an integrated web and mobile-based Emergency Response and Crisis Management Coordination System. The system addresses these challenges through centralized incident reporting, geolocation-based mapping, Tanod duty-status monitoring, real-time dispatch alerts, barangay-to-MDRRMO escalation, and safety advisories.
+GANTT CHART
+A Gantt chart is one of the essential tools used in the development process for planning and monitoring the project's timeline. It presents the different phases, tasks, and activities involved in the system's development, along with their corresponding start and end dates, allowing the developers to track progress, manage deadlines, and ensure that each stage of the project is completed in an organized and timely manner.
+
+
+
+
+
+
+
+
+
+Figure 4. Gantt Chart
+Figure 4 shows the Gantt Chart, which presents the 5-month implementation timeline of the proposed system, covering July to November. It shows the sequence and duration of the major activities involved in the study, including the planning of the project, analysis and design, documentation, development (front-end and back-end), software and hardware testing, software debugging, oral defense, revisions, and completion. The timeline was planned to ensure that each activity was completed systematically and within the scheduled period.
+PROJECT DEVELOPMENT COST ESTIMATION
+The project development cost estimation presents the estimated expenses needed for the development, implementation, and documentation of the project. It includes the costs of the resources and materials required to complete the project successfully.
+ECONOMIC FEASIBILITY
+The Economic feasibility the project cost of the project presents the estimated expenses needed for the development, implementation, and documentation.
+Table 3
+Economic feasibility
+Item	Cost
+Electric Bill	1,000
+Internet Connection	1,000
+Transportation	500
+Printing Documentation	1,000
+Professional Service	1,000
+TOTAL	4,000
+
+Table 3 presents the estimated costs required for the development and implementation of the NorzAgapay system. The expenses include electricity, internet connection, transportation, printing of documentation, and professional services, with a total estimated cost of ₱4,000.
+Method of Research
+This study employs a quantitative-developmental research design, which systematically combines the collection and analysis of numerical data with the iterative design, development, and evaluation of a technological system. This approach is suitable for NorzAgapay because it supports the development and quantitative evaluation of an integrated web and mobile-based platform for incident reporting, assessment and dispatch, duty-status tracking, GPS-based monitoring, escalation management, and real-time safety advisories. Through this method, the researchers can determine whether the system is functional, efficient, reliable, secure, and suitable for emergency-response coordination among the MDRRMO, Barangay Local Government Units, Barangay Tanods, and residents.
+Software Development Methodologies 
+The researchers adopted the Agile Software Development Life Cycle (SDLC) to guide the systematic and iterative development of NorzAgapay through planning, designing, developing, testing, and incorporating feedback for continuous improvement.
+
+
+
+
+
+
+
+
+
+
+
+Figure 5. Agile Software Development Life Cycle (SDLC)
+Requirements-Gathering Phase – In this phase, the research team conducted meetings with concerned personnel to identify system requirements, define key features, and establish the overall plan for NorzAgapay. The requirements focused on incident reporting, assessment and dispatch, duty-status tracking, location-based and evacuation-center monitoring, escalation, notifications, and safety advisories.
+Design Phase – During the design phase, the system architecture, data structures, user interfaces, and flowcharts were developed. These designs ensured that the system met the operational needs of MDRRMO administrators, Barangay officials, Barangay Tanods, and residents.
+Development Phase – In this phase, the researchers developed the web portal, mobile application, backend services, and database. The system incorporated role-based access, geotagged incident reporting, dispatch workflows, duty-status updates, incident mapping, evacuation-center monitoring, escalation procedures, and notifications.
+Testing Phase – The system was tested by intended users to evaluate its usability, functionality, reliability, and performance. Feedback gathered during this phase was used to identify issues and improve the system features.
+Deployment Phase – After testing and revision, the system was prepared for use in supporting emergency-response coordination within the Municipality of Norzagaray.
+Review and Maintenance Phase – In the final phase, the system is monitored and updated. The research team performs improvements, resolves technical issues, and helps ensure that the system remains reliable, secure, and efficient over time.
+Research Design
+The researchers used a quantitative-developmental research design in developing NorzAgapay. The developmental approach helped the researchers plan, create, test, and improve the system, while the quantitative approach was used to gather and analyze numerical data from the system evaluation. Before the system was developed, an initial interview was conducted with selected respondents and concerned personnel to understand the existing problems, monitoring procedures, and system requirements that guided the development of NorzAgapay.
+Requirement Analysis
+The requirement analysis was conducted to identify the needs of the proposed NorzAgapay system. It covered the functions, usability, security, and other requirements needed by the Municipal Disaster Risk Reduction and Management Office (MDRRMO), Barangay Local Government Units, Barangay Tanods, and residents of Norzagaray. These requirements were gathered from current practices in incident reporting, dispatch, responder duty tracking, evacuation-center monitoring, escalation, and public-safety communication and were used as a guide in developing the system.
+The functional requirements describe the main features of NorzAgapay. The system shall allow users to log in and access features based on their assigned roles. It shall record and monitor incident reports, responder dispatch, duty status, and evacuation-center information. Residents shall be able to submit incident reports with location and media details, view evacuation-center information, and receive safety advisories, while Barangay officials and MDRRMO personnel shall be able to verify, assess, and dispatch responders accordingly. The system shall also provide geolocation-based incident mapping, evacuation-center monitoring, an escalation pipeline between barangays and the municipal headquarters, real-time notifications, and safety advisories. These features are designed to make disaster-response coordination more organized, timely, and easier to manage.
+The non-functional requirements focus on the overall quality of NorzAgapay. The system shall be evaluated using ISO/IEC 25010:2023 based on the selected software quality characteristics such as functional suitability, performance efficiency, interaction capability, reliability, and security. It should perform its functions properly, respond promptly even during high-incident volumes, work consistently, and keep user and incident information protected. These requirements help ensure that the proposed system is reliable, secure, useful, and responsive to the needs of disaster response operations.
+
+Respondents of Study
+To effectively evaluate the proposed NorzAgapay: An Integrated Web and Mobile-Based Emergency Response and Crisis Management Coordination System, it is important to determine the number of respondents who will participate in the study. The respondents were selected from MDRRMO personnel and staff who are directly involved in disaster-response coordination and are intended users of the system. The following table summarizes the total population, the statistically computed sample size, and the sampling technique used in the study.
+Respondents	Population Size (S)	Sample Size (n)	Sampling Technique
+MDRRMO Personnel/Staff	39	36	
+Total	39	36	Simple Random
+
+Table 4. Population and Sample Size of NorzAgapay Study Respondents
+Table 4 shows the population and sample distribution for the study titled NorzAgapay: An Integrated Web and Mobile-Based Emergency Response and Crisis Management Coordination System. The total population consists of 39 respondents, composed of MDRRMO personnel and staff who are directly involved in disaster-response coordination. To determine the appropriate sample size, the Cochran formula was applied using a 95% confidence level and a 5% margin of error, resulting in a sample size of 36 respondents.
+Sampling Technique
+The study will use Simple Random Sampling as the sampling technique to select the respondents. This technique is appropriate because the population consists of MDRRMO personnel and staff who are directly involved in disaster-response coordination, making them a relatively homogeneous group in terms of their involvement with the system. Using the Cochran formula with a 95% confidence level and a 5% margin of error, a sample size of 36 was determined from the total population of 39 respondents. Each member of the MDRRMO personnel and staff has an equal chance of being selected, helping ensure that respondents with relevant emergency-response experience are fairly represented. This technique will help obtain a reliable and representative sample for evaluating NorzAgapay.
+Statistical Instrument Used
+The researchers used a researcher-made questionnaire as the primary instrument for gathering data. The questionnaire consisted of three parts: Part 1 – Respondent Profile; Part 2 – Technical Aspects, covering the selected ISO/IEC 25010:2023 criteria; and Part 3 – User Evaluation. A five-point Likert scale was used in Parts 2 and 3 to measure the respondents' level of agreement with each statement. The scale ranged from 5 (Strongly Agree) to 1 (Strongly Disagree).
+Table 5. Five-Point Likert Scale
+Scale 	Verbal Interpretation	Description
+5	Strongly Agree	The respondent strongly agrees with the statement.
+4	Agree	The respondent agrees with the statement.
+3	Neutral	The respondent is neither in agreement nor disagreement with the statement.
+2	Disagree	The respondent disagrees with the statement.
+1	Strongly Disagree	The respondent strongly disagrees with the statement.
+Table 5.
+Table 5 presents the five-point Likert scale used to assess the respondents' evaluation of the developed system. Each response was assigned a numerical value ranging from 1 to 5, with 5 indicating Strongly Agree and 1 indicating Strongly Disagree.
+1. Frequency
+Frequency was used to determine the number of respondents or responses in a specific category. It was utilized to present the respondents' profile and to identify the number of responses for each option in the Likert-scale questionnaire items.
+The frequency is represented as:
+f=Number of occurrences of a particular response or category
+Where:
+f = Frequency
+Number of occurrences = Number of respondents or responses in a particular category
+2. Percentage
+Percentage was used to determine the proportion of respondents belonging to a particular category relative to the total number of respondents.
+ 
+The following formula was used:
+
+
+Where:
+•	P = Percentage
+•	f = Frequency
+•	N = Total number of respondents
+•	N = Total number of respondents
+3. Weighted Mean
+Weighted mean was used to determine the respondents’ average evaluation of the developed system based on the five-point Likert scale.
+
+
+
+The following formula was used:
+
+
+Where:
+WM = Weighted Mean
+f = Frequency of a rating
+x = Scale value
+n = Total number of responses
+
+The computed weighted mean was interpreted using the following ranges:
+Table 6. Interpretation of Weighted Mean
+Weighted Mean Range	Verbal Interpretation
+4.21 – 5.00	Strongly Agree
+3.41 – 4.20	Agree
+2.61 – 3.40	Neutral
+1.81 – 2.60	Disagree
+1.00 – 1.80	Strongly Disagree
+Table 6 shows the interpretation of the computed weighted mean scores based on the corresponding verbal interpretations.
+
+
+
+
+Design
+Output User - Interface Design
+The User Interface Design presents the visual layout and organization of the proposed NorzAgapay system. It is designed to provide a clear, organized, and user-friendly experience for MDRRMO administrators, barangay officials, Barangay Tanods, and residents involved in disaster response coordination.
+
+
+
+
+
+
+
+
+Admin Dashboard
+The Admin Dashboard features a sidebar navigation menu that provides quick access to the system's primary functions, such as the Command Center, Incidents, Responder Status, Evacuation Centers, Escalations, Incident Map, and Safety Advisories. Administrators can access the Command Center for an overall, real-time view of ongoing incidents, escalated cases, dispatched responders, evacuation-center occupancy, and resolved reports through a live map and status counters. The Incident, Evacuation Center, and Escalation modules allow monitoring of reported emergencies and ongoing response operations, while the Safety Advisories module supports the issuance of localized public-safety announcements. This structure allows administrators to efficiently navigate between incident monitoring, dispatch coordination, evacuation-center monitoring, escalation oversight, and public-safety communication.
+
+
+
+
+
+
+
+
+
+
+
+Mobile Application Resident 
+The Resident Home screen serves as the main interface for residents accessing the NorzAgapay mobile application. It displays the municipality and registered barangay information at the top, along with the registered contact number, allowing residents to quickly confirm their account details. The screen presents options for Emergency Incident reporting, Community Incident reporting, My Submitted Reports, Evacuation Centers, and Safety Advisories. Residents can submit reports to Barangay officials and the MDRRMO with descriptions, photo evidence, and GPS locations; monitor the status and response to their submitted reports; view evacuation-center locations and occupancy information; and view official safety announcements and disaster advisories. This layout allows residents to report emergencies easily, remain informed, and monitor the progress of their reports.
+
+
+
+
+
+
+
+
+
+
+
+Incident Reports
+The Incident Reports screen serves as the main interface for Barangay Tanods in monitoring and responding to reported emergencies within their barangay. It displays incidents categorized into three tabs: Pending, Responding, and Resolved, allowing responders to quickly track the status of each report. Each incident entry shows key details such as the incident type, contact number of the reporting resident, and the date and time it was submitted, along with the status of assistance requests such as SOS calls. A Report Incident button is also available, allowing Tanods to directly log incidents they encounter or respond to. The bottom navigation provides quick access to Reports, Dispatch, Status, Map, and Account sections, enabling responders to monitor incidents, update their duty and response status, navigate to incident locations, and manage their accounts.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Evacuation Centers
+The Evacuation Centers screen allows authorized Barangay officials and Barangay Tanods to monitor evacuation facilities within their barangay. It displays each center's name, location, current occupancy, and capacity status. Authorized users may update this information as conditions change, while MDRRMO personnel can view municipality-wide evacuation-center data through the web portal. Residents can view available evacuation-center information to help them identify suitable locations during emergencies. This module supports shelter monitoring only and does not include relief-goods allocation or distribution.
+
+Barangay Team
+The Barangay Team screen allows the Barangay Captain and authorized Barangay Administrators to view the registered Barangay Tanods involved in disaster-response operations within their barangay. It displays each responder's name, contact information, assigned role, and duty status, along with a color-coded badge for easy identification. Authorized Barangay administrative offices verify and manage responder accounts. This screen enables Barangay officials to identify available responders and maintain clear roles and responsibilities during emergency operations.
+
+References
+Nuevas, L. K., Velarde, J. L. C., Javellana, J. B. A., & Torlao, J. R. E. (2024, October). Real-time incident reporting and emergency response: A mobile GPS app for Abuyog, Leyte, Philippines. In 2024 Seventh International Conference on Vocational Education and Electrical Engineering (ICVEE). https://www.researchgate.net/publication/387830217
+Mustafa, R., Han, J., Sarkar, N. I., & Petrova, K. (2025). Secure cross-layer mobile sensing framework for real-time disaster reporting and visualisation using a mobile application. Sensors, 25(21), Article 6766. https://doi.org/10.3390/s25216766
+Yaneza, J. S. (2025). Online emergency response management system for City Disaster Risk Reduction Management Office of Calamba City, Laguna. International Journal of Advanced Computer Research (IJACR). https://www.researchgate.net/publication/393127891
+

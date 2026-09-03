@@ -1,0 +1,389 @@
+CHAPTER 3
+
+ Research and Methodology 
+	This chapter presents the research methods and procedures used in the study. It describes the research design, respondents, data gathering procedures, and methods used to develop and evaluate the proposed system. 
+Project Team 
+The project Team presents the structure of the research team and shows the assigned roles and responsibilities of each member. It illustrates how the researchers work together to ensure the proper development, documentation, testing, and completion of the FieldTrack project.
+
+
+
+
+
+
+
+
+Figure 3.  Project Team
+Figure 3 illustrates The project team is composed of five members, each assigned specific roles and responsibilities to ensure the successful development and completion of the system. Noel S. Rosero serves as the Project Manager and Main Documenter, responsible for coordinating the team and managing the project documentation. Jorgen A. Cañaveral serves as the System Developer/Programmer, responsible for developing and implementing the system. Lady Allyssa Marice C. Santos serves as the Documenter/Data Analyst, responsible for preparing documentation and analyzing gathered data. Mike Justine C. Dominguez and Mark P. Trocio serves as the Tester/Documenter, responsible for testing the system and assisting in the preparation of project documentation. 
+
+HARDWARE AND SOFTWARE SPECIFICATION
+The hardware and software resources needed for the system will be one of the essential parts for the development. The developers will use a desktop computer or laptop, an android smartphone for hardware, and a Visual Studio  for coding and MySQL as their server and database management.
+Table 1.
+HARDWARE REQUIREMENTS
+HARDWARE	MINIMUM REQUISITE
+DESTOP/LAPTOP/Smart Phone	Intel Core i5, 8GB RAM, Windows 11, Android, Quad-Core, 3–4GB RAM
+
+Table 1 presents the hardware and software resources required for the development and operation of the FieldTrack system. The developers will use desktop computers or laptops, smartphones, and tablets as hardware resources, while Windows 11 and Android will serve as the software platforms for system development and use. 
+
+
+
+Table 2.
+SOFTWARE REQUIREMENTS
+SOFTWARE CATEGORY	MINIMUM REQUISITE
+Operating System	            Windows 11 / Linux 
+Integrated Development Environment (IDE) 	
+Visual Studio code
+Web Server/Cloud 	Apache Web Server (XAMPP) 
+Database Server 	MySQL (MariaDB) 
+Programming Language 	PHP 8.x / JavaScript
+
+
+
+
+
+
+
+
+
+
+The table 2 shows the software resources required for the development and operation of the FieldTrack system are essential for ensuring its proper functionality. The developers will use Windows 11 or Linux as the operating system, Visual Studio Code as the integrated development environment, and Apache Web Server (XAMPP) for web server functions. MySQL (MariaDB) will be used for database management, while PHP 8.x and JavaScript will be used as the primary programming languages for system development.
+
+OPERATION FEASIBILITY
+Hardware and Software Requirements
+The hardware and software requirements identify the resources needed for the proper operation of the proposed system. These requirements ensure that the system can be developed, tested, and accessed using appropriate devices and software. The specified resources support the system in performing its intended functions effectively.
+The hardware and software requirements specify the minimum resources needed to develop, operate, and maintain the proposed system. For hardware, the system requires a desktop or laptop with at least an Intel Core i5 processor, 8 GB RAM, and Windows 11, while smartphones should have an Android operating system, quad-core processor, and 3–4 GB RAM. These specifications provide sufficient performance for system development, testing, and access to the proposed application.
+For software requirements, the system uses Windows 11 or Linux as the operating system and Visual Studio Code as the Integrated Development Environment (IDE). Apache Web Server through XAMPP is used for local web server operations, while MySQL (MariaDB) is used for database management. The system is developed using PHP 8.x and JavaScript, which support the development of the system's web-based functions and interactive features.
+The identified hardware and software requirements were selected to provide a suitable environment for the development, testing, and operation of the proposed system. These minimum specifications ensure that the system can function properly while allowing the researchers and intended users to access its features using commonly available computing devices.
+
+
+
+
+
+Activity Diagram
+
+Figure 4. Activity Diagram(ADMIN )
+Figure 4 shows the Activity Diagram serves as the behavioral framework for FieldTrack, detailing how the platform automates and manages the workflows for field study and practicum students at Norzagaray College. By mapping out the interactions between user roles and system operations, the diagram demonstrates how manual tracking is transformed into a streamlined, digital monitoring process. 
+
+Activity diagram
+
+Figure 5. Activity Diagram(USER )
+Figure 5 shows the activity diagram for FieldTrack, which explains how the system works for students at Norzagaray College. It shows how the system receives user inputs, checks practicum submissions, and updates student records in real time. By dividing tasks into two columns one for the User / Admin and one for the System the diagram shows how the platform changes manual tracking into a fully automated digital process. 
+
+FISHBONE DIAGRAM
+The Fishbone Diagram is used to identify and organize the possible causes of problems encountered in the current monitoring and management process. It helps the researchers determine the root causes of the identified issues and serves as a basis for developing the proposed system.
+Figure 6. Fishbone Diagram (Cause-and-Effect or Ishikawa Diagram)
+
+The Figure 6 Fishbone Diagram (Cause-and-Effect or Ishikawa Diagram) illustrates the root causes contributing to the central problem of inefficient manual monitoring and management of Field Study and Practicum Students. The identified causes are categorized into six main operational areas: Requirements Verification, Attendance Monitoring, Submission Tracking, Progress Monitoring, Record Management, and Information Coordination.
+Regarding Requirements Verification, the process is affected by manual document submission, delayed verification, and the absence of standardized verification procedures. These challenges may make it difficult for supervising instructors or advisers to efficiently check and confirm the completeness and validity of student requirements. In terms of Attendance Monitoring, handwritten attendance, late record checking, and incomplete time records may result in difficulties in maintaining accurate and updated attendance information.
+For Submission Tracking, the absence of a centralized submission tracker, late identification of missing files, and inconsistent submissions can make it difficult to monitor the status of student requirements. Similarly, Progress Monitoring is affected by manual progress tracking, manual hour tracking, and the lack of real-time completion tracking, which may delay the monitoring of students' progress and completion status.
+In terms of Record Management, paper-based records, slow record retrieval, and scattered student files can make the management and retrieval of important information inefficient. Lastly, Information Coordination is affected by separate communication channels, delayed updates, and the lack of shared access to information, which may result in communication gaps among students, advisers, and administrators.
+These identified causes serve as the basis for the development of FieldTrack: A Digital Monitoring System for Field Study and Practicum Students at Norzagaray College, Bulacan. The proposed system aims to address these challenges by providing a centralized and organized platform for monitoring attendance, verifying requirements, tracking submissions and student progress, managing records, and improving information coordination.
+
+GANTT CHART
+A Gantt chart is one of the essential tools used in the development process for planning and monitoring the project's timeline. It presents the different phases, tasks, and activities involved in the system's development, along with their corresponding start and end dates, allowing the developers to track progress, manage deadlines, and ensure that each stage of the project is completed in an organized and timely manner.
+ 
+Figure 7. Gantt Chart
+
+Figure 7 shows The Gantt Chart presents the 11-month implementation timeline of the proposed system, covering December 2025 to October 2026. It shows the sequence and duration of the major activities involved in the study, system development, testing, evaluation, documentation, and final presentation. The timeline was planned to ensure that each activity was completed systematically and within the scheduled period.
+The project began in December 2025 with the generation and selection of the proposed system title. During this period, the researchers identified the main problem, gathered initial requirements, and prepared the project plan. The initial proposal was presented during the Title Proposal Defense in January 2026.
+After the title was approved, the researchers focused on planning the system and designing its User Interface and User Experience (UI/UX). They also prepared Chapter 1: The Problem and Its Background, which established the purpose, problems, objectives, and proposed solution of the study. This phase provided the foundation for the succeeding research and development activities.
+In February 2026, the researchers prepared Chapter 2: Review of Related Literature and Studies by gathering relevant local and foreign sources. The initial development of the system also started during this period. The system reached approximately 40% completion, including the basic structure and major features.
+In March 2026, the researchers worked on Chapter 3: Research Design and Methodology while continuing system development. The system reached approximately 60% completion. Initial testing was also conducted to identify errors and determine the improvements needed for the system.
+In April 2026, the researchers conducted the Thesis Proposal Defense and presented the study and proposed system to the panel. The researchers considered the comments and recommendations provided by the panel. These recommendations guided the revision of the research documents and further development of the system.
+From May to July 2026, the researchers continued revising Chapters 1 to 3 and improving the system based on the panel's recommendations. In May, the system reached approximately 80% completion, followed by another testing phase to evaluate its functionality and usability. By June 2026, the system reached 100% development completion, with the major modules and features integrated and prepared for evaluation.
+In July 2026, the researchers conducted the system evaluation and gathered the necessary data from the respondents. The collected data were analyzed and used as the basis for Chapter 4: Results and Discussion. The findings helped determine whether the developed system addressed the identified problems and achieved the objectives of the study.
+In August 2026, the researchers completed the remaining documentation and prepared Chapter 5: Summary, Conclusions, and Recommendations. The findings were summarized, conclusions were developed, and recommendations were provided based on the results of the study. Necessary improvements were also made to the system based on the evaluation results.
+During September 2026, the researchers conducted final system testing to verify that the features were functioning properly. Remaining errors were corrected, and the research manuscript was finalized. The researchers also completed the necessary revisions to ensure that both the system and documentation were ready for presentation.
+In October 2026, the researchers prepared the completed system and research manuscript for the Mock Defense. Presentation practices and rehearsals were conducted to prepare the researchers for the defense. After receiving additional feedback, the necessary revisions were made in preparation for the Final Defense.
+PROJECT DEVELOPMENT COST ESTIMATION
+			The project development cost estimation presents the estimated expenses needed for the development, implementation, and documentation of the project. It includes the costs of the resources and materials required to complete the project successfully. 
+ECONOMIC FEASIBILITY
+The Economic feasibility the project cost of the project present the estemated expenses needed for the development ,implementation, and documentation
+Table 3
+Economic feasibility
+ITEM 	COST
+Electric Bill	1,000
+Internet Connection 	800
+Transportation	500
+Printing Documentation	1,000
+Professional Service	1,000
+TOTAL	4,000
+
+
+The table 3 shows the estimated costs required for the development and implementation of the InterShip system. The expenses include electricity, internet connection, transportation, printing of documentation, and professional services, with a total estimated cost of ₱4,000
+
+Project Design 
+The project is designed as a web-based and mobile-based digital platform that centralizes the management and monitoring of Field Study and Practicum activities. It will support student information management, attendance monitoring, requirements tracking and verification, activity recording, progress and status monitoring, evaluation management, notifications and reminders, and reports and records management.
+The system will allow students to manage their information, attendance, requirements, and activities, while advisers and administrators can monitor student progress, verify requirements, conduct evaluations, and manage records. Notifications and reminders will help users stay informed about deadlines, activities, evaluations, and incomplete requirements.
+The system will also include a Practicum/Internship Opportunity Matching feature that will assist students in finding potential companies or organizations for their required practicum or internship. It will match relevant student information, such as academic program, skills, interests, preferred location, and qualifications, with available opportunities. The system will provide recommended opportunities that students can review and select, while advisers or administrators can review and monitor the placement process.
+
+
+
+User Diagram 
+
+
+
+
+
+
+
+
+
+Figure 8. User diagram 
+Figure 8  shows the User Diagram of the system, illustrating the roles and interactions of the five users: Student, Adviser, Administrator, Linkage Partner, and Field Supervisor. Each user has specific functions, such as managing records, monitoring students, handling placements, and evaluating performance. 
+
+Output User - Interface Design
+The User Interface Design presents the visual layout and organization of the proposed solution for monitoring and managing Field Study and Practicum activities. It is designed to provide a clear, organized, and user-friendly experience for students, advisers, and administrators.
+
+
+
+
+
+
+
+
+
+Figure 9. Login page (Admin, Adviser, Supervisor) 
+The figure 9 shows the login Page would be first to be seen when opening the system after entering important details in the system the user brought to the home page.  
+Admin Dashboard
+Figure 10. Admin Dashboard
+The figure 10 shows the dashboard also includes filters for Academic Year, Semester, Program, and Section, allowing administrators to view information based on a specific academic context. Summary cards show important items such as pending partner applications, supervisor verification, active deployments, students ready for deployment, and attendance/logbook exceptions.
+Adviser Dashboard 	
+
+
+
+
+
+
+
+Figure 11 . Adviser Dashboard
+The figure 11 shows the Adviser Dashboard features a sidebar navigation menu that provides quick access to the system's primary functions. The navigation is organized into Overview, Student Summary, and Mentoring & Evaluation sections. Advisers can access the Dashboard for an overall view of student information, Student Summary for monitoring assigned students, and mentoring-related modules such as Logbook Mentoring, Case Study, and Assessment. This structure allows advisers to efficiently navigate between student monitoring, mentoring documentation, and evaluation activities. 
+
+
+
+
+
+
+
+Linkage Partner
+
+Figure 12. Linkage Partner
+This Figure 12 shows Linkage Partner Dashboard: This dashboard provides partner organizations with a centralized platform for managing internship opportunities, reviewing student applications, assigning supervisors, monitoring intern progress, conducting evaluations, and accessing reports throughout the internship process. 
+Mobile Application
+ Login Field Study/Practicummer Student
+
+
+
+
+
+
+Figure 13. Mobile Application  Login Page
+The figure 13 shows the Login Page is the initial interface of the FieldTrack system and serves as the authentication point for users. It requires users to provide their email/username and password before accessing the system. The page also includes a Forgot Password option for account recovery, a Sign In button for authentication, and a settings option for application configuration. A support message is also provided to guide users who encounter difficulties logging into their account.   
+
+Mobile navigation For Student of Practicummer
+
+ 
+Figure  14. Mobile navigation for Student of Practicummer
+Figure 14 shows the FieldTrack mobile application uses a bottom navigation bar to provide quick and convenient access to its primary features. The Attendance module allows students to monitor their attendance and fieldwork location, while the Logbook module is used to document fieldwork activities. The Practicum module allows students to create and manage practicum entries, and the History module provides access to previously recorded logbook and attendance information. This navigation structure is designed to make fieldwork monitoring and documentation accessible from a single mobile interface. 
+
+Technical Practicum  -  Project:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Figure 15. Technical Practicum - Project:
+Figure 15 shows the module allows Field Study students to document their practical experiences, activities, and projects completed during their field study. It provides a centralized area where students can create and maintain their practicum records for monitoring and evaluation. 
+
+Case Study Reports – Field Study 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Figure 16 Case Study Reports 
+Figure 16 shows the Case Study Reports section allows Field Study students to document and submit case studies based on their field experiences, observations, and assigned activities, which can then be reviewed by their adviser for monitoring and evaluation. 
+
+Data design
+The FieldTrack data design organizes the system’s core information into interconnected entities covering academic setup, users, requirements, partner placements, attendance, field records, evaluations, and completion. It illustrates how student data moves from enrollment and document approval through internship assignment, daily monitoring, performance evaluation, and final completion. Primary keys, foreign keys, and logical relationships support data integrity, traceability, and program-specific management. 
+System Architecture 
+ 
+Figure 17. System architecture
+Figure 17 shows the  FieldTrack system follows a modular architecture where mobile and web users communicate with the central application server through secure interfaces. The application server manages authentication, business processes, and data access, while the MySQL database and file storage provide persistent data management. External services are integrated to support additional functions such as email notifications, AI assistance, and mapping services. 
+
+Test Plan
+	System testing was conducted to evaluate the functionality, reliability, security, usability, and performance of the developed FieldTrack system based on its specified requirements. Testing covered the complete internship and field-study workflow and the interactions among administrators, advisers, students, supervisors, and linkage partners. Table X summarizes the test cases according to their respective test areas.
+Table 4. Summary of Test Cases by Test Area
+No.	Test Area	No. of Test
+ Cases	Functionality
+1	Authentication and Account Management	16	User registration, login, logout, password recovery, account activation, session handling, and account-status validation.
+2	Role-Based Access and Program Scope	18	Access permissions for administrators, advisers, students, supervisors, and linkage partners, including COED, CS, and HM data isolation.
+3	User, Student Profile, and Academic Configuration	15	User accounts, student profiles, enrollment records, program and section setup, academic context, and resume generation.
+4	Linkage Partner and Supervisor Management	16	Partner registration, program approval, establishment records, supervisor accounts, assignments, and audit history.
+5	Internship Posting, Matching, and Applications	20	Posting management, internship browsing, AI recommendations, applications, placement, and absorption tracking.
+6	Pre-Deployment Requirements and COE Verification	26	Requirement templates, stage-aware uploads, document validation, COE scanning, review, resubmission, and deployment eligibility.
+7	Attendance, GPS, Geofencing, and Selfie Validation	32	Punch sequences, GPS capture, geofence checks, selfie requirements, continuous-day attendance, overtime, and hour calculations.
+8	DTR Approval, Digital Signing, and Corrections	24	DTR generation, QR signing, link expiry, approval or rejection, corrections, version control, and printing.
+9	Task, Logbook, and Journal Management	20	Task assignment, daily submissions, photo evidence, journal entries, reviews, remarks, and missing-entry detection.
+10	Case Study and Practicum Submissions	14	Classroom observations, case studies, technical and hospitality practicum submissions, monitoring, review, and printing.
+11	Evaluation, Rubrics, and Grade Verification	18	Rubric configuration, supervisor and partner evaluations, weighted scoring, grade verification, and completion status.
+12	Messaging and Notifications	15	Message threads, role-based communication, read receipts, event notifications, unread counts, and mobile delivery.
+13	Analytics, Reporting, and Document Output	14	Dashboard statistics, reports, attendance summaries, evaluations, filtering, CSV/PDF exports, and printable records.
+14	UI/UX, Compatibility, Performance, Security, and Data Integrity	20	Responsive layout, navigation, compatibility, response time, input validation, access security, and database consistency.
+ 
+Table 4. Summary of Test Cases by Test Area
+
+Software Development Methodologies
+        	The researchers adopted the Agile Software Development Life Cycle (SDLC) to guide the systematic and iterative development of RETRASYS through planning, designing, developing, testing, and incorporating feedback for continuous improvement.
+
+
+
+
+
+
+
+
+
+
+Figure 18. Agile Software Development Life Cycle (SDLC)
+
+The process is compared to following phases:
+Requirements Gathering Phases - In this phase, the research team conducted meetings
+to identify system requirements, define key features, and establish the overall plan for the
+FieldTrack system. This includes determining how the system will monitor student
+activities, location, and performance.
+Design Phase - During the design phase, the system architecture, data structures, and
+flowcharts were developed. These designs ensure that the system meets the specific needs
+of both students and administrators.
+Development Phase - In this phase, the actual system was built. The researchers
+developed both the front-end interface and the back-end database, incorporating features
+such as activity tracking, analytics, and location verification.
+Testing Phase - The system was tested by students and administrators to evaluate its
+usability, accuracy, and functionality, particularly in terms of location tracking. Feedback
+gathered during this phase was used to identify and fix issues, as well as improve system
+Features.
+Deployment Phase - After successful testing, the system was deployed for actual use. It
+was implemented to monitor and manage field study activities in real-world settings.
+Review and Maintenance Phase - In the final phase, the system is continuously
+monitored and updated. The research team performs regular improvements, resolves
+technical issues, and ensures that the system remains reliable, secure, and efficient over
+time.
+Research Design
+The researchers used a quantitative-developmental research design in developing FieldTrack. The developmental approach helped the researchers plan, create, test, and improve the system, while the quantitative approach was used to gather and analyze numerical data from the system evaluation. Before the system was developed, an initial interview was conducted with selected respondents and concerned personnel to understand the existing problems, monitoring procedures, and system requirements that guided the development of FieldTrack
+.
+Requirement Analysis
+The requirement analysis was conducted to identify the needs of the proposed FieldTrack system. It covered the functions, usability, security, and other requirements needed by field study and practicum students, supervising instructors/advisers, and administrators. These requirements were gathered from the current practices in attendance, requirements, progress, activities, reminders  and evaluation and were used as a guide in developing the system.
+The functional requirements describe the main features of FieldTrack. The system shall allow users to log in and access features based on their assigned roles. It shall record and monitor student attendance, activities, submitted requirements, and progress. Students shall be able to submit requirements, reminders and activity reports, while supervising instructors/advisers shall be able to review, verify, and update student records. The system shall also provide evaluations, notifications and reminders, status monitoring, and record management. These features are designed to make the monitoring of field study and practicum students more organized and easier to manage.
+The non-functional requirements focus on the overall quality of FieldTrack. The system shall be evaluated using ISO/IEC 25010 based on the selected software quality characteristics such as functional suitability, reliability, and security. It should perform its functions properly, work consistently, and keep user information protected. The system shall also be assessed using ISO 9241-11:2018 in terms of effectiveness, efficiency, and satisfaction. The interface should be simple enough for the intended users to perform their tasks correctly and without unnecessary difficulty. These requirements help ensure that the proposed system is reliable, secure, useful, and easy to use.
+Respondents of Study
+The respondents of the study consisted of 105 fourth-year students from the Bachelor of Elementary Education (BEED) and Bachelor of Secondary Education (BSED) programs. These respondents were selected from four sections with a total population of 145 students. The distribution of respondents included 31 students from BEED 4A, 23 students from BEED 4B, 26 students from BSED 4A,  25 students from BSED 4B, and 2 Students from BSCS ACT 2A . The respondents were selected to provide relevant information and evaluate the proposed FieldTrack: A Digital Monitoring System for Field Study and Practicum at Norzagaray College based on their experiences and needs in monitoring field study and practicum activities. 
+
+Table 5. Distribution of  Respondents
+Section	Population	Sample
+BEED 4A	42 	31
+BEED 4B	31	23
+BSED 4A	35	25
+BSED 4B	37	27
+ ACT 2A	2	1
+TOTAL	147	107
+
+Table 5. Section, Population and Sample Size
+
+Table 7 the population and sample distribution for the study titled FieldTrackED:
+A Digital Monitoring System for Field Study Students of the College of Education in
+Selected Local Colleges in Bulacan. The total population consists of 145 respondents,
+categorized into four sections: BEED 3A (42), BEED 3B (31), BSED 3A (35),  BSED
+3B (37) and ACT (2). To determine the appropriate sample size, the Cochran formula was applied using a 95% confidence level and a 5% margin of error, resulting in a sample size of 105
+respondents.
+Sampling Technique
+The study will use Stratified Random Sampling as the sampling technique to select the respondents. This technique is appropriate because the population consists of students from different programs and sections, including the Bachelor of Elementary Education (BEED), Bachelor of Secondary Education (BSED), and Associate in Computer Technology (ACT). The respondents will first be grouped according to their respective programs and sections, after which participants will be randomly selected from each group to ensure that all groups are properly represented in the study. This technique will help obtain a more balanced and representative sample for the evaluation of the proposed FieldTrack system.
+Statistical Instrument Used
+The researchers used a researcher-made questionnaire as the primary instrument for gathering data. The questionnaire consisted of five parts: Part 1 – Respondent Profile; Part 2 – Functional Features; Part 3 – Predictive Analytics Features; Part 4 – Software Quality based on ISO/IEC 25010:2023; and Part 5 – Usability based on ISO 9241-11:2018. A five-point Likert scale was used in Parts 2 to 5 to measure the respondents’ level of agreement with each statement. The scale ranged from 5 (Strongly Agree) to 1 (Strongly Disagree).
+
+
+Table 6. Five-Point Likert Scale
+Scale	Verbal Interpretation	Description
+5	Strongly Agree	The respondent strongly agrees with the statement.
+4	Agree	The respondent agrees with the statement.
+3	Neutral	The respondent is neither in agreement nor disagreement with the statement.
+2	Disagree	The respondent disagrees with the statement.
+1	Strongly Disagree	The respondent strongly disagrees with the statement.
+Table 6 presents the five-point Likert scale used to assess the respondents' evaluation of the developed system. Each response was assigned a numerical value ranging from 1 to 5, with 5 indicating Strongly Agree and 1 indicating Strongly Disagree.
+
+1. Frequency
+Frequency was used to determine the number of respondents or responses in a specific category. It was utilized to present the respondents' profile and to identify the number of responses for each option in the Likert-scale questionnaire items.
+The frequency is represented as:
+f=Number of occurrences of a particular response or category
+ 
+Where:
+f = Frequency
+Number of occurrences = Number of respondents or responses in a particular category
+ 
+2. Percentage
+Percentage was used to determine the proportion of respondents belonging to a particular category relative to the total number of respondents.
+ 
+The following formula was used:
+ 
+
+Where:
+●	P = Percentage
+●	f = Frequency
+●	N = Total number of respondents
+●	100 = Constant multiplier
+●	 
+3. Weighted Mean
+Weighted mean was used to determine the respondents’ average evaluation of the developed system based on the five-point Likert scale.
+ 
+The following formula was used:
+ 
+ 
+Where:
+WM = Weighted Mean
+ f = Frequency of a rating
+ x = Scale value
+ n = Total number of responses
+ 
+The computed weighted mean was interpreted using the following ranges:
+ 
+Table 7. Interpretation of Weighted Mean
+Weighted Mean Range	Verbal Interpretation
+4.21 – 5.00	Strongly Agree
+3.41 – 4.20	Agree
+2.61 – 3.40	Neutral
+1.81 – 2.60	Disagree
+1.00 – 1.80	Strongly Disagree
+Table 7. shows the interpretation of the computed weighted mean scores based on the corresponding verbal interpretations.
+
+
+
+
+
+
+
+
+
+References
+
+https://jsret.knpub.com/index.php/jrest/article/view/941
+
+https://www.researchgate.net/publication/376563616_Web-Based_Student_Internship_Attendance_Application_System_for_Effective_Student_Attendance_Monitoring
+
+https://www.researchgate.net/publication/401146151_A_Digital_Solution_for_Student_Internship_Tracking_and_Enhancing_Student's_Experience
+
