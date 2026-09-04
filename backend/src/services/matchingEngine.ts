@@ -255,14 +255,22 @@ export async function matchRespondersToIncident(incidentId: string, unitId?: str
       .eq('status', 'active');
 
     // If we have pre-selected personnel, we prioritize them. 
-    // Otherwise we filter by role and type as usual.
+    // Otherwise we filter by role and check specializations.
     if (preSelectedPersonnelIds.length > 0) {
       query.in('id', preSelectedPersonnelIds);
     } else {
-      query.eq('role', 'professional_unit').in('unit_type', classification.unitTypes);
+      query.eq('role', 'professional_unit');
     }
 
-    const { data: personnel } = await query;
+    let { data: personnel } = await query;
+
+    if (personnel && personnel.length > 0 && preSelectedPersonnelIds.length === 0) {
+      personnel = personnel.filter((u) => {
+        if (!u.unit_type) return false;
+        const types = u.unit_type.split(',').map((s: string) => s.trim());
+        return types.some((t: string) => classification.unitTypes.includes(t));
+      });
+    }
 
     if (personnel && personnel.length > 0) {
       // Calculate distance (prioritize Redis GPS data) and sort

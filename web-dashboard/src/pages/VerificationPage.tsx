@@ -144,7 +144,14 @@ export default function VerificationPage() {
                   </div>
                   {user.unit_type && (
                     <div style={{fontSize:'13px',color:'var(--text-secondary)',marginBottom:'8px'}}>
-                      Specialization: <span style={{fontWeight:600,color:'var(--accent)'}}>{user.unit_type}</span>
+                      <div style={{fontWeight:500,marginBottom:'4px'}}>Specialization(s):</div>
+                      <div style={{display:'flex',flexWrap:'wrap',gap:'4px'}}>
+                        {user.unit_type.split(',').map((s, idx) => (
+                          <span key={idx} className="badge badge-open" style={{fontSize:'11px',padding:'2px 8px'}}>
+                            {s.trim()}
+                          </span>
+                        ))}
+                      </div>
                     </div>
                   )}
                   {user.certifications.length > 0 && (
@@ -186,8 +193,12 @@ export default function VerificationPage() {
                 </span>
                 {selectedUser.unit_type && (
                   <div style={{marginTop:'8px'}}>
-                    <div className="form-label">Officer Specialization</div>
-                    <span className="badge badge-success">{selectedUser.unit_type}</span>
+                    <div className="form-label">Officer Specialization(s)</div>
+                    <div style={{display:'flex',flexWrap:'wrap',gap:'4px',marginTop:'4px'}}>
+                      {selectedUser.unit_type.split(',').map((s, idx) => (
+                        <span key={idx} className="badge badge-success">{s.trim()}</span>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
