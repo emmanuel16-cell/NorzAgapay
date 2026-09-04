@@ -89,8 +89,13 @@ export const inventoryAPI = {
 // Verification
 export const verificationAPI = {
   pending: () => api.get('/verification/pending'),
+  archived: () => api.get('/verification/archived'),
   approve: (userId: string) => api.post(`/verification/${userId}/approve`),
   reject: (userId: string, reason?: string) => api.post(`/verification/${userId}/reject`, { reason }),
+  restore: (userId: string) => api.post(`/verification/${userId}/restore`),
+  bulkApprove: (userIds: string[]) => api.post('/verification/bulk-approve', { userIds }),
+  bulkReject: (userIds: string[], reason?: string) => api.post('/verification/bulk-reject', { userIds, reason }),
+  bulkRestore: (userIds: string[]) => api.post('/verification/bulk-restore', { userIds }),
 };
 
 // Resource Requests
