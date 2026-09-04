@@ -201,7 +201,7 @@ export default function CommandCenter() {
             reporter_phone: r.reporter_phone || r.contact_number || '09510173028',
             responder_name: r.barangay_responder_name || 'Matic Tic',
             responder_phone: '09510173028',
-            barangay_response_notes: r.barangay_response_notes || 'Initial assessment done. Dispatched 4 barangay volunteers with chainsaws and first-aid kits.',
+            barangay_response_notes: r.barangay_response_notes || 'Initial assessment done. Dispatched 4 barangay responders with chainsaws and first-aid kits.',
             assigned_unit_id: 'unit-1',
           });
         });

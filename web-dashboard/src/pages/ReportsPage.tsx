@@ -28,7 +28,6 @@ interface IncidentReport {
     id: string;
     full_name: string;
     role: string;
-    volunteer_type?: 'specialist' | 'general';
   };
 }
 
@@ -108,7 +107,7 @@ export default function ReportsPage() {
             type: 'emergency',
             title: 'Fallen High-Voltage Tree Obstruction',
             specifics: 'Fallen Tree & Downed Wires',
-            description: 'Large acacia tree fell across two lanes. Team Leader and 5 volunteers actively on scene diverting traffic.',
+            description: 'Large acacia tree fell across two lanes. Team Leader and 5 responders actively on scene diverting traffic.',
             status: 'responding',
             severity: 'moderate',
             latitude: 14.9045,

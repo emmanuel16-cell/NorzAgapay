@@ -8,7 +8,6 @@ import CommandCenter from './pages/CommandCenter';
 import MissionsPage from './pages/MissionsPage';
 import VerificationPage from './pages/VerificationPage';
 import ResourceRequestsPage from './pages/ResourceRequestsPage';
-import VolunteerDispatchPage from './pages/VolunteerDispatchPage';
 import RespondUnitsPage from './pages/RespondUnitsPage';
 import ShipmentsPage from './pages/ShipmentsPage';
 import UsersPage from './pages/UsersPage';
@@ -50,7 +49,6 @@ function AppRoutes() {
         <Route path="requests" element={<ResourceRequestsPage />} />
         <Route path="evacuation-centers" element={<EvacuationCentersPage />} />
         <Route path="verification" element={<VerificationPage />} />
-        <Route path="volunteer-dispatch" element={<VolunteerDispatchPage />} />
         <Route path="respond-units" element={<RespondUnitsPage />} />
         <Route path="shipments" element={<ShipmentsPage />} />
         <Route path="users" element={<UsersPage />} />

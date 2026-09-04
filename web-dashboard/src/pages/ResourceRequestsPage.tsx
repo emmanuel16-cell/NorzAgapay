@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 
 interface ResourceRequest {
   id: string;
-  request_type: 'volunteers' | 'goods';
+  request_type: 'personnel' | 'goods' | string;
   sub_type?: string;
   details: string;
   status: 'pending' | 'approved' | 'rejected' | 'fulfilled';
@@ -120,7 +120,7 @@ export default function ResourceRequestsPage() {
                     </td>
                     <td>
                       <div style={{ textTransform: 'capitalize', fontWeight: 500 }}>
-                        {req.request_type}
+                        {req.request_type === 'volunteers' ? 'Personnel' : req.request_type}
                       </div>
                       {req.sub_type && (
                         <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>

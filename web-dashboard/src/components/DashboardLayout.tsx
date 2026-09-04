@@ -18,7 +18,6 @@ const navItems: NavItem[] = [
   { label: 'Logistics', section: true },
   { path: '/evacuation-centers', icon: '🏕️', label: 'Evacuation Centers' },
   { path: '/requests', icon: '📋', label: 'Resource Requests' },
-  { path: '/volunteer-dispatch', icon: '🚚', label: 'Volunteer Dispatch' },
   { path: '/respond-units', icon: '🚓', label: 'Respond Units' },
   { path: '/shipments', icon: '🛣️', label: 'Shipment Tracker' },
   { label: 'Administration', section: true },

@@ -10,7 +10,6 @@ interface User {
 
 const roleColors: Record<string,string> = {
   admin:'badge-critical', commander:'badge-high',
-  volunteer_specialist:'badge-moderate', volunteer_general:'badge-low',
   professional_unit:'badge-open'
 };
 
@@ -54,9 +53,7 @@ export default function UsersPage() {
           <option value="">All Roles</option>
           <option value="admin">Admin</option>
           <option value="commander">Commander</option>
-          <option value="volunteer_specialist">Specialist</option>
-          <option value="volunteer_general">General Labor</option>
-          <option value="professional_unit">Professional Unit</option>
+          <option value="professional_unit">MDRRMO Officer</option>
         </select>
       </div>
 
@@ -74,7 +71,7 @@ export default function UsersPage() {
                   <tr key={u.id}>
                     <td style={{fontWeight:600,color:'var(--text-primary)'}}>{u.full_name}</td>
                     <td>{u.email}</td>
-                    <td><span className={`badge ${roleColors[u.role]||''}`}>{u.role.replace(/_/g,' ')}</span></td>
+                    <td><span className={`badge ${roleColors[u.role]||'badge-low'}`}>{u.role === 'professional_unit' ? 'MDRRMO Officer' : u.role.replace(/_/g,' ')}</span></td>
                     <td>{u.unit_type || '—'}</td>
                     <td><span className={`badge ${u.status==='active'?'badge-low':'badge-pending'}`}>{u.status}</span></td>
                     <td>{u.verified ? '✅' : '❌'}</td>
@@ -100,9 +97,7 @@ export default function UsersPage() {
               <select className="form-select" value={editForm.role} onChange={e=>setEditForm({...editForm,role:e.target.value})}>
                 <option value="admin">Admin</option>
                 <option value="commander">Commander</option>
-                <option value="volunteer_specialist">Specialist</option>
-                <option value="volunteer_general">General Labor</option>
-                <option value="professional_unit">Professional Unit</option>
+                <option value="professional_unit">MDRRMO Officer</option>
               </select>
             </div>
             <div className="form-group">

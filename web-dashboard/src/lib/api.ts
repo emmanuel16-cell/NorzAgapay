@@ -110,7 +110,7 @@ export const matchingAPI = {
 export const analyticsAPI = {
   overview: () => api.get('/reports/overview'),
   missions: () => api.get('/reports/incidents'),
-  volunteers: () => api.get('/reports/volunteers'),
+  responders: () => api.get('/reports/volunteers'),
 };
 
 // Dispatch Units
@@ -118,13 +118,6 @@ export const dispatchUnitAPI = {
   list: () => api.get('/dispatch-units'),
   create: (data: any) => api.post('/dispatch-units', data),
   delete: (id: string) => api.delete(`/dispatch-units/${id}`),
-};
-
-// Volunteer Dispatch
-export const volunteerDispatchAPI = {
-  list: () => api.get('/volunteer-dispatch'),
-  create: (data: any) => api.post('/volunteer-dispatch', data),
-  delete: (id: string) => api.delete(`/volunteer-dispatch/${id}`),
 };
 
 // Respond Units

@@ -14,7 +14,6 @@ export default function VerificationPage() {
   const [pending, setPending] = useState<PendingUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedUser, setSelectedUser] = useState<PendingUser | null>(null);
-  const [activeTab, setActiveTab] = useState<'all' | 'officers' | 'volunteers'>('all');
 
   const fetchPending = () => {
     setLoading(true);
@@ -26,10 +25,10 @@ export default function VerificationPage() {
 
   useEffect(() => { fetchPending(); }, []);
 
-  const handleApprove = async (userId: string, isOfficer: boolean) => {
+  const handleApprove = async (userId: string) => {
     try {
       await verificationAPI.approve(userId);
-      toast.success(isOfficer ? 'MDRRMO Officer approved and added to active officers' : 'Volunteer approved');
+      toast.success('Officer approved and added to active personnel');
       setSelectedUser(null);
       fetchPending();
     } catch { toast.error('Approval failed'); }
@@ -47,85 +46,47 @@ export default function VerificationPage() {
 
   const getRoleLabel = (role: string) => {
     switch (role) {
-      case 'volunteer_general': return 'General Labor';
-      case 'volunteer_specialist': return 'Certified Specialist';
       case 'professional_unit': return 'MDRRMO Officer';
-      default: return role;
+      default: return role.replace(/_/g, ' ');
     }
   };
 
-  const officerCount = pending.filter(u => u.role === 'professional_unit').length;
-  const volunteerCount = pending.filter(u => u.role !== 'professional_unit').length;
-
-  const filteredUsers = pending.filter(user => {
-    if (activeTab === 'officers') return user.role === 'professional_unit';
-    if (activeTab === 'volunteers') return user.role !== 'professional_unit';
-    return true;
-  });
+  const officerCount = pending.length;
 
   return (
     <>
       <div className="page-header">
-        <h1 className="page-title">Account Verification Queue</h1>
+        <h1 className="page-title">Officer Verification Queue</h1>
         <div style={{ display: 'flex', gap: '8px' }}>
           <span className="badge badge-open" style={{ fontSize: '12px', padding: '6px 12px' }}>
-            🎖️ {officerCount} Officer{officerCount === 1 ? '' : 's'}
-          </span>
-          <span className="badge badge-pending" style={{ fontSize: '12px', padding: '6px 12px' }}>
-            🤝 {volunteerCount} Volunteer{volunteerCount === 1 ? '' : 's'}
+            🎖️ {officerCount} Pending Officer{officerCount === 1 ? '' : 's'}
           </span>
         </div>
-      </div>
-
-      <div style={{ padding: '0 24px 12px', display: 'flex', gap: '12px' }}>
-        <button
-          className={`btn btn-sm ${activeTab === 'all' ? 'btn-primary' : 'btn-outline'}`}
-          onClick={() => setActiveTab('all')}
-        >
-          All Applications ({pending.length})
-        </button>
-        <button
-          className={`btn btn-sm ${activeTab === 'officers' ? 'btn-primary' : 'btn-outline'}`}
-          onClick={() => setActiveTab('officers')}
-        >
-          🎖️ MDRRMO Officers ({officerCount})
-        </button>
-        <button
-          className={`btn btn-sm ${activeTab === 'volunteers' ? 'btn-primary' : 'btn-outline'}`}
-          onClick={() => setActiveTab('volunteers')}
-        >
-          🤝 Volunteers ({volunteerCount})
-        </button>
       </div>
 
       <div className="page-content">
         {loading ? (
           <div className="loading-overlay"><div className="spinner"/></div>
-        ) : filteredUsers.length === 0 ? (
+        ) : pending.length === 0 ? (
           <div className="empty-state">
             <div className="empty-state-icon">✅</div>
             <p>No pending verifications</p>
-            <p style={{fontSize:'13px',marginTop:'8px'}}>
-              {activeTab === 'officers'
-                ? 'No MDRRMO officer registrations pending review.'
-                : 'All account applications have been reviewed.'}
+            <p style={{fontSize:'13px',marginTop:'8px',color:'var(--text-muted)'}}>
+              All officer registrations have been reviewed.
             </p>
           </div>
         ) : (
-          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(340px,1fr))',gap:'16px'}}>
-            {filteredUsers.map(user => {
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(320px,1fr))',gap:'16px'}}>
+            {pending.map(user => {
               const isOfficer = user.role === 'professional_unit';
               return (
-                <div
-                  key={user.id}
-                  className="card"
-                  style={{
-                    cursor: 'pointer',
-                    border: isOfficer ? '1px solid rgba(56, 189, 248, 0.4)' : undefined,
-                  }}
-                  onClick={() => setSelectedUser(user)}
-                >
-                  <div style={{display:'flex',alignItems:'center',gap:'12px',marginBottom:'12px'}}>
+                <div key={user.id} className="card" style={{cursor:'pointer',borderLeft: isOfficer ? '4px solid var(--accent)' : undefined}} onClick={()=>setSelectedUser(user)}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'8px'}}>
+                    <div>
+                      <div style={{fontWeight:700,fontSize:'16px',color:'var(--text-primary)'}}>{user.full_name}</div>
+                      <div style={{fontSize:'12px',color:'var(--text-muted)'}}>{user.email}</div>
+                      {user.phone && <div style={{fontSize:'12px',color:'var(--text-muted)'}}>📞 {user.phone}</div>}
+                    </div>
                     <div
                       className="user-avatar"
                       style={{
@@ -263,9 +224,9 @@ export default function VerificationPage() {
               <button className="btn btn-danger" onClick={()=>handleReject(selectedUser.id)}>Reject</button>
               <button 
                 className="btn btn-success" 
-                onClick={()=>handleApprove(selectedUser.id, selectedUser.role === 'professional_unit')}
+                onClick={()=>handleApprove(selectedUser.id)}
               >
-                {selectedUser.role === 'professional_unit' ? '✓ Approve MDRRMO Officer' : '✓ Approve Volunteer'}
+                ✓ Approve Officer
               </button>
             </div>
           </div>

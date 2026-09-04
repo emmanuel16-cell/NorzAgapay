@@ -8,14 +8,14 @@ const COLORS = ['#1B4F72','#E74C3C','#27AE60','#F39C12','#3498DB','#9B59B6'];
 export default function AnalyticsPage() {
   const [stats, setStats] = useState<any>(null);
   const [missions, setMissions] = useState<any[]>([]);
-  const [volunteers, setVolunteers] = useState<any[]>([]);
+  const [responders, setResponders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     Promise.all([
       analyticsAPI.overview().then(r => setStats(r.data.stats)),
       analyticsAPI.missions().then(r => setMissions(r.data.incidents || [])),
-      analyticsAPI.volunteers().then(r => setVolunteers(r.data.volunteers || [])),
+      analyticsAPI.responders().then(r => setResponders(r.data.volunteers || r.data.responders || [])),
     ]).catch(() => toast.error('Failed to load analytics')).finally(() => setLoading(false));
   }, []);
 
@@ -30,7 +30,7 @@ export default function AnalyticsPage() {
   missions.forEach(inc => { severityCounts[inc.severity] = (severityCounts[inc.severity]||0)+1; });
   const severityData = Object.entries(severityCounts).map(([name,value])=>({ name, value }));
 
-  const topVolunteers = [...volunteers].sort((a,b) => b.completedTasks - a.completedTasks).slice(0,10);
+  const topResponders = [...responders].sort((a,b) => b.completedTasks - a.completedTasks).slice(0,10);
 
   return (
     <>
@@ -47,7 +47,7 @@ export default function AnalyticsPage() {
           <div className="stats-grid" style={{padding:0,marginBottom:'24px'}}>
             {[
               { label:'Total Users', value: stats.totalUsers, icon:'👥', color:'var(--primary)' },
-              { label:'Active Volunteers', value: stats.activeVolunteers, icon:'🟢', color:'var(--success)' },
+              { label:'Active Officers', value: stats.activeOfficers ?? stats.activeVolunteers ?? 0, icon:'🎖️', color:'var(--success)' },
               { label:'Total Missions', value: missions.length, icon:'🚨', color:'var(--accent)' },
               { label:'Tasks Completed', value: stats.completedTasks, icon:'✅', color:'var(--warning)' },
             ].map(s => (
@@ -90,17 +90,17 @@ export default function AnalyticsPage() {
         </div>
 
 
-        {/* Top Volunteers */}
+        {/* Top Responders */}
         <div className="card">
-          <div className="card-title" style={{marginBottom:'16px'}}>Top Volunteer Deployments</div>
-          {topVolunteers.length === 0 ? (
-            <div className="empty-state" style={{padding:'20px'}}><p>No volunteer data yet</p></div>
+          <div className="card-title" style={{marginBottom:'16px'}}>Top Responder Deployments</div>
+          {topResponders.length === 0 ? (
+            <div className="empty-state" style={{padding:'20px'}}><p>No deployment data yet</p></div>
           ) : (
             <div className="table-container" style={{border:'none'}}>
               <table>
                 <thead><tr><th>Name</th><th>Role</th><th>Total Tasks</th><th>Completed</th><th>Completion Rate</th></tr></thead>
                 <tbody>
-                  {topVolunteers.map(v => (
+                  {topResponders.map(v => (
                     <tr key={v.id}>
                       <td style={{fontWeight:600,color:'var(--text-primary)'}}>{v.full_name}</td>
                       <td><span className="badge badge-low">{v.role.replace(/_/g,' ')}</span></td>
