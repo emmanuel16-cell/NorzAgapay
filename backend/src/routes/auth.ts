@@ -64,6 +64,9 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
     const password_hash = await bcrypt.hash(password, 12);
 
     // Insert user
+    const isAutoActive = role === 'volunteer_general';
+    const initialStatus = isAutoActive ? 'active' : 'pending_verification';
+
     const { data: newUser, error: insertError } = await supabaseAdmin
       .from('users')
       .insert({
@@ -73,8 +76,8 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
         password_hash,
         role,
         unit_type: role === 'professional_unit' ? unit_type : null,
-        status: (role === 'volunteer_general' || role === 'professional_unit') ? 'active' : 'pending_verification',
-        verified: role === 'volunteer_general' ? true : false,
+        status: initialStatus,
+        verified: isAutoActive,
       })
       .select('id, full_name, email, role, unit_type, status, verified')
       .single();
@@ -85,7 +88,17 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Generate JWT
+    // If account requires verification, return pending response without auth token
+    if (newUser.status === 'pending_verification') {
+      res.status(201).json({
+        message: 'Registration successful! Your MDRRMO officer account has been submitted and is pending verification by an administrator at the Web Dashboard.',
+        user: newUser,
+        requiresVerification: true,
+      });
+      return;
+    }
+
+    // Generate JWT for auto-approved accounts
     const token = jwt.sign(
       {
         userId: newUser.id,

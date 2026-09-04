@@ -20,7 +20,6 @@ const navItems: NavItem[] = [
   { path: '/requests', icon: '📋', label: 'Resource Requests' },
   { path: '/volunteer-dispatch', icon: '🚚', label: 'Volunteer Dispatch' },
   { path: '/respond-units', icon: '🚓', label: 'Respond Units' },
-  { path: '/inventory', icon: '📦', label: 'Inventory' },
   { path: '/shipments', icon: '🛣️', label: 'Shipment Tracker' },
   { label: 'Administration', section: true },
   { path: '/verification', icon: '✅', label: 'Verification Queue' },

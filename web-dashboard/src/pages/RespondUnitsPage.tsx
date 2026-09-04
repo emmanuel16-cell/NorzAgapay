@@ -7,6 +7,7 @@ interface RespondUnit {
   unit_name: string;
   specialization: string;
   officer_ids: string[];
+  team_leader_id?: string | null;
   status: string;
   created_at: string;
 }
@@ -47,13 +48,15 @@ export default function RespondUnitsPage() {
   const [form, setForm] = useState({
     unit_name: '',
     specialization: 'Rescue Officer',
-    officer_ids: [] as string[]
+    officer_ids: [] as string[],
+    team_leader_id: '',
   });
 
   const [editForm, setEditForm] = useState({
     unit_name: '',
     specialization: 'Rescue Officer',
-    officer_ids: [] as string[]
+    officer_ids: [] as string[],
+    team_leader_id: '',
   });
 
   const fetchData = async () => {
@@ -82,11 +85,12 @@ export default function RespondUnitsPage() {
       toast.error('Please select at least one officer');
       return;
     }
+    const leaderId = form.team_leader_id || form.officer_ids[0];
     try {
-      await respondUnitAPI.create(form);
-      toast.success('Respond Unit created');
+      await respondUnitAPI.create({ ...form, team_leader_id: leaderId });
+      toast.success('Respond Unit created with Team Leader');
       setShowAdd(false);
-      setForm({ unit_name: '', specialization: 'Rescue Officer', officer_ids: [] });
+      setForm({ unit_name: '', specialization: 'Rescue Officer', officer_ids: [], team_leader_id: '' });
       fetchData();
     } catch {
       toast.error('Failed to create respond unit');
@@ -95,10 +99,12 @@ export default function RespondUnitsPage() {
 
   const handleEdit = (unit: RespondUnit) => {
     setEditingId(unit.id);
+    const leaderId = unit.team_leader_id || (unit.officer_ids && unit.officer_ids[0]) || '';
     setEditForm({
       unit_name: unit.unit_name,
       specialization: unit.specialization,
-      officer_ids: [...unit.officer_ids]
+      officer_ids: [...unit.officer_ids],
+      team_leader_id: leaderId,
     });
     setShowEdit(true);
   };
@@ -110,8 +116,9 @@ export default function RespondUnitsPage() {
       toast.error('Please select at least one officer');
       return;
     }
+    const leaderId = editForm.team_leader_id || editForm.officer_ids[0];
     try {
-      await respondUnitAPI.update(editingId, editForm);
+      await respondUnitAPI.update(editingId, { ...editForm, team_leader_id: leaderId });
       toast.success('Respond Unit updated');
       setShowEdit(false);
       setEditingId(null);
@@ -123,19 +130,35 @@ export default function RespondUnitsPage() {
 
   const toggleOfficer = (officerId: string, isEdit: boolean = false) => {
     if (isEdit) {
-      setEditForm(prev => ({
-        ...prev,
-        officer_ids: prev.officer_ids.includes(officerId)
+      setEditForm(prev => {
+        const nextIds = prev.officer_ids.includes(officerId)
           ? prev.officer_ids.filter(id => id !== officerId)
-          : [...prev.officer_ids, officerId]
-      }));
+          : [...prev.officer_ids, officerId];
+        let nextLeader = prev.team_leader_id;
+        if (!nextIds.includes(nextLeader)) {
+          nextLeader = nextIds.length > 0 ? nextIds[0] : '';
+        }
+        return {
+          ...prev,
+          officer_ids: nextIds,
+          team_leader_id: nextLeader,
+        };
+      });
     } else {
-      setForm(prev => ({
-        ...prev,
-        officer_ids: prev.officer_ids.includes(officerId)
+      setForm(prev => {
+        const nextIds = prev.officer_ids.includes(officerId)
           ? prev.officer_ids.filter(id => id !== officerId)
-          : [...prev.officer_ids, officerId]
-      }));
+          : [...prev.officer_ids, officerId];
+        let nextLeader = prev.team_leader_id;
+        if (!nextIds.includes(nextLeader)) {
+          nextLeader = nextIds.length > 0 ? nextIds[0] : '';
+        }
+        return {
+          ...prev,
+          officer_ids: nextIds,
+          team_leader_id: nextLeader,
+        };
+      });
     }
   };
 
@@ -194,48 +217,66 @@ export default function RespondUnitsPage() {
                 <tr>
                   <th>Unit Name</th>
                   <th>Specialization</th>
-                  <th>Officers</th>
+                  <th>Team Leader</th>
+                  <th>Officers / Crew</th>
                   <th>Status</th>
                   <th>Created</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredUnits.map(unit => (
-                  <tr key={unit.id}>
-                    <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{unit.unit_name}</td>
-                    <td>
-                      <span className="badge badge-open" style={{ fontSize: '11px' }}>
-                        {getSpecLabel(unit.specialization)}
-                      </span>
-                    </td>
-                    <td>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                        {unit.officer_ids && unit.officer_ids.length > 0 ? (
-                          unit.officer_ids.map(id => {
-                            const officer = officers.find(o => o.id === id);
-                            return officer ? (
-                              <span key={id} className="badge" style={{ fontSize: '10px', background: 'rgba(255,255,255,0.05)' }}>
-                                {officer.name}
-                              </span>
-                            ) : null;
-                          })
+                {filteredUnits.map(unit => {
+                  const leaderId = unit.team_leader_id || (unit.officer_ids && unit.officer_ids[0]);
+                  const leader = officers.find(o => o.id === leaderId);
+                  const otherOfficers = unit.officer_ids ? unit.officer_ids.filter(id => id !== leaderId) : [];
+
+                  return (
+                    <tr key={unit.id}>
+                      <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{unit.unit_name}</td>
+                      <td>
+                        <span className="badge badge-open" style={{ fontSize: '11px' }}>
+                          {getSpecLabel(unit.specialization)}
+                        </span>
+                      </td>
+                      <td>
+                        {leader ? (
+                          <span className="badge badge-success" style={{ fontSize: '11px', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                            ⭐ {leader.name}
+                          </span>
                         ) : (
-                          <span style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>No officers</span>
+                          <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>Unassigned</span>
                         )}
-                      </div>
-                    </td>
-                    <td>
-                      <span className={`badge ${unit.status === 'available' ? 'badge-open' : 'badge-pending'}`}>
-                        {unit.status || 'available'}
-                      </span>
-                    </td>
-                    <td style={{ fontSize: '12px' }}>{new Date(unit.created_at).toLocaleDateString()}</td>
-                    <td>
-                      <button className="btn btn-outline btn-sm" onClick={() => handleEdit(unit)}>Edit</button>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                          {otherOfficers.length > 0 ? (
+                            otherOfficers.map(id => {
+                              const officer = officers.find(o => o.id === id);
+                              return officer ? (
+                                <span key={id} className="badge" style={{ fontSize: '10px', background: 'rgba(255,255,255,0.05)' }}>
+                                  {officer.name}
+                                </span>
+                              ) : null;
+                            })
+                          ) : (
+                            <span style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>
+                              {leader ? 'No additional crew' : 'No officers'}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td>
+                        <span className={`badge ${unit.status === 'available' ? 'badge-open' : 'badge-pending'}`}>
+                          {unit.status || 'available'}
+                        </span>
+                      </td>
+                      <td style={{ fontSize: '12px' }}>{new Date(unit.created_at).toLocaleDateString()}</td>
+                      <td>
+                        <button className="btn btn-outline btn-sm" onClick={() => handleEdit(unit)}>Edit</button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -333,6 +374,32 @@ export default function RespondUnitsPage() {
                 </p>
               </div>
 
+              {form.officer_ids.length > 0 && (
+                <div className="form-group">
+                  <label className="form-label">
+                    ⭐ Designate Team Leader *
+                  </label>
+                  <select
+                    className="form-select"
+                    required
+                    value={form.team_leader_id || form.officer_ids[0]}
+                    onChange={e => setForm({ ...form, team_leader_id: e.target.value })}
+                  >
+                    {form.officer_ids.map(id => {
+                      const officer = officers.find(o => o.id === id);
+                      return (
+                        <option key={id} value={id}>
+                          ⭐ {officer?.name || 'Officer'} ({getSpecLabel(officer?.specialization || '')})
+                        </option>
+                      );
+                    })}
+                  </select>
+                  <p style={{ fontSize: '11px', color: 'var(--accent)', marginTop: '4px' }}>
+                    1 officer must be the designated Team Leader for this unit.
+                  </p>
+                </div>
+              )}
+
               <div className="modal-footer" style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
                 <button type="button" className="btn btn-outline" onClick={() => setShowAdd(false)}>Cancel</button>
                 <button type="submit" className="btn btn-primary" disabled={form.officer_ids.length === 0}>
@@ -369,7 +436,7 @@ export default function RespondUnitsPage() {
                   className="form-select"
                   required
                   value={editForm.specialization}
-                  onChange={e => setEditForm({ ...editForm, specialization: e.target.value, officer_ids: [] })}
+                  onChange={e => setEditForm({ ...editForm, specialization: e.target.value, officer_ids: [], team_leader_id: '' })}
                 >
                   {SPECIALIZATIONS.map(s => (
                     <option key={s.value} value={s.value}>{s.label}</option>
@@ -428,6 +495,32 @@ export default function RespondUnitsPage() {
                   )}
                 </div>
               </div>
+
+              {editForm.officer_ids.length > 0 && (
+                <div className="form-group">
+                  <label className="form-label">
+                    ⭐ Designate Team Leader *
+                  </label>
+                  <select
+                    className="form-select"
+                    required
+                    value={editForm.team_leader_id || editForm.officer_ids[0]}
+                    onChange={e => setEditForm({ ...editForm, team_leader_id: e.target.value })}
+                  >
+                    {editForm.officer_ids.map(id => {
+                      const officer = officers.find(o => o.id === id);
+                      return (
+                        <option key={id} value={id}>
+                          ⭐ {officer?.name || 'Officer'} ({getSpecLabel(officer?.specialization || '')})
+                        </option>
+                      );
+                    })}
+                  </select>
+                  <p style={{ fontSize: '11px', color: 'var(--accent)', marginTop: '4px' }}>
+                    The Team Leader can manage members on the move and coordinate dispatches in the mobile app.
+                  </p>
+                </div>
+              )}
 
               <div className="modal-footer" style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
                 <button type="button" className="btn btn-outline" onClick={() => { setShowEdit(false); setEditingId(null); }}>Drop Changes</button>

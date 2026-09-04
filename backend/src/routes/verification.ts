@@ -84,21 +84,38 @@ router.post(
         return;
       }
 
-      // If user is a professional unit, add to officers table
+      // If user is a professional unit, add/update in officers table
       if (user.role === 'professional_unit') {
-        const { error: officerError } = await supabaseAdmin
+        const { data: existingOfficer } = await supabaseAdmin
           .from('officers')
-          .insert([{
-            name: user.full_name,
-            phone: user.phone,
-            email: user.email,
-            specialization: user.unit_type,
-            status: 'active'
-          }]);
+          .select('id')
+          .eq('email', user.email)
+          .maybeSingle();
 
-        if (officerError) {
-          console.error('Error adding professional unit to officers table:', officerError);
-          // We don't fail the whole request, but we log it
+        if (existingOfficer) {
+          await supabaseAdmin
+            .from('officers')
+            .update({
+              name: user.full_name,
+              phone: user.phone,
+              specialization: user.unit_type || 'Rescue Officer',
+              status: 'active',
+            })
+            .eq('id', existingOfficer.id);
+        } else {
+          const { error: officerError } = await supabaseAdmin
+            .from('officers')
+            .insert([{
+              name: user.full_name,
+              phone: user.phone,
+              email: user.email,
+              specialization: user.unit_type || 'Rescue Officer',
+              status: 'active',
+            }]);
+
+          if (officerError) {
+            console.error('Error adding professional unit to officers table:', officerError);
+          }
         }
       }
 
@@ -116,7 +133,11 @@ router.post(
         console.error('Certification verification error:', certError);
       }
 
-      res.json({ message: 'Volunteer approved successfully.' });
+      const approvalMessage = user.role === 'professional_unit'
+        ? 'MDRRMO Officer approved successfully.'
+        : 'Volunteer approved successfully.';
+
+      res.json({ message: approvalMessage });
     } catch (err) {
       console.error('Approve verification error:', err);
       res.status(500).json({ error: 'Internal server error.' });

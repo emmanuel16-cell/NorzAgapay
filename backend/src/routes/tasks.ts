@@ -23,7 +23,7 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response): Promise<v
     // Non-admin users can see all tasks matching their role type
     if (!['admin', 'commander'].includes(user.role)) {
       const allowedTypes = ['general_labor'];
-      if (user.role === 'volunteer_specialist') {
+      if (user.role === 'volunteer_specialist' || user.role === 'professional_unit') {
         allowedTypes.push('specialist');
       }
       
@@ -71,7 +71,7 @@ router.get('/:id', authenticate, async (req: AuthRequest, res: Response): Promis
     const user = req.user!;
     if (!['admin', 'commander'].includes(user.role)) {
       const allowedTypes = ['general_labor'];
-      if (user.role === 'volunteer_specialist') {
+      if (user.role === 'volunteer_specialist' || user.role === 'professional_unit') {
         allowedTypes.push('specialist');
       }
       if (!allowedTypes.includes(task.task_type)) {
@@ -351,5 +351,87 @@ router.patch(
     }
   }
 );
+
+// ============================================
+// POST /api/tasks/:id/members — Team Leader adds members on the move
+// ============================================
+
+router.post('/:id/members', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const { member_ids } = req.body;
+
+    if (!member_ids || !Array.isArray(member_ids) || member_ids.length === 0) {
+      res.status(400).json({ error: 'member_ids array is required' });
+      return;
+    }
+
+    const { data: task, error: fetchError } = await supabaseAdmin
+      .from('tasks')
+      .select('*, incident:incidents(*)')
+      .eq('id', id)
+      .single();
+
+    if (fetchError || !task) {
+      res.status(404).json({ error: 'Task / dispatch not found.' });
+      return;
+    }
+
+    // Add each member into task_volunteers
+    for (const memberId of member_ids) {
+      let resolvedUserId = memberId;
+
+      // If officer ID is passed, resolve to user ID
+      const { data: off } = await supabaseAdmin
+        .from('officers')
+        .select('email')
+        .eq('id', memberId)
+        .maybeSingle();
+
+      if (off && off.email) {
+        const { data: matchedUser } = await supabaseAdmin
+          .from('users')
+          .select('id')
+          .eq('email', off.email)
+          .maybeSingle();
+        if (matchedUser) {
+          resolvedUserId = matchedUser.id;
+        }
+      }
+
+      await supabaseAdmin
+        .from('task_volunteers')
+        .upsert({
+          task_id: id,
+          volunteer_id: resolvedUserId,
+          status: 'joined',
+        }, { onConflict: 'task_id,volunteer_id' });
+
+      // Mark user status as occupied
+      await supabaseAdmin
+        .from('users')
+        .update({ status: 'occupied' })
+        .eq('id', resolvedUserId);
+    }
+
+    // Emit real-time notification
+    io.to('commanders').emit('task:membersUpdated', { taskId: id, memberIds: member_ids });
+
+    // Fetch updated task with full volunteers
+    const { data: updatedTask } = await supabaseAdmin
+      .from('tasks')
+      .select('*, incident:incidents(*), volunteers:task_volunteers(volunteer_id, status)')
+      .eq('id', id)
+      .single();
+
+    res.json({
+      message: 'Members added to dispatch team successfully.',
+      task: updatedTask,
+    });
+  } catch (err: any) {
+    console.error('Add members on the move error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 export default router;
