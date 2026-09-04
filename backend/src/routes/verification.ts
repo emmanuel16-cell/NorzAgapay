@@ -34,7 +34,19 @@ router.get(
             .select('*')
             .eq('user_id', user.id);
 
-          return { ...user, certifications: certs || [] };
+          const allCerts = certs || [];
+          const specCerts = allCerts.filter((c: any) => c.cert_number === 'SPECIALIZATION');
+          const otherCerts = allCerts.filter((c: any) => c.cert_number !== 'SPECIALIZATION');
+
+          const finalUnitType = specCerts.length > 0
+            ? specCerts.map((c: any) => c.cert_type).join(', ')
+            : user.unit_type;
+
+          return {
+            ...user,
+            unit_type: finalUnitType,
+            certifications: otherCerts,
+          };
         })
       );
 
@@ -86,6 +98,17 @@ router.post(
 
       // If user is a professional unit, add/update in officers table
       if (user.role === 'professional_unit') {
+        // Fetch full specializations list if stored in certifications
+        const { data: specCerts } = await supabaseAdmin
+          .from('certifications')
+          .select('cert_type')
+          .eq('user_id', userId)
+          .eq('cert_number', 'SPECIALIZATION');
+
+        const officerSpecialization = (specCerts && specCerts.length > 0)
+          ? specCerts.map((c: any) => c.cert_type).join(', ')
+          : (user.unit_type || 'Rescue Officer');
+
         const { data: existingOfficer } = await supabaseAdmin
           .from('officers')
           .select('id')
@@ -98,7 +121,7 @@ router.post(
             .update({
               name: user.full_name,
               phone: user.phone,
-              specialization: user.unit_type || 'Rescue Officer',
+              specialization: officerSpecialization,
               status: 'active',
             })
             .eq('id', existingOfficer.id);
@@ -109,7 +132,7 @@ router.post(
               name: user.full_name,
               phone: user.phone,
               email: user.email,
-              specialization: user.unit_type || 'Rescue Officer',
+              specialization: officerSpecialization,
               status: 'active',
             }]);
 

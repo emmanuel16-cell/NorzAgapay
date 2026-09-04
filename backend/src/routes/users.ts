@@ -40,7 +40,31 @@ router.get(
         return;
       }
 
-      res.json({ users: data });
+      // Enrich professional units with multi-specializations from certifications
+      const userList = data || [];
+      const proUserIds = userList.filter((u: any) => u.role === 'professional_unit').map((u: any) => u.id);
+      if (proUserIds.length > 0) {
+        const { data: specCerts } = await supabaseAdmin
+          .from('certifications')
+          .select('user_id, cert_type')
+          .in('user_id', proUserIds)
+          .eq('cert_number', 'SPECIALIZATION');
+
+        if (specCerts && specCerts.length > 0) {
+          const specMap = new Map<string, string[]>();
+          for (const cert of specCerts) {
+            if (!specMap.has(cert.user_id)) specMap.set(cert.user_id, []);
+            specMap.get(cert.user_id)!.push(cert.cert_type);
+          }
+          for (const u of userList) {
+            if (specMap.has(u.id)) {
+              u.unit_type = specMap.get(u.id)!.join(', ');
+            }
+          }
+        }
+      }
+
+      res.json({ users: userList });
     } catch (err) {
       console.error('Fetch users error:', err);
       res.status(500).json({ error: 'Internal server error.' });
@@ -79,6 +103,14 @@ router.get('/:id', authenticate, async (req: AuthRequest, res: Response): Promis
       .select('*')
       .eq('user_id', req.params.id);
 
+    const allCerts = certs || [];
+    const specCerts = allCerts.filter((c: any) => c.cert_number === 'SPECIALIZATION');
+    const otherCerts = allCerts.filter((c: any) => c.cert_number !== 'SPECIALIZATION');
+
+    if (data.role === 'professional_unit' && specCerts.length > 0) {
+      data.unit_type = specCerts.map((c: any) => c.cert_type).join(', ');
+    }
+
     // Get task history
     const { data: tasks } = await supabaseAdmin
       .from('tasks')
@@ -87,7 +119,7 @@ router.get('/:id', authenticate, async (req: AuthRequest, res: Response): Promis
       .order('created_at', { ascending: false })
       .limit(20);
 
-    res.json({ user: data, certifications: certs || [], recent_tasks: tasks || [] });
+    res.json({ user: data, certifications: otherCerts, recent_tasks: tasks || [] });
   } catch (err) {
     console.error('Fetch user detail error:', err);
     res.status(500).json({ error: 'Internal server error.' });

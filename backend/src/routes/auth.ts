@@ -15,7 +15,7 @@ const router = Router();
 const registerSchema = z.object({
   full_name: z.string().min(2, 'Full name is required'),
   email: z.string().email('Invalid email address'),
-  phone: z.string().max(15).optional(),
+  phone: z.string().max(30).optional().nullable(),
   password: z.string().min(6, 'Password must be at least 6 characters'),
   role: z.enum(['volunteer_specialist', 'volunteer_general', 'professional_unit']),
   unit_type: z.string().nullable().optional(),
@@ -67,6 +67,14 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
     const isAutoActive = role === 'volunteer_general';
     const initialStatus = isAutoActive ? 'active' : 'pending_verification';
 
+    // Parse specializations for professional unit
+    const rawUnitType = unit_type || '';
+    const specs = rawUnitType
+      .split(',')
+      .map((s: string) => s.trim())
+      .filter(Boolean);
+    const primaryUnitType = specs[0] || 'Rescue Officer';
+
     const { data: newUser, error: insertError } = await supabaseAdmin
       .from('users')
       .insert({
@@ -75,7 +83,7 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
         phone: phone || null,
         password_hash,
         role,
-        unit_type: role === 'professional_unit' ? unit_type : null,
+        unit_type: role === 'professional_unit' ? primaryUnitType : null,
         status: initialStatus,
         verified: isAutoActive,
       })
@@ -88,11 +96,28 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
+    // If professional unit, store all specializations in certifications table
+    if (role === 'professional_unit' && specs.length > 0) {
+      const certRows = specs.map((spec: string) => ({
+        user_id: newUser.id,
+        cert_type: spec,
+        cert_number: 'SPECIALIZATION',
+        verified: isAutoActive,
+      }));
+      const { error: certError } = await supabaseAdmin.from('certifications').insert(certRows);
+      if (certError) {
+        console.error('Failed to store specialization certifications:', certError);
+      }
+    }
+
+    const responseUnitType = specs.length > 0 ? specs.join(', ') : newUser.unit_type;
+    const returnUser = { ...newUser, unit_type: responseUnitType };
+
     // If account requires verification, return pending response without auth token
     if (newUser.status === 'pending_verification') {
       res.status(201).json({
         message: 'Registration successful! Your MDRRMO officer account has been submitted and is pending verification by an administrator at the Web Dashboard.',
-        user: newUser,
+        user: returnUser,
         requiresVerification: true,
       });
       return;
@@ -104,7 +129,7 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
         userId: newUser.id,
         email: newUser.email,
         role: newUser.role,
-        unitType: newUser.unit_type,
+        unitType: responseUnitType,
       },
       config.jwtSecret,
       { expiresIn: config.jwtExpiresIn as any }
@@ -112,7 +137,7 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
 
     res.status(201).json({
       message: 'Registration successful.',
-      user: newUser,
+      user: returnUser,
       token,
     });
   } catch (err) {
@@ -170,13 +195,27 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
+    // If professional unit, fetch all specializations from certifications table
+    let unitType = user.unit_type;
+    if (user.role === 'professional_unit') {
+      const { data: specCerts } = await supabaseAdmin
+        .from('certifications')
+        .select('cert_type')
+        .eq('user_id', user.id)
+        .eq('cert_number', 'SPECIALIZATION');
+
+      if (specCerts && specCerts.length > 0) {
+        unitType = specCerts.map((c: any) => c.cert_type).join(', ');
+      }
+    }
+
     // Generate JWT
     const token = jwt.sign(
       {
         userId: user.id,
         email: user.email,
         role: user.role,
-        unitType: user.unit_type,
+        unitType,
       },
       config.jwtSecret,
       { expiresIn: config.jwtExpiresIn as any }
@@ -195,7 +234,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
         full_name: user.full_name,
         email: user.email,
         role: user.role,
-        unit_type: user.unit_type,
+        unit_type: unitType,
         status: user.status,
         verified: user.verified,
       },
@@ -295,6 +334,18 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response): Promise
     if (error || !user) {
       res.status(404).json({ error: 'User not found.' });
       return;
+    }
+
+    if (user.role === 'professional_unit') {
+      const { data: specCerts } = await supabaseAdmin
+        .from('certifications')
+        .select('cert_type')
+        .eq('user_id', user.id)
+        .eq('cert_number', 'SPECIALIZATION');
+
+      if (specCerts && specCerts.length > 0) {
+        user.unit_type = specCerts.map((c: any) => c.cert_type).join(', ');
+      }
     }
 
     res.json({ user });
