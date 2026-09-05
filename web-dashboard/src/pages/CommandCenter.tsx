@@ -148,6 +148,7 @@ export default function CommandCenter() {
   const [filters, setFilters] = useState({
     incidents: true,
     escalated: true,
+    responseOngoing: true,
     dispatchUnits: true,
     unitsLine: true,
     resolved: true,
@@ -181,9 +182,13 @@ export default function CommandCenter() {
           const lat = parseFloat(r.latitude) || 14.908;
           const lng = parseFloat(r.longitude) || 121.045;
           let st: 'pending' | 'responding' | 'escalated' | 'resolved' = 'pending';
-          if (r.status === 'resolved') st = 'resolved';
-          else if (r.status === 'responding') st = 'responding';
-          else if (r.beyond_barangay_capability || r.severity === 'critical') st = 'escalated';
+          if (r.status === 'resolved' || r.status === 'closed') {
+            st = 'resolved';
+          } else if (r.beyond_barangay_capability || r.severity === 'critical' || r.status === 'escalated') {
+            st = 'escalated';
+          } else if (r.status === 'responding' || r.status === 'in_progress' || r.barangay_response_status === 'responding') {
+            st = 'responding';
+          }
 
           items.push({
             id: r.id,
@@ -224,6 +229,21 @@ export default function CommandCenter() {
             responder_name: 'Matic Tic',
             responder_phone: '09510173028',
             barangay_response_notes: 'Put here the Initial response details of the emergency report of the barangay',
+          },
+          {
+            id: 'inc-blue-1',
+            title: 'Minor Landslide & Road Clearing',
+            type: 'landslide',
+            status: 'responding',
+            severity: 'moderate',
+            latitude: 14.9120,
+            longitude: 121.0415,
+            description: 'Debris and rockslide along hillside road. Resident reported blocked passage.',
+            reporter_name: 'Resident',
+            reporter_phone: '09510173028',
+            responder_name: 'Matic Tic',
+            responder_phone: '09510173028',
+            barangay_response_notes: 'Barangay quick response team deployed on-site clearing debris and directing traffic.',
           },
           {
             id: 'inc-red-1',
@@ -297,6 +317,13 @@ export default function CommandCenter() {
 
   useEffect(() => {
     fetchData();
+    const handleRefresh = () => fetchData();
+    socket.on('barangay:responding', handleRefresh);
+    socket.on('incident_report:new', handleRefresh);
+    return () => {
+      socket.off('barangay:responding', handleRefresh);
+      socket.off('incident_report:new', handleRefresh);
+    };
   }, []);
 
   // Stats calculation
@@ -317,7 +344,7 @@ export default function CommandCenter() {
   const handleOpenIncidentPin = (item: IncidentItem) => {
     setSelectedIncident(item);
     setSelectedVisualUrl(item.proof_url || null);
-    if (item.status === 'escalated') {
+    if (item.status === 'escalated' || item.status === 'responding') {
       setActiveModalType('escalated');
     } else {
       setActiveModalType('incident');
@@ -445,6 +472,16 @@ export default function CommandCenter() {
                 Escalated
               </label>
 
+              <label className="hud-checkbox-label" style={{ color: filters.responseOngoing ? '#3b82f6' : '#64748b' }}>
+                <input
+                  type="checkbox"
+                  checked={filters.responseOngoing}
+                  onChange={(e) => setFilters({ ...filters, responseOngoing: e.target.checked })}
+                  style={{ accentColor: '#3b82f6' }}
+                />
+                Response Ongoing
+              </label>
+
               <label className="hud-checkbox-label" style={{ color: filters.dispatchUnits ? '#06b6d4' : '#64748b' }}>
                 <input
                   type="checkbox"
@@ -490,13 +527,25 @@ export default function CommandCenter() {
 
           {/* Incident Markers */}
           {incidents.map((inc) => {
-            if (inc.status === 'pending' || inc.status === 'responding') {
+            if (inc.status === 'pending') {
               if (!filters.incidents) return null;
               return (
                 <Marker
                   key={inc.id}
                   position={[inc.latitude, inc.longitude]}
                   icon={createTeardropPin('#F97316', '!')}
+                  eventHandlers={{ click: () => handleOpenIncidentPin(inc) }}
+                />
+              );
+            }
+
+            if (inc.status === 'responding') {
+              if (!filters.responseOngoing) return null;
+              return (
+                <Marker
+                  key={inc.id}
+                  position={[inc.latitude, inc.longitude]}
+                  icon={createTeardropPin('#3B82F6', '!')}
                   eventHandlers={{ click: () => handleOpenIncidentPin(inc) }}
                 />
               );
