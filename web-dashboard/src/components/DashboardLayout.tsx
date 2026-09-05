@@ -1,30 +1,45 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type ReactNode } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import {
+  CloudSun,
+  MapPin,
+  AlertTriangle,
+  Target,
+  Tent,
+  ClipboardList,
+  Ambulance,
+  Route,
+  CheckCircle2,
+  Users,
+  Award,
+  BarChart3,
+  LogOut,
+} from 'lucide-react';
 
 interface NavItem {
   path?: string;
-  icon?: string;
+  icon?: ReactNode;
   label: string;
   section?: boolean;
 }
 
 const navItems: NavItem[] = [
-  { path: '/weather-monitoring', icon: '🌤️', label: 'Weather Monitoring' },
+  { path: '/weather-monitoring', icon: <CloudSun size={19} strokeWidth={1.8} />, label: 'Weather Monitoring' },
   { label: 'Operations', section: true },
-  { path: '/', icon: '📍', label: 'Command Center' },
-  { path: '/reports', icon: '📊', label: 'Incidents' },
-  { path: '/missions', icon: '🎯', label: 'Missions' },
+  { path: '/', icon: <MapPin size={19} strokeWidth={1.8} />, label: 'Command Center' },
+  { path: '/reports', icon: <AlertTriangle size={19} strokeWidth={1.8} />, label: 'Incidents' },
+  { path: '/missions', icon: <Target size={19} strokeWidth={1.8} />, label: 'Missions' },
   { label: 'Logistics', section: true },
-  { path: '/evacuation-centers', icon: '🏕️', label: 'Evacuation Centers' },
-  { path: '/requests', icon: '📋', label: 'Resource Requests' },
-  { path: '/respond-units', icon: '🚓', label: 'Respond Units' },
-  { path: '/shipments', icon: '🛣️', label: 'Shipment Tracker' },
+  { path: '/evacuation-centers', icon: <Tent size={19} strokeWidth={1.8} />, label: 'Evacuation Centers' },
+  { path: '/requests', icon: <ClipboardList size={19} strokeWidth={1.8} />, label: 'Resource Requests' },
+  { path: '/respond-units', icon: <Ambulance size={19} strokeWidth={1.8} />, label: 'Respond Units' },
+  { path: '/shipments', icon: <Route size={19} strokeWidth={1.8} />, label: 'Shipment Tracker' },
   { label: 'Administration', section: true },
-  { path: '/verification', icon: '✅', label: 'Verification Queue' },
-  { path: '/users', icon: '👥', label: 'User Management' },
-  { path: '/officers', icon: '🎖️', label: 'Officers' },
-  { path: '/analytics', icon: '📊', label: 'Analytics' },
+  { path: '/verification', icon: <CheckCircle2 size={19} strokeWidth={1.8} />, label: 'Verification Queue' },
+  { path: '/users', icon: <Users size={19} strokeWidth={1.8} />, label: 'User Management' },
+  { path: '/officers', icon: <Award size={19} strokeWidth={1.8} />, label: 'Officers' },
+  { path: '/analytics', icon: <BarChart3 size={19} strokeWidth={1.8} />, label: 'Analytics' },
 ];
 
 export default function DashboardLayout() {
@@ -138,9 +153,10 @@ export default function DashboardLayout() {
               <button
                 onClick={handleLogout}
                 className="btn btn-outline btn-sm"
-                style={{ width: '100%', marginTop: '10px' }}
+                style={{ width: '100%', marginTop: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
               >
-                Sign Out
+                <LogOut size={15} strokeWidth={1.8} />
+                <span>Sign Out</span>
               </button>
             </>
           ) : (
@@ -156,8 +172,9 @@ export default function DashboardLayout() {
                 className="collapsed-logout-btn"
                 title="Sign Out"
                 aria-label="Sign Out"
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
               >
-                🚪
+                <LogOut size={16} strokeWidth={1.8} />
               </button>
             </div>
           )}

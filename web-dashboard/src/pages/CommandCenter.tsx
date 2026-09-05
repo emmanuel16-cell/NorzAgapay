@@ -6,6 +6,7 @@ import 'leaflet/dist/leaflet.css';
 import { analyticsAPI, missionAPI, userAPI, reportAPI, respondUnitAPI, socket } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
+import { AlertTriangle, Siren, Users, CheckCircle2 } from 'lucide-react';
 
 interface IncidentItem {
   id: string;
@@ -478,7 +479,9 @@ export default function CommandCenter() {
                     <span className="stat-val">{stats.incident}</span>
                     <span className="stat-name">Incident</span>
                   </div>
-                  <span className="stat-card-icon">⚠️</span>
+                  <span className="stat-card-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <AlertTriangle size={22} strokeWidth={2} color="#f59e0b" />
+                  </span>
                 </div>
 
                 <div className="command-stat-card escalated">
@@ -486,7 +489,9 @@ export default function CommandCenter() {
                     <span className="stat-val">{stats.escalated}</span>
                     <span className="stat-name">Escalated</span>
                   </div>
-                  <span className="stat-card-icon">🚨</span>
+                  <span className="stat-card-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Siren size={22} strokeWidth={2} color="#ef4444" />
+                  </span>
                 </div>
 
                 <div className="command-stat-card dispatch">
@@ -494,7 +499,9 @@ export default function CommandCenter() {
                     <span className="stat-val">{stats.dispatch}</span>
                     <span className="stat-name">Dispatch Units</span>
                   </div>
-                  <span className="stat-card-icon">👥</span>
+                  <span className="stat-card-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Users size={22} strokeWidth={2} color="#38bdf8" />
+                  </span>
                 </div>
 
                 <div className="command-stat-card resolved">
@@ -502,7 +509,9 @@ export default function CommandCenter() {
                     <span className="stat-val">{stats.resolved}</span>
                     <span className="stat-name">Resolved</span>
                   </div>
-                  <span className="stat-card-icon">✅</span>
+                  <span className="stat-card-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <CheckCircle2 size={22} strokeWidth={2} color="#10b981" />
+                  </span>
                 </div>
               </>
             )}
@@ -1069,7 +1078,7 @@ export default function CommandCenter() {
                     flexShrink: 0
                   }}
                 >
-                  ⚠️
+                  <AlertTriangle size={22} strokeWidth={2} color="#f59e0b" />
                 </div>
                 <div>
                   <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 'bold', color: '#ffffff' }}>
