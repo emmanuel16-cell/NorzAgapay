@@ -127,7 +127,7 @@ router.post('/', optionalAuthenticate, upload.single('proof'), async (req: AuthR
         barangay_id: resolvedBarangayId,
         status: 'pending'
       })
-      .select()
+      .select('*, barangays(name)')
       .single();
 
     if (dbError) {
@@ -136,17 +136,40 @@ router.post('/', optionalAuthenticate, upload.single('proof'), async (req: AuthR
       return;
     }
 
+    const formattedReport = {
+      ...report,
+      barangay_name: (report as any)?.barangays?.name || null
+    };
+
+    // Auto-create pending task so mobile_app responders see it in Pending dispatches
+    try {
+      await supabaseAdmin
+        .from('tasks')
+        .insert({
+          title: `🚨 Emergency: ${formattedReport.title}`,
+          description: formattedReport.description || formattedReport.specifics || `Emergency reported at ${formattedReport.barangay_name || 'Norzagaray'}.`,
+          task_type: 'general_labor',
+          status: 'pending',
+          latitude: formattedReport.latitude,
+          longitude: formattedReport.longitude,
+          address: formattedReport.address || formattedReport.barangay_name || 'Norzagaray, Bulacan'
+        });
+      io.emit('task:new', formattedReport);
+    } catch (taskErr) {
+      console.warn('Could not auto-create initial task:', taskErr);
+    }
+
     // Emit socket event for real-time notification
-    io.to('commanders').emit('incident_report:new', report);
+    io.to('commanders').emit('incident_report:new', formattedReport);
 
     // Notify specific barangay room if assigned
     if (resolvedBarangayId) {
-      io.to(`barangay:${resolvedBarangayId}`).emit('barangay:report_received', report);
+      io.to(`barangay:${resolvedBarangayId}`).emit('barangay:report_received', formattedReport);
     }
 
     res.status(201).json({
       message: 'Report submitted successfully.',
-      report
+      report: formattedReport
     });
   } catch (err) {
     console.error('Incident report submission error:', err);
@@ -219,7 +242,7 @@ router.get('/', async (req: Request, res: Response) => {
         const { type } = req.query;
         let query = supabaseAdmin
             .from('incident_reports')
-            .select('*')
+            .select('*, barangays(name)')
             .order('created_at', { ascending: false });
 
         if (type === 'emergency' || type === 'community') {
@@ -234,10 +257,90 @@ router.get('/', async (req: Request, res: Response) => {
             return;
         }
 
-        res.json(reports);
+        const formatted = (reports || []).map((r: any) => ({
+            ...r,
+            barangay_name: r.barangays?.name || null
+        }));
+
+        res.json(formatted);
     } catch (err) {
         console.error('Fetch reports error:', err);
         res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+/**
+ * PATCH /api/incident-reports/:id/mdrrmo-respond
+ * Mark MDRRMO response dispatched
+ */
+router.patch('/:id/mdrrmo-respond', optionalAuthenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const { responder_name, notes, assigned_unit_id } = req.body;
+        const responderName = responder_name || (req.user as any)?.name || req.user?.email || 'MDRRMO Command Unit';
+
+        let updatedReport: any = null;
+
+        // Try updating with mdrrmo columns
+        try {
+            const { data, error } = await supabaseAdmin
+                .from('incident_reports')
+                .update({
+                    status: 'responding',
+                    mdrrmo_response_status: 'responding',
+                    mdrrmo_responded_at: new Date().toISOString(),
+                    mdrrmo_responded_by: req.user?.userId || null,
+                    mdrrmo_responder_name: responderName,
+                    mdrrmo_response_notes: notes || null,
+                })
+                .eq('id', id)
+                .select('*, barangays(name)')
+                .single();
+
+            if (error) throw error;
+            updatedReport = data;
+        } catch (dbErr) {
+            console.warn('Fallback update without extra columns:', dbErr);
+            // Fallback in case columns aren't added in DB yet
+            const { data, error } = await supabaseAdmin
+                .from('incident_reports')
+                .update({
+                    status: 'responding',
+                })
+                .eq('id', id)
+                .select('*, barangays(name)')
+                .single();
+
+            if (error) throw error;
+            updatedReport = {
+                ...data,
+                mdrrmo_response_status: 'responding',
+                mdrrmo_responder_name: responderName,
+                mdrrmo_responded_at: new Date().toISOString()
+            };
+        }
+
+        const formatted = {
+            ...updatedReport,
+            barangay_name: updatedReport.barangays?.name || null,
+            mdrrmo_response_status: 'responding',
+            mdrrmo_responder_name: responderName
+        };
+
+        // Broadcast real-time to commanders (web-dashboard)
+        io.to('commanders').emit('incident_report:mdrrmo_responding', formatted);
+        io.emit('incident_report:updated', formatted);
+
+        // Broadcast real-time to specific barangay room
+        if (formatted.barangay_id) {
+            io.to(`barangay:${formatted.barangay_id}`).emit('incident_report:mdrrmo_responding', formatted);
+            io.to(`barangay:${formatted.barangay_id}`).emit('barangay:report_updated', formatted);
+        }
+
+        res.json(formatted);
+    } catch (err) {
+        console.error('MDRRMO respond to report error:', err);
+        res.status(500).json({ error: 'Failed to update report with MDRRMO response' });
     }
 });
 

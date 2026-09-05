@@ -25,6 +25,11 @@ interface IncidentItem {
   responder_phone?: string;
   barangay_response_notes?: string;
   assigned_unit_id?: string;
+  barangay_name?: string;
+  barangay_response_status?: string;
+  barangay_responder_name?: string;
+  mdrrmo_response_status?: string;
+  mdrrmo_responder_name?: string;
 }
 
 interface DispatchUnitItem {
@@ -208,6 +213,11 @@ export default function CommandCenter() {
             responder_phone: '09510173028',
             barangay_response_notes: r.barangay_response_notes || 'Initial assessment done. Dispatched 4 barangay responders with chainsaws and first-aid kits.',
             assigned_unit_id: 'unit-1',
+            barangay_name: r.barangay_name || (r.barangays && r.barangays.name) || 'Partida',
+            barangay_response_status: r.barangay_response_status || (r.status === 'responding' ? 'responding' : 'pending'),
+            barangay_responder_name: r.barangay_responder_name,
+            mdrrmo_response_status: r.mdrrmo_response_status || 'pending',
+            mdrrmo_responder_name: r.mdrrmo_responder_name,
           });
         });
       }
@@ -320,9 +330,13 @@ export default function CommandCenter() {
     const handleRefresh = () => fetchData();
     socket.on('barangay:responding', handleRefresh);
     socket.on('incident_report:new', handleRefresh);
+    socket.on('incident_report:mdrrmo_responding', handleRefresh);
+    socket.on('incident_report:updated', handleRefresh);
     return () => {
       socket.off('barangay:responding', handleRefresh);
       socket.off('incident_report:new', handleRefresh);
+      socket.off('incident_report:mdrrmo_responding', handleRefresh);
+      socket.off('incident_report:updated', handleRefresh);
     };
   }, []);
 
@@ -369,9 +383,54 @@ export default function CommandCenter() {
     toast.success(`Copied: ${text}`);
   };
 
-  const handleDispatch = () => {
-    toast.success('Dispatch action initiated! Responders alerted.');
+  // Co-response confirmation modal state
+  const [coResponseConfirmModal, setCoResponseConfirmModal] = useState<{
+    open: boolean;
+    incident: IncidentItem | null;
+  } | null>(null);
+
+  const executeMdrrmoDispatch = async (incident: IncidentItem) => {
+    try {
+      const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+      const token = localStorage.getItem('token');
+      await fetch(`${baseUrl}/incident-reports/${incident.id}/mdrrmo-respond`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          responder_name: user?.full_name || user?.email || 'MDRRMO Command Unit',
+          notes: 'MDRRMO responding from Command Center dispatch'
+        })
+      });
+    } catch (e) {
+      console.warn('Could not notify backend of mdrrmo respond:', e);
+    }
+    toast.success('Dispatch action initiated! MDRRMO responders alerted.');
+    setCoResponseConfirmModal(null);
     closeModal();
+    fetchData();
+  };
+
+  const handleDispatch = (overrideConfirm = false) => {
+    if (!selectedIncident) return;
+
+    // Check if Barangay is currently responding
+    const isBarangayResponding =
+      selectedIncident.barangay_response_status === 'responding' ||
+      Boolean(selectedIncident.responder_name && selectedIncident.responder_name !== 'MDRRMO');
+
+    if (isBarangayResponding && !overrideConfirm) {
+      // Show confirmation prompt
+      setCoResponseConfirmModal({
+        open: true,
+        incident: selectedIncident
+      });
+      return;
+    }
+
+    executeMdrrmoDispatch(selectedIncident);
   };
 
   return (
@@ -734,7 +793,7 @@ export default function CommandCenter() {
                   <button className="btn-preview-close" onClick={closeModal}>
                     ✕ CLOSE
                   </button>
-                  <button className="btn-preview-dispatch" onClick={handleDispatch}>
+                  <button className="btn-preview-dispatch" onClick={() => handleDispatch()}>
                     🚑 DISPATCH
                   </button>
                 </div>
@@ -857,7 +916,7 @@ export default function CommandCenter() {
                   <button className="btn-preview-close" onClick={closeModal}>
                     ✕ CLOSE
                   </button>
-                  <button className="btn-preview-dispatch" onClick={handleDispatch}>
+                  <button className="btn-preview-dispatch" onClick={() => handleDispatch()}>
                     🚑 DISPATCH
                   </button>
                 </div>
@@ -972,6 +1031,114 @@ export default function CommandCenter() {
               <div className="unit-location-box">
                 <span className="unit-location-label">Responding to:</span>
                 <span className="unit-location-val">{selectedUnit.target_location || 'Location'}</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 4. CO-RESPONSE CONFIRMATION MODAL */}
+        {coResponseConfirmModal && coResponseConfirmModal.incident && (
+          <div className="pin-modal-backdrop" style={{ zIndex: 9999 }} onClick={() => setCoResponseConfirmModal(null)}>
+            <div
+              className="pin-modal-container"
+              style={{
+                maxWidth: '460px',
+                padding: '24px',
+                background: '#1e293b',
+                borderRadius: '16px',
+                border: '1px solid #334155',
+                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.75)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '16px'
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                <div
+                  style={{
+                    width: '44px',
+                    height: '44px',
+                    borderRadius: '50%',
+                    background: 'rgba(245, 158, 11, 0.15)',
+                    border: '1px solid rgba(245, 158, 11, 0.3)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '22px',
+                    flexShrink: 0
+                  }}
+                >
+                  ⚠️
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 'bold', color: '#ffffff' }}>
+                    Active Barangay Response
+                  </h3>
+                  <span style={{ fontSize: '12px', color: '#94a3b8' }}>
+                    Coordinated Emergency Response
+                  </span>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  background: 'rgba(15, 23, 42, 0.6)',
+                  padding: '16px',
+                  borderRadius: '10px',
+                  border: '1px solid #334155',
+                  color: '#e2e8f0',
+                  fontSize: '14px',
+                  lineHeight: '1.6'
+                }}
+              >
+                Barangay{' '}
+                <strong style={{ color: '#38bdf8' }}>
+                  {coResponseConfirmModal.incident.barangay_name || 'Partida'}
+                </strong>{' '}
+                is currently responding to this incident.
+                <br /><br />
+                Do you want to also respond to this incident?
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '4px' }}>
+                <button
+                  type="button"
+                  style={{
+                    padding: '10px 18px',
+                    borderRadius: '8px',
+                    background: 'transparent',
+                    border: '1px solid #475569',
+                    color: '#cbd5e1',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                    fontSize: '13px'
+                  }}
+                  onClick={() => setCoResponseConfirmModal(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  style={{
+                    padding: '10px 20px',
+                    borderRadius: '8px',
+                    background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+                    border: 'none',
+                    color: '#ffffff',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                    fontSize: '13px',
+                    boxShadow: '0 4px 12px rgba(2, 132, 199, 0.4)'
+                  }}
+                  onClick={() => {
+                    const inc = coResponseConfirmModal.incident;
+                    setCoResponseConfirmModal(null);
+                    if (inc) executeMdrrmoDispatch(inc);
+                  }}
+                >
+                  🚑 Yes, Also Respond & Dispatch
+                </button>
               </div>
             </div>
           </div>

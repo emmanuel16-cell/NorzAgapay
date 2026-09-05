@@ -411,17 +411,42 @@ router.patch('/reports/:id/respond', authenticateBarangay, requireRole(['captain
 
     if (error) throw error;
 
-    const { data: responder, error: responderError } = await supabaseAdmin
+    const { data: responder } = await supabaseAdmin
       .from('barangay_users')
       .select('full_name')
       .eq('id', req.barangayUser.userId)
-      .single();
-    if (responderError) throw responderError;
+      .maybeSingle();
+
+    const { data: bData } = await supabaseAdmin
+      .from('barangays')
+      .select('name')
+      .eq('id', req.barangayUser.barangayId)
+      .maybeSingle();
+
+    const barangayName = bData?.name || 'Barangay';
+    const responderName = responder?.full_name || 'Barangay Responder';
 
     // Notify MDRRMO dashboard
-    io.to('commanders').emit('barangay:responding', { reportId: req.params.id, barangayId: req.barangayUser.barangayId, notes });
+    io.to('commanders').emit('barangay:responding', {
+      reportId: req.params.id,
+      barangayId: req.barangayUser.barangayId,
+      barangayName: barangayName,
+      responderName: responderName,
+      notes,
+    });
 
-    res.json({ ...data, barangay_responder_name: responder.full_name });
+    io.emit('incident_report:updated', {
+      ...data,
+      barangay_name: barangayName,
+      barangay_response_status: 'responding',
+      barangay_responder_name: responderName,
+    });
+
+    res.json({
+      ...data,
+      barangay_name: barangayName,
+      barangay_responder_name: responderName,
+    });
   } catch (err) {
     console.error('Respond to report error:', err);
     res.status(500).json({ error: 'Failed to update report' });
