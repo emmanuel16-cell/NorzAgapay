@@ -195,7 +195,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // If professional unit, fetch all specializations from certifications table
+    // If professional unit, fetch all specializations from certifications table or officers table
     let unitType = user.unit_type;
     if (user.role === 'professional_unit') {
       const { data: specCerts } = await supabaseAdmin
@@ -206,6 +206,15 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
 
       if (specCerts && specCerts.length > 0) {
         unitType = specCerts.map((c: any) => c.cert_type).join(', ');
+      } else {
+        const { data: off } = await supabaseAdmin
+          .from('officers')
+          .select('specialization')
+          .eq('email', user.email)
+          .maybeSingle();
+        if (off?.specialization) {
+          unitType = off.specialization;
+        }
       }
     }
 
@@ -345,6 +354,15 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response): Promise
 
       if (specCerts && specCerts.length > 0) {
         user.unit_type = specCerts.map((c: any) => c.cert_type).join(', ');
+      } else {
+        const { data: off } = await supabaseAdmin
+          .from('officers')
+          .select('specialization')
+          .eq('email', user.email)
+          .maybeSingle();
+        if (off?.specialization) {
+          user.unit_type = off.specialization;
+        }
       }
     }
 

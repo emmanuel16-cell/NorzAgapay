@@ -40,7 +40,7 @@ router.get(
         return;
       }
 
-      // Enrich professional units with multi-specializations from certifications
+      // Enrich professional units with multi-specializations from certifications or officers
       const userList = data || [];
       const proUserIds = userList.filter((u: any) => u.role === 'professional_unit').map((u: any) => u.id);
       if (proUserIds.length > 0) {
@@ -50,16 +50,29 @@ router.get(
           .in('user_id', proUserIds)
           .eq('cert_number', 'SPECIALIZATION');
 
+        const specMap = new Map<string, string[]>();
         if (specCerts && specCerts.length > 0) {
-          const specMap = new Map<string, string[]>();
           for (const cert of specCerts) {
             if (!specMap.has(cert.user_id)) specMap.set(cert.user_id, []);
             specMap.get(cert.user_id)!.push(cert.cert_type);
           }
-          for (const u of userList) {
-            if (specMap.has(u.id)) {
-              u.unit_type = specMap.get(u.id)!.join(', ');
-            }
+        }
+
+        const { data: officersList } = await supabaseAdmin
+          .from('officers')
+          .select('email, specialization');
+        const officerSpecMap = new Map<string, string>();
+        for (const off of officersList || []) {
+          if (off.email && off.specialization) {
+            officerSpecMap.set(off.email, off.specialization);
+          }
+        }
+
+        for (const u of userList) {
+          if (specMap.has(u.id)) {
+            u.unit_type = specMap.get(u.id)!.join(', ');
+          } else if (u.email && officerSpecMap.has(u.email)) {
+            u.unit_type = officerSpecMap.get(u.email);
           }
         }
       }
@@ -107,8 +120,19 @@ router.get('/:id', authenticate, async (req: AuthRequest, res: Response): Promis
     const specCerts = allCerts.filter((c: any) => c.cert_number === 'SPECIALIZATION');
     const otherCerts = allCerts.filter((c: any) => c.cert_number !== 'SPECIALIZATION');
 
-    if (data.role === 'professional_unit' && specCerts.length > 0) {
-      data.unit_type = specCerts.map((c: any) => c.cert_type).join(', ');
+    if (data.role === 'professional_unit') {
+      if (specCerts.length > 0) {
+        data.unit_type = specCerts.map((c: any) => c.cert_type).join(', ');
+      } else {
+        const { data: off } = await supabaseAdmin
+          .from('officers')
+          .select('specialization')
+          .eq('email', data.email)
+          .maybeSingle();
+        if (off?.specialization) {
+          data.unit_type = off.specialization;
+        }
+      }
     }
 
     // Get task history

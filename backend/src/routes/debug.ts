@@ -30,11 +30,36 @@ router.get('/accounts', debugOnly, async (req: Request, res: Response) => {
     }
     const { data, error } = await supabaseAdmin
       .from('users')
-        .select('id, full_name, email, phone, role, unit_type, status, verified')
+      .select('id, full_name, email, phone, role, unit_type, status, verified')
       .eq('status', 'active')
       .order('full_name');
     if (error) throw error;
-    res.json({ accounts: data.map((user) => ({ ...user, audience })) });
+
+    // Enrich professional units with multi-specializations
+    const users = data || [];
+    for (const u of users) {
+      if (u.role === 'professional_unit') {
+        const { data: specCerts } = await supabaseAdmin
+          .from('certifications')
+          .select('cert_type')
+          .eq('user_id', u.id)
+          .eq('cert_number', 'SPECIALIZATION');
+        if (specCerts && specCerts.length > 0) {
+          u.unit_type = specCerts.map((c: any) => c.cert_type).join(', ');
+        } else {
+          const { data: off } = await supabaseAdmin
+            .from('officers')
+            .select('specialization')
+            .eq('email', u.email)
+            .maybeSingle();
+          if (off?.specialization) {
+            u.unit_type = off.specialization;
+          }
+        }
+      }
+    }
+
+    res.json({ accounts: users.map((user) => ({ ...user, audience })) });
   } catch (err) {
     console.error('Debug account list error:', err);
     res.status(500).json({ error: 'Unable to load debug accounts' });
@@ -74,6 +99,27 @@ router.post('/quick-login', debugOnly, async (req: Request, res: Response) => {
       res.status(404).json({ error: 'Active account not found' });
       return;
     }
+
+    if (user.role === 'professional_unit') {
+      const { data: specCerts } = await supabaseAdmin
+        .from('certifications')
+        .select('cert_type')
+        .eq('user_id', user.id)
+        .eq('cert_number', 'SPECIALIZATION');
+      if (specCerts && specCerts.length > 0) {
+        user.unit_type = specCerts.map((c: any) => c.cert_type).join(', ');
+      } else {
+        const { data: off } = await supabaseAdmin
+          .from('officers')
+          .select('specialization')
+          .eq('email', user.email)
+          .maybeSingle();
+        if (off?.specialization) {
+          user.unit_type = off.specialization;
+        }
+      }
+    }
+
     const token = jwt.sign(
       { userId: user.id, email: user.email, role: user.role, unitType: user.unit_type, debug: true },
       config.jwtSecret, { expiresIn: '1h' },
