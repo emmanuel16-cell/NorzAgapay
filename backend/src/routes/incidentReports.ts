@@ -83,11 +83,16 @@ router.post('/', optionalAuthenticate, upload.single('proof'), async (req: AuthR
     }
 
     let proofUrl = null;
+    let finalProofType = proof_type || 'image';
     const file = req.file;
 
     // Handle incident proof upload
     if (file) {
-      const ext = file.originalname.split('.').pop() || 'jpg';
+      const ext = (file.originalname.split('.').pop() || 'jpg').toLowerCase();
+      const isVideo = (file.mimetype && file.mimetype.startsWith('video/')) || ['mp4', 'mov', 'webm', '3gp', 'mkv', 'avi'].includes(ext);
+      if (isVideo || proof_type === 'video') {
+        finalProofType = 'video';
+      }
       const timestamp = Date.now();
       const filename = `reports/${reporter_type || 'anonymous'}/${timestamp}.${ext}`;
 
@@ -119,7 +124,7 @@ router.post('/', optionalAuthenticate, upload.single('proof'), async (req: AuthR
         latitude: parseFloat(latitude),
         longitude: parseFloat(longitude),
         proof_url: proofUrl,
-        proof_type: proof_type || 'image',
+        proof_type: finalProofType,
         reporter_type: reporter_type || 'resident',
         reporter_id: req.user?.userId || null,
         reporter_name: reporterName,

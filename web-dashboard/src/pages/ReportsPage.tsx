@@ -33,6 +33,21 @@ interface IncidentReport {
 
 type TabType = 'incidents' | 'escalated' | 'responding' | 'resolved';
 
+// Helper to detect video from URL or proof_type
+const isVideoProof = (url?: string | null, proof_type?: string | null): boolean => {
+  if (proof_type === 'video') return true;
+  if (!url) return false;
+  const lower = url.toLowerCase().split('?')[0];
+  return (
+    lower.endsWith('.mp4') ||
+    lower.endsWith('.mov') ||
+    lower.endsWith('.webm') ||
+    lower.endsWith('.3gp') ||
+    lower.endsWith('.mkv') ||
+    lower.endsWith('.avi')
+  );
+};
+
 export default function ReportsPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -41,7 +56,7 @@ export default function ReportsPage() {
   const [activeTab, setActiveTab] = useState<TabType>('incidents');
   const [loading, setLoading] = useState(true);
   const [verifying, setVerifying] = useState(false);
-  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [previewMedia, setPreviewMedia] = useState<{ url: string; isVideo: boolean } | null>(null);
 
   useEffect(() => {
     fetchReports();
@@ -65,84 +80,10 @@ export default function ReportsPage() {
       if (Array.isArray(res.data)) {
         data = res.data;
       }
-      // Demo fallback if backend is empty
-      if (data.length === 0) {
-        data = [
-          {
-            id: 'demo-1',
-            type: 'emergency',
-            title: 'Flash Flood & Road Blockage',
-            specifics: 'Road Inundated',
-            description: 'Put here the response details of the emergency report of the resident. Water rising rapidly near the river bank.',
-            status: 'pending',
-            severity: 'high',
-            latitude: 14.9085,
-            longitude: 121.0375,
-            proof_url: 'https://images.unsplash.com/photo-1547683905-f686c993aae5?auto=format&fit=crop&w=600&q=80',
-            proof_type: 'image',
-            reporter_name: 'Resident',
-            reporter_phone: '09510173028',
-            created_at: new Date().toISOString(),
-          },
-          {
-            id: 'demo-2',
-            type: 'emergency',
-            title: 'Critical Bridge Scour & Landslide',
-            specifics: 'Severe Riverbank Collapse',
-            description: 'Severe erosion along riverbank threatening residential houses. Requesting heavy rescue truck and evacuation team.',
-            status: 'escalated',
-            severity: 'critical',
-            latitude: 14.9095,
-            longitude: 121.0505,
-            proof_url: 'https://images.unsplash.com/photo-1584467735815-f778f274e296?auto=format&fit=crop&w=600&q=80',
-            proof_type: 'image',
-            reporter_name: 'Resident',
-            reporter_phone: '09510173028',
-            barangay_responder_name: 'Matic Tic (Team Leader)',
-            barangay_response_notes: 'Initial response completed. Beyond barangay equipment capacity. Escalated to MDRRMO.',
-            created_at: new Date(Date.now() - 3600000).toISOString(),
-          },
-          {
-            id: 'demo-3',
-            type: 'emergency',
-            title: 'Fallen High-Voltage Tree Obstruction',
-            specifics: 'Fallen Tree & Downed Wires',
-            description: 'Large acacia tree fell across two lanes. Team Leader and 5 responders actively on scene diverting traffic.',
-            status: 'responding',
-            severity: 'moderate',
-            latitude: 14.9045,
-            longitude: 121.0420,
-            proof_url: 'https://images.unsplash.com/photo-1513836279014-a89f7a76ae86?auto=format&fit=crop&w=600&q=80',
-            proof_type: 'image',
-            reporter_name: 'Resident',
-            reporter_phone: '09123456789',
-            barangay_responder_name: 'Team Leader 1',
-            barangay_response_notes: 'Dispatched 5 responders with chainsaws.',
-            created_at: new Date(Date.now() - 7200000).toISOString(),
-          },
-          {
-            id: 'demo-4',
-            type: 'emergency',
-            title: 'Cleared Drainage & Downed Wire',
-            specifics: 'Drainage Cleared',
-            description: 'Tree branches removed from electrical poles and road opened for light vehicles.',
-            status: 'resolved',
-            severity: 'low',
-            latitude: 14.9055,
-            longitude: 121.0440,
-            proof_url: 'https://images.unsplash.com/photo-1509316975850-ff9c5deb0cd9?auto=format&fit=crop&w=600&q=80',
-            proof_type: 'image',
-            reporter_name: 'Resident',
-            reporter_phone: '09123456789',
-            barangay_responder_name: 'Team Leader 1',
-            barangay_response_notes: 'Repaired by barangay engineering personnel and resolved.',
-            created_at: new Date(Date.now() - 86400000).toISOString(),
-          },
-        ];
-      }
       setReports(data);
     } catch (err) {
       console.error('Failed to fetch reports', err);
+      toast.error('Failed to load incident reports');
     } finally {
       setLoading(false);
     }
@@ -351,20 +292,60 @@ export default function ReportsPage() {
                       position: 'relative',
                       cursor: 'pointer',
                       border: '1px solid rgba(255, 255, 255, 0.1)',
+                      background: '#000',
                     }}
-                    onClick={() => setPreviewImage(report.proof_url!)}
+                    onClick={() => {
+                      const isVid = isVideoProof(report.proof_url, report.proof_type);
+                      setPreviewMedia({ url: report.proof_url!, isVideo: isVid });
+                    }}
                   >
-                    <img
-                      src={report.proof_url}
-                      alt="Proof"
-                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                    />
+                    {isVideoProof(report.proof_url, report.proof_type) ? (
+                      <>
+                        <video
+                          src={report.proof_url}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        />
+                        <div
+                          style={{
+                            position: 'absolute',
+                            inset: 0,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            background: 'rgba(0,0,0,0.3)',
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: '36px',
+                              height: '36px',
+                              borderRadius: '50%',
+                              background: 'rgba(0,0,0,0.65)',
+                              border: '1px solid rgba(255,255,255,0.4)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                            }}
+                          >
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="#fff">
+                              <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                            </svg>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <img
+                        src={report.proof_url}
+                        alt="Proof"
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                      />
+                    )}
                     <div
                       style={{
                         position: 'absolute',
                         bottom: '8px',
                         right: '8px',
-                        background: 'rgba(0, 0, 0, 0.7)',
+                        background: 'rgba(0, 0, 0, 0.75)',
                         padding: '4px 8px',
                         borderRadius: '6px',
                         fontSize: '11px',
@@ -374,11 +355,22 @@ export default function ReportsPage() {
                         gap: '4px',
                       }}
                     >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <circle cx="11" cy="11" r="8"></circle>
-                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                      </svg>
-                      Tap to enlarge
+                      {isVideoProof(report.proof_url, report.proof_type) ? (
+                        <>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="#fff">
+                            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                          </svg>
+                          Play Video
+                        </>
+                      ) : (
+                        <>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <circle cx="11" cy="11" r="8"></circle>
+                            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                          </svg>
+                          Tap to enlarge
+                        </>
+                      )}
                     </div>
                   </div>
                 )}
@@ -436,11 +428,11 @@ export default function ReportsPage() {
         </div>
       )}
 
-      {/* Image Preview Modal */}
-      {previewImage && (
+      {/* Media Preview Modal */}
+      {previewMedia && (
         <div
           className="pin-modal-backdrop"
-          onClick={() => setPreviewImage(null)}
+          onClick={() => setPreviewMedia(null)}
           style={{ zIndex: 3000 }}
         >
           <div
@@ -472,16 +464,27 @@ export default function ReportsPage() {
                 justifyContent: 'center',
                 cursor: 'pointer',
                 fontSize: '16px',
+                zIndex: 10,
               }}
-              onClick={() => setPreviewImage(null)}
+              onClick={() => setPreviewMedia(null)}
             >
               ✕
             </button>
-            <img
-              src={previewImage}
-              alt="Visual Preview Enlarged"
-              style={{ maxWidth: '85vw', maxHeight: '80vh', objectFit: 'contain', display: 'block' }}
-            />
+            {previewMedia.isVideo ? (
+              <video
+                src={previewMedia.url}
+                controls
+                autoPlay
+                playsInline
+                style={{ maxWidth: '85vw', maxHeight: '80vh', display: 'block', background: '#000' }}
+              />
+            ) : (
+              <img
+                src={previewMedia.url}
+                alt="Visual Preview Enlarged"
+                style={{ maxWidth: '85vw', maxHeight: '80vh', objectFit: 'contain', display: 'block' }}
+              />
+            )}
           </div>
         </div>
       )}
@@ -532,13 +535,23 @@ export default function ReportsPage() {
                   borderRadius: '12px',
                   overflow: 'hidden',
                   border: '1px solid rgba(255,255,255,0.1)',
+                  background: '#000',
                 }}
               >
-                <img
-                  src={selectedReport.proof_url}
-                  alt="Incident Proof"
-                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                />
+                {isVideoProof(selectedReport.proof_url, selectedReport.proof_type) ? (
+                  <video
+                    src={selectedReport.proof_url}
+                    controls
+                    playsInline
+                    style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                  />
+                ) : (
+                  <img
+                    src={selectedReport.proof_url}
+                    alt="Incident Proof"
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  />
+                )}
               </div>
             )}
 

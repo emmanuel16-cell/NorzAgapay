@@ -1,9 +1,9 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { CARTO_DARK_MAP_URL, CARTO_ATTRIBUTION } from '../lib/mapConfig';
 import 'leaflet/dist/leaflet.css';
-import { analyticsAPI, missionAPI, userAPI, reportAPI, respondUnitAPI, socket } from '../lib/api';
+import { reportAPI, respondUnitAPI, socket } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 import { AlertTriangle, Siren, Users, CheckCircle2 } from 'lucide-react';
@@ -46,10 +46,34 @@ interface DispatchUnitItem {
   target_location?: string;
 }
 
+// Helper to detect video from URL or proof_type
+const isVideoProof = (url?: string | null, proof_type?: string | null): boolean => {
+  if (proof_type === 'video') return true;
+  if (!url) return false;
+  const lower = url.toLowerCase().split('?')[0];
+  return lower.endsWith('.mp4') || lower.endsWith('.mov') || lower.endsWith('.webm') ||
+    lower.endsWith('.3gp') || lower.endsWith('.mkv') || lower.endsWith('.avi');
+};
+
 // Custom Marker Creators matching image 3
-const createTeardropPin = (color: string, symbol: string) => {
+const createTeardropPin = (color: string, symbol: string, isUnread = false) => {
   const width = 42;
   const height = 54;
+  const unreadDot = isUnread ? `
+    <div style="
+      position: absolute;
+      top: -4px;
+      right: -4px;
+      width: 13px;
+      height: 13px;
+      border-radius: 50%;
+      background: #EF4444;
+      border: 2px solid #0b1120;
+      box-shadow: 0 0 6px rgba(239,68,68,0.8);
+      z-index: 10;
+      animation: unread-pulse 1.5s ease-in-out infinite;
+    "></div>
+  ` : '';
   return L.divIcon({
     html: `
       <div style="position: relative; width: ${width}px; height: ${height}px; cursor: pointer; filter: drop-shadow(0 6px 10px rgba(0,0,0,0.45));">
@@ -71,7 +95,14 @@ const createTeardropPin = (color: string, symbol: string) => {
           color: ${color};
           user-select: none;
         ">${symbol}</div>
+        ${unreadDot}
       </div>
+      <style>
+        @keyframes unread-pulse {
+          0%, 100% { transform: scale(1); opacity: 1; }
+          50% { transform: scale(1.3); opacity: 0.75; }
+        }
+      </style>
     `,
     className: 'custom-teardrop-marker',
     iconSize: [width, height],
@@ -108,25 +139,6 @@ const createResponderUnitBadge = () => {
   });
 };
 
-// Fallback high quality emergency / flood / tree / road images for proof gallery
-const SAMPLE_VISUAL_PROOFS = [
-  'https://images.unsplash.com/photo-1547683905-f686c993aae5?auto=format&fit=crop&w=400&q=80', // flood
-  'https://images.unsplash.com/photo-1513836279014-a89f7a76ae86?auto=format&fit=crop&w=400&q=80', // fallen tree
-  'https://images.unsplash.com/photo-1582213782179-e0d53f98f2ca?auto=format&fit=crop&w=400&q=80', // power line
-  'https://images.unsplash.com/photo-1584467735815-f778f274e296?auto=format&fit=crop&w=400&q=80', // cracked road
-  'https://images.unsplash.com/photo-1509316975850-ff9c5deb0cd9?auto=format&fit=crop&w=400&q=80', // flood walking
-  'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=400&q=80', // landscape
-];
-
-const SAMPLE_BARANGAY_VISUALS = [
-  'https://images.unsplash.com/photo-1582213782179-e0d53f98f2ca?auto=format&fit=crop&w=400&q=80',
-  'https://images.unsplash.com/photo-1584467735815-f778f274e296?auto=format&fit=crop&w=400&q=80',
-  'https://images.unsplash.com/photo-1513836279014-a89f7a76ae86?auto=format&fit=crop&w=400&q=80',
-  'https://images.unsplash.com/photo-1547683905-f686c993aae5?auto=format&fit=crop&w=400&q=80',
-  'https://images.unsplash.com/photo-1509316975850-ff9c5deb0cd9?auto=format&fit=crop&w=400&q=80',
-  'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=400&q=80',
-];
-
 function MapResizer() {
   const map = useMap();
   useEffect(() => {
@@ -134,6 +146,35 @@ function MapResizer() {
     const timer = setTimeout(() => map.invalidateSize(), 300);
     return () => clearTimeout(timer);
   }, [map]);
+  return null;
+}
+
+// Auto-fits the map to show all visible pins
+function FitBoundsController({ points }: { points: [number, number][] }) {
+  const map = useMap();
+  const prevHashRef = useRef<string>('');
+
+  useEffect(() => {
+    if (points.length === 0) return;
+
+    const validPoints = points.filter(([lat, lng]) => lat !== 0 && lng !== 0);
+    if (validPoints.length === 0) return;
+
+    const currentHash = validPoints
+      .map(([lat, lng]) => `${lat.toFixed(5)},${lng.toFixed(5)}`)
+      .sort()
+      .join(';');
+    if (currentHash === prevHashRef.current) return;
+    prevHashRef.current = currentHash;
+
+    if (validPoints.length === 1) {
+      map.flyTo(validPoints[0], 14, { animate: true, duration: 1.2 });
+    } else {
+      const bounds = L.latLngBounds(validPoints.map(([lat, lng]) => L.latLng(lat, lng)));
+      map.flyToBounds(bounds, { padding: [60, 60], animate: true, duration: 1.2, maxZoom: 15 });
+    }
+  }, [map, points]);
+
   return null;
 }
 
@@ -165,6 +206,16 @@ export default function CommandCenter() {
   const [dispatchUnits, setDispatchUnits] = useState<DispatchUnitItem[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Track which incident IDs the user has already clicked/viewed
+  const [viewedIds, setViewedIds] = useState<Set<string>>(() => {
+    try {
+      const stored = localStorage.getItem('cc_viewed_incident_ids');
+      return stored ? new Set(JSON.parse(stored)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+
   // Interactive Modal State
   const [activeModalType, setActiveModalType] = useState<'incident' | 'escalated' | 'unit' | null>(null);
   const [selectedIncident, setSelectedIncident] = useState<IncidentItem | null>(null);
@@ -175,9 +226,8 @@ export default function CommandCenter() {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [reportsRes, missionsRes, unitsRes] = await Promise.allSettled([
+      const [reportsRes, unitsRes] = await Promise.allSettled([
         reportAPI.list(),
-        missionAPI.list(),
         respondUnitAPI.list(),
       ]);
 
@@ -185,8 +235,9 @@ export default function CommandCenter() {
 
       if (reportsRes.status === 'fulfilled' && Array.isArray(reportsRes.value.data)) {
         reportsRes.value.data.forEach((r: any) => {
-          const lat = parseFloat(r.latitude) || 14.908;
-          const lng = parseFloat(r.longitude) || 121.045;
+          const lat = parseFloat(r.latitude);
+          const lng = parseFloat(r.longitude);
+          if (!lat || !lng) return; // skip if no valid coordinates
           let st: 'pending' | 'responding' | 'escalated' | 'resolved' = 'pending';
           if (r.status === 'resolved' || r.status === 'closed') {
             st = 'resolved';
@@ -204,18 +255,18 @@ export default function CommandCenter() {
             severity: r.severity || 'high',
             latitude: lat,
             longitude: lng,
-            description: r.description || 'Flooding and fallen debris blocking roadway. Immediate assistance needed.',
+            description: r.description || '',
             proof_url: r.proof_url || null,
             proof_type: r.proof_type || 'image',
             created_at: r.created_at,
             reporter_name: r.reporter_name || r.reporter?.full_name || 'Resident',
-            reporter_phone: r.reporter_phone || r.contact_number || '09510173028',
-            responder_name: r.barangay_responder_name || 'Matic Tic',
-            responder_phone: '09510173028',
-            barangay_response_notes: r.barangay_response_notes || 'Initial assessment done. Dispatched 4 barangay responders with chainsaws and first-aid kits.',
-            assigned_unit_id: 'unit-1',
-            barangay_name: r.barangay_name || (r.barangays && r.barangays.name) || 'Partida',
-            barangay_response_status: r.barangay_response_status || (r.status === 'responding' ? 'responding' : 'pending'),
+            reporter_phone: r.reporter_phone || r.contact_number || '',
+            responder_name: r.barangay_responder_name || r.mdrrmo_responder_name || '',
+            responder_phone: '',
+            barangay_response_notes: r.barangay_response_notes || '',
+            assigned_unit_id: r.assigned_unit_id || null,
+            barangay_name: r.barangay_name || (r.barangays && r.barangays.name) || '',
+            barangay_response_status: r.barangay_response_status || 'pending',
             barangay_responder_name: r.barangay_responder_name,
             mdrrmo_response_status: r.mdrrmo_response_status || 'pending',
             mdrrmo_responder_name: r.mdrrmo_responder_name,
@@ -223,102 +274,30 @@ export default function CommandCenter() {
         });
       }
 
-      // If empty or default demo markers needed (matching image 3 coordinates around Norzagaray)
-      if (items.length === 0) {
-        items.push(
-          {
-            id: 'inc-orange-1',
-            title: 'Flash Flood & Road Blockage',
-            type: 'flash_flood',
-            status: 'pending',
-            severity: 'high',
-            latitude: 14.9085,
-            longitude: 121.0375,
-            description: 'Put here the response details of the emergency report of the resident',
-            reporter_name: 'Resident',
-            reporter_phone: '09510173028',
-            responder_name: 'Matic Tic',
-            responder_phone: '09510173028',
-            barangay_response_notes: 'Put here the Initial response details of the emergency report of the barangay',
-          },
-          {
-            id: 'inc-blue-1',
-            title: 'Minor Landslide & Road Clearing',
-            type: 'landslide',
-            status: 'responding',
-            severity: 'moderate',
-            latitude: 14.9120,
-            longitude: 121.0415,
-            description: 'Debris and rockslide along hillside road. Resident reported blocked passage.',
-            reporter_name: 'Resident',
-            reporter_phone: '09510173028',
-            responder_name: 'Matic Tic',
-            responder_phone: '09510173028',
-            barangay_response_notes: 'Barangay quick response team deployed on-site clearing debris and directing traffic.',
-          },
-          {
-            id: 'inc-red-1',
-            title: 'Critical Bridge Scour & Landslide',
-            type: 'rescue',
-            status: 'escalated',
-            severity: 'critical',
-            latitude: 14.9095,
-            longitude: 121.0505,
-            description: 'Severe erosion along riverbank threatening residential houses. Requesting heavy rescue truck and evacuation team.',
-            reporter_name: 'Resident',
-            reporter_phone: '09510173028',
-            responder_name: 'Matic Tic',
-            responder_phone: '09510173028',
-            barangay_response_notes: 'Put here the Initial response details of the emergency report of the barangay',
-            assigned_unit_id: 'unit-blue-1',
-          },
-          {
-            id: 'inc-green-1',
-            title: 'Cleared Drainage & Downed Wire',
-            type: 'other',
-            status: 'resolved',
-            severity: 'low',
-            latitude: 14.9055,
-            longitude: 121.0440,
-            description: 'Tree branches removed from electrical poles and road opened for light vehicles.',
-            reporter_name: 'Resident',
-            reporter_phone: '09123456789',
-            responder_name: 'Matic Tic',
-            responder_phone: '09510173028',
-            barangay_response_notes: 'Repaired by barangay engineering personnel and resolved.',
-          }
-        );
-      }
-
       setIncidents(items);
 
-      // Dispatch units (matching cyan pin in image 3)
-      const units: DispatchUnitItem[] = [
-        {
-          id: 'unit-blue-1',
-          name: 'Unit Name',
-          unit_type: 'medical',
-          specialization: 'Specialization',
-          leader_name: 'Unit Leader Name',
-          members: [
-            'Member/Officers name',
-            'Member/Officers name',
-            'Member/Officers name',
-            'Member/Officers name',
-            'Member/Officers name',
-            'Member/Officers name',
-            'Member/Officers name',
-            'Member/Officers name',
-            'Member/Officers name',
-            'Member/Officers name',
-          ],
-          latitude: 14.9005,
-          longitude: 121.0470,
-          target_incident_id: 'inc-red-1',
-          target_location: 'Location',
-        },
-      ];
-      setDispatchUnits(units);
+      // Real dispatch units from API
+      const unitItems: DispatchUnitItem[] = [];
+      if (unitsRes.status === 'fulfilled' && Array.isArray(unitsRes.value.data)) {
+        unitsRes.value.data.forEach((u: any) => {
+          const lat = parseFloat(u.latitude);
+          const lng = parseFloat(u.longitude);
+          if (!lat || !lng) return;
+          unitItems.push({
+            id: u.id,
+            name: u.unit_name || u.name || 'Unit',
+            unit_type: u.specialization || u.unit_type || '',
+            specialization: u.specialization || '',
+            leader_name: u.leader_name || u.team_leader_name || '',
+            members: Array.isArray(u.members) ? u.members : [],
+            latitude: lat,
+            longitude: lng,
+            target_incident_id: u.target_incident_id || null,
+            target_location: u.target_location || u.address || '',
+          });
+        });
+      }
+      setDispatchUnits(unitItems);
     } catch (err) {
       console.error('Failed to load command center data:', err);
     } finally {
@@ -341,22 +320,45 @@ export default function CommandCenter() {
     };
   }, []);
 
-  // Stats calculation
+  // Stats calculation — real counts, no demo padding
   const stats = useMemo(() => {
     const incCount = incidents.filter(i => i.status === 'pending' || i.status === 'responding').length;
     const escCount = incidents.filter(i => i.status === 'escalated').length;
     const unitCount = dispatchUnits.length;
     const resCount = incidents.filter(i => i.status === 'resolved').length;
     return {
-      incident: Math.max(incCount, 20),
-      escalated: Math.max(escCount, 20),
-      dispatch: Math.max(unitCount, 20),
-      resolved: Math.max(resCount, 20),
+      incident: incCount,
+      escalated: escCount,
+      dispatch: unitCount,
+      resolved: resCount,
     };
   }, [incidents, dispatchUnits]);
 
+  // Compute all visible pin points for auto-fit bounds
+  const visiblePinPoints = useMemo((): [number, number][] => {
+    const pts: [number, number][] = [];
+    incidents.forEach((inc) => {
+      if (inc.status === 'pending' && !filters.incidents) return;
+      if (inc.status === 'responding' && !filters.responseOngoing) return;
+      if (inc.status === 'escalated' && !filters.escalated) return;
+      if (inc.status === 'resolved' && !filters.resolved) return;
+      pts.push([inc.latitude, inc.longitude]);
+    });
+    if (filters.dispatchUnits) {
+      dispatchUnits.forEach((u) => pts.push([u.latitude, u.longitude]));
+    }
+    return pts;
+  }, [incidents, dispatchUnits, filters]);
+
   // Click Handlers
   const handleOpenIncidentPin = (item: IncidentItem) => {
+    // Mark as viewed
+    setViewedIds(prev => {
+      const next = new Set(prev);
+      next.add(item.id);
+      try { localStorage.setItem('cc_viewed_incident_ids', JSON.stringify([...next])); } catch {}
+      return next;
+    });
     setSelectedIncident(item);
     setSelectedVisualUrl(item.proof_url || null);
     if (item.status === 'escalated' || item.status === 'responding') {
@@ -586,22 +588,24 @@ export default function CommandCenter() {
         {/* Leaflet Map */}
         <MapContainer
           center={[14.9055, 121.0450]}
-          zoom={14}
+          zoom={13}
           zoomControl={false}
           style={{ width: '100%', height: '100%', background: '#0b1120' }}
         >
           <TileLayer url={CARTO_DARK_MAP_URL} attribution={CARTO_ATTRIBUTION} />
           <MapResizer />
+          <FitBoundsController points={visiblePinPoints} />
 
           {/* Incident Markers */}
           {incidents.map((inc) => {
+            const isUnread = !viewedIds.has(inc.id);
             if (inc.status === 'pending') {
               if (!filters.incidents) return null;
               return (
                 <Marker
                   key={inc.id}
                   position={[inc.latitude, inc.longitude]}
-                  icon={createTeardropPin('#F97316', '!')}
+                  icon={createTeardropPin('#F97316', '!', isUnread)}
                   eventHandlers={{ click: () => handleOpenIncidentPin(inc) }}
                 />
               );
@@ -613,7 +617,7 @@ export default function CommandCenter() {
                 <Marker
                   key={inc.id}
                   position={[inc.latitude, inc.longitude]}
-                  icon={createTeardropPin('#3B82F6', '!')}
+                  icon={createTeardropPin('#3B82F6', '!', isUnread)}
                   eventHandlers={{ click: () => handleOpenIncidentPin(inc) }}
                 />
               );
@@ -625,7 +629,7 @@ export default function CommandCenter() {
                 <Marker
                   key={inc.id}
                   position={[inc.latitude, inc.longitude]}
-                  icon={createTeardropPin('#EF4444', '!')}
+                  icon={createTeardropPin('#EF4444', '!', isUnread)}
                   eventHandlers={{ click: () => handleOpenIncidentPin(inc) }}
                 />
               );
@@ -637,7 +641,7 @@ export default function CommandCenter() {
                 <Marker
                   key={inc.id}
                   position={[inc.latitude, inc.longitude]}
-                  icon={createTeardropPin('#10B981', '✓')}
+                  icon={createTeardropPin('#10B981', '✓', isUnread)}
                   eventHandlers={{ click: () => handleOpenIncidentPin(inc) }}
                 />
               );
@@ -725,22 +729,31 @@ export default function CommandCenter() {
                   <span>Visual Proof</span>
                 </div>
 
-                {/* 2x3 Thumbnail Grid */}
-                <div className="thumbnail-grid-2x3">
-                  {SAMPLE_VISUAL_PROOFS.map((url, idx) => {
-                    const currentImg = idx === 0 && selectedIncident.proof_url ? selectedIncident.proof_url : url;
-                    const isSelected = selectedVisualUrl === currentImg;
-                    return (
-                      <div
-                        key={idx}
-                        className={`grid-thumb-item ${isSelected ? 'active' : ''}`}
-                        onClick={() => setSelectedVisualUrl(currentImg)}
-                      >
-                        <img src={currentImg} alt={`Proof thumbnail ${idx + 1}`} />
-                      </div>
-                    );
-                  })}
-                </div>
+                {/* Proof thumbnail – only show if we have a real proof_url */}
+                {selectedIncident.proof_url ? (
+                  <div className="thumbnail-grid-2x3">
+                    <div
+                      className={`grid-thumb-item ${selectedVisualUrl === selectedIncident.proof_url ? 'active' : ''}`}
+                      onClick={() => setSelectedVisualUrl(selectedIncident.proof_url!)}
+                      style={{ position: 'relative' }}
+                    >
+                      {isVideoProof(selectedIncident.proof_url, selectedIncident.proof_type) ? (
+                        <>
+                          <video src={selectedIncident.proof_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.35)' }}>
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="#fff"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                          </div>
+                        </>
+                      ) : (
+                        <img src={selectedIncident.proof_url} alt="Proof thumbnail" />
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ padding: '12px 0', color: '#64748b', fontSize: '12px', textAlign: 'center' }}>
+                    No visual proof submitted
+                  </div>
+                )}
 
                 {/* Response details box */}
                 <div className="panel-details-box">
@@ -752,7 +765,7 @@ export default function CommandCenter() {
                     <polyline points="10 9 9 9 8 9"></polyline>
                   </svg>
                   <div>
-                    {selectedIncident.description || 'Put here the response details of the emergency report of the resident'}
+                    {selectedIncident.description || 'No description provided.'}
                   </div>
                 </div>
               </div>
@@ -775,11 +788,22 @@ export default function CommandCenter() {
                 <div className="preview-display-viewport">
                   {selectedVisualUrl ? (
                     <>
-                      <img src={selectedVisualUrl} alt="Visual preview" className="preview-display-image" />
+                      {isVideoProof(selectedVisualUrl, selectedIncident.proof_type) ? (
+                        <video
+                          key={selectedVisualUrl}
+                          src={selectedVisualUrl}
+                          controls
+                          playsInline
+                          className="preview-display-image"
+                          style={{ background: '#000' }}
+                        />
+                      ) : (
+                        <img src={selectedVisualUrl} alt="Visual preview" className="preview-display-image" />
+                      )}
                       <button
                         className="preview-fullscreen-btn"
                         onClick={() => window.open(selectedVisualUrl, '_blank')}
-                        title="Open Fullscreen"
+                        title="Open in new tab"
                       >
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                           <polyline points="15 3 21 3 21 9"></polyline>
@@ -793,7 +817,7 @@ export default function CommandCenter() {
                     <div className="preview-empty-state">
                       <div className="preview-empty-icon">🖼️</div>
                       <div className="preview-empty-title">Choose Visual to Preview</div>
-                      <div className="preview-empty-sub">Select an image to preview it here</div>
+                      <div className="preview-empty-sub">Select a proof thumbnail to preview it here</div>
                     </div>
                   )}
                 </div>
@@ -850,21 +874,31 @@ export default function CommandCenter() {
                   <span>Visual Proof</span>
                 </div>
 
-                <div className="thumbnail-grid-2x3">
-                  {SAMPLE_VISUAL_PROOFS.map((url, idx) => {
-                    const currentImg = idx === 0 && selectedIncident.proof_url ? selectedIncident.proof_url : url;
-                    const isSelected = selectedVisualUrl === currentImg;
-                    return (
-                      <div
-                        key={idx}
-                        className={`grid-thumb-item ${isSelected ? 'active' : ''}`}
-                        onClick={() => setSelectedVisualUrl(currentImg)}
-                      >
-                        <img src={currentImg} alt={`Proof thumbnail ${idx + 1}`} />
-                      </div>
-                    );
-                  })}
-                </div>
+                {/* Proof thumbnail – only show if we have a real proof_url */}
+                {selectedIncident.proof_url ? (
+                  <div className="thumbnail-grid-2x3">
+                    <div
+                      className={`grid-thumb-item ${selectedVisualUrl === selectedIncident.proof_url ? 'active' : ''}`}
+                      onClick={() => setSelectedVisualUrl(selectedIncident.proof_url!)}
+                      style={{ position: 'relative' }}
+                    >
+                      {isVideoProof(selectedIncident.proof_url, selectedIncident.proof_type) ? (
+                        <>
+                          <video src={selectedIncident.proof_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.35)' }}>
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="#fff"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                          </div>
+                        </>
+                      ) : (
+                        <img src={selectedIncident.proof_url} alt="Proof thumbnail" />
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ padding: '12px 0', color: '#64748b', fontSize: '12px', textAlign: 'center' }}>
+                    No visual proof submitted
+                  </div>
+                )}
 
                 <div className="panel-details-box">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" strokeWidth="2" style={{ flexShrink: 0 }}>
@@ -875,7 +909,7 @@ export default function CommandCenter() {
                     <polyline points="10 9 9 9 8 9"></polyline>
                   </svg>
                   <div>
-                    {selectedIncident.description || 'Put here the response details of the emergency report of the resident'}
+                    {selectedIncident.description || 'No description provided.'}
                   </div>
                 </div>
               </div>
@@ -898,11 +932,22 @@ export default function CommandCenter() {
                 <div className="preview-display-viewport">
                   {selectedVisualUrl ? (
                     <>
-                      <img src={selectedVisualUrl} alt="Visual preview" className="preview-display-image" />
+                      {isVideoProof(selectedVisualUrl, selectedIncident.proof_type) ? (
+                        <video
+                          key={selectedVisualUrl}
+                          src={selectedVisualUrl}
+                          controls
+                          playsInline
+                          className="preview-display-image"
+                          style={{ background: '#000' }}
+                        />
+                      ) : (
+                        <img src={selectedVisualUrl} alt="Visual preview" className="preview-display-image" />
+                      )}
                       <button
                         className="preview-fullscreen-btn"
                         onClick={() => window.open(selectedVisualUrl, '_blank')}
-                        title="Open Fullscreen"
+                        title="Open in new tab"
                       >
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                           <polyline points="15 3 21 3 21 9"></polyline>
@@ -916,7 +961,7 @@ export default function CommandCenter() {
                     <div className="preview-empty-state">
                       <div className="preview-empty-icon">🖼️</div>
                       <div className="preview-empty-title">Choose Visual to Preview</div>
-                      <div className="preview-empty-sub">Select an image to preview it here</div>
+                      <div className="preview-empty-sub">Select a proof thumbnail to preview it here</div>
                     </div>
                   )}
                 </div>
@@ -931,7 +976,7 @@ export default function CommandCenter() {
                 </div>
               </div>
 
-              {/* Right Card: Team Leader Initial Response (Image 1) */}
+              {/* Right Card: Team Leader Initial Response */}
               <div className="panel-teamleader">
                 <div className="panel-header-user">
                   <div className="user-identity">
@@ -943,9 +988,11 @@ export default function CommandCenter() {
                     <div className="user-details-text">
                       <span className="user-title">Team Leader</span>
                       <span className="user-title" style={{ fontSize: '11px', color: '#cbd5e1' }}>
-                        {selectedIncident.responder_name || 'Matic Tic'}
+                        {selectedIncident.responder_name || selectedIncident.barangay_responder_name || 'N/A'}
                       </span>
-                      <span className="user-phone purple">{selectedIncident.responder_phone || '09510173028'}</span>
+                      {selectedIncident.responder_phone && (
+                        <span className="user-phone purple">{selectedIncident.responder_phone}</span>
+                      )}
                     </div>
                   </div>
                   <button
@@ -969,22 +1016,7 @@ export default function CommandCenter() {
                   <span>Initial Response Visuals</span>
                 </div>
 
-                <div className="thumbnail-grid-2x3">
-                  {SAMPLE_BARANGAY_VISUALS.map((url, idx) => {
-                    const isSelected = selectedVisualUrl === url;
-                    return (
-                      <div
-                        key={idx}
-                        className={`grid-thumb-item purple ${isSelected ? 'active' : ''}`}
-                        onClick={() => setSelectedVisualUrl(url)}
-                      >
-                        <img src={url} alt={`Initial response thumb ${idx + 1}`} />
-                      </div>
-                    );
-                  })}
-                </div>
-
-                <div className="panel-details-box purple">
+                <div className="panel-details-box purple" style={{ marginTop: '8px' }}>
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#a855f7" strokeWidth="2" style={{ flexShrink: 0 }}>
                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                     <polyline points="14 2 14 8 20 8"></polyline>
@@ -992,7 +1024,7 @@ export default function CommandCenter() {
                     <line x1="16" y1="17" x2="8" y2="17"></line>
                   </svg>
                   <div>
-                    {selectedIncident.barangay_response_notes || 'Put here the Initial response details of the emergency report of the barangay'}
+                    {selectedIncident.barangay_response_notes || 'No initial response notes available.'}
                   </div>
                 </div>
               </div>

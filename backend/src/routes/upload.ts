@@ -7,7 +7,23 @@ import { supabaseAdmin } from '../config/supabase';
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
-const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'application/pdf', 'image/jpg'];
+const ALLOWED_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'application/pdf',
+  'image/jpg',
+  'video/mp4',
+  'video/quicktime',
+  'video/webm',
+  'video/3gpp',
+  'video/x-matroska',
+  'video/avi',
+  'video/mpeg',
+];
+
+const isAllowedMimeType = (mimetype: string) => {
+  return mimetype.startsWith('image/') || mimetype.startsWith('video/') || mimetype === 'application/pdf' || ALLOWED_TYPES.includes(mimetype);
+};
 
 // ============================================
 // POST /api/upload — direct upload (multipart)
@@ -22,8 +38,8 @@ router.post('/', authenticate, upload.single('file'), async (req: AuthRequest, r
       return;
     }
 
-    if (!ALLOWED_TYPES.includes(file.mimetype)) {
-      res.status(400).json({ error: 'Invalid file type. Allowed: jpg, png, pdf' });
+    if (!isAllowedMimeType(file.mimetype)) {
+      res.status(400).json({ error: 'Invalid file type. Allowed: jpg, png, pdf, mp4, mov, webm, 3gp' });
       return;
     }
 
@@ -63,8 +79,8 @@ router.post('/presigned-url', authenticate, async (req: AuthRequest, res: Respon
   try {
     const { file_type, category, file_name } = req.body;
     
-    if (!file_type || !ALLOWED_TYPES.includes(file_type)) {
-      res.status(400).json({ error: 'Invalid file type. Allowed: jpg, png, pdf' });
+    if (!file_type || !isAllowedMimeType(file_type)) {
+      res.status(400).json({ error: 'Invalid file type. Allowed: jpg, png, pdf, mp4, mov, webm, 3gp' });
       return;
     }
 
