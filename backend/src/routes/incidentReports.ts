@@ -31,7 +31,7 @@ const optionalAuthenticate = (req: AuthRequest, res: Response, next: NextFunctio
  * Handles report submission from mobile and resident apps.
  * Supports multipart/form-data for proof file upload.
  */
-router.post('/', optionalAuthenticate, upload.single('proof'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { 
       type, 
@@ -82,60 +82,99 @@ router.post('/', optionalAuthenticate, upload.single('proof'), async (req: AuthR
       }
     }
 
-    let proofUrl = null;
-    let finalProofType = proof_type || 'image';
-    const file = req.file;
+    const uploadedFiles: Express.Multer.File[] = (req.files as Express.Multer.File[]) || (req.file ? [req.file] : []);
+    const proofUrls: string[] = [];
+    const proofTypes: string[] = [];
 
-    // Handle incident proof upload
-    if (file) {
-      const ext = (file.originalname.split('.').pop() || 'jpg').toLowerCase();
-      const isVideo = (file.mimetype && file.mimetype.startsWith('video/')) || ['mp4', 'mov', 'webm', '3gp', 'mkv', 'avi'].includes(ext);
-      if (isVideo || proof_type === 'video') {
-        finalProofType = 'video';
-      }
+    let providedProofTypes: string[] = [];
+    if (req.body.proof_types) {
+      try {
+        providedProofTypes = typeof req.body.proof_types === 'string'
+          ? JSON.parse(req.body.proof_types)
+          : req.body.proof_types;
+      } catch (_) {}
+    }
+
+    // Handle incident proof uploads
+    if (uploadedFiles.length > 0) {
       const timestamp = Date.now();
-      const filename = `reports/${reporter_type || 'anonymous'}/${timestamp}.${ext}`;
+      for (let i = 0; i < uploadedFiles.length; i++) {
+        const f = uploadedFiles[i];
+        const ext = (f.originalname.split('.').pop() || 'jpg').toLowerCase();
+        const isVideo = (f.mimetype && f.mimetype.startsWith('video/')) || ['mp4', 'mov', 'webm', '3gp', 'mkv', 'avi'].includes(ext);
+        const pType = providedProofTypes[i] || (isVideo || proof_type === 'video' ? 'video' : 'image');
+        const filename = `reports/${reporter_type || 'anonymous'}/${timestamp}_${i}.${ext}`;
 
-      const { error: uploadError } = await supabaseAdmin
-        .storage
-        .from(config.supabaseBucketName)
-        .upload(filename, file.buffer, {
-          contentType: file.mimetype,
-          upsert: true
-        });
-
-      if (!uploadError) {
-        const { data: { publicUrl } } = supabaseAdmin
+        const { error: uploadError } = await supabaseAdmin
           .storage
           .from(config.supabaseBucketName)
-          .getPublicUrl(filename);
-        proofUrl = publicUrl;
+          .upload(filename, f.buffer, {
+            contentType: f.mimetype,
+            upsert: true
+          });
+
+        if (!uploadError) {
+          const { data: { publicUrl } } = supabaseAdmin
+            .storage
+            .from(config.supabaseBucketName)
+            .getPublicUrl(filename);
+          proofUrls.push(publicUrl);
+          proofTypes.push(pType);
+        } else {
+          console.error('Upload proof error:', uploadError);
+        }
       }
     }
 
-    // Insert into database
-    const { data: report, error: dbError } = await supabaseAdmin
-      .from('incident_reports')
-      .insert({
-        type,
-        title,
-        specifics,
-        description,
-        latitude: parseFloat(latitude),
-        longitude: parseFloat(longitude),
-        proof_url: proofUrl,
-        proof_type: finalProofType,
-        reporter_type: reporter_type || 'resident',
-        reporter_id: req.user?.userId || null,
-        reporter_name: reporterName,
-        reporter_phone: reporterPhone,
-        barangay_id: resolvedBarangayId,
-        status: 'pending'
-      })
-      .select('*, barangays(name)')
-      .single();
+    const proofUrl = proofUrls.length > 0 ? proofUrls[0] : null;
+    const finalProofType = proofTypes.length > 0 ? proofTypes[0] : (proof_type || 'image');
 
-    if (dbError) {
+    // Insert into database
+    const insertPayload: any = {
+      type,
+      title,
+      specifics,
+      description,
+      latitude: parseFloat(latitude),
+      longitude: parseFloat(longitude),
+      proof_url: proofUrl,
+      proof_type: finalProofType,
+      reporter_type: reporter_type || 'resident',
+      reporter_id: req.user?.userId || null,
+      reporter_name: reporterName,
+      reporter_phone: reporterPhone,
+      barangay_id: resolvedBarangayId,
+      status: 'pending'
+    };
+
+    let report: any = null;
+    let dbError: any = null;
+
+    try {
+      const res = await supabaseAdmin
+        .from('incident_reports')
+        .insert({
+          ...insertPayload,
+          proof_urls: proofUrls,
+          proof_types: proofTypes
+        })
+        .select('*, barangays(name)')
+        .single();
+
+      if (res.error) throw res.error;
+      report = res.data;
+    } catch (colErr) {
+      // Fallback without proof_urls / proof_types columns
+      const res = await supabaseAdmin
+        .from('incident_reports')
+        .insert(insertPayload)
+        .select('*, barangays(name)')
+        .single();
+      report = res.data;
+      dbError = res.error;
+    }
+
+    if (dbError || !report) {
       console.error('Database error:', dbError);
       res.status(500).json({ error: 'Failed to save report to database.' });
       return;
@@ -143,6 +182,8 @@ router.post('/', optionalAuthenticate, upload.single('proof'), async (req: AuthR
 
     const formattedReport = {
       ...report,
+      proof_urls: (report as any)?.proof_urls?.length ? (report as any).proof_urls : proofUrls,
+      proof_types: (report as any)?.proof_types?.length ? (report as any).proof_types : proofTypes,
       barangay_name: (report as any)?.barangays?.name || null
     };
 
@@ -272,6 +313,109 @@ router.get('/', async (req: Request, res: Response) => {
         console.error('Fetch reports error:', err);
         res.status(500).json({ error: 'Internal server error' });
     }
+});
+
+/**
+ * PATCH /api/incident-reports/:id
+ * Update incident report (description, specifics, proofs)
+ */
+router.patch('/:id', optionalAuthenticate, upload.any(), async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const { description, specifics } = req.body;
+
+    // Handle kept proof URLs
+    let keptUrls: string[] = [];
+    if (req.body['kept_proof_urls[]']) {
+      keptUrls = Array.isArray(req.body['kept_proof_urls[]']) 
+        ? req.body['kept_proof_urls[]'] 
+        : [req.body['kept_proof_urls[]']];
+    } else if (req.body.kept_proof_urls) {
+      try {
+        keptUrls = typeof req.body.kept_proof_urls === 'string' 
+          ? JSON.parse(req.body.kept_proof_urls) 
+          : req.body.kept_proof_urls;
+      } catch (_) {
+        keptUrls = [req.body.kept_proof_urls];
+      }
+    }
+
+    // Upload new files
+    const newFiles = (req.files as Express.Multer.File[]) || [];
+    const newUrls: string[] = [];
+    const newTypes: string[] = [];
+
+    if (newFiles.length > 0) {
+      const timestamp = Date.now();
+      for (let i = 0; i < newFiles.length; i++) {
+        const f = newFiles[i];
+        const ext = (f.originalname.split('.').pop() || 'jpg').toLowerCase();
+        const isVideo = (f.mimetype && f.mimetype.startsWith('video/')) || ['mp4', 'mov', 'webm', '3gp', 'mkv', 'avi'].includes(ext);
+        const filename = `reports/updates/${timestamp}_${i}.${ext}`;
+
+        const { error: uploadError } = await supabaseAdmin
+          .storage
+          .from(config.supabaseBucketName)
+          .upload(filename, f.buffer, {
+            contentType: f.mimetype,
+            upsert: true
+          });
+
+        if (!uploadError) {
+          const { data: { publicUrl } } = supabaseAdmin
+            .storage
+            .from(config.supabaseBucketName)
+            .getPublicUrl(filename);
+          newUrls.push(publicUrl);
+          newTypes.push(isVideo ? 'video' : 'image');
+        }
+      }
+    }
+
+    const allUrls = [...keptUrls, ...newUrls];
+    const updatePayload: any = {};
+    if (description !== undefined) updatePayload.description = description;
+    if (specifics !== undefined) updatePayload.specifics = specifics;
+    if (allUrls.length > 0) {
+      updatePayload.proof_url = allUrls[0];
+    }
+
+    let updatedReport: any = null;
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('incident_reports')
+        .update({
+          ...updatePayload,
+          proof_urls: allUrls,
+        })
+        .eq('id', id)
+        .select('*, barangays(name)')
+        .single();
+      if (error) throw error;
+      updatedReport = data;
+    } catch (_) {
+      const { data, error } = await supabaseAdmin
+        .from('incident_reports')
+        .update(updatePayload)
+        .eq('id', id)
+        .select('*, barangays(name)')
+        .single();
+      if (error) throw error;
+      updatedReport = data;
+    }
+
+    const formatted = {
+      ...updatedReport,
+      proof_urls: allUrls,
+      barangay_name: updatedReport?.barangays?.name || null
+    };
+
+    io.emit('incident_report:updated', formatted);
+    res.json(formatted);
+  } catch (err) {
+    console.error('Update report error:', err);
+    res.status(500).json({ error: 'Failed to update report' });
+  }
 });
 
 /**
