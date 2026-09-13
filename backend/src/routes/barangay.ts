@@ -214,15 +214,27 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Check if account has a verification record
-    const verification = await DispatcherVerificationService.getByUserId(user.id);
-
     // Fetch barangay details
     const { data: barangay } = await supabaseAdmin
       .from('barangays')
       .select('name, municipality')
       .eq('id', user.barangay_id)
       .maybeSingle();
+
+    // Check if account has a verification record
+    let verification = await DispatcherVerificationService.getByUserId(user.id);
+
+    // If user is a dispatcher / captain but has no verification record yet, create one
+    if (!verification && (user.role === 'captain' || user.role === 'dispatcher')) {
+      verification = await DispatcherVerificationService.createVerification({
+        userId: user.id,
+        barangayId: user.barangay_id,
+        barangayName: barangay?.name || 'Barangay',
+        fullName: user.full_name,
+        email: user.email,
+        phone: user.phone,
+      });
+    }
 
     // If user is a dispatcher / undergoing verification:
     // Allow login so they can access the verification screen, download the authorization form, or upload certification

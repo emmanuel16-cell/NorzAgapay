@@ -351,18 +351,20 @@ setInterval(runScheduledUpdates, 300000);
 // Start Server
 // ============================================
 
-server.listen(config.port, () => {
-  console.log(`
-  ╔══════════════════════════════════════════════╗
-  ║         NorzAgapay Backend Server            ║
-  ║══════════════════════════════════════════════║
-  ║  Port:        ${config.port}                          ║
-  ║  Environment: ${config.nodeEnv.padEnd(20)}       ║
-  ║  CORS Origin: ${config.corsOrigin.padEnd(20)}║
-  ║  Scheduled Updates: Every 5 minutes        ║
-  ╚══════════════════════════════════════════════╝
-  `);
-});
+if (process.env.NODE_ENV !== 'test') {
+  server.listen(config.port, () => {
+    console.log(`
+    ╔══════════════════════════════════════════════╗
+    ║         NorzAgapay Backend Server            ║
+    ║══════════════════════════════════════════════║
+    ║  Port:        ${config.port}                          ║
+    ║  Environment: ${config.nodeEnv.padEnd(20)}       ║
+    ║  CORS Origin: ${config.corsOrigin.padEnd(20)}║
+    ║  Scheduled Updates: Every 5 minutes        ║
+    ╚══════════════════════════════════════════════╝
+    `);
+  });
+}
 
 export { io };
 export default app;

@@ -57,5 +57,64 @@
     ],
     "created_at": "2026-09-13T20:53:21.797Z",
     "updated_at": "2026-09-13T20:53:24.182Z"
+  },
+  {
+    "id": "disp-ver-1789334555927-4c9tz",
+    "user_id": "test-dispatcher-1789334555927",
+    "barangay_id": "barangay-poblacion-001",
+    "barangay_name": "Poblacion",
+    "full_name": "Juan Dela Cruz",
+    "email": "juan_1789334555927@example.com",
+    "phone": "09123456789",
+    "position_designation": "Barangay Dispatcher",
+    "punong_barangay_name": "Hon. Maria Santos",
+    "punong_barangay_position": "Punong Barangay",
+    "reference_no": "MDRRMO-VREF-20260913-FALG",
+    "document_url": "/uploads/certifications/test-juan-sealed.pdf",
+    "status": "verified",
+    "rejection_reason": null,
+    "submitted_at": "2026-09-13T21:22:37.997Z",
+    "reviewed_at": "2026-09-13T21:22:38.226Z",
+    "reviewed_by": "mdrrmo-admin-1",
+    "verification_history": [
+      {
+        "action": "Account Registered",
+        "timestamp": "2026-09-13T21:22:35.927Z",
+        "note": "Dispatcher account created. Pending authorization certification.",
+        "actor": "Juan Dela Cruz"
+      },
+      {
+        "action": "Certification Submitted",
+        "timestamp": "2026-09-13T21:22:36.736Z",
+        "note": "Signed and sealed document submitted for MDRRMO verification.",
+        "actor": "Juan Dela Cruz"
+      },
+      {
+        "action": "Verification Rejected",
+        "timestamp": "2026-09-13T21:22:37.220Z",
+        "note": "Rejected: Submitted certification could not be verified. Missing official barangay dry seal.",
+        "actor": "MDRRMO Command Center"
+      },
+      {
+        "action": "Resubmission Initiated",
+        "timestamp": "2026-09-13T21:22:37.657Z",
+        "note": "Dispatcher opened document resubmission.",
+        "actor": "Juan Dela Cruz"
+      },
+      {
+        "action": "Certification Submitted",
+        "timestamp": "2026-09-13T21:22:37.997Z",
+        "note": "Signed and sealed document submitted for MDRRMO verification.",
+        "actor": "Juan Dela Cruz"
+      },
+      {
+        "action": "Account Approved & Activated",
+        "timestamp": "2026-09-13T21:22:38.226Z",
+        "note": "Authorization document verified. Seal and signature confirmed.",
+        "actor": "MDRRMO Command Center"
+      }
+    ],
+    "created_at": "2026-09-13T21:22:35.927Z",
+    "updated_at": "2026-09-13T21:22:38.226Z"
   }
 ]
