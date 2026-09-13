@@ -1,0 +1,61 @@
+[
+  {
+    "id": "disp-ver-1789332801797-0qhxw",
+    "user_id": "test-dispatcher-1789332801797",
+    "barangay_id": "barangay-poblacion-001",
+    "barangay_name": "Poblacion",
+    "full_name": "Juan Dela Cruz",
+    "email": "juan_1789332801797@example.com",
+    "phone": "09123456789",
+    "position_designation": "Barangay Dispatcher",
+    "punong_barangay_name": "Hon. Maria Santos",
+    "punong_barangay_position": "Punong Barangay",
+    "reference_no": "MDRRMO-VREF-20260913-OEVB",
+    "document_url": "/uploads/certifications/test-juan-sealed.pdf",
+    "status": "verified",
+    "rejection_reason": null,
+    "submitted_at": "2026-09-13T20:53:23.935Z",
+    "reviewed_at": "2026-09-13T20:53:24.182Z",
+    "reviewed_by": "mdrrmo-admin-1",
+    "verification_history": [
+      {
+        "action": "Account Registered",
+        "timestamp": "2026-09-13T20:53:21.797Z",
+        "note": "Dispatcher account created. Pending authorization certification.",
+        "actor": "Juan Dela Cruz"
+      },
+      {
+        "action": "Certification Submitted",
+        "timestamp": "2026-09-13T20:53:22.977Z",
+        "note": "Signed and sealed document submitted for MDRRMO verification.",
+        "actor": "Juan Dela Cruz"
+      },
+      {
+        "action": "Verification Rejected",
+        "timestamp": "2026-09-13T20:53:23.306Z",
+        "note": "Rejected: Submitted certification could not be verified. Missing official barangay dry seal.",
+        "actor": "MDRRMO Command Center"
+      },
+      {
+        "action": "Resubmission Initiated",
+        "timestamp": "2026-09-13T20:53:23.694Z",
+        "note": "Dispatcher opened document resubmission.",
+        "actor": "Juan Dela Cruz"
+      },
+      {
+        "action": "Certification Submitted",
+        "timestamp": "2026-09-13T20:53:23.935Z",
+        "note": "Signed and sealed document submitted for MDRRMO verification.",
+        "actor": "Juan Dela Cruz"
+      },
+      {
+        "action": "Account Approved & Activated",
+        "timestamp": "2026-09-13T20:53:24.182Z",
+        "note": "Authorization document verified. Seal and signature confirmed.",
+        "actor": "MDRRMO Command Center"
+      }
+    ],
+    "created_at": "2026-09-13T20:53:21.797Z",
+    "updated_at": "2026-09-13T20:53:24.182Z"
+  }
+]
