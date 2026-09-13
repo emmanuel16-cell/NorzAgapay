@@ -96,6 +96,13 @@ export const verificationAPI = {
   bulkApprove: (userIds: string[]) => api.post('/verification/bulk-approve', { userIds }),
   bulkReject: (userIds: string[], reason?: string) => api.post('/verification/bulk-reject', { userIds, reason }),
   bulkRestore: (userIds: string[]) => api.post('/verification/bulk-restore', { userIds }),
+
+  // Barangay Dispatcher Verifications
+  dispatcherPending: () => api.get('/verification/dispatchers/pending'),
+  dispatcherArchived: () => api.get('/verification/dispatchers/archived'),
+  approveDispatcher: (id: string, notes?: string) => api.post(`/verification/dispatchers/${id}/approve`, { notes }),
+  rejectDispatcher: (id: string, reason: string) => api.post(`/verification/dispatchers/${id}/reject`, { reason }),
+  requestCorrectionDispatcher: (id: string, reason: string) => api.post(`/verification/dispatchers/${id}/request-correction`, { reason }),
 };
 
 // Resource Requests

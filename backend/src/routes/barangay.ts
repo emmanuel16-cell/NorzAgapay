@@ -1,13 +1,18 @@
+import fs from 'fs';
+import path from 'path';
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import multer from 'multer';
 import { z } from 'zod';
 import { config } from '../config';
 import { supabaseAdmin } from '../config/supabase';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { io } from '../server';
+import { DispatcherVerificationService } from '../services/dispatcherVerificationService';
 
 const router = Router();
+const upload = multer({ storage: multer.memoryStorage() });
 
 // ─── Middleware: Barangay Auth ───────────────────────────────────────────────
 
@@ -64,7 +69,7 @@ router.get('/list', async (_req: Request, res: Response) => {
 });
 
 // ─── POST /api/barangay/register ────────────────────────────────────────────
-// Register a new barangay captain (first user for a barangay = captain)
+// Register a new barangay dispatcher/captain
 
 const registerSchema = z.object({
   full_name: z.string().min(2),
@@ -72,26 +77,30 @@ const registerSchema = z.object({
   password: z.string().min(8),
   phone: z.string().optional(),
   barangay_id: z.string().uuid(),
+  position_designation: z.string().optional(),
+  punong_barangay_name: z.string().optional(),
+  punong_barangay_position: z.string().optional(),
 });
 
 router.post('/register', async (req: Request, res: Response): Promise<void> => {
   try {
     const body = registerSchema.parse(req.body);
 
-    // Check if captain already exists for this barangay
+    // Check if active captain already exists for this barangay
     const { data: existing } = await supabaseAdmin
       .from('barangay_users')
-      .select('id')
+      .select('id, is_active')
       .eq('barangay_id', body.barangay_id)
       .eq('role', 'captain')
-      .single();
+      .maybeSingle();
 
-    if (existing) {
-      res.status(409).json({ error: 'A captain already exists for this barangay. Contact them to add you as a member.' });
+    if (existing && existing.is_active) {
+      res.status(409).json({ error: 'An active captain already exists for this barangay. Contact them to add you as a member.' });
       return;
     }
 
     const password_hash = await bcrypt.hash(body.password, 12);
+    // User is created with is_active: false (pending verification)
     const { data: user, error } = await supabaseAdmin
       .from('barangay_users')
       .insert({
@@ -101,8 +110,9 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
         password_hash,
         barangay_id: body.barangay_id,
         role: 'captain',
+        is_active: false,
       })
-      .select('id, full_name, email, phone, role, barangay_id')
+      .select('id, full_name, email, phone, role, barangay_id, is_active')
       .single();
 
     if (error) {
@@ -113,16 +123,60 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
       throw error;
     }
 
+    // Fetch barangay name
+    const { data: barangay } = await supabaseAdmin
+      .from('barangays')
+      .select('name, municipality')
+      .eq('id', user.barangay_id)
+      .maybeSingle();
+
+    const barangayName = barangay?.name || 'Barangay';
+
+    // Create verification tracking record
+    const verification = await DispatcherVerificationService.createVerification({
+      userId: user.id,
+      barangayId: user.barangay_id,
+      barangayName,
+      fullName: user.full_name,
+      email: user.email,
+      phone: user.phone,
+      positionDesignation: body.position_designation || 'Barangay Dispatcher',
+      punongBarangayName: body.punong_barangay_name || 'Punong Barangay / Authorized Barangay Official',
+      punongBarangayPosition: body.punong_barangay_position || 'Punong Barangay',
+    });
+
     const token = jwt.sign(
-      { userId: user.id, barangayId: user.barangay_id, role: user.role },
+      { userId: user.id, barangayId: user.barangay_id, role: user.role, email: user.email },
       config.jwtSecret,
       { expiresIn: '30d' }
     );
 
-    // Join the socket room for this barangay
-    io.to(`barangay:${user.barangay_id}`).emit('team:member_added', { user });
+    // Notify MDRRMO commanders of new pending dispatcher verification
+    try {
+      io.to('commanders').emit('verification:dispatcher_new', {
+        id: verification.id,
+        applicant: user.full_name,
+        barangay: barangayName,
+        reference_no: verification.reference_no,
+      });
+    } catch (_) {}
 
-    res.status(201).json({ token, user });
+    res.status(201).json({
+      token,
+      user: {
+        id: user.id,
+        full_name: user.full_name,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+        barangay_id: user.barangay_id,
+        barangay_name: barangayName,
+        municipality: barangay?.municipality || 'Norzagaray',
+        is_active: false,
+        verification_status: 'pending_document',
+        verification,
+      },
+    });
   } catch (err: any) {
     if (err?.name === 'ZodError') {
       res.status(400).json({ error: err.errors });
@@ -154,26 +208,59 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    if (!user.is_active) {
-      res.status(403).json({ error: 'Account has been deactivated. Contact your barangay captain.' });
-      return;
-    }
-
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) {
       res.status(401).json({ error: 'Invalid email or password' });
       return;
     }
 
-    // Fetch barangay name
+    // Check if account has a verification record
+    const verification = await DispatcherVerificationService.getByUserId(user.id);
+
+    // Fetch barangay details
     const { data: barangay } = await supabaseAdmin
       .from('barangays')
       .select('name, municipality')
       .eq('id', user.barangay_id)
-      .single();
+      .maybeSingle();
+
+    // If user is a dispatcher / undergoing verification:
+    // Allow login so they can access the verification screen, download the authorization form, or upload certification
+    if (verification) {
+      const isVerified = verification.status === 'verified';
+      const token = jwt.sign(
+        { userId: user.id, barangayId: user.barangay_id, role: user.role, email: user.email },
+        config.jwtSecret,
+        { expiresIn: '30d' }
+      );
+
+      res.json({
+        token,
+        user: {
+          id: user.id,
+          full_name: user.full_name,
+          email: user.email,
+          phone: user.phone,
+          role: user.role,
+          barangay_id: user.barangay_id,
+          barangay_name: barangay?.name || '',
+          municipality: barangay?.municipality || 'Norzagaray',
+          is_active: isVerified,
+          verification_status: verification.status,
+          verification,
+        },
+      });
+      return;
+    }
+
+    // If regular volunteer / team leader is deactivated by captain
+    if (!user.is_active) {
+      res.status(403).json({ error: 'Account has been deactivated. Contact your barangay captain.' });
+      return;
+    }
 
     const token = jwt.sign(
-      { userId: user.id, barangayId: user.barangay_id, role: user.role },
+      { userId: user.id, barangayId: user.barangay_id, role: user.role, email: user.email },
       config.jwtSecret,
       { expiresIn: '30d' }
     );
@@ -189,6 +276,8 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
         barangay_id: user.barangay_id,
         barangay_name: barangay?.name || '',
         municipality: barangay?.municipality || 'Norzagaray',
+        is_active: true,
+        verification_status: 'verified',
       },
     });
   } catch (err) {
@@ -216,14 +305,201 @@ router.get('/me', authenticateBarangay, async (req: any, res: Response) => {
       .from('barangays')
       .select('name, municipality')
       .eq('id', user.barangay_id)
-      .single();
+      .maybeSingle();
 
-    res.json({ ...user, barangay_name: barangay?.name, municipality: barangay?.municipality });
+    const verification = await DispatcherVerificationService.getByUserId(user.id);
+    const verificationStatus = verification ? verification.status : (user.is_active ? 'verified' : 'pending_document');
+
+    res.json({
+      ...user,
+      barangay_name: barangay?.name,
+      municipality: barangay?.municipality,
+      verification_status: verificationStatus,
+      verification,
+    });
   } catch (err) {
     console.error('Get me error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+// ─── GET /api/barangay/dispatcher/authorization-pdf ──────────────────────────
+// Download / view prefilled Authorization & Certification PDF matching Image 1
+
+router.get('/dispatcher/authorization-pdf', async (req: Request, res: Response): Promise<void> => {
+  try {
+    let userId: string | undefined;
+
+    // Check Authorization header or query param token
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.startsWith('Bearer ')
+      ? authHeader.split(' ')[1]
+      : (req.query.token as string);
+
+    if (token) {
+      try {
+        const decoded = jwt.verify(token, config.jwtSecret) as any;
+        userId = decoded.userId;
+      } catch (_) {}
+    }
+
+    if (!userId && req.query.userId) {
+      userId = req.query.userId as string;
+    }
+
+    if (!userId) {
+      res.status(401).json({ error: 'Authentication required to generate authorization PDF' });
+      return;
+    }
+
+    const verification = await DispatcherVerificationService.getByUserId(userId);
+    if (!verification) {
+      res.status(404).json({ error: 'Verification record not found' });
+      return;
+    }
+
+    const pdfBuffer = await DispatcherVerificationService.generateAuthorizationPDF({
+      dispatcherName: verification.full_name,
+      positionDesignation: verification.position_designation || 'Barangay Dispatcher',
+      barangayName: verification.barangay_name || 'Barangay',
+      officialName: verification.punong_barangay_name || 'Punong Barangay / Authorized Official',
+      officialPosition: verification.punong_barangay_position || 'Punong Barangay',
+      referenceNo: verification.reference_no,
+    });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="Barangay_Dispatcher_Authorization_${verification.reference_no}.pdf"`
+    );
+    res.setHeader('Content-Length', pdfBuffer.length);
+    res.send(pdfBuffer);
+  } catch (err) {
+    console.error('Generate authorization PDF error:', err);
+    res.status(500).json({ error: 'Failed to generate authorization PDF' });
+  }
+});
+
+// ─── POST /api/barangay/dispatcher/submit-certification ──────────────────────
+// Upload signed and sealed certification document
+
+router.post(
+  '/dispatcher/submit-certification',
+  authenticateBarangay,
+  upload.single('file'),
+  async (req: any, res: Response): Promise<void> => {
+    try {
+      const userId = req.barangayUser.userId;
+      let documentUrl: string | undefined;
+
+      // 1. Check if multipart file was uploaded
+      if (req.file) {
+        const file = req.file;
+        const ext = file.originalname.split('.').pop() || 'jpg';
+        const objectPath = `certifications/${userId}/${Date.now()}.${ext}`;
+
+        // Attempt upload to Supabase Storage
+        let uploadedToSupabase = false;
+        try {
+          const { data: storageData, error: storageErr } = await supabaseAdmin.storage
+            .from(config.supabaseBucketName)
+            .upload(objectPath, file.buffer, {
+              contentType: file.mimetype,
+              upsert: true,
+            });
+
+          if (!storageErr && storageData) {
+            const { data: publicUrlData } = supabaseAdmin.storage
+              .from(config.supabaseBucketName)
+              .getPublicUrl(objectPath);
+            documentUrl = publicUrlData.publicUrl;
+            uploadedToSupabase = true;
+          }
+        } catch (_) {}
+
+        // Fallback: save to local uploads directory
+        if (!uploadedToSupabase) {
+          const uploadsDir = path.join(__dirname, '../../data/uploads/certifications');
+          if (!fs.existsSync(uploadsDir)) {
+            fs.mkdirSync(uploadsDir, { recursive: true });
+          }
+          const fileName = `${userId}_${Date.now()}.${ext}`;
+          const filePath = path.join(uploadsDir, fileName);
+          fs.writeFileSync(filePath, file.buffer);
+          documentUrl = `/uploads/certifications/${fileName}`;
+        }
+      } else if (req.body.document_url) {
+        documentUrl = req.body.document_url;
+      } else if (req.body.file_base64) {
+        // Base64 upload support
+        const base64Data = req.body.file_base64.replace(/^data:([A-Za-z-+\/]+);base64,/, '');
+        const ext = req.body.file_name?.split('.').pop() || 'jpg';
+        const uploadsDir = path.join(__dirname, '../../data/uploads/certifications');
+        if (!fs.existsSync(uploadsDir)) {
+          fs.mkdirSync(uploadsDir, { recursive: true });
+        }
+        const fileName = `${userId}_${Date.now()}.${ext}`;
+        const filePath = path.join(uploadsDir, fileName);
+        fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
+        documentUrl = `/uploads/certifications/${fileName}`;
+      }
+
+      if (!documentUrl) {
+        res.status(400).json({ error: 'Certification file is required.' });
+        return;
+      }
+
+      const updatedVerification = await DispatcherVerificationService.submitCertification(
+        userId,
+        documentUrl
+      );
+
+      res.json({
+        message: 'Certification document submitted successfully.',
+        verification: updatedVerification,
+      });
+    } catch (err: any) {
+      console.error('Submit certification error:', err);
+      res.status(500).json({ error: err.message || 'Failed to submit certification.' });
+    }
+  }
+);
+
+// ─── GET /api/barangay/dispatcher/verification-status ────────────────────────
+
+router.get(
+  '/dispatcher/verification-status',
+  authenticateBarangay,
+  async (req: any, res: Response): Promise<void> => {
+    try {
+      const verification = await DispatcherVerificationService.getByUserId(req.barangayUser.userId);
+      if (!verification) {
+        res.status(404).json({ error: 'Verification record not found' });
+        return;
+      }
+      res.json({ verification });
+    } catch (err) {
+      console.error('Get verification status error:', err);
+      res.status(500).json({ error: 'Failed to retrieve verification status' });
+    }
+  }
+);
+
+// ─── POST /api/barangay/dispatcher/resubmit ──────────────────────────────────
+
+router.post(
+  '/dispatcher/resubmit',
+  authenticateBarangay,
+  async (req: any, res: Response): Promise<void> => {
+    try {
+      const updated = await DispatcherVerificationService.allowResubmission(req.barangayUser.userId);
+      res.json({ message: 'Resubmission initiated.', verification: updated });
+    } catch (err: any) {
+      console.error('Resubmit error:', err);
+      res.status(500).json({ error: err.message || 'Failed to initiate resubmission' });
+    }
+  }
+);
 
 // ─── GET /api/barangay/team ──────────────────────────────────────────────────
 // List team members for this barangay

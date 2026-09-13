@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { supabaseAdmin } from '../config/supabase';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth';
+import { DispatcherVerificationService } from '../services/dispatcherVerificationService';
 
 const router = Router();
 
@@ -391,6 +392,105 @@ router.post(
     } catch (err: any) {
       console.error('Restore verification error:', err);
       res.status(500).json({ error: err.message || 'Internal server error.' });
+    }
+  }
+);
+
+// ============================================
+// BARANGAY DISPATCHER VERIFICATION ROUTES (MDRRMO)
+// ============================================
+
+// GET /api/verification/dispatchers/pending — list pending dispatcher verifications
+router.get(
+  '/dispatchers/pending',
+  authenticate,
+  authorize('admin'),
+  async (_req: AuthRequest, res: Response): Promise<void> => {
+    try {
+      const pending = await DispatcherVerificationService.getPending();
+      res.json({ pending_dispatchers: pending });
+    } catch (err) {
+      console.error('Fetch pending dispatcher verifications error:', err);
+      res.status(500).json({ error: 'Failed to fetch pending dispatcher verifications.' });
+    }
+  }
+);
+
+// GET /api/verification/dispatchers/archived — list archived/rejected dispatcher verifications
+router.get(
+  '/dispatchers/archived',
+  authenticate,
+  authorize('admin'),
+  async (_req: AuthRequest, res: Response): Promise<void> => {
+    try {
+      const archived = await DispatcherVerificationService.getArchived();
+      res.json({ archived_dispatchers: archived });
+    } catch (err) {
+      console.error('Fetch archived dispatcher verifications error:', err);
+      res.status(500).json({ error: 'Failed to fetch archived dispatcher verifications.' });
+    }
+  }
+);
+
+// POST /api/verification/dispatchers/:id/approve — approve dispatcher & activate account
+router.post(
+  '/dispatchers/:id/approve',
+  authenticate,
+  authorize('admin'),
+  async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const { notes } = req.body;
+      const updated = await DispatcherVerificationService.approve(id, req.user?.userId, notes);
+      res.json({
+        message: 'Barangay Dispatcher approved and activated successfully.',
+        verification: updated,
+      });
+    } catch (err: any) {
+      console.error('Approve dispatcher verification error:', err);
+      res.status(500).json({ error: err.message || 'Failed to approve dispatcher verification.' });
+    }
+  }
+);
+
+// POST /api/verification/dispatchers/:id/reject — reject dispatcher certification
+router.post(
+  '/dispatchers/:id/reject',
+  authenticate,
+  authorize('admin'),
+  async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const { reason } = req.body;
+      const updated = await DispatcherVerificationService.reject(id, req.user?.userId, reason);
+      res.json({
+        message: 'Barangay Dispatcher verification rejected.',
+        verification: updated,
+      });
+    } catch (err: any) {
+      console.error('Reject dispatcher verification error:', err);
+      res.status(500).json({ error: err.message || 'Failed to reject dispatcher verification.' });
+    }
+  }
+);
+
+// POST /api/verification/dispatchers/:id/request-correction — request correction on dispatcher certification
+router.post(
+  '/dispatchers/:id/request-correction',
+  authenticate,
+  authorize('admin'),
+  async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const { reason } = req.body;
+      const updated = await DispatcherVerificationService.requestCorrection(id, req.user?.userId, reason);
+      res.json({
+        message: 'Correction requested for Barangay Dispatcher verification.',
+        verification: updated,
+      });
+    } catch (err: any) {
+      console.error('Request correction dispatcher verification error:', err);
+      res.status(500).json({ error: err.message || 'Failed to request correction.' });
     }
   }
 );
