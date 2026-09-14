@@ -69,7 +69,9 @@ router.get('/list', async (_req: Request, res: Response) => {
 });
 
 // ─── POST /api/barangay/register ────────────────────────────────────────────
-// Register a new barangay dispatcher/captain
+// Register a new barangay dispatcher/captain.
+// Saves ONLY to barangay_dispatcher_verifications (pending).
+// barangay_users entry is created only after MDRRMO approval.
 
 const registerSchema = z.object({
   full_name: z.string().min(2),
@@ -86,76 +88,82 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
   try {
     const body = registerSchema.parse(req.body);
 
-    // Check if active captain already exists for this barangay
-    const { data: existing } = await supabaseAdmin
+    // Check if an active captain already exists in barangay_users for this barangay
+    const { data: existingApproved } = await supabaseAdmin
       .from('barangay_users')
       .select('id, is_active')
       .eq('barangay_id', body.barangay_id)
       .eq('role', 'captain')
+      .eq('is_active', true)
       .maybeSingle();
 
-    if (existing && existing.is_active) {
+    if (existingApproved) {
       res.status(409).json({ error: 'An active captain already exists for this barangay. Contact them to add you as a member.' });
       return;
     }
 
-    const password_hash = await bcrypt.hash(body.password, 12);
-    // User is created with is_active: false (pending verification)
-    const { data: user, error } = await supabaseAdmin
-      .from('barangay_users')
-      .insert({
-        full_name: body.full_name,
-        email: body.email,
-        phone: body.phone || null,
-        password_hash,
-        barangay_id: body.barangay_id,
-        role: 'captain',
-        is_active: false,
-      })
-      .select('id, full_name, email, phone, role, barangay_id, is_active')
-      .single();
-
-    if (error) {
-      if (error.code === '23505') {
-        res.status(409).json({ error: 'Email already registered' });
-        return;
-      }
-      throw error;
+    // Check if a pending dispatcher with this email already exists
+    const existingPending = DispatcherVerificationService.findByEmail(body.email);
+    if (existingPending && existingPending.status !== 'rejected') {
+      res.status(409).json({ error: 'A pending registration already exists for this email.' });
+      return;
     }
+
+    // Check email uniqueness in barangay_users as well
+    const { data: existingUser } = await supabaseAdmin
+      .from('barangay_users')
+      .select('id')
+      .eq('email', body.email)
+      .maybeSingle();
+    if (existingUser) {
+      res.status(409).json({ error: 'Email already registered' });
+      return;
+    }
+
+    // Hash password — stored locally with verification record for login during pending state
+    const password_hash = await bcrypt.hash(body.password, 12);
 
     // Fetch barangay name
     const { data: barangay } = await supabaseAdmin
       .from('barangays')
       .select('name, municipality')
-      .eq('id', user.barangay_id)
+      .eq('id', body.barangay_id)
       .maybeSingle();
 
     const barangayName = barangay?.name || 'Barangay';
 
-    // Create verification tracking record
+    // Create verification record ONLY — no barangay_users entry yet
     const verification = await DispatcherVerificationService.createVerification({
-      userId: user.id,
-      barangayId: user.barangay_id,
+      // userId not provided → service generates a UUID that will persist to barangay_users on approval
+      barangayId: body.barangay_id,
       barangayName,
-      fullName: user.full_name,
-      email: user.email,
-      phone: user.phone,
+      fullName: body.full_name,
+      email: body.email,
+      phone: body.phone || null,
       positionDesignation: body.position_designation || 'Barangay Dispatcher',
       punongBarangayName: body.punong_barangay_name || 'Punong Barangay / Authorized Barangay Official',
       punongBarangayPosition: body.punong_barangay_position || 'Punong Barangay',
+      passwordHash: password_hash,
     });
 
+    // Issue JWT using the verification's user_id (the UUID that will become barangay_users.id)
     const token = jwt.sign(
-      { userId: user.id, barangayId: user.barangay_id, role: user.role, email: user.email },
+      {
+        userId: verification.user_id,
+        barangayId: body.barangay_id,
+        role: 'captain',
+        email: body.email,
+        isPendingDispatcher: true,
+      },
       config.jwtSecret,
       { expiresIn: '30d' }
     );
 
-    // Notify MDRRMO commanders of new pending dispatcher verification
+    // Notify MDRRMO commanders of new pending dispatcher
     try {
       io.to('commanders').emit('verification:dispatcher_new', {
         id: verification.id,
-        applicant: user.full_name,
+        applicant: body.full_name,
         barangay: barangayName,
         reference_no: verification.reference_no,
       });
@@ -164,12 +172,12 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
     res.status(201).json({
       token,
       user: {
-        id: user.id,
-        full_name: user.full_name,
-        email: user.email,
-        phone: user.phone,
-        role: user.role,
-        barangay_id: user.barangay_id,
+        id: verification.user_id,
+        full_name: body.full_name,
+        email: body.email,
+        phone: body.phone || null,
+        role: 'captain',
+        barangay_id: body.barangay_id,
         barangay_name: barangayName,
         municipality: barangay?.municipality || 'Norzagaray',
         is_active: false,
@@ -197,55 +205,66 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const { data: user, error } = await supabaseAdmin
+    // ── Path A: Check barangay_users (approved dispatchers, team leaders, volunteers) ──
+    const { data: user } = await supabaseAdmin
       .from('barangay_users')
       .select('id, full_name, email, phone, role, barangay_id, password_hash, is_active')
       .eq('email', email)
-      .single();
-
-    if (error || !user) {
-      res.status(401).json({ error: 'Invalid email or password' });
-      return;
-    }
-
-    const valid = await bcrypt.compare(password, user.password_hash);
-    if (!valid) {
-      res.status(401).json({ error: 'Invalid email or password' });
-      return;
-    }
-
-    // Fetch barangay details
-    const { data: barangay } = await supabaseAdmin
-      .from('barangays')
-      .select('name, municipality')
-      .eq('id', user.barangay_id)
       .maybeSingle();
 
-    // Check if account has a verification record
-    let verification = await DispatcherVerificationService.getByUserId(user.id);
+    if (user) {
+      const valid = await bcrypt.compare(password, user.password_hash);
+      if (!valid) {
+        res.status(401).json({ error: 'Invalid email or password' });
+        return;
+      }
 
-    // If user is a dispatcher / captain but has no verification record yet, create one
-    if (!verification && (user.role === 'captain' || user.role === 'dispatcher')) {
-      verification = await DispatcherVerificationService.createVerification({
-        userId: user.id,
-        barangayId: user.barangay_id,
-        barangayName: barangay?.name || 'Barangay',
-        fullName: user.full_name,
-        email: user.email,
-        phone: user.phone,
-      });
-    }
+      // Fetch barangay details
+      const { data: barangay } = await supabaseAdmin
+        .from('barangays')
+        .select('name, municipality')
+        .eq('id', user.barangay_id)
+        .maybeSingle();
 
-    // If user is a dispatcher / undergoing verification:
-    // Allow login so they can access the verification screen, download the authorization form, or upload certification
-    if (verification) {
-      const isVerified = verification.status === 'verified';
+      // Dispatcher/captain in barangay_users — they are approved (is_active=true)
+      // Check for a verification record to return full details
+      if (user.role === 'captain' || user.role === 'dispatcher') {
+        const verification = await DispatcherVerificationService.getByUserId(user.id);
+        const token = jwt.sign(
+          { userId: user.id, barangayId: user.barangay_id, role: user.role, email: user.email },
+          config.jwtSecret,
+          { expiresIn: '30d' }
+        );
+        res.json({
+          token,
+          user: {
+            id: user.id,
+            full_name: user.full_name,
+            email: user.email,
+            phone: user.phone,
+            role: user.role,
+            barangay_id: user.barangay_id,
+            barangay_name: barangay?.name || '',
+            municipality: barangay?.municipality || 'Norzagaray',
+            is_active: user.is_active,
+            verification_status: user.is_active ? 'verified' : 'pending_document',
+            verification: verification || null,
+          },
+        });
+        return;
+      }
+
+      // Team leader or volunteer
+      if (!user.is_active) {
+        res.status(403).json({ error: 'Account has been deactivated. Contact your barangay captain.' });
+        return;
+      }
+
       const token = jwt.sign(
         { userId: user.id, barangayId: user.barangay_id, role: user.role, email: user.email },
         config.jwtSecret,
         { expiresIn: '30d' }
       );
-
       res.json({
         token,
         user: {
@@ -257,41 +276,63 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
           barangay_id: user.barangay_id,
           barangay_name: barangay?.name || '',
           municipality: barangay?.municipality || 'Norzagaray',
-          is_active: isVerified,
-          verification_status: verification.status,
-          verification,
+          is_active: true,
+          verification_status: 'verified',
         },
       });
       return;
     }
 
-    // If regular volunteer / team leader is deactivated by captain
-    if (!user.is_active) {
-      res.status(403).json({ error: 'Account has been deactivated. Contact your barangay captain.' });
+    // ── Path B: Not in barangay_users — check pending dispatcher verifications ──
+    const pendingRecord = DispatcherVerificationService.findByEmail(email);
+
+    if (pendingRecord && pendingRecord._password_hash) {
+      const valid = await bcrypt.compare(password, pendingRecord._password_hash);
+      if (!valid) {
+        res.status(401).json({ error: 'Invalid email or password' });
+        return;
+      }
+
+      // Fetch barangay details
+      const { data: barangay } = await supabaseAdmin
+        .from('barangays')
+        .select('name, municipality')
+        .eq('id', pendingRecord.barangay_id)
+        .maybeSingle();
+
+      // Issue a limited token — userId maps to verification's user_id
+      const token = jwt.sign(
+        {
+          userId: pendingRecord.user_id,
+          barangayId: pendingRecord.barangay_id,
+          role: 'captain',
+          email: pendingRecord.email,
+          isPendingDispatcher: true,
+        },
+        config.jwtSecret,
+        { expiresIn: '30d' }
+      );
+
+      res.json({
+        token,
+        user: {
+          id: pendingRecord.user_id,
+          full_name: pendingRecord.full_name,
+          email: pendingRecord.email,
+          phone: pendingRecord.phone,
+          role: 'captain',
+          barangay_id: pendingRecord.barangay_id,
+          barangay_name: barangay?.name || pendingRecord.barangay_name || '',
+          municipality: barangay?.municipality || 'Norzagaray',
+          is_active: false,
+          verification_status: pendingRecord.status,
+          verification: pendingRecord,
+        },
+      });
       return;
     }
 
-    const token = jwt.sign(
-      { userId: user.id, barangayId: user.barangay_id, role: user.role, email: user.email },
-      config.jwtSecret,
-      { expiresIn: '30d' }
-    );
-
-    res.json({
-      token,
-      user: {
-        id: user.id,
-        full_name: user.full_name,
-        email: user.email,
-        phone: user.phone,
-        role: user.role,
-        barangay_id: user.barangay_id,
-        barangay_name: barangay?.name || '',
-        municipality: barangay?.municipality || 'Norzagaray',
-        is_active: true,
-        verification_status: 'verified',
-      },
-    });
+    res.status(401).json({ error: 'Invalid email or password' });
   } catch (err) {
     console.error('Barangay login error:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -302,33 +343,63 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
 
 router.get('/me', authenticateBarangay, async (req: any, res: Response) => {
   try {
-    const { data: user, error } = await supabaseAdmin
+    const userId = req.barangayUser.userId;
+
+    // First try barangay_users (approved dispatchers, team leaders, volunteers)
+    const { data: user } = await supabaseAdmin
       .from('barangay_users')
       .select('id, full_name, email, phone, role, barangay_id, is_active, created_at')
-      .eq('id', req.barangayUser.userId)
-      .single();
+      .eq('id', userId)
+      .maybeSingle();
 
-    if (error || !user) {
-      res.status(404).json({ error: 'User not found' });
+    if (user) {
+      const { data: barangay } = await supabaseAdmin
+        .from('barangays')
+        .select('name, municipality')
+        .eq('id', user.barangay_id)
+        .maybeSingle();
+
+      const verification = (user.role === 'captain' || user.role === 'dispatcher')
+        ? await DispatcherVerificationService.getByUserId(user.id)
+        : null;
+      const verificationStatus = verification ? verification.status : (user.is_active ? 'verified' : 'pending_document');
+
+      res.json({
+        ...user,
+        barangay_name: barangay?.name,
+        municipality: barangay?.municipality,
+        verification_status: verificationStatus,
+        verification,
+      });
       return;
     }
 
-    const { data: barangay } = await supabaseAdmin
-      .from('barangays')
-      .select('name, municipality')
-      .eq('id', user.barangay_id)
-      .maybeSingle();
+    // Fallback: pending dispatcher (not yet in barangay_users)
+    const verification = await DispatcherVerificationService.getByUserId(userId);
+    if (verification) {
+      const { data: barangay } = await supabaseAdmin
+        .from('barangays')
+        .select('name, municipality')
+        .eq('id', verification.barangay_id)
+        .maybeSingle();
 
-    const verification = await DispatcherVerificationService.getByUserId(user.id);
-    const verificationStatus = verification ? verification.status : (user.is_active ? 'verified' : 'pending_document');
+      res.json({
+        id: verification.user_id,
+        full_name: verification.full_name,
+        email: verification.email,
+        phone: verification.phone,
+        role: 'captain',
+        barangay_id: verification.barangay_id,
+        barangay_name: barangay?.name || verification.barangay_name,
+        municipality: barangay?.municipality || 'Norzagaray',
+        is_active: false,
+        verification_status: verification.status,
+        verification,
+      });
+      return;
+    }
 
-    res.json({
-      ...user,
-      barangay_name: barangay?.name,
-      municipality: barangay?.municipality,
-      verification_status: verificationStatus,
-      verification,
-    });
+    res.status(404).json({ error: 'User not found' });
   } catch (err) {
     console.error('Get me error:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -729,6 +800,7 @@ router.post('/team', authenticateBarangay, requireRole(['captain', 'team_leader'
         barangay_id: req.barangayUser.barangayId,
         role: body.role,
         added_by: req.barangayUser.userId,
+        is_active: true,  // Team leaders and volunteers are active immediately
       })
       .select('id, full_name, email, phone, role, barangay_id, is_active, created_at')
       .single();

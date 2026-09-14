@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import PDFDocument from 'pdfkit';
 import { supabaseAdmin } from '../config/supabase';
 
@@ -41,6 +42,8 @@ export interface DispatcherVerification {
   verification_history: VerificationHistoryEntry[];
   created_at: string;
   updated_at: string;
+  // Stored locally only — never pushed to Supabase
+  _password_hash?: string;
 }
 
 const STORAGE_FILE = path.join(__dirname, '../../data/dispatcher_verifications.json');
@@ -82,12 +85,19 @@ export function generateReferenceNo(): string {
   return `MDRRMO-VREF-${dateStr}-${randomSuffix}`;
 }
 
+/** Generate a UUID v4 compatible string */
+function generateUUID(): string {
+  return crypto.randomUUID();
+}
+
 export class DispatcherVerificationService {
   /**
-   * Initialize a new verification record upon dispatcher registration
+   * Initialize a new verification record upon dispatcher registration.
+   * The user_id is a self-generated UUID that will later become the
+   * barangay_users.id when MDRRMO approves the dispatcher.
    */
   static async createVerification(params: {
-    userId: string;
+    userId?: string;      // if provided, use this UUID; otherwise generate one
     barangayId: string;
     barangayName?: string;
     fullName: string;
@@ -96,13 +106,16 @@ export class DispatcherVerificationService {
     positionDesignation?: string;
     punongBarangayName?: string;
     punongBarangayPosition?: string;
+    passwordHash?: string; // stored locally only for login during pending state
   }): Promise<DispatcherVerification> {
     const now = new Date().toISOString();
     const referenceNo = generateReferenceNo();
+    // Use provided userId or generate a new UUID that will persist through approval
+    const userId = params.userId || generateUUID();
 
     const record: DispatcherVerification = {
       id: `disp-ver-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-      user_id: params.userId,
+      user_id: userId,
       barangay_id: params.barangayId,
       barangay_name: params.barangayName || 'Barangay',
       full_name: params.fullName,
@@ -128,9 +141,10 @@ export class DispatcherVerificationService {
       ],
       created_at: now,
       updated_at: now,
+      _password_hash: params.passwordHash, // local-only, not persisted to Supabase
     };
 
-    // Attempt to persist to Supabase
+    // Attempt to persist to Supabase (without password_hash)
     try {
       const { data, error } = await supabaseAdmin
         .from('barangay_dispatcher_verifications')
@@ -150,16 +164,19 @@ export class DispatcherVerificationService {
         .select()
         .single();
 
-      if (!error && data) {
+      if (error) {
+        console.error('[DispatcherVerification] Supabase insert error:', error.message, error.details);
+      } else if (data) {
         record.id = data.id;
+        console.log('[DispatcherVerification] Saved to Supabase, id:', data.id);
       }
-    } catch (e) {
-      // Supabase table not migrated yet; fallback to local persistence
+    } catch (e: any) {
+      console.error('[DispatcherVerification] Supabase insert exception:', e?.message || e);
     }
 
-    // Always update local persistent fallback
+    // Always persist to local JSON (includes password_hash for login)
     const items = ensureStorage();
-    const idx = items.findIndex((i) => i.user_id === params.userId);
+    const idx = items.findIndex((i) => i.user_id === userId || i.email === params.email);
     if (idx >= 0) {
       items[idx] = record;
     } else {
@@ -171,7 +188,16 @@ export class DispatcherVerificationService {
   }
 
   /**
-   * Get verification record by user id
+   * Find a pending dispatcher verification record by email (for login).
+   * Returns the record including _password_hash from local store.
+   */
+  static findByEmail(email: string): DispatcherVerification | null {
+    const items = ensureStorage();
+    return items.find((i) => i.email?.toLowerCase() === email?.toLowerCase()) || null;
+  }
+
+  /**
+   * Get verification record by user_id
    */
   static async getByUserId(userId: string): Promise<DispatcherVerification | null> {
     // Try Supabase first
@@ -189,13 +215,18 @@ export class DispatcherVerificationService {
           ...data,
           barangay_name: data.barangays?.name || data.barangay_name || 'Barangay',
         };
-        // sync to local store
+        // sync back to local store (preserving _password_hash)
         const items = ensureStorage();
         const idx = items.findIndex((i) => i.user_id === userId);
-        if (idx >= 0) items[idx] = item;
-        else items.push(item);
+        if (idx >= 0) {
+          items[idx] = { ...items[idx], ...item, _password_hash: items[idx]._password_hash };
+        } else {
+          items.push(item);
+        }
         saveLocalStorage(items);
-        return item;
+        // Return with local password_hash if available
+        const local = items.find((i) => i.user_id === userId);
+        return local || item;
       }
     } catch (_) {}
 
@@ -237,23 +268,7 @@ export class DispatcherVerificationService {
     const now = new Date().toISOString();
 
     if (!existing) {
-      // Find the user to create a record if missing
-      const { data: user } = await supabaseAdmin
-        .from('barangay_users')
-        .select('id, full_name, email, phone, barangay_id, barangays(name)')
-        .eq('id', userId)
-        .single();
-
-      if (!user) throw new Error('Barangay user not found');
-
-      existing = await this.createVerification({
-        userId: user.id,
-        barangayId: user.barangay_id,
-        barangayName: (user as any).barangays?.name,
-        fullName: user.full_name,
-        email: user.email,
-        phone: user.phone,
-      });
+      throw new Error('Verification record not found. Please register first.');
     }
 
     const updatedHistory: VerificationHistoryEntry[] = [
@@ -294,7 +309,7 @@ export class DispatcherVerificationService {
     // Save to local store
     const items = ensureStorage();
     const idx = items.findIndex((i) => i.user_id === userId);
-    if (idx >= 0) items[idx] = updated;
+    if (idx >= 0) items[idx] = { ...updated, _password_hash: items[idx]._password_hash };
     else items.push(updated);
     saveLocalStorage(items);
 
@@ -349,7 +364,7 @@ export class DispatcherVerificationService {
 
     const items = ensureStorage();
     const idx = items.findIndex((i) => i.user_id === userId);
-    if (idx >= 0) items[idx] = updated;
+    if (idx >= 0) items[idx] = { ...updated, _password_hash: items[idx]._password_hash };
     saveLocalStorage(items);
 
     return updated;
@@ -402,7 +417,8 @@ export class DispatcherVerificationService {
   }
 
   /**
-   * MDRRMO approves dispatcher verification -> activates account
+   * MDRRMO approves dispatcher verification.
+   * Creates a barangay_users entry so the dispatcher gets full app access.
    */
   static async approve(idOrRef: string, adminUserId?: string, note?: string): Promise<DispatcherVerification> {
     const record = await this.getById(idOrRef);
@@ -429,7 +445,7 @@ export class DispatcherVerificationService {
       verification_history: updatedHistory,
     };
 
-    // 1. Update verification table in Supabase
+    // 1. Update verification record status in Supabase
     try {
       await supabaseAdmin
         .from('barangay_dispatcher_verifications')
@@ -442,26 +458,80 @@ export class DispatcherVerificationService {
           verification_history: updatedHistory,
         })
         .or(`id.eq.${record.id},user_id.eq.${record.user_id}`);
-    } catch (_) {}
+    } catch (e: any) {
+      console.error('[DispatcherVerification] Error updating verification status on approval:', e?.message);
+    }
 
-    // 2. Activate user in barangay_users
+    // 2. Create (or activate) the barangay_users entry — this gives full app access
+    //    The user_id from the verification becomes the barangay_users.id
+    const localItems = ensureStorage();
+    const localRecord = localItems.find((i) => i.user_id === record.user_id || i.id === record.id);
+    const passwordHash = localRecord?._password_hash;
+
     try {
-      await supabaseAdmin
+      // First check if the user already exists in barangay_users
+      const { data: existingUser } = await supabaseAdmin
         .from('barangay_users')
-        .update({
+        .select('id, is_active')
+        .eq('id', record.user_id)
+        .maybeSingle();
+
+      if (existingUser) {
+        // User already exists (e.g., was created before this flow) — just activate
+        await supabaseAdmin
+          .from('barangay_users')
+          .update({ is_active: true })
+          .eq('id', record.user_id);
+        console.log('[DispatcherVerification] Activated existing barangay_user:', record.user_id);
+      } else {
+        // Create a new barangay_users entry using the same user_id UUID
+        const insertPayload: any = {
+          full_name: record.full_name,
+          email: record.email,
+          phone: record.phone || null,
+          barangay_id: record.barangay_id,
+          role: 'captain',
           is_active: true,
-          verification_status: 'verified',
-        })
-        .eq('id', record.user_id);
-    } catch (err) {
-      console.error('Error activating barangay user in Supabase:', err);
+        };
+        // Include password_hash if available from local store
+        if (passwordHash) {
+          insertPayload.password_hash = passwordHash;
+        }
+        // Try to use the same UUID — Supabase allows explicit id if not auto-generated
+        try {
+          insertPayload.id = record.user_id;
+          const { error: insertErr } = await supabaseAdmin
+            .from('barangay_users')
+            .insert(insertPayload);
+          if (insertErr) {
+            // If explicit ID fails, try without (let Supabase generate a new one)
+            console.warn('[DispatcherVerification] Insert with explicit id failed, retrying:', insertErr.message);
+            delete insertPayload.id;
+            const { data: newUser, error: insertErr2 } = await supabaseAdmin
+              .from('barangay_users')
+              .insert(insertPayload)
+              .select('id')
+              .single();
+            if (insertErr2) {
+              console.error('[DispatcherVerification] Failed to create barangay_user:', insertErr2.message);
+            } else {
+              console.log('[DispatcherVerification] Created barangay_user with new id:', newUser?.id);
+            }
+          } else {
+            console.log('[DispatcherVerification] Created barangay_user with matching id:', record.user_id);
+          }
+        } catch (e2: any) {
+          console.error('[DispatcherVerification] Exception creating barangay_user:', e2?.message);
+        }
+      }
+    } catch (err: any) {
+      console.error('[DispatcherVerification] Error creating barangay_users entry on approval:', err?.message);
     }
 
     // 3. Update local store
-    const items = ensureStorage();
-    const idx = items.findIndex((i) => i.id === record.id || i.user_id === record.user_id);
-    if (idx >= 0) items[idx] = updated;
-    saveLocalStorage(items);
+    const idx = localItems.findIndex((i) => i.id === record.id || i.user_id === record.user_id);
+    if (idx >= 0) localItems[idx] = { ...updated, _password_hash: localItems[idx]._password_hash };
+    saveLocalStorage(localItems);
 
     // 4. Real-time broadcast to mobile app & dashboard
     try {
@@ -510,7 +580,6 @@ export class DispatcherVerificationService {
       verification_history: updatedHistory,
     };
 
-    // Update Supabase
     try {
       await supabaseAdmin
         .from('barangay_dispatcher_verifications')
@@ -525,21 +594,18 @@ export class DispatcherVerificationService {
         .or(`id.eq.${record.id},user_id.eq.${record.user_id}`);
     } catch (_) {}
 
-    // Ensure account remains restricted
+    // Ensure account remains restricted if it exists in barangay_users
     try {
       await supabaseAdmin
         .from('barangay_users')
-        .update({
-          is_active: false,
-          verification_status: 'rejected',
-        })
+        .update({ is_active: false })
         .eq('id', record.user_id);
     } catch (_) {}
 
     // Save local store
     const items = ensureStorage();
     const idx = items.findIndex((i) => i.id === record.id || i.user_id === record.user_id);
-    if (idx >= 0) items[idx] = updated;
+    if (idx >= 0) items[idx] = { ...updated, _password_hash: items[idx]._password_hash };
     saveLocalStorage(items);
 
     // Real-time broadcast to mobile app
@@ -605,7 +671,7 @@ export class DispatcherVerificationService {
 
     const items = ensureStorage();
     const idx = items.findIndex((i) => i.id === record.id || i.user_id === record.user_id);
-    if (idx >= 0) items[idx] = updated;
+    if (idx >= 0) items[idx] = { ...updated, _password_hash: items[idx]._password_hash };
     saveLocalStorage(items);
 
     try {
