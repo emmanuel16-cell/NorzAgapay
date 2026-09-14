@@ -2,7 +2,16 @@ import fs from 'fs';
 import path from 'path';
 import PDFDocument from 'pdfkit';
 import { supabaseAdmin } from '../config/supabase';
-import { io } from '../server';
+
+// Safe getter for socket.io to avoid circular boot in CLI / test scripts
+function getIO() {
+  try {
+    const serverModule = require('../server');
+    return serverModule.io || null;
+  } catch (_) {
+    return null;
+  }
+}
 
 export interface VerificationHistoryEntry {
   action: string;
@@ -291,7 +300,7 @@ export class DispatcherVerificationService {
 
     // Notify command center via socket
     try {
-      io.to('commanders').emit('verification:dispatcher_submitted', {
+      getIO()?.to('commanders').emit('verification:dispatcher_submitted', {
         id: updated.id,
         applicant: updated.full_name,
         barangay: updated.barangay_name,
@@ -456,12 +465,12 @@ export class DispatcherVerificationService {
 
     // 4. Real-time broadcast to mobile app & dashboard
     try {
-      io.to(`barangay:${record.barangay_id}`).emit('dispatcher:verified', {
+      getIO()?.to(`barangay:${record.barangay_id}`).emit('dispatcher:verified', {
         userId: record.user_id,
         status: 'verified',
         message: 'Your account has been verified and activated by MDRRMO.',
       });
-      io.emit('dispatcher:status_changed', {
+      getIO()?.emit('dispatcher:status_changed', {
         userId: record.user_id,
         status: 'verified',
       });
@@ -535,12 +544,12 @@ export class DispatcherVerificationService {
 
     // Real-time broadcast to mobile app
     try {
-      io.to(`barangay:${record.barangay_id}`).emit('dispatcher:rejected', {
+      getIO()?.to(`barangay:${record.barangay_id}`).emit('dispatcher:rejected', {
         userId: record.user_id,
         status: 'rejected',
         reason: finalReason,
       });
-      io.emit('dispatcher:status_changed', {
+      getIO()?.emit('dispatcher:status_changed', {
         userId: record.user_id,
         status: 'rejected',
         reason: finalReason,
@@ -600,12 +609,12 @@ export class DispatcherVerificationService {
     saveLocalStorage(items);
 
     try {
-      io.to(`barangay:${record.barangay_id}`).emit('dispatcher:correction', {
+      getIO()?.to(`barangay:${record.barangay_id}`).emit('dispatcher:correction', {
         userId: record.user_id,
         status: 'needs_correction',
         reason: correctionReason,
       });
-      io.emit('dispatcher:status_changed', {
+      getIO()?.emit('dispatcher:status_changed', {
         userId: record.user_id,
         status: 'needs_correction',
         reason: correctionReason,
@@ -616,22 +625,28 @@ export class DispatcherVerificationService {
   }
 
   /**
-   * Generate the prefilled PDF authorization certification matching Image 1
+   * Generate the prefilled Barangay Dispatcher Authorization and Certification PDF
+   * Standard A4, Times-Roman 12pt, justified text, official signature block & blank MDRRMO Ref No.
    */
   static generateAuthorizationPDF(params: {
     dispatcherName: string;
     positionDesignation: string;
     barangayName: string;
-    officialName: string;
-    officialPosition: string;
-    referenceNo: string;
-    dateStr?: string;
+    officialName?: string | null;
+    officialPosition?: string | null;
+    referenceNo?: string | null;
+    dateStr?: string | null;
   }): Promise<Buffer> {
     return new Promise((resolve, reject) => {
       try {
         const doc = new PDFDocument({
-          size: 'LETTER',
-          margins: { top: 60, bottom: 60, left: 65, right: 65 },
+          size: 'A4',
+          margins: { top: 60, bottom: 60, left: 60, right: 60 },
+          info: {
+            Title: 'Barangay Dispatcher Authorization and Certification',
+            Author: 'NorzAgapay Crisis Management System',
+            Subject: 'Barangay Dispatcher Authorization',
+          },
         });
 
         const buffers: Buffer[] = [];
@@ -647,105 +662,108 @@ export class DispatcherVerificationService {
             year: 'numeric',
           });
 
-        const barangay = params.barangayName.replace(/^Brgy\.?\s*/i, '');
+        const barangay = (params.barangayName || 'Barangay').replace(/^Brgy\.?\s*/i, '').trim();
+        const fullName = (params.dispatcherName || '').trim();
+        const position = (params.positionDesignation || 'Barangay Dispatcher').trim();
+        const officialName = (params.officialName || '').trim();
 
-        // Title (Centered, Bold)
-        doc.moveDown(2);
+        // 1. Title (Centered, Bold)
+        doc.moveDown(1.5);
         doc
-          .font('Helvetica-Bold')
+          .font('Times-Bold')
           .fontSize(13)
           .text('BARANGAY DISPATCHER AUTHORIZATION AND CERTIFICATION', {
             align: 'center',
           });
 
-        doc.moveDown(3);
+        doc.moveDown(2.5);
 
-        // Date
+        // 2. Date: [automatically generated current date] - aligned left bold
         doc
-          .font('Helvetica-Bold')
-          .fontSize(11)
+          .font('Times-Bold')
+          .fontSize(12)
           .text(`Date: ${currentDate}`, { align: 'left' });
 
-        doc.moveDown(1.5);
+        doc.moveDown(1.8);
 
-        // Paragraph 1
+        // 3. Body paragraphs (Times-Roman 12pt, justified)
         doc
-          .font('Helvetica')
-          .fontSize(11)
-          .lineGap(4)
+          .font('Times-Roman')
+          .fontSize(12)
+          .lineGap(5)
           .text(
-            `This is to certify that ${params.dispatcherName}, a ${params.positionDesignation} at Barangay ${barangay}.`,
+            `This is to certify that ${fullName}, a ${position} at Barangay ${barangay}, is an authorized representative of Barangay ${barangay}, Municipality of Norzagaray, Bulacan, and is hereby authorized to act as a Barangay Dispatcher for the purpose of coordinating and communicating disaster, emergency, and incident-related information through the NorzAgapay Real-Time Crisis Management and Volunteer Logistics Application.`,
             { align: 'justify' }
           );
 
-        doc.moveDown(1);
+        doc.moveDown(1.2);
 
-        // Paragraph 2
-        doc.text(
-          `Is an authorized representative of Barangay ${barangay}, Municipality of Norzagaray, Bulacan, and is hereby authorized to act as a Barangay Dispatcher for the purpose of coordinating and communicating disaster, emergency, and incident-related information through the NorzAgapay Real-Time Crisis Management and Volunteer Logistics Application.`,
-          { align: 'justify' }
-        );
-
-        doc.moveDown(1);
-
-        // Paragraph 3
         doc.text(
           `This authorization is issued for official barangay disaster risk reduction and management coordination purposes. The dispatcher is expected to use the account responsibly and only for legitimate activities related to emergency preparedness, response, and coordination.`,
           { align: 'justify' }
         );
 
-        doc.moveDown(1);
+        doc.moveDown(1.2);
 
-        // Paragraph 4
         doc.text(
           `This certification is issued upon the request of the above-named individual for the purpose of account verification and activation as a Barangay Dispatcher in the NorzAgapay Application.`,
           { align: 'justify' }
         );
 
-        doc.moveDown(4);
+        doc.moveDown(3);
 
-        // Certification & Authorization Section
+        // 4. CERTIFIED AND AUTHORIZED BY: - aligned left bold
         doc
-          .font('Helvetica-Bold')
-          .fontSize(11)
+          .font('Times-Bold')
+          .fontSize(12)
           .text('CERTIFIED AND AUTHORIZED BY:', { align: 'left' });
 
-        doc.moveDown(4);
+        // Signature will be put directly over the NAME OF PUNONG BARANGAY / AUTHORIZED OFFICIAL
+        doc.moveDown(3.5);
 
-        // Signature Line & Official Details (Centered in column or signature block)
-        const signatureX = 160;
+        // 5. Official signature line & name/position (centered)
+        const pageWidth = 595.28;
+        const sigBlockWidth = 360;
+        const sigBlockX = (pageWidth - sigBlockWidth) / 2;
+
         doc
-          .font('Helvetica')
-          .fontSize(11)
-          .text('_______________________________________', signatureX, doc.y, {
+          .font('Times-Roman')
+          .fontSize(12)
+          .text('________________________________________________', sigBlockX, doc.y, {
             align: 'center',
-            width: 320,
+            width: sigBlockWidth,
           });
 
         doc.moveDown(0.5);
+
+        const displayedOfficialName = officialName.length > 0
+          ? officialName
+          : '[NAME OF PUNONG BARANGAY / AUTHORIZED OFFICIAL]';
+
         doc
-          .font('Helvetica-Bold')
-          .fontSize(11)
-          .text(params.officialName || 'Punong Barangay / Authorized Barangay Official', signatureX, doc.y, {
+          .font('Times-Bold')
+          .fontSize(12)
+          .text(displayedOfficialName, sigBlockX, doc.y, {
             align: 'center',
-            width: 320,
+            width: sigBlockWidth,
           });
 
         doc.moveDown(0.3);
+
         doc
-          .font('Helvetica')
-          .fontSize(10)
-          .text(params.officialPosition || 'Punong Barangay / Authorized Barangay Official', signatureX, doc.y, {
+          .font('Times-Roman')
+          .fontSize(11)
+          .text('Punong Barangay / Authorized Barangay Official', sigBlockX, doc.y, {
             align: 'center',
-            width: 320,
+            width: sigBlockWidth,
           });
 
-        // Bottom Reference
-        doc.y = 700;
+        // 6. MDRRMO Verification Reference No.: - aligned left bold (left blank)
+        doc.y = 720;
         doc
-          .font('Helvetica')
-          .fontSize(10)
-          .text(`MDRRMO Verification Reference No.: ${params.referenceNo}`, 65, doc.y);
+          .font('Times-Bold')
+          .fontSize(12)
+          .text('MDRRMO Verification Reference No.: ', 60, doc.y, { align: 'left' });
 
         doc.end();
       } catch (err) {

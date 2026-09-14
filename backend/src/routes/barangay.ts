@@ -336,13 +336,14 @@ router.get('/me', authenticateBarangay, async (req: any, res: Response) => {
 });
 
 // ─── GET /api/barangay/dispatcher/authorization-pdf ──────────────────────────
-// Download / view prefilled Authorization & Certification PDF matching Image 1
+// Download / view prefilled Authorization & Certification PDF
+// Supports inline preview and attachment download via ?download=true
 
 router.get('/dispatcher/authorization-pdf', async (req: Request, res: Response): Promise<void> => {
   try {
     let userId: string | undefined;
 
-    // Check Authorization header or query param token
+    // 1. Check Authorization header or query param token
     const authHeader = req.headers.authorization;
     const token = authHeader?.startsWith('Bearer ')
       ? authHeader.split(' ')[1]
@@ -359,36 +360,175 @@ router.get('/dispatcher/authorization-pdf', async (req: Request, res: Response):
       userId = req.query.userId as string;
     }
 
-    if (!userId) {
-      res.status(401).json({ error: 'Authentication required to generate authorization PDF' });
+    // Support query by verification id or reference number if provided
+    const lookupId = userId || (req.query.id as string) || (req.query.ref as string);
+
+    if (!lookupId) {
+      res.status(401).json({ error: 'Authentication or userId required to generate authorization PDF' });
       return;
     }
 
-    const verification = await DispatcherVerificationService.getByUserId(userId);
+    // 2. Fetch or dynamically generate verification record from existing user registration data
+    let verification = await DispatcherVerificationService.getByUserId(lookupId);
     if (!verification) {
-      res.status(404).json({ error: 'Verification record not found' });
+      verification = await DispatcherVerificationService.getById(lookupId);
+    }
+
+    if (!verification) {
+      // Look up existing user registration in barangay_users
+      const { data: bUser } = await supabaseAdmin
+        .from('barangay_users')
+        .select('id, full_name, email, phone, barangay_id, role, created_at, barangays(name, municipality)')
+        .eq('id', lookupId)
+        .maybeSingle();
+
+      if (bUser) {
+        const barangayName = (bUser as any).barangays?.name || 'Barangay';
+        verification = await DispatcherVerificationService.createVerification({
+          userId: bUser.id,
+          barangayId: bUser.barangay_id,
+          barangayName,
+          fullName: bUser.full_name,
+          email: bUser.email,
+          phone: bUser.phone,
+          positionDesignation: 'Barangay Dispatcher',
+          punongBarangayName: '[NAME OF PUNONG BARANGAY / AUTHORIZED OFFICIAL]',
+          punongBarangayPosition: 'Punong Barangay',
+        });
+      }
+    }
+
+    if (!verification) {
+      res.status(404).json({ error: 'Dispatcher registration record not found' });
       return;
     }
+
+    const currentDate = new Date().toLocaleDateString('en-US', {
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+    });
 
     const pdfBuffer = await DispatcherVerificationService.generateAuthorizationPDF({
       dispatcherName: verification.full_name,
       positionDesignation: verification.position_designation || 'Barangay Dispatcher',
       barangayName: verification.barangay_name || 'Barangay',
-      officialName: verification.punong_barangay_name || 'Punong Barangay / Authorized Official',
+      officialName: verification.punong_barangay_name || '[NAME OF PUNONG BARANGAY / AUTHORIZED OFFICIAL]',
       officialPosition: verification.punong_barangay_position || 'Punong Barangay',
-      referenceNo: verification.reference_no,
+      referenceNo: '', // Blank as specified in Step 5
+      dateStr: currentDate,
     });
+
+    const isDownload = req.query.download === 'true' || req.query.download === '1' || req.query.dl === '1';
+    const dispositionType = isDownload ? 'attachment' : 'inline';
+    const safeName = (verification.full_name || 'Dispatcher').replace(/[^a-zA-Z0-9_]/g, '_');
+    const filename = `Barangay_Dispatcher_Authorization_${safeName}.pdf`;
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader(
       'Content-Disposition',
-      `inline; filename="Barangay_Dispatcher_Authorization_${verification.reference_no}.pdf"`
+      `${dispositionType}; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`
     );
     res.setHeader('Content-Length', pdfBuffer.length);
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length');
     res.send(pdfBuffer);
   } catch (err) {
     console.error('Generate authorization PDF error:', err);
     res.status(500).json({ error: 'Failed to generate authorization PDF' });
+  }
+});
+
+// ─── GET /api/barangay/dispatcher/certification-data ────────────────────────
+// Retrieve prefilled certification data for in-app viewing & printing
+
+router.get('/dispatcher/certification-data', async (req: Request, res: Response): Promise<void> => {
+  try {
+    let userId: string | undefined;
+
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.startsWith('Bearer ')
+      ? authHeader.split(' ')[1]
+      : (req.query.token as string);
+
+    if (token) {
+      try {
+        const decoded = jwt.verify(token, config.jwtSecret) as any;
+        userId = decoded.userId;
+      } catch (_) {}
+    }
+
+    if (!userId && req.query.userId) {
+      userId = req.query.userId as string;
+    }
+
+    const lookupId = userId || (req.query.id as string);
+    if (!lookupId) {
+      res.status(401).json({ error: 'Authentication or userId required' });
+      return;
+    }
+
+    let verification = await DispatcherVerificationService.getByUserId(lookupId);
+    if (!verification) {
+      verification = await DispatcherVerificationService.getById(lookupId);
+    }
+
+    if (!verification) {
+      const { data: bUser } = await supabaseAdmin
+        .from('barangay_users')
+        .select('id, full_name, email, phone, barangay_id, role, created_at, barangays(name, municipality)')
+        .eq('id', lookupId)
+        .maybeSingle();
+
+      if (bUser) {
+        const barangayName = (bUser as any).barangays?.name || 'Barangay';
+        verification = await DispatcherVerificationService.createVerification({
+          userId: bUser.id,
+          barangayId: bUser.barangay_id,
+          barangayName,
+          fullName: bUser.full_name,
+          email: bUser.email,
+          phone: bUser.phone,
+          positionDesignation: 'Barangay Dispatcher',
+          punongBarangayName: '[NAME OF PUNONG BARANGAY / AUTHORIZED OFFICIAL]',
+          punongBarangayPosition: 'Punong Barangay',
+        });
+      }
+    }
+
+    if (!verification) {
+      res.status(404).json({ error: 'Dispatcher registration record not found' });
+      return;
+    }
+
+    const currentDate = new Date().toLocaleDateString('en-US', {
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+    });
+
+    const barangayName = (verification.barangay_name || 'Barangay').replace(/^Brgy\.?\s*/i, '').trim();
+
+    res.json({
+      title: 'BARANGAY DISPATCHER AUTHORIZATION AND CERTIFICATION',
+      date: currentDate,
+      full_name: verification.full_name,
+      position_designation: verification.position_designation || 'Barangay Dispatcher',
+      barangay: barangayName,
+      municipality: 'Municipality of Norzagaray, Bulacan',
+      contact_info: verification.phone || '',
+      official_name: verification.punong_barangay_name || '[NAME OF PUNONG BARANGAY / AUTHORIZED OFFICIAL]',
+      official_position: 'Punong Barangay / Authorized Barangay Official',
+      reference_no: '', // Blank as requested
+      paragraphs: [
+        `This is to certify that ${verification.full_name}, a ${verification.position_designation || 'Barangay Dispatcher'} at Barangay ${barangayName}, is an authorized representative of Barangay ${barangayName}, Municipality of Norzagaray, Bulacan, and is hereby authorized to act as a Barangay Dispatcher for the purpose of coordinating and communicating disaster, emergency, and incident-related information through the NorzAgapay Real-Time Crisis Management and Volunteer Logistics Application.`,
+        `This authorization is issued for official barangay disaster risk reduction and management coordination purposes. The dispatcher is expected to use the account responsibly and only for legitimate activities related to emergency preparedness, response, and coordination.`,
+        `This certification is issued upon the request of the above-named individual for the purpose of account verification and activation as a Barangay Dispatcher in the NorzAgapay Application.`,
+      ],
+    });
+  } catch (err) {
+    console.error('Fetch certification data error:', err);
+    res.status(500).json({ error: 'Failed to fetch certification data' });
   }
 });
 

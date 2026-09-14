@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { verificationAPI } from '../lib/api';
+import { verificationAPI, API_BASE } from '../lib/api';
 import toast from 'react-hot-toast';
 
 interface PendingUser {
@@ -1365,7 +1365,7 @@ export default function VerificationPage() {
                     </a>
 
                     <a
-                      href={`http://localhost:3001/api/barangay/dispatcher/authorization-pdf?userId=${selectedDispatcher.user_id}`}
+                      href={`${API_BASE}/barangay/dispatcher/authorization-pdf?userId=${selectedDispatcher.user_id}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="oq-cancel-btn"

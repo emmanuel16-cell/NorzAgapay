@@ -351,7 +351,7 @@ setInterval(runScheduledUpdates, 300000);
 // Start Server
 // ============================================
 
-if (process.env.NODE_ENV !== 'test') {
+if (require.main === module) {
   server.listen(config.port, () => {
     console.log(`
     ╔══════════════════════════════════════════════╗
@@ -368,3 +368,4 @@ if (process.env.NODE_ENV !== 'test') {
 
 export { io };
 export default app;
+// Reloaded for dispatcher certification routes
