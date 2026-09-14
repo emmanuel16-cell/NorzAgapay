@@ -24,11 +24,14 @@ interface BarangayPayload {
 
 const authenticateBarangay = async (req: AuthRequest, res: Response, next: any) => {
   const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith('Bearer ')) {
+  const token = authHeader?.startsWith('Bearer ')
+    ? authHeader.split(' ')[1]
+    : ((req.query?.token as string) || (req.body?.token as string));
+
+  if (!token) {
     res.status(401).json({ error: 'Unauthorized' });
     return;
   }
-  const token = authHeader.split(' ')[1];
   try {
     const decoded = jwt.verify(token, config.jwtSecret) as any;
     if (!decoded.barangayId) {
@@ -103,7 +106,7 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
     }
 
     // Check if a pending dispatcher with this email already exists
-    const existingPending = DispatcherVerificationService.findByEmail(body.email);
+    const existingPending = await DispatcherVerificationService.findByEmail(body.email);
     if (existingPending && existingPending.status !== 'rejected') {
       res.status(409).json({ error: 'A pending registration already exists for this email.' });
       return;
@@ -284,7 +287,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
     }
 
     // ── Path B: Not in barangay_users — check pending dispatcher verifications ──
-    const pendingRecord = DispatcherVerificationService.findByEmail(email);
+    const pendingRecord = await DispatcherVerificationService.findByEmail(email);
 
     if (pendingRecord && pendingRecord._password_hash) {
       const valid = await bcrypt.compare(password, pendingRecord._password_hash);
@@ -695,7 +698,11 @@ router.get(
   authenticateBarangay,
   async (req: any, res: Response): Promise<void> => {
     try {
-      const verification = await DispatcherVerificationService.getByUserId(req.barangayUser.userId);
+      const targetUserId = req.query?.userId || req.barangayUser?.userId;
+      let verification = await DispatcherVerificationService.getByUserId(targetUserId);
+      if (!verification && targetUserId) {
+        verification = await DispatcherVerificationService.getById(targetUserId);
+      }
       if (!verification) {
         res.status(404).json({ error: 'Verification record not found' });
         return;

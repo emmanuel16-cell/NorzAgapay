@@ -144,37 +144,57 @@ export class DispatcherVerificationService {
       _password_hash: params.passwordHash, // local-only, not persisted to Supabase
     };
 
-    // Attempt to persist to Supabase (without password_hash)
+    // Attempt to persist to Supabase
     try {
-      const { data, error } = await supabaseAdmin
+      const payload: any = {
+        user_id: record.user_id,
+        barangay_id: record.barangay_id,
+        full_name: record.full_name,
+        email: record.email,
+        phone: record.phone,
+        position_designation: record.position_designation,
+        punong_barangay_name: record.punong_barangay_name,
+        punong_barangay_position: record.punong_barangay_position,
+        reference_no: record.reference_no,
+        status: record.status,
+        verification_history: record.verification_history,
+      };
+
+      if (params.passwordHash) {
+        payload.password_hash = params.passwordHash;
+      }
+
+      let res = await supabaseAdmin
         .from('barangay_dispatcher_verifications')
-        .insert({
-          user_id: record.user_id,
-          barangay_id: record.barangay_id,
-          full_name: record.full_name,
-          email: record.email,
-          phone: record.phone,
-          position_designation: record.position_designation,
-          punong_barangay_name: record.punong_barangay_name,
-          punong_barangay_position: record.punong_barangay_position,
-          reference_no: record.reference_no,
-          status: record.status,
-          verification_history: record.verification_history,
-        })
+        .insert(payload)
         .select()
         .single();
 
-      if (error) {
-        console.error('[DispatcherVerification] Supabase insert error:', error.message, error.details);
-      } else if (data) {
-        record.id = data.id;
-        console.log('[DispatcherVerification] Saved to Supabase, id:', data.id);
+      // If password_hash column doesn't exist yet, retry without it
+      if (res.error && res.error.code === 'PGRST204') {
+        delete payload.password_hash;
+        res = await supabaseAdmin
+          .from('barangay_dispatcher_verifications')
+          .insert(payload)
+          .select()
+          .single();
+      }
+
+      if (res.error) {
+        if (res.error.code === '23503') {
+          console.warn('[DispatcherVerification] Foreign key constraint note: Run database/migrations/fix_dispatcher_verification_fk.sql in Supabase to allow storing dispatchers prior to MDRRMO approval.');
+        } else {
+          console.error('[DispatcherVerification] Supabase insert error:', res.error.message, res.error.details);
+        }
+      } else if (res.data) {
+        record.id = res.data.id;
+        console.log('[DispatcherVerification] Successfully saved to Supabase barangay_dispatcher_verifications, id:', res.data.id);
       }
     } catch (e: any) {
       console.error('[DispatcherVerification] Supabase insert exception:', e?.message || e);
     }
 
-    // Always persist to local JSON (includes password_hash for login)
+    // Always persist to local JSON store
     const items = ensureStorage();
     const idx = items.findIndex((i) => i.user_id === userId || i.email === params.email);
     if (idx >= 0) {
@@ -189,50 +209,82 @@ export class DispatcherVerificationService {
 
   /**
    * Find a pending dispatcher verification record by email (for login).
-   * Returns the record including _password_hash from local store.
+   * Checks Supabase first, then falls back to local storage.
    */
-  static findByEmail(email: string): DispatcherVerification | null {
-    const items = ensureStorage();
-    return items.find((i) => i.email?.toLowerCase() === email?.toLowerCase()) || null;
-  }
-
-  /**
-   * Get verification record by user_id
-   */
-  static async getByUserId(userId: string): Promise<DispatcherVerification | null> {
-    // Try Supabase first
+  static async findByEmail(email: string): Promise<DispatcherVerification | null> {
+    const cleanEmail = email.trim().toLowerCase();
     try {
       const { data, error } = await supabaseAdmin
         .from('barangay_dispatcher_verifications')
         .select('*, barangays(name)')
-        .eq('user_id', userId)
+        .ilike('email', cleanEmail)
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
 
       if (!error && data) {
-        const item = {
+        const item: DispatcherVerification = {
           ...data,
           barangay_name: data.barangays?.name || data.barangay_name || 'Barangay',
+          _password_hash: data.password_hash || undefined,
         };
-        // sync back to local store (preserving _password_hash)
+
         const items = ensureStorage();
-        const idx = items.findIndex((i) => i.user_id === userId);
+        const idx = items.findIndex((i) => i.email?.toLowerCase() === cleanEmail);
         if (idx >= 0) {
-          items[idx] = { ...items[idx], ...item, _password_hash: items[idx]._password_hash };
+          if (!item._password_hash && items[idx]._password_hash) {
+            item._password_hash = items[idx]._password_hash;
+          }
+          items[idx] = { ...items[idx], ...item };
         } else {
           items.push(item);
         }
         saveLocalStorage(items);
-        // Return with local password_hash if available
-        const local = items.find((i) => i.user_id === userId);
-        return local || item;
+        return item;
       }
     } catch (_) {}
 
-    // Fallback to local store
     const items = ensureStorage();
-    return items.find((i) => i.user_id === userId) || null;
+    return items.find((i) => i.email?.toLowerCase() === cleanEmail) || null;
+  }
+
+  /**
+   * Get verification record by user_id or verification id
+   */
+  static async getByUserId(userId: string): Promise<DispatcherVerification | null> {
+    if (!userId) return null;
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('barangay_dispatcher_verifications')
+        .select('*, barangays(name)')
+        .or(`user_id.eq.${userId},id.eq.${userId}`)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!error && data) {
+        const item: DispatcherVerification = {
+          ...data,
+          barangay_name: data.barangays?.name || data.barangay_name || 'Barangay',
+          _password_hash: data.password_hash || undefined,
+        };
+        const items = ensureStorage();
+        const idx = items.findIndex((i) => i.user_id === userId || i.id === userId);
+        if (idx >= 0) {
+          if (!item._password_hash && items[idx]._password_hash) {
+            item._password_hash = items[idx]._password_hash;
+          }
+          items[idx] = { ...items[idx], ...item };
+        } else {
+          items.push(item);
+        }
+        saveLocalStorage(items);
+        return item;
+      }
+    } catch (_) {}
+
+    const items = ensureStorage();
+    return items.find((i) => i.user_id === userId || i.id === userId) || null;
   }
 
   /**

@@ -304,5 +304,35 @@
     ],
     "created_at": "2026-09-14T00:20:45.026Z",
     "updated_at": "2026-09-14T00:20:47.378Z"
+  },
+  {
+    "id": "disp-ver-1789349339541-khx2m",
+    "user_id": "52bb5414-1d59-4d2d-8642-994c2aa7c4a2",
+    "barangay_id": "da7e6dad-459b-4030-a2cd-de69200e1f40",
+    "barangay_name": "Baraka",
+    "full_name": "Juan Test Dispatcher",
+    "email": "dispatcher_test_1789349337864@example.com",
+    "phone": "09123456789",
+    "position_designation": "Barangay Tanod Dispatcher",
+    "punong_barangay_name": "Hon. Maria Santos",
+    "punong_barangay_position": "Punong Barangay",
+    "reference_no": "MDRRMO-VREF-20260914-BTRX",
+    "document_url": null,
+    "status": "pending_document",
+    "rejection_reason": null,
+    "submitted_at": null,
+    "reviewed_at": null,
+    "reviewed_by": null,
+    "verification_history": [
+      {
+        "action": "Account Registered",
+        "timestamp": "2026-09-14T01:28:59.540Z",
+        "note": "Dispatcher account created. Pending authorization certification.",
+        "actor": "Juan Test Dispatcher"
+      }
+    ],
+    "created_at": "2026-09-14T01:28:59.540Z",
+    "updated_at": "2026-09-14T01:28:59.540Z",
+    "_password_hash": "$2a$12$YhWw.6Jp8/CEMieNRicgaeqSQe1Ce513Uc.2EvtOdrtHQPrS4lh4W"
   }
 ]

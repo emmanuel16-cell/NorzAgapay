@@ -6,10 +6,11 @@
 
 CREATE TABLE IF NOT EXISTS barangay_dispatcher_verifications (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID NOT NULL REFERENCES barangay_users(id) ON DELETE CASCADE,
+  user_id UUID, -- References barangay_users(id) once approved by MDRRMO
   barangay_id UUID NOT NULL REFERENCES barangays(id) ON DELETE CASCADE,
   full_name TEXT NOT NULL DEFAULT '',
   email TEXT NOT NULL DEFAULT '',
+  password_hash TEXT,
   phone VARCHAR(20),
   position_designation TEXT NOT NULL DEFAULT 'Barangay Dispatcher',
   punong_barangay_name TEXT NOT NULL DEFAULT '',
