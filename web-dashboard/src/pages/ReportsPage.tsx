@@ -16,6 +16,16 @@ interface IncidentReport {
   longitude: number;
   proof_url?: string;
   proof_type?: 'image' | 'video';
+  proof_urls?: string[];
+  proof_types?: ('image' | 'video' | string)[];
+  responder_media?: Array<{
+    url: string;
+    type?: 'image' | 'video' | string;
+    uploader_name?: string;
+    role?: string;
+    uploader_role?: string;
+    created_at?: string;
+  }>;
   reporter_type?: string;
   reporter_name?: string;
   reporter_phone?: string;
@@ -53,6 +63,7 @@ export default function ReportsPage() {
   const navigate = useNavigate();
   const [reports, setReports] = useState<IncidentReport[]>([]);
   const [selectedReport, setSelectedReport] = useState<IncidentReport | null>(null);
+  const [selectedProofIdx, setSelectedProofIdx] = useState<number>(0);
   const [activeTab, setActiveTab] = useState<TabType>('incidents');
   const [loading, setLoading] = useState(true);
   const [verifying, setVerifying] = useState(false);
@@ -283,97 +294,149 @@ export default function ReportsPage() {
                 </p>
 
                 {/* Proof thumbnail preview if present */}
-                {report.proof_url && (
-                  <div
-                    style={{
-                      height: '140px',
-                      borderRadius: '10px',
-                      overflow: 'hidden',
-                      position: 'relative',
-                      cursor: 'pointer',
-                      border: '1px solid rgba(255, 255, 255, 0.1)',
-                      background: '#000',
-                    }}
-                    onClick={() => {
-                      const isVid = isVideoProof(report.proof_url, report.proof_type);
-                      setPreviewMedia({ url: report.proof_url!, isVideo: isVid });
-                    }}
-                  >
-                    {isVideoProof(report.proof_url, report.proof_type) ? (
-                      <>
-                        <video
-                          src={report.proof_url}
-                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                        />
-                        <div
-                          style={{
-                            position: 'absolute',
-                            inset: 0,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            background: 'rgba(0,0,0,0.3)',
-                          }}
-                        >
+                {(() => {
+                  const proofs = (report.proof_urls && report.proof_urls.length > 0)
+                    ? report.proof_urls
+                    : (report.proof_url ? [report.proof_url] : []);
+                  if (proofs.length === 0) return null;
+                  const firstProof = proofs[0];
+                  const firstType = report.proof_types?.[0] || report.proof_type;
+                  const isVid = isVideoProof(firstProof, firstType);
+
+                  return (
+                    <div
+                      style={{
+                        height: '140px',
+                        borderRadius: '10px',
+                        overflow: 'hidden',
+                        position: 'relative',
+                        cursor: 'pointer',
+                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                        background: '#000',
+                      }}
+                      onClick={() => {
+                        setPreviewMedia({ url: firstProof, isVideo: isVid });
+                      }}
+                    >
+                      {isVid ? (
+                        <>
+                          <video
+                            src={firstProof}
+                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                          />
                           <div
                             style={{
-                              width: '36px',
-                              height: '36px',
-                              borderRadius: '50%',
-                              background: 'rgba(0,0,0,0.65)',
-                              border: '1px solid rgba(255,255,255,0.4)',
+                              position: 'absolute',
+                              inset: 0,
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'center',
+                              background: 'rgba(0,0,0,0.3)',
                             }}
                           >
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="#fff">
-                              <polygon points="5 3 19 12 5 21 5 3"></polygon>
-                            </svg>
+                            <div
+                              style={{
+                                width: '36px',
+                                height: '36px',
+                                borderRadius: '50%',
+                                background: 'rgba(0,0,0,0.65)',
+                                border: '1px solid rgba(255,255,255,0.4)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                              }}
+                            >
+                              <svg width="18" height="18" viewBox="0 0 24 24" fill="#fff">
+                                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                              </svg>
+                            </div>
                           </div>
-                        </div>
-                      </>
-                    ) : (
-                      <img
-                        src={report.proof_url}
-                        alt="Proof"
-                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                      />
-                    )}
-                    <div
-                      style={{
-                        position: 'absolute',
-                        bottom: '8px',
-                        right: '8px',
-                        background: 'rgba(0, 0, 0, 0.75)',
-                        padding: '4px 8px',
-                        borderRadius: '6px',
-                        fontSize: '11px',
-                        color: '#fff',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                      }}
-                    >
-                      {isVideoProof(report.proof_url, report.proof_type) ? (
-                        <>
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="#fff">
-                            <polygon points="5 3 19 12 5 21 5 3"></polygon>
-                          </svg>
-                          Play Video
                         </>
                       ) : (
-                        <>
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <circle cx="11" cy="11" r="8"></circle>
-                            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                          </svg>
-                          Tap to enlarge
-                        </>
+                        <img
+                          src={firstProof}
+                          alt="Proof"
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        />
                       )}
+
+                      {/* Multi-proof badge */}
+                      {proofs.length > 1 && (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            top: '8px',
+                            left: '8px',
+                            background: 'rgba(2, 132, 199, 0.85)',
+                            padding: '3px 7px',
+                            borderRadius: '6px',
+                            fontSize: '11px',
+                            fontWeight: 600,
+                            color: '#fff',
+                            backdropFilter: 'blur(4px)',
+                            border: '1px solid rgba(56, 189, 248, 0.4)',
+                          }}
+                        >
+                          📸 {proofs.length} Visuals
+                        </div>
+                      )}
+
+                      {/* Responder media badge */}
+                      {report.responder_media && report.responder_media.length > 0 && (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            top: '8px',
+                            right: '8px',
+                            background: 'rgba(16, 185, 129, 0.85)',
+                            padding: '3px 7px',
+                            borderRadius: '6px',
+                            fontSize: '11px',
+                            fontWeight: 600,
+                            color: '#fff',
+                            backdropFilter: 'blur(4px)',
+                            border: '1px solid rgba(52, 211, 153, 0.4)',
+                          }}
+                        >
+                          🦺 {report.responder_media.length} Field
+                        </div>
+                      )}
+
+                      <div
+                        style={{
+                          position: 'absolute',
+                          bottom: '8px',
+                          right: '8px',
+                          background: 'rgba(0, 0, 0, 0.75)',
+                          padding: '4px 8px',
+                          borderRadius: '6px',
+                          fontSize: '11px',
+                          color: '#fff',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                        }}
+                      >
+                        {isVid ? (
+                          <>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="#fff">
+                              <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                            </svg>
+                            Play Video
+                          </>
+                        ) : (
+                          <>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <circle cx="11" cy="11" r="8"></circle>
+                              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                            </svg>
+                            Tap to enlarge
+                          </>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
 
                 {/* Resident & Responder Info Row */}
                 <div
@@ -527,31 +590,166 @@ export default function ReportsPage() {
               </button>
             </div>
 
-            {selectedReport.proof_url && (
-              <div
-                style={{
-                  width: '100%',
-                  height: '240px',
-                  borderRadius: '12px',
-                  overflow: 'hidden',
-                  border: '1px solid rgba(255,255,255,0.1)',
-                  background: '#000',
-                }}
-              >
-                {isVideoProof(selectedReport.proof_url, selectedReport.proof_type) ? (
-                  <video
-                    src={selectedReport.proof_url}
-                    controls
-                    playsInline
-                    style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-                  />
-                ) : (
-                  <img
-                    src={selectedReport.proof_url}
-                    alt="Incident Proof"
-                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                  />
-                )}
+            {/* Proofs Gallery with Thumbnails Switcher */}
+            {(() => {
+              const proofs = (selectedReport.proof_urls && selectedReport.proof_urls.length > 0)
+                ? selectedReport.proof_urls
+                : (selectedReport.proof_url ? [selectedReport.proof_url] : []);
+              if (proofs.length === 0) return null;
+              const activeIdx = (selectedProofIdx < proofs.length) ? selectedProofIdx : 0;
+              const currentUrl = proofs[activeIdx];
+              const currentType = selectedReport.proof_types?.[activeIdx] || selectedReport.proof_type;
+              const isVid = isVideoProof(currentUrl, currentType);
+
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 700 }}>
+                      VISUAL PROOF ({proofs.length} item{proofs.length > 1 ? 's' : ''})
+                    </div>
+                    {proofs.length > 1 && (
+                      <span style={{ fontSize: '11px', color: '#38bdf8' }}>
+                        {activeIdx + 1} of {proofs.length}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Main Preview */}
+                  <div
+                    style={{
+                      width: '100%',
+                      height: '240px',
+                      borderRadius: '12px',
+                      overflow: 'hidden',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      background: '#000',
+                      position: 'relative',
+                    }}
+                  >
+                    {isVid ? (
+                      <video
+                        key={currentUrl}
+                        src={currentUrl}
+                        controls
+                        playsInline
+                        style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                      />
+                    ) : (
+                      <img
+                        key={currentUrl}
+                        src={currentUrl}
+                        alt="Incident Proof"
+                        style={{ width: '100%', height: '100%', objectFit: 'contain', cursor: 'pointer' }}
+                        onClick={() => setPreviewMedia({ url: currentUrl, isVideo: false })}
+                      />
+                    )}
+                    <button
+                      style={{
+                        position: 'absolute',
+                        top: '8px',
+                        right: '8px',
+                        background: 'rgba(0,0,0,0.6)',
+                        border: '1px solid rgba(255,255,255,0.3)',
+                        borderRadius: '6px',
+                        color: '#fff',
+                        padding: '4px 8px',
+                        cursor: 'pointer',
+                        fontSize: '11px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                      }}
+                      onClick={() => setPreviewMedia({ url: currentUrl, isVideo: isVid })}
+                    >
+                      Enlarge ↗
+                    </button>
+                  </div>
+
+                  {/* Thumbnail Row if multiple proofs */}
+                  {proofs.length > 1 && (
+                    <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px' }}>
+                      {proofs.map((url, idx) => {
+                        const thumbIsVid = isVideoProof(url, selectedReport.proof_types?.[idx]);
+                        const isActive = idx === activeIdx;
+                        return (
+                          <div
+                            key={url + idx}
+                            onClick={() => setSelectedProofIdx(idx)}
+                            style={{
+                              width: '56px',
+                              height: '56px',
+                              borderRadius: '8px',
+                              overflow: 'hidden',
+                              flexShrink: 0,
+                              cursor: 'pointer',
+                              border: isActive ? '2px solid #38bdf8' : '1px solid rgba(255,255,255,0.15)',
+                              background: '#000',
+                              position: 'relative',
+                            }}
+                          >
+                            {thumbIsVid ? (
+                              <>
+                                <video src={url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.3)' }}>
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="#fff"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                                </div>
+                              </>
+                            ) : (
+                              <img src={url} alt={`Thumbnail ${idx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* Responder Field Photos / Media */}
+            {selectedReport.responder_media && selectedReport.responder_media.length > 0 && (
+              <div>
+                <div style={{ fontSize: '12px', color: '#10b981', fontWeight: 700, marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span>RESPONDER FIELD PHOTOS & MEDIA ({selectedReport.responder_media.length})</span>
+                </div>
+                <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px' }}>
+                  {selectedReport.responder_media.map((item, idx) => {
+                    const itemIsVid = isVideoProof(item.url, item.type);
+                    return (
+                      <div
+                        key={item.url + idx}
+                        onClick={() => setPreviewMedia({ url: item.url, isVideo: itemIsVid })}
+                        style={{
+                          width: '80px',
+                          borderRadius: '8px',
+                          overflow: 'hidden',
+                          flexShrink: 0,
+                          cursor: 'pointer',
+                          border: '1px solid rgba(16, 185, 129, 0.4)',
+                          background: '#0a192f',
+                          display: 'flex',
+                          flexDirection: 'column',
+                        }}
+                      >
+                        <div style={{ width: '100%', height: '60px', position: 'relative', background: '#000' }}>
+                          {itemIsVid ? (
+                            <>
+                              <video src={item.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.35)' }}>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="#fff"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                              </div>
+                            </>
+                          ) : (
+                            <img src={item.url} alt="Field media" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          )}
+                        </div>
+                        <div style={{ padding: '3px 4px', fontSize: '9px', color: '#cbd5e1', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {item.uploader_name || 'Responder'}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
 

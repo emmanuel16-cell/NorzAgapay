@@ -19,6 +19,16 @@ interface IncidentItem {
   description?: string;
   proof_url?: string;
   proof_type?: string;
+  proof_urls?: string[];
+  proof_types?: string[];
+  responder_media?: Array<{
+    url: string;
+    type?: string;
+    uploader_name?: string;
+    role?: string;
+    uploader_role?: string;
+    created_at?: string;
+  }>;
   created_at?: string;
   reporter_name?: string;
   reporter_phone?: string;
@@ -258,6 +268,9 @@ export default function CommandCenter() {
             description: r.description || '',
             proof_url: r.proof_url || null,
             proof_type: r.proof_type || 'image',
+            proof_urls: Array.isArray(r.proof_urls) && r.proof_urls.length > 0 ? r.proof_urls : (r.proof_url ? [r.proof_url] : []),
+            proof_types: Array.isArray(r.proof_types) ? r.proof_types : (r.proof_type ? [r.proof_type] : []),
+            responder_media: Array.isArray(r.responder_media) ? r.responder_media : [],
             created_at: r.created_at,
             reporter_name: r.reporter_name || r.reporter?.full_name || 'Resident',
             reporter_phone: r.reporter_phone || r.contact_number || '',
@@ -360,7 +373,10 @@ export default function CommandCenter() {
       return next;
     });
     setSelectedIncident(item);
-    setSelectedVisualUrl(item.proof_url || null);
+    const firstVisual = (item.proof_urls && item.proof_urls.length > 0)
+      ? item.proof_urls[0]
+      : (item.proof_url || (item.responder_media && item.responder_media.length > 0 ? item.responder_media[0].url : null));
+    setSelectedVisualUrl(firstVisual);
     if (item.status === 'escalated' || item.status === 'responding') {
       setActiveModalType('escalated');
     } else {
@@ -729,29 +745,108 @@ export default function CommandCenter() {
                   <span>Visual Proof</span>
                 </div>
 
-                {/* Proof thumbnail – only show if we have a real proof_url */}
-                {selectedIncident.proof_url ? (
-                  <div className="thumbnail-grid-2x3">
-                    <div
-                      className={`grid-thumb-item ${selectedVisualUrl === selectedIncident.proof_url ? 'active' : ''}`}
-                      onClick={() => setSelectedVisualUrl(selectedIncident.proof_url!)}
-                      style={{ position: 'relative' }}
-                    >
-                      {isVideoProof(selectedIncident.proof_url, selectedIncident.proof_type) ? (
-                        <>
-                          <video src={selectedIncident.proof_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.35)' }}>
-                            <svg width="22" height="22" viewBox="0 0 24 24" fill="#fff"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                {/* Proof thumbnail grid */}
+                {(() => {
+                  const proofs = (selectedIncident.proof_urls && selectedIncident.proof_urls.length > 0)
+                    ? selectedIncident.proof_urls
+                    : (selectedIncident.proof_url ? [selectedIncident.proof_url] : []);
+
+                  if (proofs.length === 0) {
+                    return (
+                      <div style={{ padding: '12px 0', color: '#64748b', fontSize: '12px', textAlign: 'center' }}>
+                        No visual proof submitted
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '8px' }}>
+                      {proofs.map((url, idx) => {
+                        const isVid = isVideoProof(url, selectedIncident.proof_types?.[idx] || selectedIncident.proof_type);
+                        const isActive = selectedVisualUrl === url;
+                        return (
+                          <div
+                            key={url + idx}
+                            className={`grid-thumb-item ${isActive ? 'active' : ''}`}
+                            onClick={() => setSelectedVisualUrl(url)}
+                            style={{
+                              position: 'relative',
+                              width: '64px',
+                              height: '64px',
+                              cursor: 'pointer',
+                              border: isActive ? '2px solid #38bdf8' : '1px solid rgba(255,255,255,0.15)',
+                              borderRadius: '8px',
+                              overflow: 'hidden',
+                              background: '#000',
+                            }}
+                          >
+                            {isVid ? (
+                              <>
+                                <video src={url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.35)' }}>
+                                  <svg width="18" height="18" viewBox="0 0 24 24" fill="#fff"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                                </div>
+                              </>
+                            ) : (
+                              <img src={url} alt={`Proof thumbnail ${idx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            )}
                           </div>
-                        </>
-                      ) : (
-                        <img src={selectedIncident.proof_url} alt="Proof thumbnail" />
-                      )}
+                        );
+                      })}
                     </div>
-                  </div>
-                ) : (
-                  <div style={{ padding: '12px 0', color: '#64748b', fontSize: '12px', textAlign: 'center' }}>
-                    No visual proof submitted
+                  );
+                })()}
+
+                {/* Responder Field Media Section */}
+                {selectedIncident.responder_media && selectedIncident.responder_media.length > 0 && (
+                  <div style={{ marginTop: '8px', marginBottom: '12px' }}>
+                    <div className="section-label-row" style={{ marginBottom: '6px' }}>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5">
+                        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                        <circle cx="12" cy="13" r="4"></circle>
+                      </svg>
+                      <span style={{ color: '#10b981' }}>
+                        Responder Field Media ({selectedIncident.responder_media.length})
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                      {selectedIncident.responder_media.map((item, mIdx) => {
+                        const isVid = isVideoProof(item.url, item.type);
+                        const isActive = selectedVisualUrl === item.url;
+                        return (
+                          <div
+                            key={item.url + mIdx}
+                            className={`grid-thumb-item ${isActive ? 'active' : ''}`}
+                            onClick={() => setSelectedVisualUrl(item.url)}
+                            title={`Uploaded by ${item.uploader_name || 'Responder'}`}
+                            style={{
+                              position: 'relative',
+                              width: '64px',
+                              height: '64px',
+                              cursor: 'pointer',
+                              border: isActive ? '2px solid #10b981' : '1px solid rgba(16,185,129,0.35)',
+                              borderRadius: '8px',
+                              overflow: 'hidden',
+                              background: '#0a192f',
+                            }}
+                          >
+                            {isVid ? (
+                              <>
+                                <video src={item.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.4)' }}>
+                                  <svg width="16" height="16" viewBox="0 0 24 24" fill="#fff"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                                </div>
+                              </>
+                            ) : (
+                              <img src={item.url} alt="Field media" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            )}
+                            <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.75)', fontSize: '8px', color: '#fff', textAlign: 'center', padding: '1px 2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {item.uploader_name || 'Field'}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
 
@@ -874,29 +969,108 @@ export default function CommandCenter() {
                   <span>Visual Proof</span>
                 </div>
 
-                {/* Proof thumbnail – only show if we have a real proof_url */}
-                {selectedIncident.proof_url ? (
-                  <div className="thumbnail-grid-2x3">
-                    <div
-                      className={`grid-thumb-item ${selectedVisualUrl === selectedIncident.proof_url ? 'active' : ''}`}
-                      onClick={() => setSelectedVisualUrl(selectedIncident.proof_url!)}
-                      style={{ position: 'relative' }}
-                    >
-                      {isVideoProof(selectedIncident.proof_url, selectedIncident.proof_type) ? (
-                        <>
-                          <video src={selectedIncident.proof_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.35)' }}>
-                            <svg width="22" height="22" viewBox="0 0 24 24" fill="#fff"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                {/* Proof thumbnail grid */}
+                {(() => {
+                  const proofs = (selectedIncident.proof_urls && selectedIncident.proof_urls.length > 0)
+                    ? selectedIncident.proof_urls
+                    : (selectedIncident.proof_url ? [selectedIncident.proof_url] : []);
+
+                  if (proofs.length === 0) {
+                    return (
+                      <div style={{ padding: '12px 0', color: '#64748b', fontSize: '12px', textAlign: 'center' }}>
+                        No visual proof submitted
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '8px' }}>
+                      {proofs.map((url, idx) => {
+                        const isVid = isVideoProof(url, selectedIncident.proof_types?.[idx] || selectedIncident.proof_type);
+                        const isActive = selectedVisualUrl === url;
+                        return (
+                          <div
+                            key={url + idx}
+                            className={`grid-thumb-item ${isActive ? 'active' : ''}`}
+                            onClick={() => setSelectedVisualUrl(url)}
+                            style={{
+                              position: 'relative',
+                              width: '64px',
+                              height: '64px',
+                              cursor: 'pointer',
+                              border: isActive ? '2px solid #38bdf8' : '1px solid rgba(255,255,255,0.15)',
+                              borderRadius: '8px',
+                              overflow: 'hidden',
+                              background: '#000',
+                            }}
+                          >
+                            {isVid ? (
+                              <>
+                                <video src={url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.35)' }}>
+                                  <svg width="18" height="18" viewBox="0 0 24 24" fill="#fff"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                                </div>
+                              </>
+                            ) : (
+                              <img src={url} alt={`Proof thumbnail ${idx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            )}
                           </div>
-                        </>
-                      ) : (
-                        <img src={selectedIncident.proof_url} alt="Proof thumbnail" />
-                      )}
+                        );
+                      })}
                     </div>
-                  </div>
-                ) : (
-                  <div style={{ padding: '12px 0', color: '#64748b', fontSize: '12px', textAlign: 'center' }}>
-                    No visual proof submitted
+                  );
+                })()}
+
+                {/* Responder Field Media Section */}
+                {selectedIncident.responder_media && selectedIncident.responder_media.length > 0 && (
+                  <div style={{ marginTop: '8px', marginBottom: '12px' }}>
+                    <div className="section-label-row" style={{ marginBottom: '6px' }}>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5">
+                        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                        <circle cx="12" cy="13" r="4"></circle>
+                      </svg>
+                      <span style={{ color: '#10b981' }}>
+                        Responder Field Media ({selectedIncident.responder_media.length})
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                      {selectedIncident.responder_media.map((item, mIdx) => {
+                        const isVid = isVideoProof(item.url, item.type);
+                        const isActive = selectedVisualUrl === item.url;
+                        return (
+                          <div
+                            key={item.url + mIdx}
+                            className={`grid-thumb-item ${isActive ? 'active' : ''}`}
+                            onClick={() => setSelectedVisualUrl(item.url)}
+                            title={`Uploaded by ${item.uploader_name || 'Responder'}`}
+                            style={{
+                              position: 'relative',
+                              width: '64px',
+                              height: '64px',
+                              cursor: 'pointer',
+                              border: isActive ? '2px solid #10b981' : '1px solid rgba(16,185,129,0.35)',
+                              borderRadius: '8px',
+                              overflow: 'hidden',
+                              background: '#0a192f',
+                            }}
+                          >
+                            {isVid ? (
+                              <>
+                                <video src={item.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.4)' }}>
+                                  <svg width="16" height="16" viewBox="0 0 24 24" fill="#fff"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                                </div>
+                              </>
+                            ) : (
+                              <img src={item.url} alt="Field media" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            )}
+                            <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.75)', fontSize: '8px', color: '#fff', textAlign: 'center', padding: '1px 2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {item.uploader_name || 'Field'}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
 

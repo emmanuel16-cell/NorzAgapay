@@ -10,6 +10,7 @@ import { supabaseAdmin } from '../config/supabase';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { io } from '../server';
 import { DispatcherVerificationService } from '../services/dispatcherVerificationService';
+import { formatIncidentReport } from './incidentReports';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -918,15 +919,131 @@ router.get('/reports', authenticateBarangay, async (req: any, res: Response) => 
         }
       }
 
-      return {
+      return formatIncidentReport({
         ...report,
         assigned_team_leader_ids: assignedIds,
         barangay_responder_name: responderName || responderNames.get(report.barangay_responded_by) || null,
-      };
+      });
     }));
   } catch (err) {
     console.error('Fetch barangay reports error:', err);
     res.status(500).json({ error: 'Failed to fetch reports' });
+  }
+});
+
+// ─── POST /api/barangay/reports/:id/field-media ──────────────────────────────
+// Attach field photo / video from team leader or responder
+
+router.post('/reports/:id/field-media', authenticateBarangay, upload.single('media'), async (req: any, res: Response) => {
+  try {
+    const { id } = req.params;
+    const file = req.file;
+    if (!file) {
+      res.status(400).json({ error: 'No media file provided.' });
+      return;
+    }
+
+    const { type } = req.body;
+    const ext = (file.originalname.split('.').pop() || 'jpg').toLowerCase();
+    const isVideo = type === 'video' || (file.mimetype && file.mimetype.startsWith('video/')) || ['mp4', 'mov', 'webm', '3gp', 'mkv', 'avi'].includes(ext);
+    const mediaType = isVideo ? 'video' : 'image';
+    const timestamp = Date.now();
+    const filename = `reports/field-media/${id}_${timestamp}.${ext}`;
+
+    const { error: uploadError } = await supabaseAdmin
+      .storage
+      .from(config.supabaseBucketName)
+      .upload(filename, file.buffer, {
+        contentType: file.mimetype,
+        upsert: true
+      });
+
+    if (uploadError) {
+      console.error('Field media upload error:', uploadError);
+      res.status(500).json({ error: 'Failed to upload media file.' });
+      return;
+    }
+
+    const { data: { publicUrl } } = supabaseAdmin
+      .storage
+      .from(config.supabaseBucketName)
+      .getPublicUrl(filename);
+
+    const { data: userRow } = await supabaseAdmin
+      .from('barangay_users')
+      .select('full_name, role')
+      .eq('id', req.barangayUser.userId)
+      .maybeSingle();
+
+    const uploaderName = userRow?.full_name || 'Team Leader';
+    const uploaderRole = userRow?.role || req.barangayUser.role || 'team_leader';
+
+    const newMediaItem = {
+      id: `media_${timestamp}`,
+      url: publicUrl,
+      type: mediaType,
+      uploader_id: req.barangayUser.userId,
+      uploader_name: uploaderName,
+      role: uploaderRole,
+      created_at: new Date().toISOString()
+    };
+
+    const { data: currentReport, error: fetchErr } = await supabaseAdmin
+      .from('incident_reports')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (fetchErr || !currentReport) {
+      res.status(404).json({ error: 'Incident report not found.' });
+      return;
+    }
+
+    const formattedCurrent = formatIncidentReport(currentReport);
+    const existingMedia = formattedCurrent.responder_media || [];
+    const updatedMedia = [...existingMedia, newMediaItem];
+
+    let updatedReport: any = null;
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('incident_reports')
+        .update({ responder_media: updatedMedia })
+        .eq('id', id)
+        .select('*, barangays(name)')
+        .single();
+      if (error) throw error;
+      updatedReport = data;
+    } catch (colErr) {
+      // Fallback: embed in barangay_response_notes
+      let notes = currentReport.barangay_response_notes || '';
+      if (notes.includes('[RESPONDER_MEDIA:')) {
+        notes = notes.replace(/\[RESPONDER_MEDIA:[\s\S]*?\]/, `[RESPONDER_MEDIA:${JSON.stringify(updatedMedia)}]`);
+      } else {
+        notes = notes ? `${notes} [RESPONDER_MEDIA:${JSON.stringify(updatedMedia)}]` : `[RESPONDER_MEDIA:${JSON.stringify(updatedMedia)}]`;
+      }
+      const { data, error } = await supabaseAdmin
+        .from('incident_reports')
+        .update({ barangay_response_notes: notes })
+        .eq('id', id)
+        .select('*, barangays(name)')
+        .single();
+      if (error) throw error;
+      updatedReport = data;
+    }
+
+    const formatted = formatIncidentReport(updatedReport);
+
+    io.emit('incident_report:updated', formatted);
+    io.to('commanders').emit('incident_report:updated', formatted);
+    if (formatted.barangay_id) {
+      io.to(`barangay:${formatted.barangay_id}`).emit('incident_report:updated', formatted);
+      io.to(`barangay:${formatted.barangay_id}`).emit('barangay:report_updated', formatted);
+    }
+
+    res.json(formatted);
+  } catch (err) {
+    console.error('Attach field media error in barangay route:', err);
+    res.status(500).json({ error: 'Internal server error while attaching field media.' });
   }
 });
 

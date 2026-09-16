@@ -27,9 +27,103 @@ const optionalAuthenticate = (req: AuthRequest, res: Response, next: NextFunctio
 };
 
 /**
+ * Universal Formatter for Incident Reports
+ * Ensures proof_url, proof_urls, proof_types, and responder_media are always present and normalized.
+ */
+export function formatIncidentReport(r: any): any {
+  if (!r) return r;
+
+  let proofUrls: string[] = [];
+  let proofTypes: string[] = [];
+  let responderMedia: any[] = [];
+
+  // Parse proof_urls
+  if (Array.isArray(r.proof_urls) && r.proof_urls.length > 0) {
+    proofUrls = r.proof_urls.filter(Boolean);
+  } else if (typeof r.proof_urls === 'string') {
+    try {
+      const parsed = JSON.parse(r.proof_urls);
+      if (Array.isArray(parsed)) proofUrls = parsed.filter(Boolean);
+    } catch (_) {}
+  }
+
+  // Fallback to parsing proof_url if proofUrls is empty
+  if (proofUrls.length === 0 && r.proof_url) {
+    if (typeof r.proof_url === 'string') {
+      const trimmed = r.proof_url.trim();
+      if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          if (Array.isArray(parsed)) proofUrls = parsed.filter(Boolean);
+        } catch (_) {}
+      } else if (trimmed.includes('|||')) {
+        proofUrls = trimmed.split('|||').map((s: string) => s.trim()).filter(Boolean);
+      }
+      if (proofUrls.length === 0 && trimmed) {
+        proofUrls = [trimmed];
+      }
+    }
+  }
+
+  // Parse proof_types
+  if (Array.isArray(r.proof_types) && r.proof_types.length > 0) {
+    proofTypes = r.proof_types;
+  } else if (typeof r.proof_types === 'string') {
+    try {
+      const parsed = JSON.parse(r.proof_types);
+      if (Array.isArray(parsed)) proofTypes = parsed;
+    } catch (_) {}
+  }
+
+  // Ensure proofTypes length matches proofUrls
+  if (proofTypes.length < proofUrls.length) {
+    proofTypes = proofUrls.map((url, idx) => {
+      if (proofTypes[idx]) return proofTypes[idx];
+      const lower = (url || '').toLowerCase().split('?')[0];
+      const isVideo = ['.mp4', '.mov', '.webm', '.3gp', '.mkv', '.avi'].some(ext => lower.endsWith(ext));
+      return isVideo ? 'video' : (r.proof_type || 'image');
+    });
+  }
+
+  // Parse responder_media
+  if (Array.isArray(r.responder_media)) {
+    responderMedia = r.responder_media;
+  } else if (typeof r.responder_media === 'string') {
+    try {
+      const parsed = JSON.parse(r.responder_media);
+      if (Array.isArray(parsed)) responderMedia = parsed;
+    } catch (_) {}
+  }
+
+  // Check if responder media is embedded in notes fallback
+  if (responderMedia.length === 0 && r.barangay_response_notes) {
+    const match = r.barangay_response_notes.match(/\[RESPONDER_MEDIA:([\s\S]*?)\]/);
+    if (match && match[1]) {
+      try {
+        const parsed = JSON.parse(match[1]);
+        if (Array.isArray(parsed)) responderMedia = parsed;
+      } catch (_) {}
+    }
+  }
+
+  const primaryProofUrl = proofUrls.length > 0 ? proofUrls[0] : (r.proof_url || null);
+  const primaryProofType = proofTypes.length > 0 ? proofTypes[0] : (r.proof_type || 'image');
+
+  return {
+    ...r,
+    proof_url: primaryProofUrl,
+    proof_type: primaryProofType,
+    proof_urls: proofUrls,
+    proof_types: proofTypes,
+    responder_media: responderMedia,
+    barangay_name: r.barangays?.name || r.barangay_name || null,
+  };
+}
+
+/**
  * POST /api/incident-reports
  * Handles report submission from mobile and resident apps.
- * Supports multipart/form-data for proof file upload.
+ * Supports multipart/form-data for multiple proof files.
  */
 router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -82,7 +176,18 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
       }
     }
 
-    const uploadedFiles: Express.Multer.File[] = (req.files as Express.Multer.File[]) || (req.file ? [req.file] : []);
+    const rawFiles: Express.Multer.File[] = (req.files as Express.Multer.File[]) || (req.file ? [req.file] : []);
+    // Deduplicate in case client sent both 'proofs' array and legacy 'proof' field
+    const uploadedFiles: Express.Multer.File[] = [];
+    const seenFiles = new Set<string>();
+    for (const f of rawFiles) {
+      const key = `${f.originalname}_${f.size}`;
+      if (!seenFiles.has(key)) {
+        seenFiles.add(key);
+        uploadedFiles.push(f);
+      }
+    }
+
     const proofUrls: string[] = [];
     const proofTypes: string[] = [];
 
@@ -126,10 +231,12 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
       }
     }
 
-    const proofUrl = proofUrls.length > 0 ? proofUrls[0] : null;
-    const finalProofType = proofTypes.length > 0 ? proofTypes[0] : (proof_type || 'image');
+    const primaryProofUrl = proofUrls.length > 0 ? proofUrls[0] : null;
+    const primaryProofType = proofTypes.length > 0 ? proofTypes[0] : (proof_type || 'image');
+    // If multiple proofs exist, encode all URLs in proof_url column as JSON fallback
+    const encodedProofUrl = proofUrls.length > 1 ? JSON.stringify(proofUrls) : primaryProofUrl;
 
-    // Insert into database
+    // Insert payload
     const insertPayload: any = {
       type,
       title,
@@ -137,8 +244,8 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
       description,
       latitude: parseFloat(latitude),
       longitude: parseFloat(longitude),
-      proof_url: proofUrl,
-      proof_type: finalProofType,
+      proof_url: encodedProofUrl,
+      proof_type: primaryProofType,
       reporter_type: reporter_type || 'resident',
       reporter_id: req.user?.userId || null,
       reporter_name: reporterName,
@@ -151,6 +258,7 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
     let dbError: any = null;
 
     try {
+      // Attempt insert with proof_urls & proof_types columns
       const res = await supabaseAdmin
         .from('incident_reports')
         .insert({
@@ -164,7 +272,8 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
       if (res.error) throw res.error;
       report = res.data;
     } catch (colErr) {
-      // Fallback without proof_urls / proof_types columns
+      // Fallback: database doesn't have proof_urls column yet
+      // insertPayload already preserved all URLs encoded in proof_url!
       const res = await supabaseAdmin
         .from('incident_reports')
         .insert(insertPayload)
@@ -180,12 +289,11 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
       return;
     }
 
-    const formattedReport = {
+    const formattedReport = formatIncidentReport({
       ...report,
-      proof_urls: (report as any)?.proof_urls?.length ? (report as any).proof_urls : proofUrls,
-      proof_types: (report as any)?.proof_types?.length ? (report as any).proof_types : proofTypes,
-      barangay_name: (report as any)?.barangays?.name || null
-    };
+      proof_urls: proofUrls.length > 0 ? proofUrls : ((report as any)?.proof_urls || []),
+      proof_types: proofTypes.length > 0 ? proofTypes : ((report as any)?.proof_types || []),
+    });
 
     // Auto-create pending task so mobile_app responders see it in Pending dispatches
     try {
@@ -232,7 +340,7 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response) => {
         const userId = req.user!.userId;
         const { data: reports, error } = await supabaseAdmin
             .from('incident_reports')
-            .select('*')
+            .select('*, barangays(name)')
             .eq('reporter_id', userId)
             .order('created_at', { ascending: false });
 
@@ -242,7 +350,7 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response) => {
             return;
         }
 
-        res.json(reports);
+        res.json((reports || []).map(formatIncidentReport));
     } catch (err) {
         console.error('Fetch user reports error:', err);
         res.status(500).json({ error: 'Internal server error' });
@@ -262,7 +370,7 @@ router.get('/resident', async (req: Request, res: Response) => {
 
     const { data: reports, error } = await supabaseAdmin
       .from('incident_reports')
-      .select('*')
+      .select('*, barangays(name)')
       .eq('reporter_type', 'resident')
       .eq('reporter_phone', contact_number)
       .order('created_at', { ascending: false });
@@ -272,7 +380,7 @@ router.get('/resident', async (req: Request, res: Response) => {
       return res.status(500).json({ error: 'Failed to fetch reports' });
     }
 
-    res.json(reports);
+    res.json((reports || []).map(formatIncidentReport));
   } catch (err) {
     console.error('Fetch resident reports error:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -303,12 +411,7 @@ router.get('/', async (req: Request, res: Response) => {
             return;
         }
 
-        const formatted = (reports || []).map((r: any) => ({
-            ...r,
-            barangay_name: r.barangays?.name || null
-        }));
-
-        res.json(formatted);
+        res.json((reports || []).map(formatIncidentReport));
     } catch (err) {
         console.error('Fetch reports error:', err);
         res.status(500).json({ error: 'Internal server error' });
@@ -377,7 +480,7 @@ router.patch('/:id', optionalAuthenticate, upload.any(), async (req: AuthRequest
     if (description !== undefined) updatePayload.description = description;
     if (specifics !== undefined) updatePayload.specifics = specifics;
     if (allUrls.length > 0) {
-      updatePayload.proof_url = allUrls[0];
+      updatePayload.proof_url = allUrls.length > 1 ? JSON.stringify(allUrls) : allUrls[0];
     }
 
     let updatedReport: any = null;
@@ -404,17 +507,130 @@ router.patch('/:id', optionalAuthenticate, upload.any(), async (req: AuthRequest
       updatedReport = data;
     }
 
-    const formatted = {
+    const formatted = formatIncidentReport({
       ...updatedReport,
       proof_urls: allUrls,
-      barangay_name: updatedReport?.barangays?.name || null
-    };
+    });
 
     io.emit('incident_report:updated', formatted);
+    io.to('commanders').emit('incident_report:updated', formatted);
+    if (formatted.barangay_id) {
+      io.to(`barangay:${formatted.barangay_id}`).emit('incident_report:updated', formatted);
+      io.to(`barangay:${formatted.barangay_id}`).emit('barangay:report_updated', formatted);
+    }
+
     res.json(formatted);
   } catch (err) {
     console.error('Update report error:', err);
     res.status(500).json({ error: 'Failed to update report' });
+  }
+});
+
+/**
+ * POST /api/incident-reports/:id/field-media
+ * Attach field photo or video to an incident report
+ */
+router.post('/:id/field-media', optionalAuthenticate, upload.single('media'), async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const file = req.file;
+    if (!file) {
+      res.status(400).json({ error: 'No media file provided.' });
+      return;
+    }
+
+    const { type, uploader_name, role } = req.body;
+    const ext = (file.originalname.split('.').pop() || 'jpg').toLowerCase();
+    const isVideo = type === 'video' || (file.mimetype && file.mimetype.startsWith('video/')) || ['mp4', 'mov', 'webm', '3gp', 'mkv', 'avi'].includes(ext);
+    const mediaType = isVideo ? 'video' : 'image';
+    const timestamp = Date.now();
+    const filename = `reports/field-media/${id}_${timestamp}.${ext}`;
+
+    const { error: uploadError } = await supabaseAdmin
+      .storage
+      .from(config.supabaseBucketName)
+      .upload(filename, file.buffer, {
+        contentType: file.mimetype,
+        upsert: true
+      });
+
+    if (uploadError) {
+      console.error('Field media upload error:', uploadError);
+      res.status(500).json({ error: 'Failed to upload media file.' });
+      return;
+    }
+
+    const { data: { publicUrl } } = supabaseAdmin
+      .storage
+      .from(config.supabaseBucketName)
+      .getPublicUrl(filename);
+
+    const newMediaItem = {
+      id: `media_${timestamp}`,
+      url: publicUrl,
+      type: mediaType,
+      uploader_id: req.user?.userId || null,
+      uploader_name: uploader_name || (req.user as any)?.name || 'Responder',
+      role: role || (req.user as any)?.role || 'team_leader',
+      created_at: new Date().toISOString()
+    };
+
+    const { data: currentReport, error: fetchErr } = await supabaseAdmin
+      .from('incident_reports')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (fetchErr || !currentReport) {
+      res.status(404).json({ error: 'Incident report not found.' });
+      return;
+    }
+
+    const formattedCurrent = formatIncidentReport(currentReport);
+    const existingMedia = formattedCurrent.responder_media || [];
+    const updatedMedia = [...existingMedia, newMediaItem];
+
+    let updatedReport: any = null;
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('incident_reports')
+        .update({ responder_media: updatedMedia })
+        .eq('id', id)
+        .select('*, barangays(name)')
+        .single();
+      if (error) throw error;
+      updatedReport = data;
+    } catch (colErr) {
+      // Fallback: embed in barangay_response_notes
+      let notes = currentReport.barangay_response_notes || '';
+      if (notes.includes('[RESPONDER_MEDIA:')) {
+        notes = notes.replace(/\[RESPONDER_MEDIA:[\s\S]*?\]/, `[RESPONDER_MEDIA:${JSON.stringify(updatedMedia)}]`);
+      } else {
+        notes = notes ? `${notes} [RESPONDER_MEDIA:${JSON.stringify(updatedMedia)}]` : `[RESPONDER_MEDIA:${JSON.stringify(updatedMedia)}]`;
+      }
+      const { data, error } = await supabaseAdmin
+        .from('incident_reports')
+        .update({ barangay_response_notes: notes })
+        .eq('id', id)
+        .select('*, barangays(name)')
+        .single();
+      if (error) throw error;
+      updatedReport = data;
+    }
+
+    const formatted = formatIncidentReport(updatedReport);
+
+    io.emit('incident_report:updated', formatted);
+    io.to('commanders').emit('incident_report:updated', formatted);
+    if (formatted.barangay_id) {
+      io.to(`barangay:${formatted.barangay_id}`).emit('incident_report:updated', formatted);
+      io.to(`barangay:${formatted.barangay_id}`).emit('barangay:report_updated', formatted);
+    }
+
+    res.json(formatted);
+  } catch (err) {
+    console.error('Attach field media error:', err);
+    res.status(500).json({ error: 'Internal server error while attaching field media.' });
   }
 });
 
