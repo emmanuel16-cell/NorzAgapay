@@ -1066,17 +1066,7 @@ export default function VerificationPage() {
               <div className="spinner" />
             </div>
           ) : currentOfficerList.length === 0 ? (
-            <div className="oq-empty">
-              <div className="oq-empty-icon">{viewMode === 'pending' ? '✅' : '📦'}</div>
-              <p style={{ fontSize: '16px', fontWeight: 600, color: '#94a3b8' }}>
-                {viewMode === 'pending' ? 'No pending officer verifications' : 'No archived officers'}
-              </p>
-              <p style={{ fontSize: '13px', marginTop: '6px' }}>
-                {viewMode === 'pending'
-                  ? 'All officer registrations have been reviewed.'
-                  : 'Rejected applications will appear here and can be restored at any time.'}
-              </p>
-            </div>
+            null
           ) : (
             <div className="oq-card-grid">
               {currentOfficerList.map((user) => {
@@ -1130,19 +1120,7 @@ export default function VerificationPage() {
               <div className="spinner" />
             </div>
           ) : currentDispatcherList.length === 0 ? (
-            <div className="oq-empty">
-              <div className="oq-empty-icon">{viewMode === 'pending' ? '✅' : '📦'}</div>
-              <p style={{ fontSize: '16px', fontWeight: 600, color: '#94a3b8' }}>
-                {viewMode === 'pending'
-                  ? 'No pending dispatcher verifications'
-                  : 'No archived dispatcher records'}
-              </p>
-              <p style={{ fontSize: '13px', marginTop: '6px' }}>
-                {viewMode === 'pending'
-                  ? 'All Barangay Dispatcher registration requests have been reviewed.'
-                  : 'Rejected or archived dispatchers will appear here.'}
-              </p>
-            </div>
+            null
           ) : (
             <div className="disp-table-wrapper">
               <table className="disp-table">
