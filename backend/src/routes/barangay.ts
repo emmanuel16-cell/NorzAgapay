@@ -872,8 +872,16 @@ router.get('/reports', authenticateBarangay, async (req: any, res: Response) => 
     const { data, error } = await query;
     if (error) throw error;
 
+    // Filter out reports sent exclusively to MDRRMO
+    const reportsForBarangay = (data || []).filter((report: any) => {
+      if (report.send_to === 'mdrrmo') return false;
+      if (report.specifics && report.specifics.includes('[SEND_TO:mdrrmo]')) return false;
+      if (report.description && report.description.includes('[SEND_TO:mdrrmo]')) return false;
+      return true;
+    });
+
     const responderIds = new Set<string>();
-    for (const report of data || []) {
+    for (const report of reportsForBarangay) {
       if (report.barangay_responded_by) responderIds.add(report.barangay_responded_by);
       if (report.barangay_response_notes) {
         const match = report.barangay_response_notes.match(/\[ASSIGNED:([^\]]+)\]/);
@@ -899,7 +907,7 @@ router.get('/reports', authenticateBarangay, async (req: any, res: Response) => 
       }
     }
 
-    res.json((data || []).map((report: any) => {
+    res.json(reportsForBarangay.map((report: any) => {
       let assignedIds: string[] = [];
       if (report.barangay_response_notes) {
         const match = report.barangay_response_notes.match(/\[ASSIGNED:([^\]]+)\]/);

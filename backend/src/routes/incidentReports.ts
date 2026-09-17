@@ -106,11 +106,29 @@ export function formatIncidentReport(r: any): any {
     }
   }
 
+  let sendTo = r.send_to;
+  let cleanSpecifics = r.specifics || '';
+  if (cleanSpecifics.includes('[SEND_TO:')) {
+    const match = cleanSpecifics.match(/\[SEND_TO:([^\]]+)\]/);
+    if (match && match[1]) {
+      if (!sendTo) sendTo = match[1].trim();
+      cleanSpecifics = cleanSpecifics.replace(/\[SEND_TO:[^\]]+\]/, '').trim();
+    }
+  }
+  if (!sendTo && r.description && r.description.includes('[SEND_TO:')) {
+    const match = r.description.match(/\[SEND_TO:([^\]]+)\]/);
+    if (match && match[1]) {
+      sendTo = match[1].trim();
+    }
+  }
+
   const primaryProofUrl = proofUrls.length > 0 ? proofUrls[0] : (r.proof_url || null);
   const primaryProofType = proofTypes.length > 0 ? proofTypes[0] : (r.proof_type || 'image');
 
   return {
     ...r,
+    send_to: sendTo || (r.barangay_id ? 'barangay' : 'all'),
+    specifics: cleanSpecifics,
     proof_url: primaryProofUrl,
     proof_type: primaryProofType,
     proof_urls: proofUrls,
@@ -139,8 +157,13 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
       first_name,
       last_name,
       contact_number,
-      barangay_id
+      barangay_id,
+      send_to
     } = req.body;
+
+    const targetSendTo = (send_to === 'barangay' || send_to === 'mdrrmo')
+      ? send_to
+      : (type === 'emergency' && !barangay_id ? 'mdrrmo' : 'barangay');
 
     // Basic validation
     if (!type || !title || !latitude || !longitude) {
@@ -237,10 +260,14 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
     const encodedProofUrl = proofUrls.length > 1 ? JSON.stringify(proofUrls) : primaryProofUrl;
 
     // Insert payload
+    const encodedSpecifics = specifics 
+      ? `${specifics} [SEND_TO:${targetSendTo}]` 
+      : `[SEND_TO:${targetSendTo}]`;
+
     const insertPayload: any = {
       type,
       title,
-      specifics,
+      specifics: encodedSpecifics,
       description,
       latitude: parseFloat(latitude),
       longitude: parseFloat(longitude),
@@ -251,14 +278,15 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
       reporter_name: reporterName,
       reporter_phone: reporterPhone,
       barangay_id: resolvedBarangayId,
-      status: 'pending'
+      status: 'pending',
+      send_to: targetSendTo
     };
 
     let report: any = null;
     let dbError: any = null;
 
     try {
-      // Attempt insert with proof_urls & proof_types columns
+      // Attempt insert with proof_urls, proof_types, and send_to columns
       const res = await supabaseAdmin
         .from('incident_reports')
         .insert({
@@ -272,11 +300,12 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
       if (res.error) throw res.error;
       report = res.data;
     } catch (colErr) {
-      // Fallback: database doesn't have proof_urls column yet
-      // insertPayload already preserved all URLs encoded in proof_url!
+      // Fallback: database might lack proof_urls or send_to column
+      const safePayload = { ...insertPayload };
+      delete safePayload.send_to;
       const res = await supabaseAdmin
         .from('incident_reports')
-        .insert(insertPayload)
+        .insert(safePayload)
         .select('*, barangays(name)')
         .single();
       report = res.data;
@@ -295,29 +324,31 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
       proof_types: proofTypes.length > 0 ? proofTypes : ((report as any)?.proof_types || []),
     });
 
-    // Auto-create pending task so mobile_app responders see it in Pending dispatches
-    try {
-      await supabaseAdmin
-        .from('tasks')
-        .insert({
-          title: `🚨 Emergency: ${formattedReport.title}`,
-          description: formattedReport.description || formattedReport.specifics || `Emergency reported at ${formattedReport.barangay_name || 'Norzagaray'}.`,
-          task_type: 'general_labor',
-          status: 'pending',
-          latitude: formattedReport.latitude,
-          longitude: formattedReport.longitude,
-          address: formattedReport.address || formattedReport.barangay_name || 'Norzagaray, Bulacan'
-        });
-      io.emit('task:new', formattedReport);
-    } catch (taskErr) {
-      console.warn('Could not auto-create initial task:', taskErr);
+    // If sent to MDRRMO (or all):
+    if (targetSendTo !== 'barangay') {
+      try {
+        await supabaseAdmin
+          .from('tasks')
+          .insert({
+            title: `🚨 Emergency: ${formattedReport.title}`,
+            description: formattedReport.description || formattedReport.specifics || `Emergency reported at ${formattedReport.barangay_name || 'Norzagaray'}.`,
+            task_type: 'general_labor',
+            status: 'pending',
+            latitude: formattedReport.latitude,
+            longitude: formattedReport.longitude,
+            address: formattedReport.address || formattedReport.barangay_name || 'Norzagaray, Bulacan'
+          });
+        io.emit('task:new', formattedReport);
+      } catch (taskErr) {
+        console.warn('Could not auto-create initial task:', taskErr);
+      }
+
+      // Emit socket event for real-time notification to MDRRMO commanders
+      io.to('commanders').emit('incident_report:new', formattedReport);
     }
 
-    // Emit socket event for real-time notification
-    io.to('commanders').emit('incident_report:new', formattedReport);
-
-    // Notify specific barangay room if assigned
-    if (resolvedBarangayId) {
+    // If sent to Barangay: notify specific barangay room ONLY
+    if (targetSendTo !== 'mdrrmo' && resolvedBarangayId) {
       io.to(`barangay:${resolvedBarangayId}`).emit('barangay:report_received', formattedReport);
     }
 
@@ -411,7 +442,20 @@ router.get('/', async (req: Request, res: Response) => {
             return;
         }
 
-        res.json((reports || []).map(formatIncidentReport));
+        const formatted = (reports || []).map(formatIncidentReport);
+        // MDRRMO only sees reports intended for MDRRMO or escalated reports
+        const mdrrmoReports = formatted.filter(r => {
+          if (r.send_to === 'barangay') {
+            const isEscalated = r.status === 'escalated' || 
+                                r.beyond_barangay_capability || 
+                                r.mdrrmo_response_status === 'responding' ||
+                                (r.barangay_response_notes && r.barangay_response_notes.toLowerCase().includes('escalated'));
+            return isEscalated;
+          }
+          return true;
+        });
+
+        res.json(mdrrmoReports);
     } catch (err) {
         console.error('Fetch reports error:', err);
         res.status(500).json({ error: 'Internal server error' });

@@ -205,7 +205,6 @@ export default function CommandCenter() {
   const [filters, setFilters] = useState({
     incidents: true,
     escalated: true,
-    responseOngoing: true,
     dispatchUnits: true,
     unitsLine: true,
     resolved: true,
@@ -249,13 +248,19 @@ export default function CommandCenter() {
           const lat = parseFloat(r.latitude);
           const lng = parseFloat(r.longitude);
           if (!lat || !lng) return; // skip if no valid coordinates
+          const isEscalated = r.beyond_barangay_capability || r.severity === 'critical' || r.status === 'escalated';
+          const isBarangayResponding = r.barangay_response_status === 'responding';
+
+          // Remove incident from Command Center if a barangay is already responding to it (unless escalated)
+          if (isBarangayResponding && !isEscalated) {
+            return;
+          }
+
           let st: 'pending' | 'responding' | 'escalated' | 'resolved' = 'pending';
           if (r.status === 'resolved' || r.status === 'closed') {
             st = 'resolved';
-          } else if (r.beyond_barangay_capability || r.severity === 'critical' || r.status === 'escalated') {
+          } else if (isEscalated) {
             st = 'escalated';
-          } else if (r.status === 'responding' || r.status === 'in_progress' || r.barangay_response_status === 'responding') {
-            st = 'responding';
           }
 
           items.push({
@@ -336,7 +341,7 @@ export default function CommandCenter() {
 
   // Stats calculation — real counts, no demo padding
   const stats = useMemo(() => {
-    const incCount = incidents.filter(i => i.status === 'pending' || i.status === 'responding').length;
+    const incCount = incidents.filter(i => i.status === 'pending').length;
     const escCount = incidents.filter(i => i.status === 'escalated').length;
     const unitCount = dispatchUnits.length;
     const resCount = incidents.filter(i => i.status === 'resolved').length;
@@ -353,7 +358,6 @@ export default function CommandCenter() {
     const pts: [number, number][] = [];
     incidents.forEach((inc) => {
       if (inc.status === 'pending' && !filters.incidents) return;
-      if (inc.status === 'responding' && !filters.responseOngoing) return;
       if (inc.status === 'escalated' && !filters.escalated) return;
       if (inc.status === 'resolved' && !filters.resolved) return;
       pts.push([inc.latitude, inc.longitude]);
@@ -568,16 +572,6 @@ export default function CommandCenter() {
                 Escalated
               </label>
 
-              <label className="hud-checkbox-label" style={{ color: filters.responseOngoing ? '#3b82f6' : '#64748b' }}>
-                <input
-                  type="checkbox"
-                  checked={filters.responseOngoing}
-                  onChange={(e) => setFilters({ ...filters, responseOngoing: e.target.checked })}
-                  style={{ accentColor: '#3b82f6' }}
-                />
-                Response Ongoing
-              </label>
-
               <label className="hud-checkbox-label" style={{ color: filters.dispatchUnits ? '#06b6d4' : '#64748b' }}>
                 <input
                   type="checkbox"
@@ -632,18 +626,6 @@ export default function CommandCenter() {
                   key={inc.id}
                   position={[inc.latitude, inc.longitude]}
                   icon={createTeardropPin('#F97316', '!', isUnread)}
-                  eventHandlers={{ click: () => handleOpenIncidentPin(inc) }}
-                />
-              );
-            }
-
-            if (inc.status === 'responding') {
-              if (!filters.responseOngoing) return null;
-              return (
-                <Marker
-                  key={inc.id}
-                  position={[inc.latitude, inc.longitude]}
-                  icon={createTeardropPin('#3B82F6', '!', isUnread)}
                   eventHandlers={{ click: () => handleOpenIncidentPin(inc) }}
                 />
               );
