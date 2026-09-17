@@ -1580,6 +1580,15 @@ tbody tr:last-child td { border-bottom: none; }
   border-color: rgba(168, 85, 247, 0.2);
 }
 
+/* Keep the reporter's note with the reporter media, before field updates. */
+.panel-resident .reporter-notes {
+  order: 1;
+}
+
+.panel-resident .responder-media-section {
+  order: 2;
+}
+
 /* Visual Preview Center Viewport */
 .preview-header-row {
   display: flex;

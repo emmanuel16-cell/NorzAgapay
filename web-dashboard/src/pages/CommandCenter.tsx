@@ -809,7 +809,7 @@ export default function CommandCenter() {
 
                 {/* Responder Field Media Section */}
                 {selectedIncident.responder_media && selectedIncident.responder_media.length > 0 && (
-                  <div style={{ marginTop: '8px', marginBottom: '12px' }}>
+                  <div className="responder-media-section" style={{ marginTop: '8px', marginBottom: '12px' }}>
                     <div className="section-label-row" style={{ marginBottom: '6px' }}>
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5">
                         <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
@@ -861,7 +861,7 @@ export default function CommandCenter() {
                 )}
 
                 {/* Response details box */}
-                <div className="panel-details-box">
+                <div className="panel-details-box reporter-notes">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" strokeWidth="2" style={{ flexShrink: 0 }}>
                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                     <polyline points="14 2 14 8 20 8"></polyline>
@@ -1035,7 +1035,7 @@ export default function CommandCenter() {
 
                 {/* Responder Field Media Section */}
                 {selectedIncident.responder_media && selectedIncident.responder_media.length > 0 && (
-                  <div style={{ marginTop: '8px', marginBottom: '12px' }}>
+                  <div className="responder-media-section" style={{ marginTop: '8px', marginBottom: '12px' }}>
                     <div className="section-label-row" style={{ marginBottom: '6px' }}>
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5">
                         <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
@@ -1086,7 +1086,7 @@ export default function CommandCenter() {
                   </div>
                 )}
 
-                <div className="panel-details-box">
+                <div className="panel-details-box reporter-notes">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" strokeWidth="2" style={{ flexShrink: 0 }}>
                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                     <polyline points="14 2 14 8 20 8"></polyline>
