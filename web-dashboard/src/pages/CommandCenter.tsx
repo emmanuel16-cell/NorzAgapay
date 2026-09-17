@@ -39,7 +39,6 @@ interface IncidentItem {
   barangay_name?: string;
   barangay_response_status?: string;
   barangay_responder_name?: string;
-  barangay_dispatcher_name?: string;
   mdrrmo_response_status?: string;
   mdrrmo_responder_name?: string;
 }
@@ -251,20 +250,12 @@ export default function CommandCenter() {
           const lng = parseFloat(r.longitude);
           if (!lat || !lng) return; // skip if no valid coordinates
           let st: 'pending' | 'responding' | 'escalated' | 'resolved' = 'pending';
-          const reportStatus = String(r.status || '').toLowerCase();
-          const barangayResponseStatus = String(r.barangay_response_status || '').toLowerCase();
-          const mdrrmoResponseStatus = String(r.mdrrmo_response_status || '').toLowerCase();
-
-          if (reportStatus === 'resolved' || reportStatus === 'closed' || barangayResponseStatus === 'resolved') {
+          if (r.status === 'resolved' || r.status === 'closed') {
             st = 'resolved';
-          } else if (
-            ['responding', 'in_progress', 'in-progress'].includes(reportStatus) ||
-            ['responding', 'in_progress', 'in-progress'].includes(barangayResponseStatus) ||
-            ['responding', 'in_progress', 'in-progress'].includes(mdrrmoResponseStatus)
-          ) {
-            st = 'responding';
-          } else if (r.beyond_barangay_capability || r.severity === 'critical' || reportStatus === 'escalated') {
+          } else if (r.beyond_barangay_capability || r.severity === 'critical' || r.status === 'escalated') {
             st = 'escalated';
+          } else if (r.status === 'responding' || r.status === 'in_progress' || r.barangay_response_status === 'responding') {
+            st = 'responding';
           }
 
           items.push({
@@ -291,7 +282,6 @@ export default function CommandCenter() {
             barangay_name: r.barangay_name || (r.barangays && r.barangays.name) || '',
             barangay_response_status: r.barangay_response_status || 'pending',
             barangay_responder_name: r.barangay_responder_name,
-            barangay_dispatcher_name: r.barangay_dispatcher_name || '',
             mdrrmo_response_status: r.mdrrmo_response_status || 'pending',
             mdrrmo_responder_name: r.mdrrmo_responder_name,
           });
@@ -1186,7 +1176,7 @@ export default function CommandCenter() {
                     <div className="user-details-text">
                       <span className="user-title">{selectedIncident.barangay_name || 'Responding Barangay'}</span>
                       <span className="user-title" style={{ fontSize: '11px', color: '#cbd5e1' }}>
-                        Dispatcher: {selectedIncident.barangay_dispatcher_name || 'Not assigned'}
+                        Responder: {selectedIncident.responder_name || selectedIncident.barangay_responder_name || 'N/A'}
                       </span>
                       {selectedIncident.responder_phone && (
                         <span className="user-phone purple">{selectedIncident.responder_phone}</span>
