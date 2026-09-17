@@ -231,6 +231,7 @@ export default function CommandCenter() {
   const [selectedIncident, setSelectedIncident] = useState<IncidentItem | null>(null);
   const [selectedUnit, setSelectedUnit] = useState<DispatchUnitItem | null>(null);
   const [selectedVisualUrl, setSelectedVisualUrl] = useState<string | null>(null);
+  const previewMediaRef = useRef<HTMLImageElement | HTMLVideoElement>(null);
 
   // Fetch data
   const fetchData = async () => {
@@ -400,6 +401,15 @@ export default function CommandCenter() {
     if (!text) return;
     navigator.clipboard.writeText(text);
     toast.success(`Copied: ${text}`);
+  };
+
+  const openVisualFullscreen = () => {
+    const media = previewMediaRef.current;
+    if (media?.requestFullscreen) {
+      media.requestFullscreen().catch(() => window.open(selectedVisualUrl || '', '_blank', 'noopener,noreferrer'));
+      return;
+    }
+    if (selectedVisualUrl) window.open(selectedVisualUrl, '_blank', 'noopener,noreferrer');
   };
 
   // Co-response confirmation modal state
@@ -742,7 +752,7 @@ export default function CommandCenter() {
                     <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
                     <circle cx="12" cy="13" r="4"></circle>
                   </svg>
-                  <span>Visual Proof</span>
+                  <span>From the reporter</span>
                 </div>
 
                 {/* Proof thumbnail grid */}
@@ -806,7 +816,7 @@ export default function CommandCenter() {
                         <circle cx="12" cy="13" r="4"></circle>
                       </svg>
                       <span style={{ color: '#10b981' }}>
-                        Responder Field Media ({selectedIncident.responder_media.length})
+                        From the responder ({selectedIncident.responder_media.length})
                       </span>
                     </div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
@@ -885,6 +895,7 @@ export default function CommandCenter() {
                     <>
                       {isVideoProof(selectedVisualUrl, selectedIncident.proof_type) ? (
                         <video
+                          ref={(element) => { previewMediaRef.current = element; }}
                           key={selectedVisualUrl}
                           src={selectedVisualUrl}
                           controls
@@ -893,12 +904,13 @@ export default function CommandCenter() {
                           style={{ background: '#000' }}
                         />
                       ) : (
-                        <img src={selectedVisualUrl} alt="Visual preview" className="preview-display-image" />
+                        <img ref={(element) => { previewMediaRef.current = element; }} src={selectedVisualUrl} alt="Visual preview" className="preview-display-image" />
                       )}
                       <button
                         className="preview-fullscreen-btn"
-                        onClick={() => window.open(selectedVisualUrl, '_blank')}
-                        title="Open in new tab"
+                        onClick={openVisualFullscreen}
+                        title="View full screen"
+                        aria-label="View full screen"
                       >
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                           <polyline points="15 3 21 3 21 9"></polyline>
@@ -966,7 +978,7 @@ export default function CommandCenter() {
                     <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
                     <circle cx="12" cy="13" r="4"></circle>
                   </svg>
-                  <span>Visual Proof</span>
+                  <span>From the reporter</span>
                 </div>
 
                 {/* Proof thumbnail grid */}
@@ -1030,7 +1042,7 @@ export default function CommandCenter() {
                         <circle cx="12" cy="13" r="4"></circle>
                       </svg>
                       <span style={{ color: '#10b981' }}>
-                        Responder Field Media ({selectedIncident.responder_media.length})
+                        From the responder ({selectedIncident.responder_media.length})
                       </span>
                     </div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
@@ -1108,6 +1120,7 @@ export default function CommandCenter() {
                     <>
                       {isVideoProof(selectedVisualUrl, selectedIncident.proof_type) ? (
                         <video
+                          ref={(element) => { previewMediaRef.current = element; }}
                           key={selectedVisualUrl}
                           src={selectedVisualUrl}
                           controls
@@ -1116,12 +1129,13 @@ export default function CommandCenter() {
                           style={{ background: '#000' }}
                         />
                       ) : (
-                        <img src={selectedVisualUrl} alt="Visual preview" className="preview-display-image" />
+                        <img ref={(element) => { previewMediaRef.current = element; }} src={selectedVisualUrl} alt="Visual preview" className="preview-display-image" />
                       )}
                       <button
                         className="preview-fullscreen-btn"
-                        onClick={() => window.open(selectedVisualUrl, '_blank')}
-                        title="Open in new tab"
+                        onClick={openVisualFullscreen}
+                        title="View full screen"
+                        aria-label="View full screen"
                       >
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                           <polyline points="15 3 21 3 21 9"></polyline>
@@ -1160,9 +1174,9 @@ export default function CommandCenter() {
                       </svg>
                     </div>
                     <div className="user-details-text">
-                      <span className="user-title">Team Leader</span>
+                      <span className="user-title">{selectedIncident.barangay_name || 'Responding Barangay'}</span>
                       <span className="user-title" style={{ fontSize: '11px', color: '#cbd5e1' }}>
-                        {selectedIncident.responder_name || selectedIncident.barangay_responder_name || 'N/A'}
+                        Responder: {selectedIncident.responder_name || selectedIncident.barangay_responder_name || 'N/A'}
                       </span>
                       {selectedIncident.responder_phone && (
                         <span className="user-phone purple">{selectedIncident.responder_phone}</span>
@@ -1187,7 +1201,7 @@ export default function CommandCenter() {
                     <circle cx="8.5" cy="8.5" r="1.5"></circle>
                     <polyline points="21 15 16 10 5 21"></polyline>
                   </svg>
-                  <span>Initial Response Visuals</span>
+                  <span>Initial Response Notes</span>
                 </div>
 
                 <div className="panel-details-box purple" style={{ marginTop: '8px' }}>
