@@ -15,6 +15,8 @@ import {
   Award,
   BarChart3,
   LogOut,
+  Moon,
+  Sun,
 } from 'lucide-react';
 
 interface NavItem {
@@ -48,6 +50,9 @@ export default function DashboardLayout() {
   const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
     return localStorage.getItem('sidebar_collapsed') === 'true';
   });
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    return localStorage.getItem('dashboard_theme') === 'light' ? 'light' : 'dark';
+  });
 
   const handleToggle = () => {
     setIsCollapsed(prev => {
@@ -64,6 +69,13 @@ export default function DashboardLayout() {
     }, 280);
     return () => clearTimeout(timer);
   }, [isCollapsed]);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem('dashboard_theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => setTheme(current => current === 'dark' ? 'light' : 'dark');
 
   const handleLogout = () => {
     logout();
@@ -149,6 +161,14 @@ export default function DashboardLayout() {
                   </div>
                   <div className="user-role">{user?.role?.replace(/_/g, ' ')}</div>
                 </div>
+                <button
+                  className="theme-toggle-btn"
+                  onClick={toggleTheme}
+                  title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+                  aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+                >
+                  {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
+                </button>
               </div>
               <button
                 onClick={handleLogout}
@@ -167,6 +187,14 @@ export default function DashboardLayout() {
               >
                 {initials}
               </div>
+              <button
+                className="collapsed-theme-btn"
+                onClick={toggleTheme}
+                title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+                aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+              >
+                {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+              </button>
               <button
                 onClick={handleLogout}
                 className="collapsed-logout-btn"
@@ -187,4 +215,3 @@ export default function DashboardLayout() {
     </div>
   );
 }
-
