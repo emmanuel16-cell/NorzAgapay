@@ -423,10 +423,15 @@ router.get('/', async (req: Request, res: Response) => {
                 .eq('role', 'dispatcher')
                 .eq('is_active', true);
 
-            if (dispatcherError) throw dispatcherError;
-            for (const dispatcher of dispatchers || []) {
-                if (dispatcher.barangay_id && dispatcher.full_name && !dispatcherByBarangay.has(dispatcher.barangay_id)) {
-                    dispatcherByBarangay.set(dispatcher.barangay_id, dispatcher.full_name);
+            // Dispatcher identity enhances the Command Center card, but a
+            // database schema/permission mismatch must never block reports.
+            if (dispatcherError) {
+                console.warn('Could not load barangay dispatcher names:', dispatcherError.message);
+            } else {
+                for (const dispatcher of dispatchers || []) {
+                    if (dispatcher.barangay_id && dispatcher.full_name && !dispatcherByBarangay.has(dispatcher.barangay_id)) {
+                        dispatcherByBarangay.set(dispatcher.barangay_id, dispatcher.full_name);
+                    }
                 }
             }
         }
