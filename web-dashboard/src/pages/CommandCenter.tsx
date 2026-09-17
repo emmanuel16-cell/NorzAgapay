@@ -39,6 +39,7 @@ interface IncidentItem {
   barangay_name?: string;
   barangay_response_status?: string;
   barangay_responder_name?: string;
+  barangay_dispatcher_name?: string;
   mdrrmo_response_status?: string;
   mdrrmo_responder_name?: string;
 }
@@ -282,6 +283,7 @@ export default function CommandCenter() {
             barangay_name: r.barangay_name || (r.barangays && r.barangays.name) || '',
             barangay_response_status: r.barangay_response_status || 'pending',
             barangay_responder_name: r.barangay_responder_name,
+            barangay_dispatcher_name: r.barangay_dispatcher_name || '',
             mdrrmo_response_status: r.mdrrmo_response_status || 'pending',
             mdrrmo_responder_name: r.mdrrmo_responder_name,
           });
@@ -1176,7 +1178,7 @@ export default function CommandCenter() {
                     <div className="user-details-text">
                       <span className="user-title">{selectedIncident.barangay_name || 'Responding Barangay'}</span>
                       <span className="user-title" style={{ fontSize: '11px', color: '#cbd5e1' }}>
-                        Responder: {selectedIncident.responder_name || selectedIncident.barangay_responder_name || 'N/A'}
+                        Dispatcher: {selectedIncident.barangay_dispatcher_name || 'Not assigned'}
                       </span>
                       {selectedIncident.responder_phone && (
                         <span className="user-phone purple">{selectedIncident.responder_phone}</span>

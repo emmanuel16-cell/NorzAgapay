@@ -411,7 +411,30 @@ router.get('/', async (req: Request, res: Response) => {
             return;
         }
 
-        res.json((reports || []).map(formatIncidentReport));
+        // The Command Center needs to identify the dispatcher coordinating a
+        // responding barangay, not only the field responder assigned to it.
+        const barangayIds = [...new Set((reports || []).map((report: any) => report.barangay_id).filter(Boolean))];
+        const dispatcherByBarangay = new Map<string, string>();
+        if (barangayIds.length > 0) {
+            const { data: dispatchers, error: dispatcherError } = await supabaseAdmin
+                .from('barangay_users')
+                .select('barangay_id, full_name')
+                .in('barangay_id', barangayIds)
+                .eq('role', 'dispatcher')
+                .eq('is_active', true);
+
+            if (dispatcherError) throw dispatcherError;
+            for (const dispatcher of dispatchers || []) {
+                if (dispatcher.barangay_id && dispatcher.full_name && !dispatcherByBarangay.has(dispatcher.barangay_id)) {
+                    dispatcherByBarangay.set(dispatcher.barangay_id, dispatcher.full_name);
+                }
+            }
+        }
+
+        res.json((reports || []).map((report: any) => formatIncidentReport({
+            ...report,
+            barangay_dispatcher_name: dispatcherByBarangay.get(report.barangay_id) || null,
+        })));
     } catch (err) {
         console.error('Fetch reports error:', err);
         res.status(500).json({ error: 'Internal server error' });
