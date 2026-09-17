@@ -212,6 +212,7 @@ export default function ReportsPage() {
             return (
               <div
                 key={report.id}
+                className="incident-report-card"
                 style={{
                   background: '#0f172a',
                   border: `1.5px solid ${accentColor}40`,
@@ -248,6 +249,7 @@ export default function ReportsPage() {
                     </span>
                     {report.severity && (
                       <span
+                        className="incident-severity"
                         style={{
                           padding: '3px 8px',
                           borderRadius: '6px',
@@ -269,7 +271,7 @@ export default function ReportsPage() {
 
                 {/* Title & Specifics */}
                 <div>
-                  <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: '#fff' }}>{report.title}</h3>
+                  <h3 className="incident-report-title" style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: '#fff' }}>{report.title}</h3>
                   {report.specifics && (
                     <div style={{ fontSize: '12px', color: '#38bdf8', fontWeight: 600, marginTop: '2px' }}>
                       {report.specifics}
@@ -279,6 +281,7 @@ export default function ReportsPage() {
 
                 {/* Description */}
                 <p
+                  className="incident-report-description"
                   style={{
                     margin: 0,
                     fontSize: '13px',
@@ -440,6 +443,7 @@ export default function ReportsPage() {
 
                 {/* Resident & Responder Info Row */}
                 <div
+                  className="incident-report-contact"
                   style={{
                     background: 'rgba(0, 0, 0, 0.25)',
                     borderRadius: '10px',
@@ -467,7 +471,7 @@ export default function ReportsPage() {
                 {/* Action Buttons */}
                 <div style={{ display: 'flex', gap: '8px', marginTop: 'auto', paddingTop: '6px' }}>
                   <button
-                    className="btn btn-outline btn-sm"
+                    className="btn btn-outline btn-sm incident-view-details"
                     style={{ flex: 1, borderColor: 'rgba(255,255,255,0.15)', color: '#fff' }}
                     onClick={() => setSelectedReport(report)}
                   >

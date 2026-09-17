@@ -1966,3 +1966,36 @@ tbody tr:last-child td { border-bottom: none; }
   background: #16a34a;
   outline: 2px solid #86efac;
 }
+
+/* Incident report cards use inline dark colors, so give them explicit light-mode values. */
+:root[data-theme='light'] .incidents-title {
+  color: var(--text-primary);
+}
+
+:root[data-theme='light'] .incident-report-card {
+  background: #ffffff !important;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12) !important;
+}
+
+:root[data-theme='light'] .incident-report-title {
+  color: var(--text-primary) !important;
+}
+
+:root[data-theme='light'] .incident-report-description {
+  color: var(--text-secondary) !important;
+}
+
+:root[data-theme='light'] .incident-severity {
+  background: #edf2f7 !important;
+  color: #475569 !important;
+}
+
+:root[data-theme='light'] .incident-report-contact {
+  background: #f1f5f9 !important;
+}
+
+:root[data-theme='light'] .incident-view-details {
+  color: var(--text-primary) !important;
+  border-color: #cbd5e1 !important;
+  background: #ffffff !important;
+}

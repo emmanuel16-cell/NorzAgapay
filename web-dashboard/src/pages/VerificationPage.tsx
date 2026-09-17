@@ -868,6 +868,60 @@ export default function VerificationPage() {
           font-size: 40px;
           margin-bottom: 12px;
         }
+
+        :root[data-theme='light'] .oq-container {
+          background-color: #f4f7fb;
+          color: #142033;
+        }
+
+        :root[data-theme='light'] .oq-title,
+        :root[data-theme='light'] .oq-card-name,
+        :root[data-theme='light'] .disp-table td,
+        :root[data-theme='light'] .disp-applicant-name,
+        :root[data-theme='light'] .review-field-value {
+          color: #142033;
+        }
+
+        :root[data-theme='light'] .oq-badge,
+        :root[data-theme='light'] .oq-badge-dispatcher,
+        :root[data-theme='light'] .oq-archive-btn,
+        :root[data-theme='light'] .oq-card,
+        :root[data-theme='light'] .disp-table-wrapper,
+        :root[data-theme='light'] .oq-modal,
+        :root[data-theme='light'] .review-section,
+        :root[data-theme='light'] .doc-preview-box {
+          background-color: #ffffff;
+          border-color: #cbd9e7;
+          box-shadow: 0 4px 16px rgba(15, 23, 42, 0.09);
+        }
+
+        :root[data-theme='light'] .oq-badge.active-queue,
+        :root[data-theme='light'] .oq-badge-dispatcher.active-queue {
+          background: linear-gradient(135deg, #e0f2fe, #eff8ff);
+          color: #075985;
+        }
+
+        :root[data-theme='light'] .oq-tabs-bar,
+        :root[data-theme='light'] .disp-table th,
+        :root[data-theme='light'] .disp-table td {
+          border-color: #d8e2ed;
+        }
+
+        :root[data-theme='light'] .oq-tab-btn,
+        :root[data-theme='light'] .oq-cancel-btn,
+        :root[data-theme='light'] .oq-card-meta,
+        :root[data-theme='light'] .disp-table th,
+        :root[data-theme='light'] .disp-applicant-meta,
+        :root[data-theme='light'] .review-field-label {
+          color: #52677d;
+        }
+
+        :root[data-theme='light'] .oq-tab-btn:hover,
+        :root[data-theme='light'] .oq-action-bar.is-multi,
+        :root[data-theme='light'] .oq-card.selected,
+        :root[data-theme='light'] .disp-table tr:hover td {
+          background-color: #eaf3fb;
+        }
       `}</style>
 
       {/* Page Header */}
