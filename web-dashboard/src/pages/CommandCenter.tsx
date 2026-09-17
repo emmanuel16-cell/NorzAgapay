@@ -251,12 +251,20 @@ export default function CommandCenter() {
           const lng = parseFloat(r.longitude);
           if (!lat || !lng) return; // skip if no valid coordinates
           let st: 'pending' | 'responding' | 'escalated' | 'resolved' = 'pending';
-          if (r.status === 'resolved' || r.status === 'closed') {
+          const reportStatus = String(r.status || '').toLowerCase();
+          const barangayResponseStatus = String(r.barangay_response_status || '').toLowerCase();
+          const mdrrmoResponseStatus = String(r.mdrrmo_response_status || '').toLowerCase();
+
+          if (reportStatus === 'resolved' || reportStatus === 'closed' || barangayResponseStatus === 'resolved') {
             st = 'resolved';
-          } else if (r.beyond_barangay_capability || r.severity === 'critical' || r.status === 'escalated') {
-            st = 'escalated';
-          } else if (r.status === 'responding' || r.status === 'in_progress' || r.barangay_response_status === 'responding') {
+          } else if (
+            ['responding', 'in_progress', 'in-progress'].includes(reportStatus) ||
+            ['responding', 'in_progress', 'in-progress'].includes(barangayResponseStatus) ||
+            ['responding', 'in_progress', 'in-progress'].includes(mdrrmoResponseStatus)
+          ) {
             st = 'responding';
+          } else if (r.beyond_barangay_capability || r.severity === 'critical' || reportStatus === 'escalated') {
+            st = 'escalated';
           }
 
           items.push({
