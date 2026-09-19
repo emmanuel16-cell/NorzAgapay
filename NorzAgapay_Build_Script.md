@@ -1,172 +1,465 @@
-# NorzAgapay — Full System Build Script
+# NorzAgapay — Full System Build Reference
 
-## Project context
+## Project Context
 
-Build **NorzAgapay**, an integrated web and mobile-based Emergency Response and Crisis Management Coordination System for Norzagaray, Bulacan. It connects the Municipal Disaster Risk Reduction and Management Office (MDRRMO), Barangay Local Government Units, Barangay Tanods, and residents.
+**NorzAgapay** is an integrated web and mobile-based Emergency Response and Crisis Management Coordination System for the Municipality of Norzagaray, Bulacan. It digitally connects four distinct user groups into a unified emergency coordination pipeline:
 
-The system supports real-time incident reporting, incident assessment and dispatch, responder duty-status tracking, GPS-based incident mapping and navigation, barangay-to-MDRRMO escalation, evacuation-center monitoring, and localized safety advisories.
+- **MDRRMO** — Municipal Disaster Risk Reduction and Management Office (command and oversight)
+- **Barangay LGU / BDRRMC** — Barangay Local Government Units and Disaster Risk Reduction and Management Committees (jurisdiction-level response)
+- **Barangay Tanods** — Frontline first responders assigned and dispatched per incident
+- **Residents** — Community members who report emergencies and receive public safety information
 
-### Scope exclusions
+The system replaces fragmented phone calls, radio-based coordination, and physical logbooks with a real-time, multi-platform pipeline covering incident reporting, field dispatch, GPS-based response tracking, evacuation center monitoring, inter-agency escalation, and localized public safety advisories.
 
-Do **not** build resource inventory, relief-goods allocation or distribution, shipment tracking, QR logistics, volunteer management or certification, volunteer task matching, AI or computer-vision functions, drone integration, IoT sensors, national DRRM integrations, or private emergency-service integrations. Evacuation-center monitoring is included, but it covers only location, capacity, occupancy, and availability—not relief goods.
+---
 
-## Technology stack
+## Technology Stack (As Built)
 
-- **MDRRMO web portal:** React, Vite, TypeScript, Leaflet, OpenStreetMap.
-- **Mobile application:** Flutter and Dart for Barangay officials, Barangay Tanods, and residents.
-- **Backend:** Node.js, Express.js, TypeScript, Socket.IO.
-- **Services:** Supabase PostgreSQL, Auth, Realtime, and Storage; Upstash Redis for short-lived high-frequency responder-location updates; OSRM for routing.
+| Layer | Technology |
+|---|---|
+| **MDRRMO Web Portal** | React 18, Vite, TypeScript, Leaflet + OpenStreetMap, Socket.IO Client |
+| **Barangay Admin App** | Flutter + Dart, Provider, Flutter Map, Socket.IO Client |
+| **Tanod Responder App** | Flutter + Dart, Provider, Hive, Flutter Secure Storage, flutter_map, OSRM routing |
+| **Resident Emergency App** | Flutter + Dart, Hive, Image Picker, Location Service, Flutter Map |
+| **Backend API** | Node.js, Express.js, TypeScript, Socket.IO Server |
+| **Database** | Supabase PostgreSQL (with RLS, Row Level Security) |
+| **Auth** | Supabase Auth + JWT (issued and validated by backend) |
+| **Realtime** | Supabase Realtime + Socket.IO (role/barangay/user rooms) |
+| **File Storage** | Supabase Storage (bucket: `norzagapay-files`) |
+| **GPS Caching** | Upstash Redis (TTL-based, REST API) |
+| **Routing/Navigation** | Project OSRM (OpenStreetMap Routing Machine) |
+| **PDF Generation** | PDFKit (server-side, for dispatcher accreditation documents) |
+| **Validation** | Zod (backend schema validation) |
+| **Weather Data** | Open-Meteo API (with PAGASA simulation layer) |
+| **Tunneling (Dev)** | ngrok / localtunnel + `update-tunnel-url.js` utility |
 
-## Roles and authorization
+---
 
-| Role | Platform | Permissions |
+## Roles and Authorization
+
+| Role | Platform | Scope of Access |
 |---|---|---|
-| `mdrrmo_admin` | Web | Municipality-wide monitoring, escalation approval, advisories, responder and evacuation-center oversight |
-| `mdrrmo_dispatcher` | Web | Incident and dispatch monitoring, escalation processing, advisories as authorized |
-| `barangay_admin` | Mobile | Barangay assessment, Tanod dispatch, escalation requests, evacuation-center updates |
-| `barangay_tanod` | Mobile | Duty-status updates, dispatch reception, GPS navigation, field updates, incident documentation |
-| `resident` | Mobile | Report submission, own-report tracking, evacuation-center viewing, safety-advisory viewing |
+| `mdrrmo_admin` | Web | Municipality-wide: all incident reports, escalations, dispatch visibility, evacuation centers, advisories, user management, dispatcher accreditation review, weather monitoring |
+| `mdrrmo_dispatcher` | Web | Operational monitoring: live incident map, dispatch tracking, responder GPS, evacuation center overview, weather/river-level alerts |
+| `barangay_admin` | Mobile (barangay_app) | Jurisdiction-scoped: barangay incident queue, Tanod dispatch, escalation requests to MDRRMO, evacuation center CRUD, co-response visibility, dispatcher accreditation submission |
+| `barangay_tanod` | Mobile (mobile_app) | Personal operational: duty status management, dispatch acceptance, GPS navigation, field status updates, incident documentation, own report history |
+| `resident` | Mobile (resident_app) | Public + personal: incident submission, own report tracking, evacuation center viewing, safety advisories, emergency camera capture |
 
-Barangay administrative offices verify and manage Tanod accounts. Barangay users can access only their jurisdiction. Residents can access only their own reports and public information. MDRRMO users can access municipality-wide information.
+**Access rules:**
+- Barangay users access only their assigned `barangay_id`; cross-barangay access is blocked.
+- Residents access only their own `incident_reports` and public-safe data.
+- MDRRMO users access the full municipality scope.
+- Barangay offices manage and verify their own Tanod accounts through the accreditation pipeline.
 
-## Database schema
+---
 
-Create Supabase migrations, foreign keys, indexes, timestamps, audit logs, and Row Level Security policies for all tables below.
+## Subsystem Overview
 
-### `barangays`
+### 1. MDRRMO Web Portal (`web-dashboard/`)
 
-`id` uuid PK; `name` text; `boundary_geojson` jsonb nullable; `is_active` boolean.
+React + Vite + TypeScript SPA. Communicates with backend via REST API and Socket.IO.
 
-### `profiles`
+**Implemented pages:**
 
-`id` uuid PK/FK to `auth.users`; `full_name`; `email` unique; `phone`; `role` enum (`mdrrmo_admin`, `mdrrmo_dispatcher`, `barangay_admin`, `barangay_tanod`, `resident`); `barangay_id` FK nullable for MDRRMO; `account_status` enum (`active`, `inactive`, `pending`, `suspended`); `is_verified`; `last_known_latitude`; `last_known_longitude`; `last_seen_at`; timestamps.
+| Page | File | Description |
+|---|---|---|
+| Login | `LoginPage.tsx` | Secure login with role-based redirect routing |
+| Command Center | `CommandCenter.tsx` | Live incident map (Leaflet/OSM), severity heatmap, active counters, escalation queue, Tanod GPS positions, duty-status board, evacuation summary panel |
+| Reports / Verification | `ReportsPage.tsx`, `VerificationPage.tsx` | Incident list with filters; full incident detail + media gallery + status history + dispatcher verification queue with PDF review, approval/rejection workflow |
+| Missions | `MissionsPage.tsx` | Active and historical dispatch assignments, Tanod assignment notes, resolution timelines |
+| Respond Units | `RespondUnitsPage.tsx` | Registered professional emergency units, duty and operational status, assignment logs |
+| Officers | `OfficersPage.tsx` | MDRRMO officer accounts and barangay assignments |
+| Evacuation Centers | `EvacuationCentersPage.tsx` | Municipality-wide shelter list and map, occupancy tracking, availability status (open / limited / full / closed) |
+| Inventory | `InventoryPage.tsx` | Equipment and supplies tracking *(in-scope for admin record-keeping)* |
+| Resource Requests | `ResourceRequestsPage.tsx` | Field resource request review from units |
+| Shipments | `ShipmentsPage.tsx` | Relief shipment logistics oversight |
+| Analytics | `AnalyticsPage.tsx` | Incident trends, response-time statistics, severity breakdown charts |
+| Weather Monitoring | `WeatherMonitoringV2.tsx` | Real-time weather conditions (Open-Meteo), river station water levels, hydromet alerts |
+| Users | `UsersPage.tsx` | MDRRMO user account management |
 
-### `incidents`
+---
 
-`id` uuid PK; `reference_number` unique; `title`; `description`; `incident_type` enum (`flood`, `fire`, `medical_emergency`, `landslide`, `earthquake`, `typhoon`, `other`); `severity` enum (`low`, `moderate`, `high`, `critical`); `status` enum (`pending`, `assessed`, `dispatched`, `responding`, `resolved`, `cancelled`); `barangay_id` FK; `latitude`; `longitude`; `address` nullable; `reported_by` FK; `assigned_by` FK nullable; `resolved_at` nullable; timestamps.
+### 2. Barangay Administrator / BDRRMC App (`barangay_app/`)
 
-### `incident_media`
+Flutter mobile application for barangay officials. Connects to the backend via REST and Socket.IO.
 
-`id` uuid PK; `incident_id` FK; `uploaded_by` FK; `file_path`; `media_type` enum (`image`, `video`, `document`); `caption` nullable; timestamps.
+**Implemented screens:**
 
-### `incident_updates`
+| Screen | File | Description |
+|---|---|---|
+| Login | `login_screen.dart` | Secure login with barangay-scoped session |
+| Home Dashboard | `home_screen.dart` | Summary counters, quick-action navigation, real-time socket connection status |
+| Reports Queue | `reports_screen.dart` | Tabbed incident list (Pending / In Progress / Resolved) with real-time push insertion; filters by severity and date |
+| Report Detail & Dispatch | `report_detail_screen.dart` | Full incident detail: GPS map view, media gallery, status timeline, Tanod assignment panel, MDRRMO co-response tracking, escalation request, field update log |
+| Barangay Incident Reporting | `barangay_report_incident_screen.dart` | Barangay-originated incident report submission with GPS, media, and incident type |
+| Evacuation Centers | `evac_centers_screen.dart` | List and map of barangay-managed shelters with occupancy controls |
+| Add Evacuation Center | `add_evac_center_screen.dart` | Register a new shelter with location, capacity, and status |
+| Team / Duty Status | `team_screen.dart` | Active Tanod roster with real-time duty status and assignment visibility |
+| Assistance Requests | `assistance_requests_screen.dart` | View and respond to Tanod field assistance or resource requests |
+| Dispatcher Verification | `dispatcher_verification_screen.dart` | Full accreditation workflow: fill Punong Barangay endorsement form, generate and upload prefilled PDF, track verification status (pending_document / under_review / verified / rejected / needs_correction) |
 
-`id` uuid PK; `incident_id` FK; `updated_by` FK; `status` enum (`pending`, `assessed`, `dispatched`, `en_route`, `on_scene`, `responding`, `resolved`, `cancelled`); `notes` nullable; `latitude` nullable; `longitude` nullable; timestamps.
+---
 
-### `responder_duty_status`
+### 3. Barangay Tanod / Responder App (`mobile_app/`)
 
-`id` uuid PK; `responder_id` FK to a Tanod profile; `status` enum (`off_duty`, `on_duty`, `assigned`, `en_route`, `on_scene`, `unavailable`); `updated_at`.
+Flutter mobile application for frontline Barangay Tanods. Communicates via REST and Socket.IO with real-time GPS broadcasting through Upstash Redis.
 
-### `dispatches`
+**Implemented screens:**
 
-`id` uuid PK; `incident_id` FK; `responder_id` FK; `assigned_by` FK; `status` enum (`assigned`, `accepted`, `en_route`, `on_scene`, `completed`, `declined`, `cancelled`); `assignment_note` nullable; `accepted_at` nullable; `completed_at` nullable; timestamps.
+| Screen | File | Description |
+|---|---|---|
+| Splash | `splash_screen.dart` | Auth session restoration and routing |
+| Login | `login_screen.dart` | Tanod login with JWT session |
+| Registration | `register_screen.dart`, `registration_form_screen.dart` | New Tanod account registration with barangay assignment |
+| Home / Duty Dashboard | `home_screen.dart` | Duty status toggle (On Duty / Off Duty / Unavailable), real-time dispatch tab, GPS service start/stop, unit availability panel, Socket.IO push alerts |
+| Task / Dispatch Detail | `task_detail_screen.dart` | Full dispatch detail: incident info, GPS map, OSRM turn-by-turn navigation, sequential status update buttons (En Route → On Scene → Resolved), photo documentation upload, situation remarks |
+| My Reports | `my_reports_screen.dart` | Assigned dispatch history and personal incident submissions |
+| Silo Bridge | `silo_bridge_screen.dart` | Multi-agency visibility: live positions of other on-duty units (police, fire, medical) on a shared map |
+| Resource Request | `resource_request_screen.dart` | Submit a field resource request to barangay command |
+| Profile | `profile_screen.dart` | Tanod profile and account details |
 
-### `escalations`
+---
 
-`id` uuid PK; `incident_id` FK; `requested_by` FK; `reason`; `status` enum (`requested`, `under_review`, `approved`, `rejected`, `closed`); `reviewed_by` FK nullable; `review_note` nullable; `reviewed_at` nullable; timestamps.
+### 4. Resident Emergency App (`resident_app/`)
 
-### `evacuation_centers`
+Flutter mobile application for citizens of Norzagaray. Offline-capable for report queuing and advisory caching.
 
-`id` uuid PK; `barangay_id` FK; `name`; `address`; `latitude`; `longitude`; `maximum_capacity` integer; `current_occupancy` integer; `availability_status` enum (`open`, `limited`, `full`, `closed`); `updated_by` FK; `last_updated_at`; timestamps. Automatically show `full` when occupancy reaches capacity.
+**Implemented screens:**
 
-### `announcements`
+| Screen | File | Description |
+|---|---|---|
+| Reporting | `reporting_screen.dart` | Emergency/community incident report with GPS auto-detection, incident type selection (flash_flood / fire / landslide / medical_emergency / typhoon / other), target routing (Barangay / MDRRMO / All), description and media attachment |
+| Emergency Camera | `emergency_camera_screen.dart` | Quick-launch camera capture linked to an incident report |
+| My Reports | `my_reports_screen.dart` | Submitted report list with resolution status timeline |
+| Report Detail | `report_detail_screen.dart` | Full status journey (pending → verified → dispatched → on_scene → resolved), public-safe view of field updates and resolution notes |
+| Evacuation Centers | `evacuation_centers_screen.dart` | List and map of open shelters with capacity indicators, search, and navigation link |
+| Evacuee Registration | `evacuee_registration_screen.dart` | Self-registration at a shelter (occupancy tracking) |
+| Profile | `profile_screen.dart` | Resident profile management |
 
-`id` uuid PK; `title`; `body`; `priority` enum (`normal`, `important`, `emergency`); `target_barangay_id` FK nullable for municipality-wide broadcasts; `published_by` FK; `published_at`; `expires_at` nullable; timestamps.
+---
 
-### `notifications`
+### 5. Backend API & Real-Time Engine (`backend/`)
 
-`id` uuid PK; `recipient_id` FK; `type` enum (`incident`, `dispatch`, `escalation`, `announcement`, `evacuation_center`); `title`; `message`; `reference_id` nullable; `read_at` nullable; timestamps.
+Node.js + Express.js + TypeScript server. Handles authentication, data access, socket event routing, background jobs, and document generation.
 
-## Required workflows
+**Running on port:** `3001` (configurable via `PORT` env var).
 
-### Resident reporting
+#### API Routes
 
-Residents submit emergency or community reports with incident type, description, GPS coordinates, and optional photo/video media. Route the report to the resident’s barangay as `pending` and notify authorized Barangay Administrators in real time. Residents can track their own reports using public-safe status updates. Queue unsent reports and attachments locally if offline, then synchronize them when a connection returns.
+| Route Prefix | File | Responsibility |
+|---|---|---|
+| `/api/auth` | `auth.ts` | Login, registration, JWT refresh, session validation |
+| `/api/incident-reports` | `incidentReports.ts` | Resident report CRUD; targeted routing (barangay/mdrrmo/all); MDRRMO co-response status updates; multi-media proof uploads |
+| `/api/barangay` | `barangay.ts` | Full barangay operations: report management, Tanod dispatch assignments, team duty status, escalations, assistance requests |
+| `/api/incidents` | `incidents.ts` | Municipal-level incident records (MDRRMO scope) |
+| `/api/tasks` | `tasks.ts` | Tanod task/dispatch records, status transitions, field documentation |
+| `/api/evacuation-centers` | `evacuationCenters.ts` | Shelter CRUD, occupancy updates, availability auto-status |
+| `/api/users` | `users.ts` | User management, account status, profile updates |
+| `/api/verification` | `verification.ts` | Dispatcher accreditation: document upload, review queue, PDF reference management, status transitions |
+| `/api/weather` | `weather.ts` | Weather data fetch (Open-Meteo), forecast storage, river station levels and alerts |
+| `/api/matching` | `matching.ts` | Responder availability matching engine queries |
+| `/api/respond-units` | `respondUnits.ts` | Professional emergency unit management (PNP, BFP, MDRRMO rescue) |
+| `/api/dispatch-units` | `dispatchUnits.ts` | Dispatch unit CRUD and assignment |
+| `/api/volunteer-dispatch` | `volunteerDispatch.ts` | Volunteer task dispatch records |
+| `/api/officers` | `officers.ts` | MDRRMO officer account data |
+| `/api/inventory` | `inventory.ts` | Supplies and equipment inventory management |
+| `/api/requests` | `requests.ts` | Field resource requests from units |
+| `/api/reports` | `reports.ts` | Analytics report data aggregation |
+| `/api/upload` | `upload.ts` | Supabase Storage presigned URL generation and direct file upload handling |
+| `/api/storages` | `storages.ts` | Storage bucket management utilities |
+| `/api/blocked-routes` | `blockedRoutes.ts` | Road closure / blocked route registry for the command map |
+| `/api/debug` | `debug.ts` | Development-only debug utilities (guarded by `ENABLE_DEBUG_QUICK_LOGIN`) |
+| `GET /api/health` | `server.ts` | Health check endpoint |
 
-### Barangay assessment and dispatch
+#### Socket.IO Real-Time Events
 
-Barangay Administrators view only reports from their jurisdiction. They assess severity, record notes, select an on-duty verified Tanod, and create a dispatch. Notify the Tanod immediately. The Tanod can accept or decline, update status to **En Route**, **On Scene**, and **Resolved**, submit notes and media, and navigate to the incident using GPS.
+**Server-side rooms:**
 
-### MDRRMO escalation pipeline
+| Room | Members | Events Received |
+|---|---|---|
+| `commanders` | `mdrrmo_admin`, `mdrrmo_dispatcher` | `gps:location`, `task:statusChanged`, `incident:new`, `inventory:changed`, `resource:request` |
+| `professional_units` | Professional emergency units | `incident:alert` |
+| `barangay:<id>` | All users in a specific barangay | `new_incident_report`, `report:updated` |
+| `user:<id>` | Individual user | Personal targeted notifications |
+| `role:<role>` | All users of a given role | Broadcast by role |
 
-A Barangay Administrator creates an escalation when local response capacity is insufficient. MDRRMO users receive a notification, review incident details and field updates, then approve or reject the escalation with a recorded decision note. Notify the requesting barangay immediately and retain the escalation history.
+**Client-emitted events:**
 
-### Evacuation-center monitoring
+| Event | Payload | Effect |
+|---|---|---|
+| `join:role` | `role: string` | Joins the appropriate commander or professional_units room |
+| `join:barangay` | `barangayId: string` | Subscribes to barangay-scoped incident events |
+| `join:user` | `userId: string` | Subscribes to personal notifications |
+| `gps:update` | `{ userId, latitude, longitude }` | Writes GPS position to Upstash Redis; broadcasts to commanders room |
+| `gps:requestAll` | — | Returns all active GPS positions from Redis to requesting socket |
+| `task:statusUpdate` | `{ taskId, status, userId }` | Broadcasts task status change to commanders |
+| `incident:new` | incident object | Broadcasts new incident alert to professional_units and commanders |
+| `inventory:update` | data | Broadcasts inventory change to commanders |
+| `resource:request` | data | Broadcasts resource request to commanders |
 
-Authorized Barangay users add or update a center’s name, location, capacity, occupancy, and availability. MDRRMO users view municipality-wide center data through the web portal and map. Residents view available center locations, capacity status, and occupancy. Do not include family registration, relief allocation, or distribution tracking.
+#### Background Jobs (Scheduled via `setInterval`)
 
-### Localized safety advisories
+Runs automatically on server start and every **5 minutes** thereafter:
 
-MDRRMO users create municipal-wide or barangay-targeted advisories with priority and expiration. Deliver them through push notifications and the resident app. Cache previously loaded advisories for offline viewing only.
+1. **Weather sync** — Fetches current conditions and hourly/daily forecasts from Open-Meteo API and persists to `weather_data` and `weather_forecasts` tables.
+2. **River level simulation** — Reads active `river_stations`, applies level variations, persists to `river_levels`, updates station status, and auto-generates `weather_advisories` if levels reach warning or critical thresholds.
 
-## Required screens
+#### Backend Services
 
-### MDRRMO web portal
+| Service | File | Function |
+|---|---|---|
+| Dispatcher Verification | `dispatcherVerificationService.ts` | Prefilled PDF generation (PDFKit), document lifecycle, audit history in JSONB |
+| Matching Engine | `matchingEngine.ts` | Responder availability and proximity scoring for incident dispatch suggestions |
 
-1. Secure login and role-based routing.
-2. Command Center with live incident map, heatmap, counters, escalation queue, dispatched Tanods, duty status, and evacuation-center occupancy summary.
-3. Incident Management with filters, details, media, updates, status history, and dispatch visibility.
-4. Escalations with review, approval/rejection, and decision notes.
-5. Responder Monitoring with duty/operational status and authorized live locations.
-6. Evacuation Centers with map, capacity, occupancy, availability, and last update.
-7. Safety Advisories with create, target, publish, expire, and delivery status.
-8. User Management for MDRRMO accounts and barangay assignments; do not add volunteer verification.
+---
 
-### Resident mobile application
+## Database Schema (As Migrated)
 
-1. Home dashboard.
-2. Emergency Incident report with media and GPS.
-3. Community Incident report with media and GPS.
-4. My Submitted Reports with public-safe resolution timeline.
-5. Evacuation Centers map and list.
-6. Safety Advisories.
+Run all migrations from `database/migrations/` in Supabase SQL Editor in this order:
 
-### Barangay Administrator / BDRRMC mobile portal
+| Migration File | Description |
+|---|---|
+| `migration.sql` | Core schema: all base tables, enums, RLS policies, indexes, Supabase Realtime publication setup |
+| `evacuation_centers_migration.sql` | `barangays` table with pre-seeded Norzagaray barangay coordinates; `evacuation_centers`, `barangay_users`, `incident_reports` tables and related indexes |
+| `dispatcher_verification_migration.sql` | `barangay_dispatcher_verifications` table: accreditation pipeline with full audit history in JSONB |
+| `fix_dispatcher_verification_fk.sql` | Foreign key corrections for dispatcher verification user references |
+| `co_response_migration.sql` | Adds MDRRMO co-response tracking columns to `incident_reports`: `mdrrmo_response_status`, `mdrrmo_responded_at`, `mdrrmo_responded_by`, `mdrrmo_responder_name`, `mdrrmo_response_notes` |
+| `add_multiple_proof_and_field_media.sql` | Adds `proof_urls TEXT[]`, `proof_types TEXT[]`, `responder_media JSONB` to `incident_reports` for multi-photo resolution documentation |
+| `add_send_to_to_incident_reports.sql` | Adds `send_to TEXT` to `incident_reports` for targeted routing: `'barangay'`, `'mdrrmo'`, or `'all'` |
 
-1. Barangay incident queue.
-2. Incident assessment and severity screen.
-3. Tanod selection and dispatch screen.
-4. Escalation request screen.
-5. Evacuation-center monitoring and update screen.
-6. Barangay responder duty-status screen.
+### Key Tables
 
-### Barangay Tanod mobile application
+#### `users`
+Custom users table (separate from `auth.users`). Fields: `id`, `full_name`, `email`, `phone`, `password_hash`, `role` (enum: `admin`, `commander`, `volunteer_specialist`, `volunteer_general`, `professional_unit`), `unit_type` (enum: `police`, `fire`, `medical`), `status`, `verified`, `latitude`, `longitude`, `last_seen`, `created_at`.
 
-1. Duty-status controls: Off Duty, On Duty, Assigned, En Route, On Scene, Unavailable.
-2. Dispatch alert and accept/decline action.
-3. GPS navigation to the assigned incident.
-4. Incident update and documentation screen.
-5. Assigned-incident history.
-6. Authorized evacuation-center occupancy update screen.
+#### `barangays`
+`id`, `name`, `municipality` (default: `Norzagaray`), `province` (default: `Bulacan`), `latitude`, `longitude`, `created_at`. Pre-seeded with all Norzagaray barangay coordinates.
 
-## Real-time, offline, and mapping requirements
+#### `barangay_users`
+Barangay-scoped user accounts. Fields: `id`, `barangay_id`, `full_name`, `email`, `phone`, `password_hash`, `role` (enum: `barangay_admin`, `barangay_tanod`), `status`, `is_verified`, `verification_status`, `verification_ref_no`, `duty_status`, `last_seen`, timestamps.
 
-- Notify Barangay Administrators of new reports; notify Tanods of dispatches; notify MDRRMO and barangays of escalations and decisions; notify intended audiences of announcements.
-- Synchronize incident, dispatch, duty-status, escalation, evacuation-center, and advisory updates in real time for authorized users.
-- Send GPS updates only for on-duty or dispatched Tanods. Redis entries expire after 30 minutes of inactivity.
-- Use Leaflet and OpenStreetMap, not placeholder maps. Display severity-based incident markers, barangay boundaries when available, evacuation centers by availability, and authorized responder locations.
-- Provide incident heatmap filtering by severity, status, date, and barangay.
-- Use OSRM to provide route guidance for a dispatched Tanod.
-- Show a clear connection-required state for real-time dispatch, GPS tracking, and instant notifications while offline.
+#### `incident_reports`
+Resident-submitted reports. Fields: `id`, `reporter_id`, `barangay_id`, `incident_type`, `severity`, `description`, `latitude`, `longitude`, `address`, `status`, `media_url`, `proof_urls` (array), `proof_types` (array), `responder_media` (JSONB), `send_to`, `mdrrmo_response_status`, `mdrrmo_responded_at`, `mdrrmo_responded_by`, `mdrrmo_responder_name`, `mdrrmo_response_notes`, timestamps.
 
-## Security and quality
+#### `incidents`
+Municipal-level incident records (created/managed by MDRRMO). Separate from `incident_reports`. Fields: `id`, `title`, `type`, `severity`, `latitude`, `longitude`, `address`, `status`, `reported_by`, `assigned_by`, `resolved_at`, timestamps.
 
-- Use Supabase Auth, JWT validation, backend authorization, and RLS for all protected data.
-- Enforce role and barangay-jurisdiction access on every endpoint and query.
-- Validate media uploads server-side with strict type and size limits.
-- Keep audit logs for incident changes, dispatch actions, escalation decisions, evacuation-center updates, and announcements.
-- Do not expose residents’ contact details or responder locations to unauthorized users.
-- Design and test for ISO/IEC 25010:2023: Functional Suitability, Performance Efficiency, Interaction Capability, Reliability, and Security.
-- Use large mobile action buttons, clear severity/status colors, confirmation before critical actions, loading and empty states, and low-bandwidth-friendly design.
+#### `tasks`
+Tanod dispatch assignments. Fields: `id`, `incident_id`, `assigned_to`, `assigned_by`, `status` (enum: `pending`, `accepted`, `in_progress`, `completed`, `cancelled`), `type` (enum: `specialist`, `general_labor`), `notes`, `accepted_at`, `completed_at`, timestamps.
+
+#### `evacuation_centers`
+`id`, `barangay_id`, `name`, `address`, `latitude`, `longitude`, `max_capacity`, `current_occupancy`, `current_families`, `status` (enum: `open`, `limited`, `full`, `closed`), `updated_by`, `last_updated_at`, timestamps.
+
+#### `barangay_dispatcher_verifications`
+`id`, `user_id`, `barangay_id`, `full_name`, `email`, `password_hash`, `phone`, `position_designation`, `punong_barangay_name`, `punong_barangay_position`, `reference_no` (unique), `document_url`, `status` (enum: `pending_document`, `under_review`, `verified`, `rejected`, `needs_correction`), `rejection_reason`, `submitted_at`, `reviewed_at`, `reviewed_by`, `verification_history` (JSONB audit trail), timestamps.
+
+#### `weather_data`
+Real-time weather readings: `temperature`, `humidity`, `wind_speed`, `wind_direction`, `rainfall`, `pressure`, `visibility`, `uv_index`, `weather_condition`, `data_source`, `recorded_at`.
+
+#### `weather_forecasts`
+Hourly and daily forecast records: `forecast_type`, `forecast_time`, `temperature`, `humidity`, `wind_speed`, `wind_direction`, `rainfall_probability`.
+
+#### `river_stations`
+Monitoring stations: `station_name`, `latitude`, `longitude`, `warning_level`, `critical_level`, `status`, `active`.
+
+#### `river_levels`
+Water level readings: `station_id`, `water_level`, `trend` (rising/falling/steady), `level` (normal/warning/critical), `recorded_at`.
+
+#### `weather_advisories`
+System-generated flood/weather alerts: `title`, `type`, `level`, `message`, `source`.
+
+#### `alerts` + `activity_feed`
+Real-time alert feed and system activity log, subscribed to Supabase Realtime.
+
+#### Additional tables
+`certifications`, `inventory`, `resource_requests`, `relief_shipments`, `blocked_routes`, `dispatch_units`, `respond_units`, `officers`, `notifications`, `hospitals`, `schools`, `municipality_info`.
+
+---
+
+## Required Workflows (As Implemented)
+
+### Resident Incident Reporting
+1. Resident opens `resident_app` and navigates to the reporting screen.
+2. GPS coordinates are auto-detected; the resident selects the incident type, writes a description, optionally attaches photos/video from the camera or gallery, and selects the target recipient (`barangay`, `mdrrmo`, or `all`).
+3. Report is submitted to `POST /api/incident-reports` and stored in Supabase.
+4. Socket.IO emits `new_incident_report` to the `barangay:<id>` room; the Barangay app receives the push alert instantly.
+5. Resident monitors the report resolution journey through `my_reports_screen.dart` and `report_detail_screen.dart`.
+
+### Barangay Assessment and Tanod Dispatch
+1. Barangay app receives real-time socket notification of a new report; it appears at the top of the incident queue.
+2. Barangay admin opens the report detail screen, reviews GPS location on map, assesses severity, and inspects attached media.
+3. Admin selects an On-Duty verified Tanod from the team panel and creates a dispatch via the backend.
+4. Dispatch alert (`task:new`) is emitted to the Tanod's personal socket room.
+5. Tanod receives an audible SnackBar alert on `home_screen.dart`, reviews the dispatch in the Dispatches tab, and accepts it.
+6. Tanod navigates to the incident using OSRM turn-by-turn routing and updates operational status: **En Route → On Scene → Resolved**.
+7. At resolution, the Tanod uploads photo proof and submits closing remarks through `task_detail_screen.dart`.
+
+### MDRRMO Co-Response
+1. For high-severity incidents (e.g., fires, medical emergencies), the barangay admin can request MDRRMO direct co-response in addition to dispatching a local Tanod.
+2. MDRRMO dispatcher sees the co-response request on the Command Center.
+3. MDRRMO responder updates `mdrrmo_response_status`, `mdrrmo_responded_at`, and `mdrrmo_response_notes` via API.
+4. Barangay app reflects the MDRRMO co-response status in the report detail view.
+
+### MDRRMO Escalation Pipeline
+1. Barangay admin initiates an escalation from the report detail screen when local resources are insufficient.
+2. Escalation record is created with status `requested` and reason notes.
+3. MDRRMO command receives a notification and sees the escalation in the Command Center queue.
+4. MDRRMO reviews incident details and field updates, then approves or rejects with a recorded decision note.
+5. The barangay immediately receives the escalation decision notification.
+6. Full escalation history is retained for audit and after-action review.
+
+### Evacuation Center Monitoring
+1. Barangay admin adds or updates shelters via `add_evac_center_screen.dart` and `evac_centers_screen.dart`.
+2. As evacuees arrive, occupancy and family counts are updated in real time. The system automatically sets status to `full` when `current_occupancy >= max_capacity`.
+3. MDRRMO Command Center displays all municipal shelters on the map and list with real-time availability.
+4. Residents browse open shelters with live capacity indicators in `evacuation_centers_screen.dart` and can self-register as evacuees.
+
+### Dispatcher Accreditation Pipeline
+1. Barangay admin initiates the accreditation process in `dispatcher_verification_screen.dart`.
+2. The screen collects the applicant's details and Punong Barangay endorsement information.
+3. Backend generates a prefilled official authorization PDF using PDFKit; a unique reference number is assigned.
+4. Barangay admin uploads the signed physical document scan to complete the submission.
+5. MDRRMO reviews the document queue in `VerificationPage.tsx`, inspects the uploaded PDF, and approves or rejects with a reason.
+6. Full verification history is stored as a JSONB audit trail in `barangay_dispatcher_verifications`.
+
+### Localized Safety Advisories & Weather Alerts
+1. MDRRMO creates advisories (municipality-wide or barangay-targeted) with priority (`normal`, `important`, `emergency`) and optional expiration.
+2. Advisories are delivered through Socket.IO push notifications and appear in the resident app advisory feed.
+3. River level monitoring runs automatically every 5 minutes; stations at warning or critical level auto-generate hydromet advisories in `weather_advisories`.
+4. Previously loaded advisories are cached locally in the mobile apps for offline viewing.
+
+### Real-Time GPS Tracking
+1. When a Tanod sets their status to On Duty, `GpsService.startTracking()` begins emitting `gps:update` events to the Socket.IO server.
+2. The server writes coordinates to Upstash Redis with a 30-minute TTL per update.
+3. The MDRRMO Command Center requests all active GPS positions via `gps:requestAll` and renders Tanod markers on the Leaflet map.
+4. GPS broadcasting automatically stops when the Tanod goes Off Duty.
+
+---
+
+## Environment Configuration
+
+### Backend (`backend/.env`)
+
+```env
+PORT=3001
+NODE_ENV=development
+CORS_ORIGIN=*
+
+# Supabase
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your-supabase-anon-key
+SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
+SUPABASE_BUCKET_NAME=norzagapay-files
+
+# JWT
+JWT_SECRET=your-secure-jwt-secret
+JWT_EXPIRES_IN=7d
+
+# Upstash Redis
+UPSTASH_REDIS_URL=https://your-redis.upstash.io
+UPSTASH_REDIS_TOKEN=your-redis-token
+
+# Optional
+MAPBOX_ACCESS_TOKEN=your-mapbox-token
+ENABLE_DEBUG_QUICK_LOGIN=false
+```
+
+### Web Dashboard (`web-dashboard/.env`)
+
+```env
+VITE_API_URL=http://localhost:3001/api
+VITE_SOCKET_URL=http://localhost:3001
+```
+
+### Mobile Apps — API and Socket URL
+
+Each Flutter app maintains its own constants file. To update all three simultaneously when using a tunnel (e.g., ngrok), run:
+
+```bash
+node update-tunnel-url.js https://your-tunnel-url.ngrok-free.app
+```
+
+This script updates:
+- `mobile_app/lib/core/constants.dart` → `apiBaseUrl`
+- `barangay_app/lib/services/api_service.dart` → `baseUrl`
+- `barangay_app/lib/services/auth_service.dart` → `_apiBaseUrl`
+- `barangay_app/lib/services/socket_service.dart` → `_socketUrl`
+- `resident_app/lib/core/constants.dart` → `apiBaseUrl`, `socketUrl`
+- `web-dashboard/.env` → `VITE_API_URL`
+- `backend/.env` → base URL reference
+
+---
+
+## Implemented Screens Summary
+
+### MDRRMO Web Portal (14 pages)
+`LoginPage`, `CommandCenter`, `ReportsPage`, `VerificationPage`, `MissionsPage`, `RespondUnitsPage`, `OfficersPage`, `EvacuationCentersPage`, `InventoryPage`, `ResourceRequestsPage`, `ShipmentsPage`, `AnalyticsPage`, `WeatherMonitoringV2`, `UsersPage`
+
+### Barangay Admin App (10 screens)
+`login_screen`, `home_screen`, `reports_screen`, `report_detail_screen`, `barangay_report_incident_screen`, `evac_centers_screen`, `add_evac_center_screen`, `team_screen`, `assistance_requests_screen`, `dispatcher_verification_screen`
+
+### Tanod Responder App (11 screens)
+`splash_screen`, `login_screen`, `register_screen`, `registration_form_screen`, `home_screen`, `task_detail_screen`, `my_reports_screen`, `silo_bridge_screen`, `resource_request_screen`, `reporting_screen`, `profile_screen`
+
+### Resident Emergency App (7 screens)
+`reporting_screen`, `emergency_camera_screen`, `my_reports_screen`, `report_detail_screen`, `evacuation_centers_screen`, `evacuee_registration_screen`, `profile_screen`
+
+---
+
+## Real-Time, Offline, and Mapping Requirements
+
+- **Socket.IO rooms**: `commanders`, `professional_units`, `barangay:<id>`, `user:<id>`, `role:<role>`.
+- **GPS updates**: Emitted only for On Duty Tanods. Redis entries expire after 30 minutes of inactivity.
+- **Offline resilience**: Unsent incident reports and attached media are queued locally in the resident app and synchronized when connection returns. Previously loaded advisories are cached for offline viewing.
+- **Maps**: Leaflet + OpenStreetMap throughout. Severity-based incident markers, barangay boundary overlays (when GeoJSON available), evacuation center pins by availability status, and GPS-tracked responder positions.
+- **Heatmap**: Incident severity/frequency heatmap on MDRRMO Command Center with filter support by severity, status, date, and barangay.
+- **Navigation**: OSRM routing engine provides turn-by-turn guidance for dispatched Tanods in `task_detail_screen.dart`.
+- **Offline state UI**: Clear connection-required indicators shown when real-time dispatch, GPS tracking, or notifications cannot function without internet connectivity.
+
+---
+
+## Security and Quality Standards
+
+- **Authentication**: `bcryptjs` password hashing; stateless JWT sessions (7-day expiry by default); Supabase Auth for storage access.
+- **Authorization**: Role and barangay-jurisdiction enforcement on every backend route using middleware; Supabase RLS policies protect all tables at the database level.
+- **Media uploads**: Server-side `multer` validation with strict file type and size limits; stored in Supabase Storage with presigned URLs for secure access.
+- **Rate limiting**: `express-rate-limit` applied to `/api/auth/login` to prevent brute-force attacks.
+- **Input validation**: `zod` schemas on all API request payloads.
+- **Audit trails**: JSONB `verification_history` in dispatcher accreditation; status timestamps on all incident and dispatch records.
+- **Data privacy**: Resident contact details are never exposed to unauthorized users; Tanod GPS positions are visible only to commanders.
+- **ISO/IEC 25010:2023**: System designed and evaluated against Functional Suitability, Performance Efficiency, Interaction Capability, Reliability, and Security.
+- **Mobile UX**: Large action buttons, severity-coded color schemes, confirmation dialogs before critical state transitions, loading and empty states, low-bandwidth-optimized design.
+
+---
+
+## Out of Scope
+
+The following are **explicitly excluded** from NorzAgapay and must not be added:
+
+- Resource inventory counting or relief-goods allocation/distribution tracking
+- QR-code shipment tracking or warehouse logistics
+- Volunteer certification, management, or skill-matching
+- AI/computer-vision damage assessment or image recognition
+- Drone integration or automated IoT sensor data streams (water gauge telemetry, seismic sensors)
+- National DRRM framework integrations (NDRRMC, OCD-DRRMIS)
+- Private emergency service integrations (private hospitals, private security)
+- Automated disaster forecasting or predictive risk modeling
+- Family registration records within evacuation centers (occupancy count only)
+
+---
 
 ## Deliverables
 
-1. React web portal, Flutter mobile application, Node.js API, and Supabase migration files.
-2. Authentication, RBAC, and RLS policies.
-3. Real-time incident, dispatch, duty-status, escalation, evacuation-center, and advisory workflows.
-4. Leaflet/OpenStreetMap maps, heatmaps, and OSRM navigation.
-5. Push notifications and offline caching for unsent reports and loaded advisories.
-6. Supabase Storage for report media and responder documentation.
-7. API documentation, environment template, setup guide, and test plan.
-
-Do not use mock data in final workflows or add features outside this scope.
+1. ✅ React web portal (`web-dashboard/`) — 14 pages, Leaflet map, heatmap, Socket.IO real-time updates
+2. ✅ Flutter Barangay Admin app (`barangay_app/`) — 10 screens, dispatch pipeline, PDF accreditation workflow
+3. ✅ Flutter Tanod Responder app (`mobile_app/`) — 11 screens, GPS tracking, OSRM navigation, real-time dispatch alerts
+4. ✅ Flutter Resident app (`resident_app/`) — 7 screens, incident reporting, report tracking, offline-capable
+5. ✅ Node.js + Express backend (`backend/`) — 21 API route files, Socket.IO server, background weather/river sync, PDF generation
+6. ✅ Supabase database migrations (`database/migrations/`) — 7 migration files with full schema, RLS, indexes, and Realtime setup
+7. ✅ Authentication and RBAC — 5-role permission system with JWT, bcrypt, and Supabase RLS
+8. ✅ Real-time workflows — incident alerts, dispatch notifications, GPS broadcast, escalation events, evacuation center sync
+9. ✅ Maps and navigation — Leaflet/OpenStreetMap incident maps, severity heatmaps, OSRM routing, GPS responder tracking
+10. ✅ PDF document service — Dispatcher authorization form generation via PDFKit
+11. ✅ Tunnel URL sync utility (`update-tunnel-url.js`) — one-command propagation of ngrok/tunnel URLs across all apps
+12. ⬜ API documentation and environment template — pending
+13. ⬜ Formal test plan (ISO/IEC 25010:2023) — pending
