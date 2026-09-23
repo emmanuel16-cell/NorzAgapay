@@ -271,14 +271,14 @@ function MediaGrid({ media, onImageClick }: { media: string[]; onImageClick: (id
   const visible = media.slice(0, MAX);
 
   const gridStyles: Record<number, React.CSSProperties> = {
-    1: { gridTemplateColumns: '1fr', gridTemplateRows: '260px' },
-    2: { gridTemplateColumns: '1fr 1fr', gridTemplateRows: '220px' },
-    3: { gridTemplateColumns: '1fr 1fr', gridTemplateRows: '160px 160px' },
-    4: { gridTemplateColumns: '1fr 1fr', gridTemplateRows: '150px 150px' },
+    1: { gridTemplateColumns: '1fr', gridTemplateRows: '340px' },
+    2: { gridTemplateColumns: '1fr 1fr', gridTemplateRows: '300px' },
+    3: { gridTemplateColumns: '1fr 1fr', gridTemplateRows: '220px 220px' },
+    4: { gridTemplateColumns: '1fr 1fr', gridTemplateRows: '200px 200px' },
   };
   const containerStyle: React.CSSProperties =
     count >= 5
-      ? { display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gridTemplateRows: 'repeat(2,130px)', gap: 4 }
+      ? { display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gridTemplateRows: 'repeat(2,175px)', gap: 4 }
       : { display: 'grid', gap: 4, ...(gridStyles[count] || {}) };
 
   return (
