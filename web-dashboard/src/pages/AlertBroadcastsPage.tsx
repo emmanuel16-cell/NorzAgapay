@@ -1093,7 +1093,7 @@ export default function AlertBroadcastsPage() {
   return (
     <>
       {/* Page Header */}
-      <div className="page-header" style={{ marginBottom: 18 }}>
+      <div className="page-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div
             style={{
@@ -1130,7 +1130,7 @@ export default function AlertBroadcastsPage() {
         </button>
       </div>
 
-      <div className="page-content" style={{ padding: '0 24px 32px' }}>
+      <div className="page-content">
         {/* Main Content Area: Responsive Feed on Left + Fixed Collapsible Category Panel on Right (Matches img 1) */}
         <div
           style={{
@@ -1151,7 +1151,7 @@ export default function AlertBroadcastsPage() {
           >
             {/* When category sidebar is minimized, show expand trigger button on top right of feed */}
             {!sidebarOpen && (
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 14 }}>
                 <button
                   onClick={() => setSidebarOpen(true)}
                   style={{
@@ -1203,24 +1203,28 @@ export default function AlertBroadcastsPage() {
             )}
           </div>
 
-          {/* Category List Sidebar (Fixed / Collapsible on Right - Matches img 1) */}
+          {/* Category List Sidebar (Fixed / Sticky on Right - Matches img 1) */}
           {sidebarOpen && (
             <div
               style={{
                 width: 250,
                 flexShrink: 0,
                 position: 'sticky',
-                top: 24,
-                background: 'var(--bg-card, #1E293B)',
-                border: '1px solid var(--border-color, #334155)',
-                borderRadius: 16,
-                padding: '12px 14px 16px',
+                top: 'calc(var(--header-height, 64px) + 20px)',
+                background: 'var(--bg-card, #1A2332)',
+                border: '1px solid var(--border-color, rgba(255, 255, 255, 0.08))',
+                borderRadius: 20,
+                padding: '14px 14px 18px',
                 boxShadow: 'var(--shadow-md)',
+                zIndex: 40,
+                alignSelf: 'flex-start',
+                maxHeight: 'calc(100vh - var(--header-height, 64px) - 36px)',
+                overflowY: 'auto',
                 transition: 'all 0.3s ease',
               }}
             >
               {/* Header with >> minimize toggle button */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 12 }}>
                 <button
                   onClick={() => setSidebarOpen(false)}
                   title="Minimize category list"
@@ -1235,15 +1239,15 @@ export default function AlertBroadcastsPage() {
                     alignItems: 'center',
                     transition: 'color 0.2s',
                   }}
-                  onMouseOver={e => (e.currentTarget.style.color = '#fff')}
+                  onMouseOver={e => (e.currentTarget.style.color = '#38BDF8')}
                   onMouseOut={e => (e.currentTarget.style.color = 'var(--text-muted, #94A3B8)')}
                 >
                   <ChevronsRight size={18} />
                 </button>
               </div>
 
-              {/* Category button items */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {/* Category button items (Exactly styled like img 1) */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
                 {CATEGORY_SIDEBAR_ITEMS.map(item => {
                   const isSelected = selectedCategory === item.id;
                   return (
@@ -1252,19 +1256,23 @@ export default function AlertBroadcastsPage() {
                       onClick={() => setSelectedCategory(item.id)}
                       style={{
                         width: '100%',
-                        padding: '11px 14px',
-                        borderRadius: 10,
+                        padding: '12px 14px',
+                        borderRadius: 12,
                         fontSize: 13,
-                        fontWeight: isSelected ? 700 : 600,
+                        fontWeight: 600,
                         textAlign: 'center',
                         cursor: 'pointer',
-                        border: isSelected ? '1px solid rgba(56, 189, 248, 0.45)' : '1px solid rgba(51, 65, 85, 0.4)',
+                        border: isSelected
+                          ? '1px solid #38BDF8'
+                          : '1px solid rgba(255, 255, 255, 0.07)',
                         background: isSelected
-                          ? 'rgba(56, 189, 248, 0.16)'
-                          : 'rgba(15, 23, 42, 0.5)',
-                        color: isSelected ? '#38BDF8' : 'var(--text-secondary, #94A3B8)',
-                        transition: 'all 0.18s ease',
-                        boxShadow: isSelected ? '0 0 12px rgba(56, 189, 248, 0.12)' : 'none',
+                          ? 'rgba(56, 189, 248, 0.08)'
+                          : 'rgba(20, 30, 48, 0.65)',
+                        color: isSelected ? '#38BDF8' : 'rgba(226, 232, 240, 0.85)',
+                        transition: 'all 0.2s ease',
+                        boxShadow: isSelected
+                          ? '0 0 10px rgba(56, 189, 248, 0.22), inset 0 0 6px rgba(56, 189, 248, 0.05)'
+                          : 'none',
                       }}
                       onMouseOver={e => {
                         if (!isSelected) {
@@ -1274,8 +1282,8 @@ export default function AlertBroadcastsPage() {
                       }}
                       onMouseOut={e => {
                         if (!isSelected) {
-                          e.currentTarget.style.background = 'rgba(15, 23, 42, 0.5)';
-                          e.currentTarget.style.color = 'var(--text-secondary, #94A3B8)';
+                          e.currentTarget.style.background = 'rgba(20, 30, 48, 0.65)';
+                          e.currentTarget.style.color = 'rgba(226, 232, 240, 0.85)';
                         }
                       }}
                     >
