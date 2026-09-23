@@ -11,8 +11,6 @@ import {
   Video,
   ChevronDown,
   ChevronUp,
-  ChevronsRight,
-  ChevronsLeft,
   ExternalLink,
   Shield,
   AlertTriangle,
@@ -1129,7 +1127,6 @@ function DeleteModal({
 export default function AlertBroadcastsPage() {
   const [posts, setPosts] = useState<BroadcastPost[]>(DEMO_POSTS);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
-  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [editPost, setEditPost] = useState<BroadcastPost | null>(null);
   const [deletePost, setDeletePost] = useState<BroadcastPost | null>(null);
@@ -1223,35 +1220,6 @@ export default function AlertBroadcastsPage() {
               transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
             }}
           >
-            {/* When category sidebar is minimized, show expand trigger button on top right of feed */}
-            {!sidebarOpen && (
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 14 }}>
-                <button
-                  onClick={() => setSidebarOpen(true)}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    padding: '8px 14px',
-                    borderRadius: 10,
-                    background: 'var(--bg-card, #1E293B)',
-                    border: '1px solid var(--border-color, #334155)',
-                    color: '#38BDF8',
-                    fontSize: 13,
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    boxShadow: 'var(--shadow-sm)',
-                    transition: 'all 0.2s',
-                  }}
-                  onMouseOver={e => (e.currentTarget.style.borderColor = '#38BDF8')}
-                  onMouseOut={e => (e.currentTarget.style.borderColor = 'var(--border-color, #334155)')}
-                >
-                  <ChevronsLeft size={16} />
-                  <span>Show Categories ({activeCategoryItem?.label ?? 'All'})</span>
-                </button>
-              </div>
-            )}
-
             {/* Posts List */}
             {filtered.length === 0 ? (
               <div className="card" style={{ textAlign: 'center', padding: '60px 24px' }}>
@@ -1277,48 +1245,24 @@ export default function AlertBroadcastsPage() {
             )}
           </div>
 
-          {/* Category List Sidebar (Fixed / Sticky on Right - Matches img 1) */}
-          {sidebarOpen && (
-            <div
-              style={{
-                width: 250,
-                flexShrink: 0,
-                position: 'sticky',
-                top: 'calc(var(--header-height, 64px) + 20px)',
-                background: 'var(--bg-card, #1A2332)',
-                border: '1px solid var(--border-color, rgba(255, 255, 255, 0.08))',
-                borderRadius: 20,
-                padding: '14px 14px 18px',
-                boxShadow: 'var(--shadow-md)',
-                zIndex: 40,
-                alignSelf: 'flex-start',
-                maxHeight: 'calc(100vh - var(--header-height, 64px) - 36px)',
-                overflowY: 'auto',
-                transition: 'all 0.3s ease',
-              }}
-            >
-              {/* Header with >> minimize toggle button */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 12 }}>
-                <button
-                  onClick={() => setSidebarOpen(false)}
-                  title="Minimize category list"
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: 'var(--text-muted, #94A3B8)',
-                    cursor: 'pointer',
-                    padding: '4px 6px',
-                    borderRadius: 6,
-                    display: 'flex',
-                    alignItems: 'center',
-                    transition: 'color 0.2s',
-                  }}
-                  onMouseOver={e => (e.currentTarget.style.color = '#38BDF8')}
-                  onMouseOut={e => (e.currentTarget.style.color = 'var(--text-muted, #94A3B8)')}
-                >
-                  <ChevronsRight size={18} />
-                </button>
-              </div>
+          {/* Category List Sidebar (Fixed / Sticky on Right - Always Maximized) */}
+          <div
+            style={{
+              width: 250,
+              flexShrink: 0,
+              position: 'sticky',
+              top: 'calc(var(--header-height, 64px) + 20px)',
+              background: 'var(--bg-card, #1A2332)',
+              border: '1px solid var(--border-color, rgba(255, 255, 255, 0.08))',
+              borderRadius: 20,
+              padding: '16px 14px 18px',
+              boxShadow: 'var(--shadow-md)',
+              zIndex: 40,
+              alignSelf: 'flex-start',
+              maxHeight: 'calc(100vh - var(--header-height, 64px) - 36px)',
+              overflowY: 'auto',
+            }}
+          >
 
               {/* Category button items (Exactly styled like img 1) */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
@@ -1367,9 +1311,8 @@ export default function AlertBroadcastsPage() {
                 })}
               </div>
             </div>
-          )}
+          </div>
         </div>
-      </div>
 
       {/* Modals */}
       {(createOpen || editPost) && (
