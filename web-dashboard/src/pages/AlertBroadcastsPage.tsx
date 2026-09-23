@@ -266,70 +266,71 @@ function CategoryPill({ category }: { category: BroadcastCategory }) {
 function MediaGrid({ media, onImageClick }: { media: string[]; onImageClick: (idx: number) => void }) {
   if (media.length === 0) return null;
   const count = media.length;
-  const MAX = 5;
-  const extra = count > MAX ? count - MAX : 0;
-  const visible = media.slice(0, MAX);
 
-  const gridStyles: Record<number, React.CSSProperties> = {
-    1: { gridTemplateColumns: '1fr', gridTemplateRows: '340px' },
-    2: { gridTemplateColumns: '1fr 1fr', gridTemplateRows: '300px' },
-    3: { gridTemplateColumns: '1fr 1fr', gridTemplateRows: '220px 220px' },
-    4: { gridTemplateColumns: '1fr 1fr', gridTemplateRows: '200px 200px' },
-  };
-  const containerStyle: React.CSSProperties =
-    count >= 5
-      ? { display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gridTemplateRows: 'repeat(2,175px)', gap: 4 }
-      : { display: 'grid', gap: 4, ...(gridStyles[count] || {}) };
+  const cell = (i: number, overlayCount?: number) => (
+    <div
+      key={i}
+      style={{ position: 'relative', overflow: 'hidden', cursor: 'pointer', flex: 1 }}
+      onClick={() => onImageClick(i)}
+    >
+      <img
+        src={media[i]}
+        alt=""
+        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', transition: 'transform 0.3s ease' }}
+        onMouseOver={e => (e.currentTarget.style.transform = 'scale(1.05)')}
+        onMouseOut={e => (e.currentTarget.style.transform = 'scale(1)')}
+      />
+      {overlayCount !== undefined && (
+        <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 26, fontWeight: 800 }}>
+          +{overlayCount}
+        </div>
+      )}
+    </div>
+  );
 
+  const wrap: React.CSSProperties = { borderRadius: 12, overflow: 'hidden', marginTop: 12, display: 'flex', flexDirection: 'column', gap: 2 };
+  const row = (h: number): React.CSSProperties => ({ display: 'flex', gap: 2, height: h });
+
+  // 1 – full square
+  if (count === 1) return <div style={wrap}><div style={row(340)}>{cell(0)}</div></div>;
+
+  // 2 – side-by-side
+  if (count === 2) return <div style={wrap}><div style={row(300)}>{cell(0)}{cell(1)}</div></div>;
+
+  // 3 – wide top + 2 bottom
+  if (count === 3) return (
+    <div style={wrap}>
+      <div style={row(220)}>{cell(0)}</div>
+      <div style={row(180)}>{cell(1)}{cell(2)}</div>
+    </div>
+  );
+
+  // 4 – 2×2
+  if (count === 4) return (
+    <div style={wrap}>
+      <div style={row(200)}>{cell(0)}{cell(1)}</div>
+      <div style={row(200)}>{cell(2)}{cell(3)}</div>
+    </div>
+  );
+
+  // 5 – 2 top + 3 bottom
+  if (count === 5) return (
+    <div style={wrap}>
+      <div style={row(220)}>{cell(0)}{cell(1)}</div>
+      <div style={row(160)}>{cell(2)}{cell(3)}{cell(4)}</div>
+    </div>
+  );
+
+  // 6+ – 2 top + 3 bottom, last cell has +N overlay
+  const extra = count - 5;
   return (
-    <div style={{ ...containerStyle, borderRadius: 12, overflow: 'hidden', marginTop: 12 }}>
-      {visible.map((url, i) => {
-        const isLast = i === MAX - 1 && extra > 0;
-        const spanStyle: React.CSSProperties = count === 3 && i === 0 ? { gridRow: 'span 2' } : {};
-        return (
-          <div
-            key={i}
-            style={{ position: 'relative', overflow: 'hidden', cursor: 'pointer', ...spanStyle }}
-            onClick={() => onImageClick(i)}
-          >
-            <img
-              src={url}
-              alt=""
-              style={{
-                width: '100%',
-                height: '100%',
-                objectFit: 'cover',
-                display: 'block',
-                transition: 'transform 0.3s ease',
-              }}
-              onMouseOver={e => (e.currentTarget.style.transform = 'scale(1.05)')}
-              onMouseOut={e => (e.currentTarget.style.transform = 'scale(1)')}
-            />
-            {isLast && (
-              <div
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  background: 'rgba(0,0,0,0.65)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: '#fff',
-                  gap: 4,
-                }}
-              >
-                <Eye size={24} />
-                <span style={{ fontSize: 22, fontWeight: 800 }}>+{extra}</span>
-                <span style={{ fontSize: 11, opacity: 0.8 }}>View all</span>
-              </div>
-            )}
-          </div>
-        );
-      })}
+    <div style={wrap}>
+      <div style={row(220)}>{cell(0)}{cell(1)}</div>
+      <div style={row(160)}>{cell(2)}{cell(3)}{cell(4, extra)}</div>
     </div>
   );
 }
+
 
 /* ─────────────────── Lightbox ─────────────────── */
 function Lightbox({ media, startIndex, onClose }: { media: string[]; startIndex: number; onClose: () => void }) {
