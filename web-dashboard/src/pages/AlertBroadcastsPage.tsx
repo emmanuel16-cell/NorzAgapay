@@ -705,20 +705,33 @@ function CreateModal({
         }
       : { ...EMPTY_FORM }
   );
-  const [mediaInput, setMediaInput] = useState('');
-  const [mediaType, setMediaType] = useState<'image' | 'video'>('image');
   const fileRef = useRef<HTMLInputElement>(null);
 
   const addLink = () => setForm(f => ({ ...f, links: [...f.links, ''] }));
   const removeLink = (i: number) => setForm(f => ({ ...f, links: f.links.filter((_, idx) => idx !== i) }));
   const setLink = (i: number, val: string) =>
     setForm(f => ({ ...f, links: f.links.map((l, idx) => (idx === i ? val : l)) }));
-  const addMediaUrl = () => {
-    if (!mediaInput.trim()) return;
-    setForm(f => ({ ...f, media: [...f.media, { url: mediaInput.trim(), type: mediaType }] }));
-    setMediaInput('');
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
+    const newItems: MediaItem[] = files.map(file => ({
+      url: URL.createObjectURL(file),
+      type: file.type.startsWith('video/') ? 'video' : 'image',
+    }));
+    setForm(f => ({ ...f, media: [...f.media, ...newItems] }));
+    // Reset so same files can be re-selected if removed
+    e.target.value = '';
   };
-  const removeMedia = (i: number) => setForm(f => ({ ...f, media: f.media.filter((_, idx) => idx !== i) }));
+
+  const removeMedia = (i: number) => {
+    setForm(f => {
+      // Revoke blob URL to free memory
+      const item = f.media[i];
+      if (item.url.startsWith('blob:')) URL.revokeObjectURL(item.url);
+      return { ...f, media: f.media.filter((_, idx) => idx !== i) };
+    });
+  };
 
   const handleSave = () => {
     if (!form.content.trim()) {
@@ -986,64 +999,47 @@ function CreateModal({
                 ))}
               </div>
             )}
-            {/* Type toggle + URL input */}
-            <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
-              <button
-                onClick={() => setMediaType('image')}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 5,
-                  padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                  border: `1px solid ${mediaType === 'image' ? '#38BDF8' : 'var(--border-color)'}`,
-                  background: mediaType === 'image' ? 'rgba(56,189,248,0.1)' : 'transparent',
-                  color: mediaType === 'image' ? '#38BDF8' : 'var(--text-muted)',
-                }}
-              >
-                <ImageIcon size={13} /> Image
-              </button>
-              <button
-                onClick={() => setMediaType('video')}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 5,
-                  padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                  border: `1px solid ${mediaType === 'video' ? '#A78BFA' : 'var(--border-color)'}`,
-                  background: mediaType === 'video' ? 'rgba(167,139,250,0.1)' : 'transparent',
-                  color: mediaType === 'video' ? '#A78BFA' : 'var(--text-muted)',
-                }}
-              >
-                <Video size={13} /> Video
-              </button>
-            </div>
-            <div style={{ display: 'flex', gap: 6 }}>
-              <div style={{ position: 'relative', flex: 1 }}>
-                {mediaType === 'video'
-                  ? <Video size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                  : <ImageIcon size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                }
-                <input
-                  style={{ ...inputStyle, paddingLeft: 30 }}
-                  value={mediaInput}
-                  onChange={e => setMediaInput(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && addMediaUrl()}
-                  placeholder={mediaType === 'video' ? 'Paste video URL (.mp4, etc.) and press Enter…' : 'Paste image URL and press Enter…'}
-                />
-              </div>
-              <button
-                onClick={addMediaUrl}
-                style={{
-                  background: 'rgba(56,189,248,0.1)',
-                  border: '1px solid rgba(56,189,248,0.25)',
-                  color: '#38BDF8',
-                  borderRadius: 8,
-                  padding: '0 12px',
-                  cursor: 'pointer',
-                  fontSize: 13,
-                  fontWeight: 600,
-                }}
-              >
-                Add
-              </button>
-            </div>
-            <input ref={fileRef} type="file" accept="image/*,video/*" multiple style={{ display: 'none' }} />
+            {/* File picker */}
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*,video/*"
+              multiple
+              style={{ display: 'none' }}
+              onChange={handleFileSelect}
+            />
+            <button
+              onClick={() => fileRef.current?.click()}
+              style={{
+                width: '100%',
+                padding: '11px',
+                borderRadius: 10,
+                border: '1.5px dashed var(--border-hover, #475569)',
+                background: 'transparent',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                fontSize: 13,
+                fontWeight: 600,
+                transition: 'all 0.2s',
+              }}
+              onMouseOver={e => {
+                e.currentTarget.style.borderColor = '#38BDF8';
+                e.currentTarget.style.color = '#38BDF8';
+                e.currentTarget.style.background = 'rgba(56,189,248,0.05)';
+              }}
+              onMouseOut={e => {
+                e.currentTarget.style.borderColor = 'var(--border-hover, #475569)';
+                e.currentTarget.style.color = 'var(--text-secondary)';
+                e.currentTarget.style.background = 'transparent';
+              }}
+            >
+              <ImageIcon size={15} />
+              Add Photos / Videos
+            </button>
           </div>
         </div>
 
