@@ -8,6 +8,7 @@ import {
   X,
   Link as LinkIcon,
   Image as ImageIcon,
+  Video,
   ChevronDown,
   ChevronUp,
   ChevronsRight,
@@ -21,6 +22,7 @@ import {
   Eye,
   Calendar,
   User,
+  Play,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -33,6 +35,11 @@ type BroadcastCategory =
   | 'relief_assistance'
   | 'all_clear';
 
+interface MediaItem {
+  url: string;
+  type: 'image' | 'video';
+}
+
 interface BroadcastPost {
   id: string;
   barangayId: string;
@@ -41,7 +48,7 @@ interface BroadcastPost {
   category: BroadcastCategory;
   content: string;
   links: string[];
-  media: string[];
+  media: MediaItem[];
   createdAt: Date;
   isFromMdrrmo?: boolean;
 }
@@ -134,8 +141,8 @@ const DEMO_POSTS: BroadcastPost[] = [
       '🚨 RED ALERT: Severe flooding reported along Norzagaray River near Bigte Creek tributary. Water level has surpassed the critical threshold. All residents in low-lying areas of Purok 1, 2, and 3 are ordered to evacuate immediately to designated evacuation centers. MDRRMO rescue team and motorized boats deployed.',
     links: ['https://bagong.pagasa.dost.gov.ph', 'https://ndrrmc.gov.ph'],
     media: [
-      'https://images.unsplash.com/photo-1547683905-f686c993aae5?auto=format&fit=crop&w=800&q=80',
-      'https://images.unsplash.com/photo-1514632595-4944383f2737?auto=format&fit=crop&w=800&q=80',
+      { url: 'https://images.unsplash.com/photo-1547683905-f686c993aae5?auto=format&fit=crop&w=800&q=80', type: 'image' },
+      { url: 'https://images.unsplash.com/photo-1514632595-4944383f2737?auto=format&fit=crop&w=800&q=80', type: 'image' },
     ],
     createdAt: new Date(Date.now() - 1 * 60 * 60 * 1000),
     isFromMdrrmo: true,
@@ -150,7 +157,7 @@ const DEMO_POSTS: BroadcastPost[] = [
       '⚠️ MDRRMO ADVISORY: Angat and Ipo Dam water level update — Spillway gates may be opened at 2:00 AM due to sustained continuous rainfall from the enhanced Southwest Monsoon (Habagat). Low-lying riparian settlements in all barangays are advised to activate early evacuation protocols and stand-by rescue assets.',
     links: ['https://pagasa.dost.gov.ph'],
     media: [
-      'https://images.unsplash.com/photo-1509114397022-ed747cca3f65?auto=format&fit=crop&w=800&q=80',
+      { url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4', type: 'video' },
     ],
     createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000),
     isFromMdrrmo: true,
@@ -165,8 +172,8 @@ const DEMO_POSTS: BroadcastPost[] = [
       'Norzagaray Emergency Operations Center (EOC) remains under heightened 24/7 Red Alert status. Preemptive sandbagging and drainage clearing ongoing along critical highway corridors. Please report blocked waterways or suspicious drainage issues to the MDRRMO command desk immediately. Hotline: 0917-123-MDRRMO.',
     links: [],
     media: [
-      'https://images.unsplash.com/photo-1582213782179-e0d53f98f2ca?auto=format&fit=crop&w=800&q=80',
-      'https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?auto=format&fit=crop&w=800&q=80',
+      { url: 'https://images.unsplash.com/photo-1582213782179-e0d53f98f2ca?auto=format&fit=crop&w=800&q=80', type: 'image' },
+      { url: 'https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?auto=format&fit=crop&w=800&q=80', type: 'image' },
     ],
     createdAt: new Date(Date.now() - 5 * 60 * 60 * 1000),
     isFromMdrrmo: true,
@@ -181,9 +188,9 @@ const DEMO_POSTS: BroadcastPost[] = [
       '📦 RELIEF DISTRIBUTION: Municipal Social Welfare and Development (MSWD) in coordination with MDRRMO has released 2,500 food packs and sanitation kits for distribution to evacuation centers across Norzagaray. Distribution staging areas are active in Poblacion, Bigte, and Minuyan shelters.',
     links: [],
     media: [
-      'https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?auto=format&fit=crop&w=800&q=80',
-      'https://images.unsplash.com/photo-1582213782179-e0d53f98f2ca?auto=format&fit=crop&w=800&q=80',
-      'https://images.unsplash.com/photo-1534274988757-a28bf1a57c17?auto=format&fit=crop&w=800&q=80',
+      { url: 'https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?auto=format&fit=crop&w=800&q=80', type: 'image' },
+      { url: 'https://images.unsplash.com/photo-1582213782179-e0d53f98f2ca?auto=format&fit=crop&w=800&q=80', type: 'image' },
+      { url: 'https://images.unsplash.com/photo-1534274988757-a28bf1a57c17?auto=format&fit=crop&w=800&q=80', type: 'image' },
     ],
     createdAt: new Date(Date.now() - 8 * 60 * 60 * 1000),
     isFromMdrrmo: true,
@@ -211,12 +218,12 @@ const DEMO_POSTS: BroadcastPost[] = [
       '🟡 YELLOW ALERT: Comprehensive river basin telemetry across Norzagaray River, Matictic Bridge, and Bigte Creek shows water level at Alert Level 2. Rescue vehicles and motorized boats have been pre-positioned at strategic response nodes. All BDRRMC chairs are advised to activate their contingency plans.',
     links: ['https://bagong.pagasa.dost.gov.ph'],
     media: [
-      'https://images.unsplash.com/photo-1534274988757-a28bf1a57c17?auto=format&fit=crop&w=800&q=80',
-      'https://images.unsplash.com/photo-1547683905-f686c993aae5?auto=format&fit=crop&w=800&q=80',
-      'https://images.unsplash.com/photo-1514632595-4944383f2737?auto=format&fit=crop&w=800&q=80',
-      'https://images.unsplash.com/photo-1509114397022-ed747cca3f65?auto=format&fit=crop&w=800&q=80',
-      'https://images.unsplash.com/photo-1582213782179-e0d53f98f2ca?auto=format&fit=crop&w=800&q=80',
-      'https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?auto=format&fit=crop&w=800&q=80',
+      { url: 'https://images.unsplash.com/photo-1534274988757-a28bf1a57c17?auto=format&fit=crop&w=800&q=80', type: 'image' },
+      { url: 'https://images.unsplash.com/photo-1547683905-f686c993aae5?auto=format&fit=crop&w=800&q=80', type: 'image' },
+      { url: 'https://images.unsplash.com/photo-1514632595-4944383f2737?auto=format&fit=crop&w=800&q=80', type: 'image' },
+      { url: 'https://images.unsplash.com/photo-1509114397022-ed747cca3f65?auto=format&fit=crop&w=800&q=80', type: 'image' },
+      { url: 'https://images.unsplash.com/photo-1582213782179-e0d53f98f2ca?auto=format&fit=crop&w=800&q=80', type: 'image' },
+      { url: 'https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?auto=format&fit=crop&w=800&q=80', type: 'image' },
     ],
     createdAt: new Date(Date.now() - 20 * 60 * 60 * 1000),
     isFromMdrrmo: true,
@@ -263,65 +270,87 @@ function CategoryPill({ category }: { category: BroadcastCategory }) {
 }
 
 /* ─────────────────── Media Grid ─────────────────── */
-function MediaGrid({ media, onImageClick }: { media: string[]; onImageClick: (idx: number) => void }) {
+function MediaGrid({ media, onItemClick }: { media: MediaItem[]; onItemClick: (idx: number) => void }) {
   if (media.length === 0) return null;
   const count = media.length;
 
-  const cell = (i: number, overlayCount?: number) => (
-    <div
-      key={i}
-      style={{ position: 'relative', overflow: 'hidden', cursor: 'pointer', flex: 1 }}
-      onClick={() => onImageClick(i)}
-    >
-      <img
-        src={media[i]}
-        alt=""
-        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', transition: 'transform 0.3s ease' }}
-        onMouseOver={e => (e.currentTarget.style.transform = 'scale(1.05)')}
-        onMouseOut={e => (e.currentTarget.style.transform = 'scale(1)')}
-      />
-      {overlayCount !== undefined && (
-        <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 26, fontWeight: 800 }}>
-          +{overlayCount}
-        </div>
-      )}
-    </div>
-  );
+  const cell = (i: number, overlayCount?: number) => {
+    const item = media[i];
+    const isVideo = item.type === 'video';
+    return (
+      <div
+        key={i}
+        style={{ position: 'relative', overflow: 'hidden', cursor: 'pointer', flex: 1, background: '#0F172A' }}
+        onClick={() => onItemClick(i)}
+      >
+        {isVideo ? (
+          <>
+            <video
+              src={item.url}
+              muted
+              playsInline
+              preload="metadata"
+              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+            />
+            {/* Play icon overlay */}
+            <div style={{
+              position: 'absolute', inset: 0,
+              background: 'rgba(0,0,0,0.35)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              transition: 'background 0.2s',
+            }}>
+              <div style={{
+                width: 48, height: 48, borderRadius: '50%',
+                background: 'rgba(255,255,255,0.2)',
+                backdropFilter: 'blur(4px)',
+                border: '2px solid rgba(255,255,255,0.6)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <Play size={22} color="#fff" fill="#fff" style={{ marginLeft: 3 }} />
+              </div>
+            </div>
+          </>
+        ) : (
+          <img
+            src={item.url}
+            alt=""
+            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', transition: 'transform 0.3s ease' }}
+            onMouseOver={e => (e.currentTarget.style.transform = 'scale(1.05)')}
+            onMouseOut={e => (e.currentTarget.style.transform = 'scale(1)')}
+          />
+        )}
+        {overlayCount !== undefined && (
+          <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 26, fontWeight: 800 }}>
+            +{overlayCount}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const wrap: React.CSSProperties = { borderRadius: 12, overflow: 'hidden', marginTop: 12, display: 'flex', flexDirection: 'column', gap: 2 };
   const row = (h: number): React.CSSProperties => ({ display: 'flex', gap: 2, height: h });
 
-  // 1 – full square
   if (count === 1) return <div style={wrap}><div style={row(340)}>{cell(0)}</div></div>;
-
-  // 2 – side-by-side
   if (count === 2) return <div style={wrap}><div style={row(300)}>{cell(0)}{cell(1)}</div></div>;
-
-  // 3 – wide top + 2 bottom
   if (count === 3) return (
     <div style={wrap}>
       <div style={row(220)}>{cell(0)}</div>
       <div style={row(180)}>{cell(1)}{cell(2)}</div>
     </div>
   );
-
-  // 4 – 2×2
   if (count === 4) return (
     <div style={wrap}>
       <div style={row(200)}>{cell(0)}{cell(1)}</div>
       <div style={row(200)}>{cell(2)}{cell(3)}</div>
     </div>
   );
-
-  // 5 – 2 top + 3 bottom
   if (count === 5) return (
     <div style={wrap}>
       <div style={row(220)}>{cell(0)}{cell(1)}</div>
       <div style={row(160)}>{cell(2)}{cell(3)}{cell(4)}</div>
     </div>
   );
-
-  // 6+ – 2 top + 3 bottom, last cell has +N overlay
   const extra = count - 5;
   return (
     <div style={wrap}>
@@ -333,14 +362,16 @@ function MediaGrid({ media, onImageClick }: { media: string[]; onImageClick: (id
 
 
 /* ─────────────────── Lightbox ─────────────────── */
-function Lightbox({ media, startIndex, onClose }: { media: string[]; startIndex: number; onClose: () => void }) {
+function Lightbox({ media, startIndex, onClose }: { media: MediaItem[]; startIndex: number; onClose: () => void }) {
   const [current, setCurrent] = useState(startIndex);
+  const item = media[current];
+  const isVideo = item.type === 'video';
   return (
     <div
       style={{
         position: 'fixed',
         inset: 0,
-        background: 'rgba(0,0,0,0.93)',
+        background: 'rgba(0,0,0,0.95)',
         zIndex: 9999,
         display: 'flex',
         flexDirection: 'column',
@@ -387,11 +418,21 @@ function Lightbox({ media, startIndex, onClose }: { media: string[]; startIndex:
         >
           ‹
         </button>
-        <img
-          src={media[current]}
-          alt=""
-          style={{ maxWidth: '70vw', maxHeight: '80vh', objectFit: 'contain', borderRadius: 12, boxShadow: '0 8px 40px rgba(0,0,0,0.8)' }}
-        />
+        {isVideo ? (
+          <video
+            key={item.url}
+            src={item.url}
+            controls
+            autoPlay
+            style={{ maxWidth: '70vw', maxHeight: '80vh', borderRadius: 12, boxShadow: '0 8px 40px rgba(0,0,0,0.8)', background: '#000' }}
+          />
+        ) : (
+          <img
+            src={item.url}
+            alt=""
+            style={{ maxWidth: '70vw', maxHeight: '80vh', objectFit: 'contain', borderRadius: 12, boxShadow: '0 8px 40px rgba(0,0,0,0.8)' }}
+          />
+        )}
         <button
           disabled={current === media.length - 1}
           onClick={() => setCurrent(c => c + 1)}
@@ -410,7 +451,8 @@ function Lightbox({ media, startIndex, onClose }: { media: string[]; startIndex:
           ›
         </button>
       </div>
-      <div style={{ color: 'rgba(255,255,255,0.5)', marginTop: 16, fontSize: 13 }}>
+      <div style={{ color: 'rgba(255,255,255,0.5)', marginTop: 16, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+        {isVideo && <Video size={13} />}
         {current + 1} / {media.length}
       </div>
     </div>
@@ -589,7 +631,7 @@ function PostCard({ post, onEdit, onDelete }: { post: BroadcastPost; onEdit: () 
       </p>
 
       {/* Media Grid */}
-      {post.media.length > 0 && <MediaGrid media={post.media} onImageClick={i => setLightboxIdx(i)} />}
+      {post.media.length > 0 && <MediaGrid media={post.media} onItemClick={i => setLightboxIdx(i)} />}
 
       {/* Links */}
       {post.links.length > 0 && (
@@ -641,7 +683,7 @@ const EMPTY_FORM = {
   category: 'safety_advisory' as BroadcastCategory,
   content: '',
   links: [''],
-  media: [] as string[],
+  media: [] as MediaItem[],
 };
 
 function CreateModal({
@@ -664,6 +706,7 @@ function CreateModal({
       : { ...EMPTY_FORM }
   );
   const [mediaInput, setMediaInput] = useState('');
+  const [mediaType, setMediaType] = useState<'image' | 'video'>('image');
   const fileRef = useRef<HTMLInputElement>(null);
 
   const addLink = () => setForm(f => ({ ...f, links: [...f.links, ''] }));
@@ -672,7 +715,7 @@ function CreateModal({
     setForm(f => ({ ...f, links: f.links.map((l, idx) => (idx === i ? val : l)) }));
   const addMediaUrl = () => {
     if (!mediaInput.trim()) return;
-    setForm(f => ({ ...f, media: [...f.media, mediaInput.trim()] }));
+    setForm(f => ({ ...f, media: [...f.media, { url: mediaInput.trim(), type: mediaType }] }));
     setMediaInput('');
   };
   const removeMedia = (i: number) => setForm(f => ({ ...f, media: f.media.filter((_, idx) => idx !== i) }));
@@ -901,33 +944,40 @@ function CreateModal({
                 marginBottom: 6,
               }}
             >
-              Images / Photos
+              Images / Videos
             </label>
             {form.media.length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
-                {form.media.map((url, i) => (
+                {form.media.map((item, i) => (
                   <div key={i} style={{ position: 'relative', width: 72, height: 72 }}>
-                    <img
-                      src={url}
-                      alt=""
-                      style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border-color)' }}
-                    />
+                    {item.type === 'video' ? (
+                      <div style={{
+                        width: 72, height: 72, borderRadius: 8,
+                        border: '1px solid var(--border-color)',
+                        background: '#0F172A',
+                        display: 'flex', flexDirection: 'column',
+                        alignItems: 'center', justifyContent: 'center', gap: 4,
+                      }}>
+                        <Video size={22} color="#38BDF8" />
+                        <span style={{ fontSize: 9, color: '#38BDF8', fontWeight: 600 }}>VIDEO</span>
+                      </div>
+                    ) : (
+                      <img
+                        src={item.url}
+                        alt=""
+                        style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border-color)' }}
+                      />
+                    )}
                     <button
                       onClick={() => removeMedia(i)}
                       style={{
                         position: 'absolute',
-                        top: -6,
-                        right: -6,
+                        top: -6, right: -6,
                         background: '#EF4444',
-                        border: 'none',
-                        color: '#fff',
-                        borderRadius: '50%',
-                        width: 20,
-                        height: 20,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
+                        border: 'none', color: '#fff',
+                        borderRadius: '50%', width: 20, height: 20,
+                        cursor: 'pointer', display: 'flex',
+                        alignItems: 'center', justifyContent: 'center',
                       }}
                     >
                       <X size={10} />
@@ -936,18 +986,45 @@ function CreateModal({
                 ))}
               </div>
             )}
+            {/* Type toggle + URL input */}
+            <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+              <button
+                onClick={() => setMediaType('image')}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 5,
+                  padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                  border: `1px solid ${mediaType === 'image' ? '#38BDF8' : 'var(--border-color)'}`,
+                  background: mediaType === 'image' ? 'rgba(56,189,248,0.1)' : 'transparent',
+                  color: mediaType === 'image' ? '#38BDF8' : 'var(--text-muted)',
+                }}
+              >
+                <ImageIcon size={13} /> Image
+              </button>
+              <button
+                onClick={() => setMediaType('video')}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 5,
+                  padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                  border: `1px solid ${mediaType === 'video' ? '#A78BFA' : 'var(--border-color)'}`,
+                  background: mediaType === 'video' ? 'rgba(167,139,250,0.1)' : 'transparent',
+                  color: mediaType === 'video' ? '#A78BFA' : 'var(--text-muted)',
+                }}
+              >
+                <Video size={13} /> Video
+              </button>
+            </div>
             <div style={{ display: 'flex', gap: 6 }}>
               <div style={{ position: 'relative', flex: 1 }}>
-                <ImageIcon
-                  size={13}
-                  style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }}
-                />
+                {mediaType === 'video'
+                  ? <Video size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                  : <ImageIcon size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                }
                 <input
                   style={{ ...inputStyle, paddingLeft: 30 }}
                   value={mediaInput}
                   onChange={e => setMediaInput(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && addMediaUrl()}
-                  placeholder="Paste image URL and press Enter…"
+                  placeholder={mediaType === 'video' ? 'Paste video URL (.mp4, etc.) and press Enter…' : 'Paste image URL and press Enter…'}
                 />
               </div>
               <button
