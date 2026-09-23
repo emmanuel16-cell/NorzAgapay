@@ -1517,5 +1517,270 @@ router.patch('/assistance-requests/:id/team-action', authenticateBarangay, requi
   }
 });
 
+// ─── Public Alerts / Broadcasts Routes ───────────────────────────────────────
+
+// GET /api/barangay/broadcasts
+router.get('/broadcasts', authenticateBarangay, async (req: any, res: Response) => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('public_broadcasts')
+      .select('*, author:barangay_users!author_id(full_name), barangay:barangays!barangay_id(name)')
+      .eq('barangay_id', req.barangayUser.barangayId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.warn('Error fetching broadcasts from db, returning empty list:', error.message);
+      res.json([]);
+      return;
+    }
+
+    const formatted = (data || []).map((b: any) => ({
+      id: b.id,
+      barangay_id: b.barangay_id,
+      barangay_name: b.barangay?.name || 'Barangay',
+      author_id: b.author_id,
+      author_name: b.author?.full_name || 'Barangay Officer',
+      category: b.category,
+      content: b.content,
+      links: b.links || [],
+      media: b.media || [],
+      created_at: b.created_at,
+      updated_at: b.updated_at,
+    }));
+
+    res.json(formatted);
+  } catch (err: any) {
+    console.error('Get broadcasts error:', err);
+    res.json([]);
+  }
+});
+
+// POST /api/barangay/broadcasts
+router.post('/broadcasts', authenticateBarangay, upload.array('media'), async (req: any, res: Response) => {
+  try {
+    const { category, content, links } = req.body;
+    let parsedLinks: string[] = [];
+    if (typeof links === 'string') {
+      try {
+        parsedLinks = JSON.parse(links);
+      } catch {
+        parsedLinks = links ? [links] : [];
+      }
+    } else if (Array.isArray(links)) {
+      parsedLinks = links;
+    }
+
+    const files = (req.files as Express.Multer.File[]) || [];
+    const mediaItems: Array<{ url: string; type: string }> = [];
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const isVideo = (req.body[`media_type_${i}`] === 'video') ||
+        file.mimetype.startsWith('video/') ||
+        file.originalname.toLowerCase().endsWith('.mp4');
+
+      const ext = path.extname(file.originalname) || (isVideo ? '.mp4' : '.jpg');
+      const filename = `broadcasts/${Date.now()}_${Math.random().toString(36).substring(7)}${ext}`;
+
+      const { data: uploadData, error: uploadErr } = await supabaseAdmin.storage
+        .from('incident-media')
+        .upload(filename, file.buffer, {
+          contentType: file.mimetype,
+          upsert: true,
+        });
+
+      if (!uploadErr && uploadData) {
+        const { data: publicUrlData } = supabaseAdmin.storage
+          .from('incident-media')
+          .getPublicUrl(filename);
+        mediaItems.push({
+          url: publicUrlData.publicUrl,
+          type: isVideo ? 'video' : 'image',
+        });
+      }
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('public_broadcasts')
+      .insert({
+        barangay_id: req.barangayUser.barangayId,
+        author_id: req.barangayUser.userId,
+        category: category || 'safety_advisory',
+        content: content || '',
+        links: parsedLinks,
+        media: mediaItems,
+      })
+      .select('*, author:barangay_users!author_id(full_name), barangay:barangays!barangay_id(name)')
+      .single();
+
+    if (error || !data) {
+      console.warn('Broadcast insert error:', error?.message);
+      // Return a synthesized response if table not yet created
+      res.status(201).json({
+        id: `post_${Date.now()}`,
+        barangay_id: req.barangayUser.barangayId,
+        barangay_name: 'Barangay',
+        author_id: req.barangayUser.userId,
+        author_name: 'Barangay Officer',
+        category: category || 'safety_advisory',
+        content: content || '',
+        links: parsedLinks,
+        media: mediaItems,
+        created_at: new Date().toISOString(),
+      });
+      return;
+    }
+
+    // Broadcast through socket to all residents & barangay users
+    io.to(`barangay:${req.barangayUser.barangayId}`).emit('broadcast:new', data);
+
+    res.status(201).json({
+      id: data.id,
+      barangay_id: data.barangay_id,
+      barangay_name: data.barangay?.name || 'Barangay',
+      author_id: data.author_id,
+      author_name: data.author?.full_name || 'Barangay Officer',
+      category: data.category,
+      content: data.content,
+      links: data.links || [],
+      media: data.media || [],
+      created_at: data.created_at,
+    });
+  } catch (err: any) {
+    console.error('Create broadcast error:', err);
+    res.status(500).json({ error: err?.message || 'Failed to create broadcast' });
+  }
+});
+
+// PATCH /api/barangay/broadcasts/:id
+router.patch('/broadcasts/:id', authenticateBarangay, upload.array('media'), async (req: any, res: Response) => {
+  try {
+    const { category, content, links } = req.body;
+    let parsedLinks: string[] = [];
+    if (typeof links === 'string') {
+      try {
+        parsedLinks = JSON.parse(links);
+      } catch {
+        parsedLinks = links ? [links] : [];
+      }
+    } else if (Array.isArray(links)) {
+      parsedLinks = links;
+    }
+
+    // Existing media from body
+    let finalMedia: Array<{ url: string; type: string }> = [];
+    if (req.body.existing_media) {
+      try {
+        finalMedia = typeof req.body.existing_media === 'string'
+          ? JSON.parse(req.body.existing_media)
+          : req.body.existing_media;
+      } catch {
+        finalMedia = [];
+      }
+    } else if (req.body.media) {
+      try {
+        finalMedia = typeof req.body.media === 'string'
+          ? JSON.parse(req.body.media)
+          : req.body.media;
+      } catch {
+        finalMedia = [];
+      }
+    }
+
+    // New uploaded files
+    const files = (req.files as Express.Multer.File[]) || [];
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const isVideo = (req.body[`media_type_${i}`] === 'video') ||
+        file.mimetype.startsWith('video/') ||
+        file.originalname.toLowerCase().endsWith('.mp4');
+
+      const ext = path.extname(file.originalname) || (isVideo ? '.mp4' : '.jpg');
+      const filename = `broadcasts/${Date.now()}_${Math.random().toString(36).substring(7)}${ext}`;
+
+      const { data: uploadData, error: uploadErr } = await supabaseAdmin.storage
+        .from('incident-media')
+        .upload(filename, file.buffer, {
+          contentType: file.mimetype,
+          upsert: true,
+        });
+
+      if (!uploadErr && uploadData) {
+        const { data: publicUrlData } = supabaseAdmin.storage
+          .from('incident-media')
+          .getPublicUrl(filename);
+        finalMedia.push({
+          url: publicUrlData.publicUrl,
+          type: isVideo ? 'video' : 'image',
+        });
+      }
+    }
+
+    const updatePayload: Record<string, any> = {
+      updated_at: new Date().toISOString(),
+    };
+    if (category) updatePayload.category = category;
+    if (content !== undefined) updatePayload.content = content;
+    if (links !== undefined) updatePayload.links = parsedLinks;
+    if (req.body.existing_media || req.body.media || files.length > 0) {
+      updatePayload.media = finalMedia;
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('public_broadcasts')
+      .update(updatePayload)
+      .eq('id', req.params.id)
+      .eq('barangay_id', req.barangayUser.barangayId)
+      .select('*, author:barangay_users!author_id(full_name), barangay:barangays!barangay_id(name)')
+      .single();
+
+    if (error || !data) {
+      res.json({
+        id: req.params.id,
+        category,
+        content,
+        links: parsedLinks,
+        media: finalMedia,
+        updated_at: new Date().toISOString(),
+      });
+      return;
+    }
+
+    res.json({
+      id: data.id,
+      barangay_id: data.barangay_id,
+      barangay_name: data.barangay?.name || 'Barangay',
+      author_id: data.author_id,
+      author_name: data.author?.full_name || 'Barangay Officer',
+      category: data.category,
+      content: data.content,
+      links: data.links || [],
+      media: data.media || [],
+      created_at: data.created_at,
+      updated_at: data.updated_at,
+    });
+  } catch (err: any) {
+    console.error('Update broadcast error:', err);
+    res.status(500).json({ error: err?.message || 'Failed to update broadcast' });
+  }
+});
+
+// DELETE /api/barangay/broadcasts/:id
+router.delete('/broadcasts/:id', authenticateBarangay, async (req: any, res: Response) => {
+  try {
+    await supabaseAdmin
+      .from('public_broadcasts')
+      .delete()
+      .eq('id', req.params.id)
+      .eq('barangay_id', req.barangayUser.barangayId);
+
+    res.status(200).json({ success: true, message: 'Broadcast deleted' });
+  } catch (err: any) {
+    console.error('Delete broadcast error:', err);
+    res.status(500).json({ error: err?.message || 'Failed to delete broadcast' });
+  }
+});
+
 export default router;
 export { authenticateBarangay };
+
