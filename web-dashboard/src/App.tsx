@@ -11,6 +11,7 @@ import ResourceRequestsPage from './pages/ResourceRequestsPage';
 import RespondUnitsPage from './pages/RespondUnitsPage';
 import ShipmentsPage from './pages/ShipmentsPage';
 import UsersPage from './pages/UsersPage';
+import AlertBroadcastsPage from './pages/AlertBroadcastsPage';
 import OfficersPage from './pages/OfficersPage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import ReportsPage from './pages/ReportsPage';
@@ -52,6 +53,7 @@ function AppRoutes() {
         <Route path="respond-units" element={<RespondUnitsPage />} />
         <Route path="shipments" element={<ShipmentsPage />} />
         <Route path="users" element={<UsersPage />} />
+        <Route path="alert-broadcasts" element={<AlertBroadcastsPage />} />
         <Route path="officers" element={<OfficersPage />} />
         <Route path="analytics" element={<AnalyticsPage />} />
       </Route>

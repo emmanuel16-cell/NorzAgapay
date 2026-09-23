@@ -17,6 +17,7 @@ import {
   LogOut,
   Moon,
   Sun,
+  Megaphone,
 } from 'lucide-react';
 
 interface NavItem {
@@ -40,6 +41,7 @@ const navItems: NavItem[] = [
   { label: 'Administration', section: true },
   { path: '/verification', icon: <CheckCircle2 size={19} strokeWidth={1.8} />, label: 'Verification Queue' },
   { path: '/users', icon: <Users size={19} strokeWidth={1.8} />, label: 'User Management' },
+  { path: '/alert-broadcasts', icon: <Megaphone size={19} strokeWidth={1.8} />, label: 'Alert Broadcasts' },
   { path: '/officers', icon: <Award size={19} strokeWidth={1.8} />, label: 'Officers' },
   { path: '/analytics', icon: <BarChart3 size={19} strokeWidth={1.8} />, label: 'Analytics' },
 ];
