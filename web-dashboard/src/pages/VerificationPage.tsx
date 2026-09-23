@@ -319,11 +319,11 @@ export default function VerificationPage() {
   };
 
   return (
-    <div className="oq-container">
+    <>
       <style>{`
         .oq-container {
           padding: 24px 32px;
-          min-height: 100vh;
+          min-height: calc(100vh - var(--header-height, 64px));
           background-color: #0b111e;
           color: #f8fafc;
           font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -924,9 +924,9 @@ export default function VerificationPage() {
         }
       `}</style>
 
-      {/* Page Header */}
-      <div className="oq-header">
-        <h1 className="oq-title">
+      {/* Fixed Page Header */}
+      <div className="page-header">
+        <h1 className="page-title oq-title" style={{ fontSize: 20, fontWeight: 800, margin: 0 }}>
           {queueCategory === 'officers'
             ? viewMode === 'pending'
               ? 'Officer Verification Queue'
@@ -953,7 +953,7 @@ export default function VerificationPage() {
             {officerCount === 1 ? '' : 'S'}
           </div>
 
-          {/* Barangay Dispatcher badge beside the officer badge (matching Image 3) */}
+          {/* Barangay Dispatcher badge beside the officer badge */}
           <div
             className={`oq-badge oq-badge-dispatcher ${queueCategory === 'dispatchers' ? 'active-queue' : ''}`}
             onClick={() => {
@@ -980,8 +980,8 @@ export default function VerificationPage() {
             aria-label="Toggle archive view"
           >
             <svg
-              width="22"
-              height="22"
+              width="20"
+              height="20"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -997,32 +997,8 @@ export default function VerificationPage() {
         </div>
       </div>
 
-      {/* Queue Category Tabs */}
-      <div className="oq-tabs-bar">
-        <button
-          className={`oq-tab-btn ${queueCategory === 'officers' ? 'active' : ''}`}
-          onClick={() => {
-            setQueueCategory('officers');
-            setIsMultiSelect(false);
-            setSelectedIds(new Set());
-          }}
-        >
-          <span>MDRRMO Officers</span>
-          <span className="oq-tab-count">{pending.length}</span>
-        </button>
-
-        <button
-          className={`oq-tab-btn ${queueCategory === 'dispatchers' ? 'active' : ''}`}
-          onClick={() => {
-            setQueueCategory('dispatchers');
-            setIsMultiSelect(false);
-            setSelectedIds(new Set());
-          }}
-        >
-          <span>Barangay Dispatchers</span>
-          <span className="oq-tab-count">{pendingDispatchers.length}</span>
-        </button>
-      </div>
+      {/* Main Content Area */}
+      <div className="page-content oq-container">
 
       {/* Main Content Area */}
       {queueCategory === 'officers' ? (
@@ -1621,6 +1597,7 @@ export default function VerificationPage() {
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </>
   );
 }
