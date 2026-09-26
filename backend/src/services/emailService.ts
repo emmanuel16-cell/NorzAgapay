@@ -1,15 +1,16 @@
 import * as nodemailer from 'nodemailer';
+import { config } from '../config';
 
 // ── Gmail SMTP Transporter ────────────────────────────────────────────────────
 // Uses explicit host/port instead of `service: 'gmail'` for Render compatibility.
 // Requires a Gmail App Password (not your regular Gmail password).
 // Generate one at: https://myaccount.google.com/apppasswords (needs 2FA enabled)
 
-const GMAIL_USER = process.env.GMAILUSER || '';
-const GMAIL_PASS = process.env.GMAILPASS || '';
+const GMAIL_USER = config.gmailUser;
+const GMAIL_PASS = config.gmailPass;
 
 if (!GMAIL_USER || !GMAIL_PASS) {
-  console.error('[EmailService] ⚠️  GMAILUSER or GMAILPASS is not set in environment variables. Emails will fail.');
+  console.error('[EmailService] ⚠️  GMAILUSER or GMAILPASS is not set. Emails will fail.');
 } else {
   console.log(`[EmailService] Gmail transporter ready for: ${GMAIL_USER}`);
 }

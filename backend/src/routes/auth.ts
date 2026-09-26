@@ -434,6 +434,22 @@ router.post(
 // OTPs stored in Upstash Redis (survive restarts, auto-expire after 10 min)
 // ============================================
 
+// Friendly GET handler for browser checks
+router.get('/resident/register-otp', (_req: Request, res: Response): void => {
+  res.status(200).json({
+    status: 'online',
+    endpoint: '/api/auth/resident/register-otp',
+    method: 'POST',
+    description: 'Generates and emails a 6-digit verification OTP code to the resident.',
+    expectedBody: {
+      full_name: 'Juan Dela Cruz',
+      email: 'user@example.com',
+      contact_number: '09123456789',
+      barangay_name: 'Poblacion',
+    },
+  });
+});
+
 // 1. Request OTP for Citizen Account Registration
 router.post('/resident/register-otp', async (req: Request, res: Response): Promise<void> => {
   try {
@@ -478,6 +494,20 @@ router.post('/resident/register-otp', async (req: Request, res: Response): Promi
     console.error('Resident register-otp error:', err);
     res.status(500).json({ error: 'Internal server error.' });
   }
+});
+
+// Friendly GET handler for browser checks
+router.get('/resident/verify-register-otp', (_req: Request, res: Response): void => {
+  res.status(200).json({
+    status: 'online',
+    endpoint: '/api/auth/resident/verify-register-otp',
+    method: 'POST',
+    description: 'Verifies the 6-digit OTP and generates an account with a temporary password sent to email.',
+    expectedBody: {
+      email: 'user@example.com',
+      otp: '123456',
+    },
+  });
 });
 
 // 2. Verify OTP & Issue Temporary Password
@@ -608,6 +638,19 @@ router.post('/resident/verify-register-otp', async (req: Request, res: Response)
   }
 });
 
+// Friendly GET handler for browser checks
+router.get('/resident/password-otp', (_req: Request, res: Response): void => {
+  res.status(200).json({
+    status: 'online',
+    endpoint: '/api/auth/resident/password-otp',
+    method: 'POST',
+    description: 'Generates and emails a 6-digit verification code to reset or change password.',
+    expectedBody: {
+      email: 'user@example.com',
+    },
+  });
+});
+
 // 3. Request OTP for Password Change
 router.post('/resident/password-otp', async (req: Request, res: Response): Promise<void> => {
   try {
@@ -653,6 +696,21 @@ router.post('/resident/password-otp', async (req: Request, res: Response): Promi
     console.error('Resident password-otp error:', err);
     res.status(500).json({ error: 'Internal server error.' });
   }
+});
+
+// Friendly GET handler for browser checks
+router.get('/resident/change-password', (_req: Request, res: Response): void => {
+  res.status(200).json({
+    status: 'online',
+    endpoint: '/api/auth/resident/change-password',
+    method: 'POST',
+    description: 'Verifies the OTP and updates the resident password in the database.',
+    expectedBody: {
+      email: 'user@example.com',
+      otp: '123456',
+      new_password: 'newSecretPassword123',
+    },
+  });
 });
 
 // 4. Update Password with OTP
