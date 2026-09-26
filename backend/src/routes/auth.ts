@@ -7,6 +7,7 @@ import { supabaseAdmin } from '../config/supabase';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth';
 import { emailService } from '../services/emailService';
 import { setOtp, getOtp, deleteOtp } from '../config/redis';
+import { randomInt } from 'crypto';
 
 const router = Router();
 
@@ -466,7 +467,7 @@ router.post('/resident/register-otp', async (req: Request, res: Response): Promi
     }
 
     // Generate 6-digit OTP
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otp = randomInt(100000, 1000000).toString();
     const key = email.toLowerCase().trim();
 
     // Store in Redis with 10-minute TTL (survives restarts)
@@ -479,21 +480,16 @@ router.post('/resident/register-otp', async (req: Request, res: Response): Promi
       purpose: 'registration',
     });
 
-    console.log(`[ResidentAuth] Generated registration OTP for ${key}: ${otp}`);
-
-    // Non-blocking email dispatch to avoid hanging if Render Free Tier blocks SMTP ports 465/587
-    emailService.sendOtpEmail(key, otp, 'registration').then((sent) => {
-      if (!sent) {
-        console.warn(`[ResidentAuth] Email transport failed (Render Free Tier blocks outbound SMTP). OTP for ${key} is: ${otp}`);
-      }
-    }).catch((err) => {
-      console.error('[ResidentAuth] Email dispatch error:', err.message);
-    });
+    const sent = await emailService.sendOtpEmail(key, otp, 'registration');
+    if (!sent) {
+      await deleteOtp(key);
+      res.status(503).json({ error: 'We could not send the verification email. Please try again later.' });
+      return;
+    }
 
     res.json({
       success: true,
       message: `Verification code sent to ${key}.`,
-      otp, // Included for testing and when SMTP is blocked on cloud hosting
       expiresInMinutes: 10,
     });
   } catch (err: any) {
@@ -684,7 +680,7 @@ router.post('/resident/password-otp', async (req: Request, res: Response): Promi
     }
 
     // Generate 6-digit OTP
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otp = randomInt(100000, 1000000).toString();
 
     // Store in Redis with 10-minute TTL
     await setOtp(key, {
@@ -693,17 +689,16 @@ router.post('/resident/password-otp', async (req: Request, res: Response): Promi
       purpose: 'password_change',
     });
 
-    console.log(`[ResidentAuth] Generated password-change OTP for ${key}: ${otp}`);
-
-    // Non-blocking email dispatch
-    emailService.sendOtpEmail(key, otp, 'password_change').catch((err) => {
-      console.warn('[ResidentAuth] Password OTP email error:', err.message);
-    });
+    const sent = await emailService.sendOtpEmail(key, otp, 'password_change');
+    if (!sent) {
+      await deleteOtp(key);
+      res.status(503).json({ error: 'We could not send the verification email. Please try again later.' });
+      return;
+    }
 
     res.json({
       success: true,
       message: `Password change verification code sent to ${email}.`,
-      otp,
       expiresInMinutes: 10,
     });
   } catch (err: any) {

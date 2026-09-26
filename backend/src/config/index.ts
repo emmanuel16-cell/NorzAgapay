@@ -27,7 +27,8 @@ export const config = {
   // Mapbox
   mapboxAccessToken: process.env.MAPBOX_ACCESS_TOKEN || '',
 
-  // Gmail Mailer
-  gmailUser: process.env.GMAILUSER || 'emmanuelnabus16@gmail.com',
-  gmailPass: process.env.GMAILPASS || 'jeopajehxbflnsow',
+  // HTTPS Email API
+  gmailUser: process.env.GMAILUSER || '',
+  sendGridApiKey: process.env.SENDGRID_API_KEY || '',
+  emailFrom: process.env.EMAIL_FROM || '',
 };

@@ -1,44 +1,43 @@
-import * as nodemailer from 'nodemailer';
 import { config } from '../config';
 
-// ── Gmail SMTP Transporter ────────────────────────────────────────────────────
-// Uses explicit host/port instead of `service: 'gmail'` for Render compatibility.
-// Requires a Gmail App Password (not your regular Gmail password).
-// Generate one at: https://myaccount.google.com/apppasswords (needs 2FA enabled)
-
-const GMAIL_USER = config.gmailUser;
-const GMAIL_PASS = config.gmailPass;
-
-if (!GMAIL_USER || !GMAIL_PASS) {
-  console.error('[EmailService] ⚠️  GMAILUSER or GMAILPASS is not set. Emails will fail.');
-} else {
-  console.log(`[EmailService] Gmail transporter ready for: ${GMAIL_USER}`);
-}
-
-const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
-  port: 465,
-  secure: true, // SSL on port 465
-  auth: {
-    user: GMAIL_USER,
-    pass: GMAIL_PASS,
-  },
-  connectionTimeout: 5000, // 5s timeout avoids hanging if Render free tier blocks port 465
-  greetingTimeout: 5000,
-  socketTimeout: 5000,
-  tls: {
-    rejectUnauthorized: false,
-  },
-});
-
-// Non-blocking SMTP connection verification at startup
-transporter.verify((err) => {
-  if (err) {
-    console.warn('[EmailService] ⚠️ SMTP connection verify failed (Note: Render Free Tier blocks outbound SMTP ports 25/465/587):', err.message);
-  } else {
-    console.log('[EmailService] ✅ SMTP connection verified — ready to send emails.');
+async function sendEmail(toEmail: string, subject: string, html: string, text: string): Promise<boolean> {
+  if (!config.sendGridApiKey || !config.emailFrom) {
+    console.error('[EmailService] SENDGRID_API_KEY or EMAIL_FROM is not configured.');
+    return false;
   }
-});
+
+  try {
+    const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${config.sendGridApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        personalizations: [{ to: [{ email: toEmail }] }],
+        from: { email: config.emailFrom, name: 'NorzAgapay Portal' },
+        ...(config.gmailUser ? { reply_to: { email: config.gmailUser } } : {}),
+        subject,
+        content: [
+          { type: 'text/plain', value: text },
+          { type: 'text/html', value: html },
+        ],
+      }),
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!response.ok) {
+      console.error(`[EmailService] SendGrid rejected email to ${toEmail} (HTTP ${response.status}).`);
+      return false;
+    }
+
+    console.log(`[EmailService] Email accepted by SendGrid for ${toEmail}.`);
+    return true;
+  } catch (err: any) {
+    console.error(`[EmailService] HTTPS email request failed for ${toEmail}:`, err.message);
+    return false;
+  }
+}
 
 export const emailService = {
   /**
@@ -81,20 +80,12 @@ export const emailService = {
       </div>
     `;
 
-    try {
-      const info = await transporter.sendMail({
-        from: `"NorzAgapay Portal" <${GMAIL_USER}>`,
-        to: toEmail,
-        subject,
-        html,
-        text: `Your NorzAgapay verification code is ${otp}. It will expire in 10 minutes. If you did not request this, please ignore.`,
-      });
-      console.log(`[EmailService] ✅ OTP sent to ${toEmail} | MessageId: ${info.messageId}`);
-      return true;
-    } catch (err: any) {
-      console.error(`[EmailService] ❌ Failed to send OTP to ${toEmail}:`, err.message, '| Code:', err.code, '| Response:', err.response);
-      return false;
-    }
+    return sendEmail(
+      toEmail,
+      subject,
+      html,
+      `Your NorzAgapay verification code is ${otp}. It will expire in 10 minutes. If you did not request this, please ignore.`,
+    );
   },
 
   /**
@@ -135,19 +126,11 @@ export const emailService = {
       </div>
     `;
 
-    try {
-      const info = await transporter.sendMail({
-        from: `"NorzAgapay Portal" <${GMAIL_USER}>`,
-        to: toEmail,
-        subject,
-        html,
-        text: `NorzAgapay sent a temporary password: ${tempPass}. Don't share this to anyone. If it's not you that requested it, please ignore. You can use this temporary password to login and change your password in Profile settings.`,
-      });
-      console.log(`[EmailService] ✅ Temp password sent to ${toEmail} | MessageId: ${info.messageId}`);
-      return true;
-    } catch (err: any) {
-      console.error(`[EmailService] ❌ Failed to send temp password to ${toEmail}:`, err.message, '| Code:', err.code, '| Response:', err.response);
-      return false;
-    }
+    return sendEmail(
+      toEmail,
+      subject,
+      html,
+      `NorzAgapay sent a temporary password: ${tempPass}. Don't share this to anyone. If it's not you that requested it, please ignore. You can use this temporary password to login and change your password in Profile settings.`,
+    );
   },
 };
