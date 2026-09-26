@@ -1,5 +1,6 @@
--- Keep resident barangay assignment separate from users.unit_type, which is
--- an enum for responder specialties (police, fire, medical, etc.).
+-- Legacy resident assignment column and user update timestamp.
+-- New resident accounts are stored in resident_user; barangay_name on users
+-- remains only for backwards compatibility with existing deployments.
 ALTER TABLE public.users
   ADD COLUMN IF NOT EXISTS barangay_name TEXT;
 

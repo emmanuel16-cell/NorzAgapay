@@ -170,12 +170,35 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
     } else {
       query = query.or(`phone.eq.${identifier.trim()},email.eq.${identifier.trim()}`);
     }
-    const { data: user, error } = await query.maybeSingle();
+    const { data: staffUser, error } = await query.maybeSingle();
+    if (error) {
+      console.error('Login lookup error:', error);
+      res.status(500).json({ error: 'Unable to look up account.' });
+      return;
+    }
 
-    if (error || !user) {
+    let user: any = staffUser;
+    let userTable = 'users';
+    if (!user && identifier.includes('@')) {
+      const { data: residentUser, error: residentError } = await supabaseAdmin
+        .from('resident_user')
+        .select('*')
+        .eq('email', identifier.toLowerCase().trim())
+        .maybeSingle();
+      if (residentError) {
+        console.error('Resident login lookup error:', residentError);
+        res.status(500).json({ error: 'Unable to look up resident account.' });
+        return;
+      }
+      user = residentUser;
+      if (residentUser) userTable = 'resident_user';
+    }
+
+    if (!user) {
       res.status(401).json({ error: 'Invalid email/phone or password.' });
       return;
     }
+    if (userTable === 'resident_user') user.role = 'resident';
 
     // Verify password
     const passwordMatch = await bcrypt.compare(password, user.password_hash);
@@ -201,7 +224,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
     }
 
     // If professional unit, fetch all specializations from certifications table or officers table
-    let unitType = user.unit_type;
+    let unitType = user.unit_type || null;
     if (user.role === 'professional_unit') {
       const { data: specCerts } = await supabaseAdmin
         .from('certifications')
@@ -237,7 +260,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
 
     // Update last_seen
     await supabaseAdmin
-      .from('users')
+      .from(userTable)
       .update({ last_seen: new Date().toISOString() })
       .eq('id', user.id);
 
@@ -545,19 +568,31 @@ router.post('/resident/verify-register-otp', async (req: Request, res: Response)
     const contactNumber = record.contactNumber || null;
     const barangayName = record.barangayName || 'Poblacion';
 
-    // Check if user already exists
+    // Resident accounts live separately from MDRRMO staff and barangay accounts.
     const { data: existingUser } = await supabaseAdmin
-      .from('users')
+      .from('resident_user')
       .select('id, email')
       .eq('email', key)
       .maybeSingle();
+
+    if (!existingUser) {
+      const { data: staffUser } = await supabaseAdmin
+        .from('users')
+        .select('id')
+        .eq('email', key)
+        .maybeSingle();
+      if (staffUser) {
+        res.status(409).json({ error: 'This email is already registered for a staff account.' });
+        return;
+      }
+    }
 
     let userId: string;
     let finalUser: any;
 
     if (existingUser) {
       const { data: updated, error: updateError } = await supabaseAdmin
-        .from('users')
+        .from('resident_user')
         .update({
           full_name: fullName,
           phone: contactNumber,
@@ -580,13 +615,12 @@ router.post('/resident/verify-register-otp', async (req: Request, res: Response)
       finalUser = updated;
     } else {
       const { data: inserted, error: insertError } = await supabaseAdmin
-        .from('users')
+        .from('resident_user')
         .insert({
           full_name: fullName,
           email: key,
           phone: contactNumber,
           password_hash,
-          role: 'volunteer_general',
           barangay_name: barangayName,
           status: 'active',
           verified: true,
@@ -608,7 +642,7 @@ router.post('/resident/verify-register-otp', async (req: Request, res: Response)
 
     // Send temporary password email non-blocking in background
     emailService.sendTemporaryPasswordEmail(key, tempPassword, fullName).catch((err) => {
-      console.warn('[ResidentAuth] Failed to send temp password email (Render SMTP blocked):', err.message);
+      console.warn('[ResidentAuth] Failed to send temporary password email:', err.message);
     });
 
     // Generate JWT token for immediate access
@@ -616,7 +650,7 @@ router.post('/resident/verify-register-otp', async (req: Request, res: Response)
       {
         userId: finalUser.id,
         email: finalUser.email,
-        role: finalUser.role,
+        role: 'resident',
         unitType: finalUser.unit_type,
       },
       config.jwtSecret,
@@ -634,7 +668,7 @@ router.post('/resident/verify-register-otp', async (req: Request, res: Response)
         email: finalUser.email,
         contact_number: finalUser.phone,
         barangay_name: finalUser.barangay_name || barangayName,
-        role: finalUser.role,
+        role: 'resident',
       },
       token,
     });
@@ -668,12 +702,20 @@ router.post('/resident/password-otp', async (req: Request, res: Response): Promi
 
     const key = email.toLowerCase().trim();
 
-    // Check if user exists
-    const { data: user } = await supabaseAdmin
-      .from('users')
+    // Prefer the resident account table; keep password recovery working for legacy users.
+    let { data: user } = await supabaseAdmin
+      .from('resident_user')
       .select('id, full_name, email')
       .eq('email', key)
       .maybeSingle();
+    if (!user) {
+      const legacyResult = await supabaseAdmin
+        .from('users')
+        .select('id, full_name, email')
+        .eq('email', key)
+        .maybeSingle();
+      user = legacyResult.data;
+    }
 
     if (!user) {
       res.status(404).json({ error: 'No account found with this email address.' });
@@ -753,11 +795,23 @@ router.post('/resident/change-password', async (req: Request, res: Response): Pr
     }
 
     // Verify current password if provided
-    const { data: user, error: fetchErr } = await supabaseAdmin
-      .from('users')
+    let accountTable = 'resident_user';
+    let { data: user, error: fetchErr } = await supabaseAdmin
+      .from('resident_user')
       .select('id, password_hash')
       .eq('email', key)
       .maybeSingle();
+
+    if (!user) {
+      accountTable = 'users';
+      const legacyResult = await supabaseAdmin
+        .from('users')
+        .select('id, password_hash')
+        .eq('email', key)
+        .maybeSingle();
+      user = legacyResult.data;
+      fetchErr = legacyResult.error;
+    }
 
     if (fetchErr || !user) {
       res.status(404).json({ error: 'User not found.' });
@@ -775,7 +829,7 @@ router.post('/resident/change-password', async (req: Request, res: Response): Pr
     // Hash new password and update
     const password_hash = await bcrypt.hash(new_password, 12);
     const { error: updateErr } = await supabaseAdmin
-      .from('users')
+      .from(accountTable)
       .update({ password_hash, updated_at: new Date().toISOString() })
       .eq('id', user.id);
 
