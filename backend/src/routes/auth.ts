@@ -402,6 +402,42 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response): Promise
   }
 });
 
+// PATCH /api/auth/resident/profile — update the signed-in resident's profile
+router.patch('/resident/profile', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (req.user?.role !== 'resident') {
+      res.status(403).json({ error: 'This endpoint is only for resident accounts.' });
+      return;
+    }
+
+    const barangayName = typeof req.body?.barangay_name === 'string'
+      ? req.body.barangay_name.trim()
+      : '';
+    if (!barangayName || barangayName.length > 100) {
+      res.status(400).json({ error: 'A valid barangay name is required.' });
+      return;
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('resident_user')
+      .update({ barangay_name: barangayName, updated_at: new Date().toISOString() })
+      .eq('id', req.user.userId)
+      .select('id, barangay_name')
+      .single();
+
+    if (error || !data) {
+      console.error('Resident profile update error:', error);
+      res.status(500).json({ error: 'Failed to update resident profile.' });
+      return;
+    }
+
+    res.json({ success: true, barangay_name: data.barangay_name });
+  } catch (err) {
+    console.error('Resident profile update error:', err);
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
 // ============================================
 // POST /api/auth/create-admin — (admin-only) create admin/commander accounts
 // ============================================
