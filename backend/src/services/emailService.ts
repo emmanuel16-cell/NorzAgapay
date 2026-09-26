@@ -18,20 +18,23 @@ if (!GMAIL_USER || !GMAIL_PASS) {
 const transporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
   port: 465,
-  secure: true, // SSL on port 465 — more reliable than STARTTLS on 587 for Render
+  secure: true, // SSL on port 465
   auth: {
     user: GMAIL_USER,
     pass: GMAIL_PASS,
   },
+  connectionTimeout: 5000, // 5s timeout avoids hanging if Render free tier blocks port 465
+  greetingTimeout: 5000,
+  socketTimeout: 5000,
   tls: {
-    rejectUnauthorized: false, // Avoids cert issues in some cloud environments
+    rejectUnauthorized: false,
   },
 });
 
-// Verify SMTP connection at startup so any auth errors appear immediately in logs
+// Non-blocking SMTP connection verification at startup
 transporter.verify((err) => {
   if (err) {
-    console.error('[EmailService] ❌ SMTP connection FAILED:', err.message, '| Code:', (err as any).code, '| Response:', (err as any).response);
+    console.warn('[EmailService] ⚠️ SMTP connection verify failed (Note: Render Free Tier blocks outbound SMTP ports 25/465/587):', err.message);
   } else {
     console.log('[EmailService] ✅ SMTP connection verified — ready to send emails.');
   }

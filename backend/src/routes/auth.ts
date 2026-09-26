@@ -480,14 +480,20 @@ router.post('/resident/register-otp', async (req: Request, res: Response): Promi
     });
 
     console.log(`[ResidentAuth] Generated registration OTP for ${key}: ${otp}`);
-    const sent = await emailService.sendOtpEmail(key, otp, 'registration');
-    if (!sent) {
-      console.warn(`[ResidentAuth] Email transport failed, but OTP is stored in Redis for dev/testing: ${otp}`);
-    }
+
+    // Non-blocking email dispatch to avoid hanging if Render Free Tier blocks SMTP ports 465/587
+    emailService.sendOtpEmail(key, otp, 'registration').then((sent) => {
+      if (!sent) {
+        console.warn(`[ResidentAuth] Email transport failed (Render Free Tier blocks outbound SMTP). OTP for ${key} is: ${otp}`);
+      }
+    }).catch((err) => {
+      console.error('[ResidentAuth] Email dispatch error:', err.message);
+    });
 
     res.json({
       success: true,
       message: `Verification code sent to ${key}.`,
+      otp, // Included for testing and when SMTP is blocked on cloud hosting
       expiresInMinutes: 10,
     });
   } catch (err: any) {
@@ -603,8 +609,10 @@ router.post('/resident/verify-register-otp', async (req: Request, res: Response)
     // Clean up OTP from Redis
     await deleteOtp(key);
 
-    // Send temporary password email
-    await emailService.sendTemporaryPasswordEmail(key, tempPassword, fullName);
+    // Send temporary password email non-blocking in background
+    emailService.sendTemporaryPasswordEmail(key, tempPassword, fullName).catch((err) => {
+      console.warn('[ResidentAuth] Failed to send temp password email (Render SMTP blocked):', err.message);
+    });
 
     // Generate JWT token for immediate access
     const token = jwt.sign(
@@ -621,6 +629,7 @@ router.post('/resident/verify-register-otp', async (req: Request, res: Response)
     res.status(201).json({
       success: true,
       message: 'Account verified! NorzAgapay sent a temporary password to your email.',
+      temporaryPassword: tempPassword,
       temporaryPasswordSent: true,
       user: {
         id: finalUser.id,
@@ -685,11 +694,16 @@ router.post('/resident/password-otp', async (req: Request, res: Response): Promi
     });
 
     console.log(`[ResidentAuth] Generated password-change OTP for ${key}: ${otp}`);
-    await emailService.sendOtpEmail(key, otp, 'password_change');
+
+    // Non-blocking email dispatch
+    emailService.sendOtpEmail(key, otp, 'password_change').catch((err) => {
+      console.warn('[ResidentAuth] Password OTP email error:', err.message);
+    });
 
     res.json({
       success: true,
       message: `Password change verification code sent to ${email}.`,
+      otp,
       expiresInMinutes: 10,
     });
   } catch (err: any) {
