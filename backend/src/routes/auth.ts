@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { config } from '../config';
 import { supabaseAdmin } from '../config/supabase';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth';
+import { emailService } from '../services/emailService';
 
 const router = Router();
 
@@ -30,7 +31,7 @@ const registerSchema = z.object({
 });
 
 const loginSchema = z.object({
-  email: z.string().email('Invalid email address'),
+  email: z.string().min(1, 'Email or phone number is required'),
   password: z.string().min(1, 'Password is required'),
 });
 
@@ -158,24 +159,26 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const { email, password } = parsed.data;
+    const { email: identifier, password } = parsed.data;
 
-    // Fetch user by email
-    const { data: user, error } = await supabaseAdmin
-      .from('users')
-      .select('*')
-      .eq('email', email)
-      .single();
+    // Fetch user by email or phone
+    let query = supabaseAdmin.from('users').select('*');
+    if (identifier.includes('@')) {
+      query = query.eq('email', identifier.toLowerCase().trim());
+    } else {
+      query = query.or(`phone.eq.${identifier.trim()},email.eq.${identifier.trim()}`);
+    }
+    const { data: user, error } = await query.maybeSingle();
 
     if (error || !user) {
-      res.status(401).json({ error: 'Invalid email or password.' });
+      res.status(401).json({ error: 'Invalid email/phone or password.' });
       return;
     }
 
     // Verify password
     const passwordMatch = await bcrypt.compare(password, user.password_hash);
     if (!passwordMatch) {
-      res.status(401).json({ error: 'Invalid email or password.' });
+      res.status(401).json({ error: 'Invalid email/phone or password.' });
       return;
     }
 
@@ -424,5 +427,328 @@ router.post(
     }
   }
 );
+
+// ============================================
+// RESIDENT OTP & REGISTRATION / PASSWORD FLOW
+// ============================================
+
+interface ResidentOtpRecord {
+  otp: string;
+  fullName?: string;
+  contactNumber?: string;
+  barangayName?: string;
+  barangayId?: string;
+  expiresAt: number;
+  purpose: 'registration' | 'password_change';
+}
+
+const residentOtpCache = new Map<string, ResidentOtpRecord>();
+
+// 1. Request OTP for Citizen Account Registration
+router.post('/resident/register-otp', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { full_name, email, contact_number, barangay_name, barangay_id } = req.body;
+
+    if (!email || !email.includes('@')) {
+      res.status(400).json({ error: 'Valid email address is required.' });
+      return;
+    }
+
+    if (!full_name || full_name.trim().length < 2) {
+      res.status(400).json({ error: 'Full name is required.' });
+      return;
+    }
+
+    // Generate 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
+
+    const key = email.toLowerCase().trim();
+    residentOtpCache.set(key, {
+      otp,
+      fullName: full_name.trim(),
+      contactNumber: contact_number?.trim() || '',
+      barangayName: barangay_name?.trim() || 'Poblacion',
+      barangayId: barangay_id || null,
+      expiresAt,
+      purpose: 'registration',
+    });
+
+    console.log(`[ResidentAuth] Generated registration OTP for ${key}: ${otp}`);
+    const sent = await emailService.sendOtpEmail(key, otp, 'registration');
+    if (!sent) {
+      console.warn(`[ResidentAuth] Email transport failed, but OTP is cached for dev/testing: ${otp}`);
+    }
+
+    res.json({
+      success: true,
+      message: `Verification code sent to ${key}.`,
+      expiresInMinutes: 10,
+    });
+  } catch (err: any) {
+    console.error('Resident register-otp error:', err);
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+// 2. Verify OTP & Issue Temporary Password
+router.post('/resident/verify-register-otp', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { email, otp } = req.body;
+    if (!email || !otp) {
+      res.status(400).json({ error: 'Email and verification code are required.' });
+      return;
+    }
+
+    const key = email.toLowerCase().trim();
+    const record = residentOtpCache.get(key);
+
+    if (!record || record.purpose !== 'registration') {
+      res.status(400).json({ error: 'No pending registration found for this email, or code has expired. Please request a new code.' });
+      return;
+    }
+
+    if (Date.now() > record.expiresAt) {
+      residentOtpCache.delete(key);
+      res.status(400).json({ error: 'Verification code has expired. Please request a new code.' });
+      return;
+    }
+
+    if (record.otp !== otp.toString().trim()) {
+      res.status(400).json({ error: 'Invalid verification code. Please check your email and enter the correct 6-digit code.' });
+      return;
+    }
+
+    // Generate readable temporary password: e.g. Norz#7392
+    const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+    const tempPassword = `Norz#${randomSuffix}`;
+    const password_hash = await bcrypt.hash(tempPassword, 10);
+
+    const fullName = record.fullName || 'Resident Citizen';
+    const contactNumber = record.contactNumber || null;
+    const barangayName = record.barangayName || 'Poblacion';
+
+    // Check if user already exists
+    const { data: existingUser } = await supabaseAdmin
+      .from('users')
+      .select('id, email')
+      .eq('email', key)
+      .maybeSingle();
+
+    let userId: string;
+    let finalUser: any;
+
+    if (existingUser) {
+      const { data: updated, error: updateError } = await supabaseAdmin
+        .from('users')
+        .update({
+          full_name: fullName,
+          phone: contactNumber,
+          password_hash,
+          unit_type: barangayName,
+          status: 'active',
+          verified: true,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existingUser.id)
+        .select('*')
+        .single();
+
+      if (updateError) {
+        console.error('Failed to update resident:', updateError);
+        res.status(500).json({ error: 'Failed to complete registration.' });
+        return;
+      }
+      userId = updated.id;
+      finalUser = updated;
+    } else {
+      const { data: inserted, error: insertError } = await supabaseAdmin
+        .from('users')
+        .insert({
+          full_name: fullName,
+          email: key,
+          phone: contactNumber,
+          password_hash,
+          role: 'volunteer_general',
+          unit_type: barangayName,
+          status: 'active',
+          verified: true,
+        })
+        .select('*')
+        .single();
+
+      if (insertError) {
+        console.error('Failed to insert resident:', insertError);
+        res.status(500).json({ error: 'Failed to create resident account.' });
+        return;
+      }
+      userId = inserted.id;
+      finalUser = inserted;
+    }
+
+    // Clean up OTP cache
+    residentOtpCache.delete(key);
+
+    // Send temporary password email
+    await emailService.sendTemporaryPasswordEmail(key, tempPassword, fullName);
+
+    // Generate JWT token for immediate access
+    const token = jwt.sign(
+      {
+        userId: finalUser.id,
+        email: finalUser.email,
+        role: finalUser.role,
+        unitType: finalUser.unit_type,
+      },
+      config.jwtSecret,
+      { expiresIn: config.jwtExpiresIn as any }
+    );
+
+    res.status(201).json({
+      success: true,
+      message: 'Account verified! NorzAgapay sent a temporary password to your email.',
+      temporaryPasswordSent: true,
+      user: {
+        id: finalUser.id,
+        full_name: finalUser.full_name,
+        email: finalUser.email,
+        contact_number: finalUser.phone,
+        barangay_name: finalUser.unit_type || barangayName,
+        role: finalUser.role,
+      },
+      token,
+    });
+  } catch (err: any) {
+    console.error('Resident verify-register-otp error:', err);
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+// 3. Request OTP for Password Change
+router.post('/resident/password-otp', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { email } = req.body;
+    if (!email || !email.includes('@')) {
+      res.status(400).json({ error: 'Valid email address is required.' });
+      return;
+    }
+
+    const key = email.toLowerCase().trim();
+
+    // Check if user exists
+    const { data: user } = await supabaseAdmin
+      .from('users')
+      .select('id, full_name, email')
+      .eq('email', key)
+      .maybeSingle();
+
+    if (!user) {
+      res.status(404).json({ error: 'No account found with this email address.' });
+      return;
+    }
+
+    // Generate 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = Date.now() + 10 * 60 * 1000;
+
+    residentOtpCache.set(key, {
+      otp,
+      fullName: user.full_name,
+      expiresAt,
+      purpose: 'password_change',
+    });
+
+    console.log(`[ResidentAuth] Generated password-change OTP for ${key}: ${otp}`);
+    await emailService.sendOtpEmail(key, otp, 'password_change');
+
+    res.json({
+      success: true,
+      message: `Password change verification code sent to ${email}.`,
+      expiresInMinutes: 10,
+    });
+  } catch (err: any) {
+    console.error('Resident password-otp error:', err);
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+// 4. Update Password with OTP
+router.post('/resident/change-password', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { email, otp, new_password, current_password } = req.body;
+
+    if (!email || !otp || !new_password) {
+      res.status(400).json({ error: 'Email, verification code, and new password are required.' });
+      return;
+    }
+
+    if (new_password.length < 6) {
+      res.status(400).json({ error: 'New password must be at least 6 characters long.' });
+      return;
+    }
+
+    const key = email.toLowerCase().trim();
+    const record = residentOtpCache.get(key);
+
+    if (!record || record.purpose !== 'password_change') {
+      res.status(400).json({ error: 'No password change request found or code has expired. Please request a new code.' });
+      return;
+    }
+
+    if (Date.now() > record.expiresAt) {
+      residentOtpCache.delete(key);
+      res.status(400).json({ error: 'Verification code has expired. Please request a new code.' });
+      return;
+    }
+
+    if (record.otp !== otp.toString().trim()) {
+      res.status(400).json({ error: 'Invalid verification code.' });
+      return;
+    }
+
+    // Verify current password if provided
+    const { data: user, error: fetchErr } = await supabaseAdmin
+      .from('users')
+      .select('id, password_hash')
+      .eq('email', key)
+      .maybeSingle();
+
+    if (fetchErr || !user) {
+      res.status(404).json({ error: 'User not found.' });
+      return;
+    }
+
+    if (current_password) {
+      const match = await bcrypt.compare(current_password, user.password_hash);
+      if (!match) {
+        res.status(400).json({ error: 'Current / temporary password is incorrect.' });
+        return;
+      }
+    }
+
+    // Hash new password and update
+    const password_hash = await bcrypt.hash(new_password, 12);
+    const { error: updateErr } = await supabaseAdmin
+      .from('users')
+      .update({ password_hash, updated_at: new Date().toISOString() })
+      .eq('id', user.id);
+
+    if (updateErr) {
+      res.status(500).json({ error: 'Failed to update password.' });
+      return;
+    }
+
+    // Clean up OTP
+    residentOtpCache.delete(key);
+
+    res.json({
+      success: true,
+      message: 'Password updated successfully! You can now use your new password.',
+    });
+  } catch (err: any) {
+    console.error('Resident change-password error:', err);
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
 
 export default router;
