@@ -49,3 +49,45 @@ export async function getAllActiveGPS(): Promise<GPSLocation[]> {
     .filter((r): r is string => r !== null)
     .map((r) => (typeof r === 'string' ? JSON.parse(r) : r as unknown as GPSLocation));
 }
+
+// ── OTP Redis Helpers ──────────────────────────────────────────────────────────
+// Key pattern: otp:<email>
+// TTL: 10 minutes (600 seconds) — enforced by Redis itself, no manual expiry check needed
+
+export const OTP_KEY_PREFIX = 'otp:';
+export const OTP_TTL_SECONDS = 600; // 10 minutes
+
+export interface ResidentOtpRecord {
+  otp: string;
+  fullName?: string;
+  contactNumber?: string;
+  barangayName?: string;
+  barangayId?: string;
+  purpose: 'registration' | 'password_change';
+}
+
+/**
+ * Store an OTP record in Redis with a 10-minute TTL.
+ */
+export async function setOtp(email: string, record: ResidentOtpRecord): Promise<void> {
+  const key = `${OTP_KEY_PREFIX}${email.toLowerCase().trim()}`;
+  await redis.set(key, JSON.stringify(record), { ex: OTP_TTL_SECONDS });
+}
+
+/**
+ * Retrieve an OTP record from Redis. Returns null if not found or expired.
+ */
+export async function getOtp(email: string): Promise<ResidentOtpRecord | null> {
+  const key = `${OTP_KEY_PREFIX}${email.toLowerCase().trim()}`;
+  const raw = await redis.get<string>(key);
+  if (!raw) return null;
+  return typeof raw === 'string' ? JSON.parse(raw) : raw as unknown as ResidentOtpRecord;
+}
+
+/**
+ * Delete an OTP record from Redis (called after successful verification).
+ */
+export async function deleteOtp(email: string): Promise<void> {
+  const key = `${OTP_KEY_PREFIX}${email.toLowerCase().trim()}`;
+  await redis.del(key);
+}

@@ -6,6 +6,7 @@ import { config } from '../config';
 import { supabaseAdmin } from '../config/supabase';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth';
 import { emailService } from '../services/emailService';
+import { setOtp, getOtp, deleteOtp } from '../config/redis';
 
 const router = Router();
 
@@ -430,19 +431,8 @@ router.post(
 
 // ============================================
 // RESIDENT OTP & REGISTRATION / PASSWORD FLOW
+// OTPs stored in Upstash Redis (survive restarts, auto-expire after 10 min)
 // ============================================
-
-interface ResidentOtpRecord {
-  otp: string;
-  fullName?: string;
-  contactNumber?: string;
-  barangayName?: string;
-  barangayId?: string;
-  expiresAt: number;
-  purpose: 'registration' | 'password_change';
-}
-
-const residentOtpCache = new Map<string, ResidentOtpRecord>();
 
 // 1. Request OTP for Citizen Account Registration
 router.post('/resident/register-otp', async (req: Request, res: Response): Promise<void> => {
@@ -461,23 +451,22 @@ router.post('/resident/register-otp', async (req: Request, res: Response): Promi
 
     // Generate 6-digit OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
-
     const key = email.toLowerCase().trim();
-    residentOtpCache.set(key, {
+
+    // Store in Redis with 10-minute TTL (survives restarts)
+    await setOtp(key, {
       otp,
       fullName: full_name.trim(),
       contactNumber: contact_number?.trim() || '',
       barangayName: barangay_name?.trim() || 'Poblacion',
-      barangayId: barangay_id || null,
-      expiresAt,
+      barangayId: barangay_id || undefined,
       purpose: 'registration',
     });
 
     console.log(`[ResidentAuth] Generated registration OTP for ${key}: ${otp}`);
     const sent = await emailService.sendOtpEmail(key, otp, 'registration');
     if (!sent) {
-      console.warn(`[ResidentAuth] Email transport failed, but OTP is cached for dev/testing: ${otp}`);
+      console.warn(`[ResidentAuth] Email transport failed, but OTP is stored in Redis for dev/testing: ${otp}`);
     }
 
     res.json({
@@ -501,19 +490,14 @@ router.post('/resident/verify-register-otp', async (req: Request, res: Response)
     }
 
     const key = email.toLowerCase().trim();
-    const record = residentOtpCache.get(key);
+    const record = await getOtp(key);
 
     if (!record || record.purpose !== 'registration') {
       res.status(400).json({ error: 'No pending registration found for this email, or code has expired. Please request a new code.' });
       return;
     }
 
-    if (Date.now() > record.expiresAt) {
-      residentOtpCache.delete(key);
-      res.status(400).json({ error: 'Verification code has expired. Please request a new code.' });
-      return;
-    }
-
+    // Expiry is enforced by Redis TTL — no manual Date.now() check needed
     if (record.otp !== otp.toString().trim()) {
       res.status(400).json({ error: 'Invalid verification code. Please check your email and enter the correct 6-digit code.' });
       return;
@@ -586,8 +570,8 @@ router.post('/resident/verify-register-otp', async (req: Request, res: Response)
       finalUser = inserted;
     }
 
-    // Clean up OTP cache
-    residentOtpCache.delete(key);
+    // Clean up OTP from Redis
+    await deleteOtp(key);
 
     // Send temporary password email
     await emailService.sendTemporaryPasswordEmail(key, tempPassword, fullName);
@@ -649,12 +633,11 @@ router.post('/resident/password-otp', async (req: Request, res: Response): Promi
 
     // Generate 6-digit OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = Date.now() + 10 * 60 * 1000;
 
-    residentOtpCache.set(key, {
+    // Store in Redis with 10-minute TTL
+    await setOtp(key, {
       otp,
       fullName: user.full_name,
-      expiresAt,
       purpose: 'password_change',
     });
 
@@ -688,19 +671,14 @@ router.post('/resident/change-password', async (req: Request, res: Response): Pr
     }
 
     const key = email.toLowerCase().trim();
-    const record = residentOtpCache.get(key);
+    const record = await getOtp(key);
 
     if (!record || record.purpose !== 'password_change') {
       res.status(400).json({ error: 'No password change request found or code has expired. Please request a new code.' });
       return;
     }
 
-    if (Date.now() > record.expiresAt) {
-      residentOtpCache.delete(key);
-      res.status(400).json({ error: 'Verification code has expired. Please request a new code.' });
-      return;
-    }
-
+    // Expiry enforced by Redis TTL — no manual Date.now() check needed
     if (record.otp !== otp.toString().trim()) {
       res.status(400).json({ error: 'Invalid verification code.' });
       return;
@@ -738,8 +716,8 @@ router.post('/resident/change-password', async (req: Request, res: Response): Pr
       return;
     }
 
-    // Clean up OTP
-    residentOtpCache.delete(key);
+    // Clean up OTP from Redis
+    await deleteOtp(key);
 
     res.json({
       success: true,
