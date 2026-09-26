@@ -1,13 +1,39 @@
-import nodemailer from 'nodemailer';
-import { config } from '../config';
+import * as nodemailer from 'nodemailer';
 
-// Create Nodemailer Gmail Transporter using GMAILUSER and GMAILPASS
+// ── Gmail SMTP Transporter ────────────────────────────────────────────────────
+// Uses explicit host/port instead of `service: 'gmail'` for Render compatibility.
+// Requires a Gmail App Password (not your regular Gmail password).
+// Generate one at: https://myaccount.google.com/apppasswords (needs 2FA enabled)
+
+const GMAIL_USER = process.env.GMAILUSER || '';
+const GMAIL_PASS = process.env.GMAILPASS || '';
+
+if (!GMAIL_USER || !GMAIL_PASS) {
+  console.error('[EmailService] ⚠️  GMAILUSER or GMAILPASS is not set in environment variables. Emails will fail.');
+} else {
+  console.log(`[EmailService] Gmail transporter ready for: ${GMAIL_USER}`);
+}
+
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
+  host: 'smtp.gmail.com',
+  port: 465,
+  secure: true, // SSL on port 465 — more reliable than STARTTLS on 587 for Render
   auth: {
-    user: process.env.GMAILUSER || config.gmailUser || 'emmanuelnabus16@gmail.com',
-    pass: process.env.GMAILPASS || config.gmailPass || 'jeopajehxbflnsow',
+    user: GMAIL_USER,
+    pass: GMAIL_PASS,
   },
+  tls: {
+    rejectUnauthorized: false, // Avoids cert issues in some cloud environments
+  },
+});
+
+// Verify SMTP connection at startup so any auth errors appear immediately in logs
+transporter.verify((err) => {
+  if (err) {
+    console.error('[EmailService] ❌ SMTP connection FAILED:', err.message, '| Code:', (err as any).code, '| Response:', (err as any).response);
+  } else {
+    console.log('[EmailService] ✅ SMTP connection verified — ready to send emails.');
+  }
 });
 
 export const emailService = {
@@ -28,7 +54,7 @@ export const emailService = {
       <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 520px; margin: 0 auto; background: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; overflow: hidden;">
         <div style="background: linear-gradient(135deg, #0c243b, #133e68, #0f5b78); padding: 24px; text-align: center; color: white;">
           <h2 style="margin: 0; font-size: 22px; font-weight: 800;">NorzAgapay</h2>
-          <p style="margin: 4px 0 0; font-size: 13px; opacity: 0.85;">Municipality of Norzagaray • MDRRMO & Barangay Portal</p>
+          <p style="margin: 4px 0 0; font-size: 13px; opacity: 0.85;">Municipality of Norzagaray &bull; MDRRMO &amp; Barangay Portal</p>
         </div>
         <div style="padding: 28px 24px; color: #1e293b;">
           <p style="font-size: 15px; line-height: 1.5; margin-top: 0;">Hello,</p>
@@ -41,7 +67,7 @@ export const emailService = {
             </div>
           </div>
           <p style="font-size: 12.5px; color: #64748b; line-height: 1.5;">
-            ⏰ This code will expire in <strong>10 minutes</strong>. For your security, do not share this code with anyone.
+            &#9200; This code will expire in <strong>10 minutes</strong>. For your security, do not share this code with anyone.
           </p>
           <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;" />
           <p style="font-size: 11.5px; color: #94a3b8; line-height: 1.4; margin-bottom: 0;">
@@ -52,17 +78,17 @@ export const emailService = {
     `;
 
     try {
-      await transporter.sendMail({
-        from: `"NorzAgapay Portal" <${process.env.GMAILUSER || 'emmanuelnabus16@gmail.com'}>`,
+      const info = await transporter.sendMail({
+        from: `"NorzAgapay Portal" <${GMAIL_USER}>`,
         to: toEmail,
         subject,
         html,
         text: `Your NorzAgapay verification code is ${otp}. It will expire in 10 minutes. If you did not request this, please ignore.`,
       });
-      console.log(`[EmailService] OTP sent successfully to ${toEmail}`);
+      console.log(`[EmailService] ✅ OTP sent to ${toEmail} | MessageId: ${info.messageId}`);
       return true;
     } catch (err: any) {
-      console.error(`[EmailService] Failed to send OTP to ${toEmail}:`, err.message);
+      console.error(`[EmailService] ❌ Failed to send OTP to ${toEmail}:`, err.message, '| Code:', err.code, '| Response:', err.response);
       return false;
     }
   },
@@ -77,7 +103,7 @@ export const emailService = {
       <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 520px; margin: 0 auto; background: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; overflow: hidden;">
         <div style="background: linear-gradient(135deg, #0c243b, #133e68, #0f5b78); padding: 24px; text-align: center; color: white;">
           <h2 style="margin: 0; font-size: 22px; font-weight: 800;">NorzAgapay</h2>
-          <p style="margin: 4px 0 0; font-size: 13px; opacity: 0.85;">Citizen Emergency & Reporting Portal</p>
+          <p style="margin: 4px 0 0; font-size: 13px; opacity: 0.85;">Citizen Emergency &amp; Reporting Portal</p>
         </div>
         <div style="padding: 28px 24px; color: #1e293b;">
           <p style="font-size: 15px; line-height: 1.5; margin-top: 0;">Hello ${fullName || 'Resident'},</p>
@@ -99,24 +125,24 @@ export const emailService = {
           </p>
           <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;" />
           <p style="font-size: 11.5px; color: #94a3b8; line-height: 1.4; margin-bottom: 0;">
-            NorzAgapay Incident Management • Municipality of Norzagaray, Bulacan
+            NorzAgapay Incident Management &bull; Municipality of Norzagaray, Bulacan
           </p>
         </div>
       </div>
     `;
 
     try {
-      await transporter.sendMail({
-        from: `"NorzAgapay Portal" <${process.env.GMAILUSER || 'emmanuelnabus16@gmail.com'}>`,
+      const info = await transporter.sendMail({
+        from: `"NorzAgapay Portal" <${GMAIL_USER}>`,
         to: toEmail,
         subject,
         html,
         text: `NorzAgapay sent a temporary password: ${tempPass}. Don't share this to anyone. If it's not you that requested it, please ignore. You can use this temporary password to login and change your password in Profile settings.`,
       });
-      console.log(`[EmailService] Temporary password sent successfully to ${toEmail}`);
+      console.log(`[EmailService] ✅ Temp password sent to ${toEmail} | MessageId: ${info.messageId}`);
       return true;
     } catch (err: any) {
-      console.error(`[EmailService] Failed to send temporary password to ${toEmail}:`, err.message);
+      console.error(`[EmailService] ❌ Failed to send temp password to ${toEmail}:`, err.message, '| Code:', err.code, '| Response:', err.response);
       return false;
     }
   },
