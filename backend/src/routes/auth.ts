@@ -492,7 +492,7 @@ router.post('/resident/register-otp', async (req: Request, res: Response): Promi
     });
   } catch (err: any) {
     console.error('Resident register-otp error:', err);
-    res.status(500).json({ error: 'Internal server error.' });
+    res.status(500).json({ error: 'Internal server error.', details: err.message });
   }
 });
 
@@ -634,7 +634,7 @@ router.post('/resident/verify-register-otp', async (req: Request, res: Response)
     });
   } catch (err: any) {
     console.error('Resident verify-register-otp error:', err);
-    res.status(500).json({ error: 'Internal server error.' });
+    res.status(500).json({ error: 'Internal server error.', details: err.message });
   }
 });
 
@@ -694,7 +694,7 @@ router.post('/resident/password-otp', async (req: Request, res: Response): Promi
     });
   } catch (err: any) {
     console.error('Resident password-otp error:', err);
-    res.status(500).json({ error: 'Internal server error.' });
+    res.status(500).json({ error: 'Internal server error.', details: err.message });
   }
 });
 
@@ -783,7 +783,7 @@ router.post('/resident/change-password', async (req: Request, res: Response): Pr
     });
   } catch (err: any) {
     console.error('Resident change-password error:', err);
-    res.status(500).json({ error: 'Internal server error.' });
+    res.status(500).json({ error: 'Internal server error.', details: err.message });
   }
 });
 
