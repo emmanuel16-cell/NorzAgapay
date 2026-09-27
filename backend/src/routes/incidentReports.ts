@@ -154,6 +154,9 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
       longitude, 
       proof_type,
       reporter_type,
+      reporter_name: submittedReporterName,
+      reporter_email: submittedReporterEmail,
+      full_name,
       first_name,
       last_name,
       contact_number,
@@ -171,8 +174,22 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
       return;
     }
 
-    const reporterName = first_name && last_name ? `${first_name} ${last_name}` : null;
-    const reporterPhone = contact_number || null;
+    let residentProfile: { full_name?: string | null; email?: string | null; phone?: string | null } | null = null;
+    if (reporter_type === 'resident' && req.user?.userId) {
+      const { data, error } = await supabaseAdmin
+        .from('resident_user')
+        .select('full_name, email, phone')
+        .eq('id', req.user.userId)
+        .maybeSingle();
+      if (error) throw error;
+      residentProfile = data;
+    }
+    const reporterName = residentProfile?.full_name || submittedReporterName || full_name ||
+      (first_name ? `${first_name} ${last_name || ''}`.trim() : null);
+    const submittedEmail = typeof submittedReporterEmail === 'string' ? submittedReporterEmail.trim() : '';
+    const submittedContact = typeof contact_number === 'string' ? contact_number.trim() : '';
+    const reporterEmail = residentProfile?.email || submittedEmail || (submittedContact.includes('@') ? submittedContact : null);
+    const reporterPhone = residentProfile?.phone || (submittedContact.includes('@') ? null : submittedContact || null);
 
     // Resolve barangay: use provided or nearest by lat/lng
     let resolvedBarangayId = barangay_id || null;
@@ -277,6 +294,7 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
       reporter_id: req.user?.userId || null,
       reporter_name: reporterName,
       reporter_phone: reporterPhone,
+      reporter_email: reporterEmail,
       barangay_id: resolvedBarangayId,
       status: 'pending',
       send_to: targetSendTo
