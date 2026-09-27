@@ -836,6 +836,46 @@ router.post('/team', authenticateBarangay, requireRole(['captain', 'team_leader'
 
 // ─── DELETE /api/barangay/team/:id ──────────────────────────────────────────
 
+router.patch('/team/:id', authenticateBarangay, requireRole(['captain']), async (req: any, res: Response): Promise<void> => {
+  try {
+    const schema = z.object({
+      full_name: z.string().trim().min(2).max(120),
+      email: z.string().trim().email(),
+      phone: z.string().trim().max(20).optional().nullable(),
+      role: z.enum(['team_leader', 'volunteer']),
+      password: z.string().min(8).optional().or(z.literal('')),
+    });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Please check the member details and try again.' });
+      return;
+    }
+    const update: Record<string, unknown> = {
+      full_name: parsed.data.full_name,
+      email: parsed.data.email.toLowerCase(),
+      phone: parsed.data.phone?.trim() || null,
+      role: parsed.data.role,
+    };
+    if (parsed.data.password) update.password_hash = await bcrypt.hash(parsed.data.password, 12);
+    const { data, error } = await supabaseAdmin
+      .from('barangay_users')
+      .update(update)
+      .eq('id', req.params.id)
+      .eq('barangay_id', req.barangayUser.barangayId)
+      .neq('role', 'captain')
+      .neq('role', 'dispatcher')
+      .select('id, full_name, email, phone, role, barangay_id, is_active, created_at, added_by')
+      .maybeSingle();
+    if (error?.code === '23505') { res.status(409).json({ error: 'Email already registered.' }); return; }
+    if (error) throw error;
+    if (!data) { res.status(404).json({ error: 'Team member not found.' }); return; }
+    res.json(data);
+  } catch (err) {
+    console.error('Update team member error:', err);
+    res.status(500).json({ error: 'Failed to update team member' });
+  }
+});
+
 router.delete('/team/:id', authenticateBarangay, requireRole(['captain']), async (req: any, res: Response) => {
   try {
     const { error } = await supabaseAdmin

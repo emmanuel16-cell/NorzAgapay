@@ -887,4 +887,85 @@ router.post('/resident/change-password', async (req: Request, res: Response): Pr
   }
 });
 
+router.post('/barangay/password-otp', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const email = typeof req.body?.email === 'string' ? req.body.email.toLowerCase().trim() : '';
+    if (!email || !email.includes('@')) {
+      res.status(400).json({ error: 'Valid email address is required.' });
+      return;
+    }
+    const { data: user, error } = await supabaseAdmin
+      .from('barangay_users')
+      .select('id, full_name, email')
+      .eq('email', email)
+      .maybeSingle();
+    if (error) throw error;
+    if (!user) {
+      res.status(404).json({ error: 'No Barangay account found with this email address.' });
+      return;
+    }
+    const otp = randomInt(100000, 1000000).toString();
+    await setOtp(email, { otp, fullName: user.full_name, purpose: 'barangay_password_change' });
+    const sent = await emailService.sendOtpEmail(email, otp, 'barangay_password_change');
+    if (!sent) {
+      await deleteOtp(email);
+      res.status(503).json({ error: 'We could not send the verification email. Please try again later.' });
+      return;
+    }
+    res.json({ success: true, message: `Password change verification code sent to ${email}.`, expiresInMinutes: 10 });
+  } catch (err: any) {
+    console.error('Barangay password-otp error:', err);
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+router.post('/barangay/change-password', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { otp, current_password, new_password } = req.body;
+    const email = typeof req.body?.email === 'string' ? req.body.email.toLowerCase().trim() : '';
+    if (!email || !otp || !current_password || !new_password) {
+      res.status(400).json({ error: 'Email, verification code, current password, and new password are required.' });
+      return;
+    }
+    if (typeof new_password !== 'string' || new_password.length < 6) {
+      res.status(400).json({ error: 'New password must be at least 6 characters long.' });
+      return;
+    }
+    const record = await getOtp(email);
+    if (!record || record.purpose !== 'barangay_password_change') {
+      res.status(400).json({ error: 'No password change request found or code has expired. Please request a new code.' });
+      return;
+    }
+    if (record.otp !== otp.toString().trim()) {
+      res.status(400).json({ error: 'Invalid verification code.' });
+      return;
+    }
+    const { data: user, error: fetchError } = await supabaseAdmin
+      .from('barangay_users')
+      .select('id, password_hash')
+      .eq('email', email)
+      .maybeSingle();
+    if (fetchError) throw fetchError;
+    if (!user) {
+      res.status(404).json({ error: 'Barangay account not found.' });
+      return;
+    }
+    if (!await bcrypt.compare(current_password, user.password_hash)) {
+      res.status(400).json({ error: 'Current password is incorrect.' });
+      return;
+    }
+    const password_hash = await bcrypt.hash(new_password, 12);
+    const { error: updateError } = await supabaseAdmin
+      .from('barangay_users')
+      .update({ password_hash, updated_at: new Date().toISOString() })
+      .eq('id', user.id);
+    if (updateError) throw updateError;
+    await deleteOtp(email);
+    res.json({ success: true, message: 'Password updated successfully.' });
+  } catch (err: any) {
+    console.error('Barangay change-password error:', err);
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
 export default router;

@@ -131,7 +131,7 @@ export interface ResidentOtpRecord {
   contactNumber?: string;
   barangayName?: string;
   barangayId?: string;
-  purpose: 'registration' | 'password_change';
+  purpose: 'registration' | 'password_change' | 'barangay_password_change';
 }
 
 /**

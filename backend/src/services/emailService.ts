@@ -43,15 +43,20 @@ export const emailService = {
   /**
    * Send 6-digit OTP email for registration or password change
    */
-  async sendOtpEmail(toEmail: string, otp: string, purpose: 'registration' | 'password_change'): Promise<boolean> {
+  async sendOtpEmail(toEmail: string, otp: string, purpose: 'registration' | 'password_change' | 'barangay_password_change'): Promise<boolean> {
     const isRegistration = purpose === 'registration';
+    const isBarangayPasswordChange = purpose === 'barangay_password_change';
     const subject = isRegistration
       ? 'NorzAgapay - Citizen Account Verification Code'
-      : 'NorzAgapay - Password Change OTP Code';
+      : isBarangayPasswordChange
+        ? 'NorzAgapay - Barangay Account Password Change OTP'
+        : 'NorzAgapay - Password Change OTP Code';
 
     const actionText = isRegistration
       ? 'complete your NorzAgapay citizen registration'
-      : 'update your resident account password';
+      : isBarangayPasswordChange
+        ? 'update your NorzAgapay barangay account password'
+        : 'update your resident account password';
 
     const html = `
       <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 520px; margin: 0 auto; background: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; overflow: hidden;">
