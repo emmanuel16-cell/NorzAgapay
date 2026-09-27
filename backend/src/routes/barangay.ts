@@ -920,6 +920,23 @@ router.get('/reports', authenticateBarangay, async (req: any, res: Response) => 
       return true;
     });
 
+    // Some older resident profiles used their login email as a fallback contact.
+    // Prefer the resident profile's actual phone when formatting contact details.
+    const residentIds = [...new Set(reportsForBarangay
+      .filter((report: any) => report.reporter_type === 'resident' && report.reporter_id)
+      .map((report: any) => report.reporter_id))];
+    const residentContacts = new Map<string, { full_name: string | null; phone: string | null; email: string | null }>();
+    if (residentIds.length > 0) {
+      const { data: residents, error: residentsError } = await supabaseAdmin
+        .from('resident_user')
+        .select('id, full_name, phone, email')
+        .in('id', residentIds);
+      if (residentsError) throw residentsError;
+      for (const resident of residents || []) {
+        residentContacts.set(resident.id, { full_name: resident.full_name, phone: resident.phone, email: resident.email });
+      }
+    }
+
     const responderIds = new Set<string>();
     for (const report of reportsForBarangay) {
       if (report.barangay_responded_by) responderIds.add(report.barangay_responded_by);
@@ -967,8 +984,17 @@ router.get('/reports', authenticateBarangay, async (req: any, res: Response) => 
         }
       }
 
+      const resident = report.reporter_id ? residentContacts.get(report.reporter_id) : null;
+      const reporterPhone = typeof report.reporter_phone === 'string' && !report.reporter_phone.includes('@')
+        ? report.reporter_phone
+        : resident?.phone || null;
+      const reporterEmail = resident?.email || (typeof report.reporter_phone === 'string' && report.reporter_phone.includes('@') ? report.reporter_phone : null);
+
       return formatIncidentReport({
         ...report,
+        reporter_name: report.reporter_name || resident?.full_name || null,
+        reporter_phone: reporterPhone,
+        reporter_email: reporterEmail,
         assigned_team_leader_ids: assignedIds,
         barangay_responder_name: responderName || responderNames.get(report.barangay_responded_by) || null,
       });
@@ -1195,6 +1221,24 @@ router.patch('/reports/:id/escalate', authenticateBarangay, requireRole(['captai
     const { notes } = req.body;
     if (!notes || !notes.trim()) {
       res.status(400).json({ error: 'Escalation notes are required' });
+      return;
+    }
+
+    const { data: assignedReport, error: assignmentError } = await supabaseAdmin
+      .from('incident_reports')
+      .select('id, barangay_responded_by, barangay_response_notes')
+      .eq('id', req.params.id)
+      .eq('barangay_id', req.barangayUser.barangayId)
+      .maybeSingle();
+    if (assignmentError) throw assignmentError;
+    if (!assignedReport) {
+      res.status(404).json({ error: 'Incident report not found in this barangay.' });
+      return;
+    }
+    const hasAssignedResponder = Boolean(assignedReport.barangay_responded_by) ||
+      Boolean(assignedReport.barangay_response_notes?.match(/^\[ASSIGNED:[^\]]+\]/));
+    if (!hasAssignedResponder) {
+      res.status(409).json({ error: 'Dispatch a responder before escalating this incident to MDRRMO.' });
       return;
     }
 
