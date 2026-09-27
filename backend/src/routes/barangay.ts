@@ -945,6 +945,24 @@ router.get('/reports', authenticateBarangay, async (req: any, res: Response) => 
 router.post('/reports/:id/field-media', authenticateBarangay, upload.single('media'), async (req: any, res: Response) => {
   try {
     const { id } = req.params;
+    if (!['team_leader', 'captain', 'dispatcher'].includes(req.barangayUser.role)) {
+      res.status(403).json({ error: 'Only response staff can upload field documentation.' });
+      return;
+    }
+    const { data: reportAccess, error: accessError } = await supabaseAdmin
+      .from('incident_reports').select('barangay_response_notes, barangay_responded_by, barangay_response_status')
+      .eq('id', id).eq('barangay_id', req.barangayUser.barangayId).maybeSingle();
+    if (accessError) throw accessError;
+    if (!reportAccess) { res.status(404).json({ error: 'Incident report not found.' }); return; }
+    if (reportAccess.barangay_response_status === 'resolved') { res.status(409).json({ error: 'Resolved incidents cannot receive new field media.' }); return; }
+    if (req.barangayUser.role === 'team_leader') {
+      const assigned = (reportAccess.barangay_response_notes || '').match(/^\[ASSIGNED:([^\]]+)\]/)?.[1]
+        ?.split(',').map((value: string) => value.trim()) || [];
+      if (reportAccess.barangay_responded_by !== req.barangayUser.userId && !assigned.includes(req.barangayUser.userId)) {
+        res.status(403).json({ error: 'This incident has not been assigned to your team leader account.' });
+        return;
+      }
+    }
     const file = req.file;
     if (!file) {
       res.status(400).json({ error: 'No media file provided.' });
@@ -1197,13 +1215,26 @@ router.patch('/reports/:id/escalate', authenticateBarangay, requireRole(['captai
 router.patch('/reports/:id/respond', authenticateBarangay, requireRole(['captain', 'dispatcher', 'team_leader']), async (req: any, res: Response) => {
   try {
     const { notes, mdrrmo_notes } = req.body;
+    const { data: currentReport, error: currentError } = await supabaseAdmin
+      .from('incident_reports').select('barangay_response_notes, barangay_responded_by')
+      .eq('id', req.params.id).eq('barangay_id', req.barangayUser.barangayId).maybeSingle();
+    if (currentError) throw currentError;
+    if (!currentReport) { res.status(404).json({ error: 'Incident report not found' }); return; }
+    if (req.barangayUser.role === 'team_leader') {
+      const assignedMatch = (currentReport.barangay_response_notes || '').match(/^\[ASSIGNED:([^\]]+)\]/);
+      const assignedIds = assignedMatch ? assignedMatch[1].split(',').map((id: string) => id.trim()) : [];
+      if (currentReport.barangay_responded_by !== req.barangayUser.userId && !assignedIds.includes(req.barangayUser.userId)) {
+        res.status(403).json({ error: 'This incident has not been assigned to your team leader account' }); return;
+      }
+    }
     const updatePayload: any = {
       barangay_response_status: 'responding',
       barangay_responded_by: req.barangayUser.userId,
       barangay_responded_at: new Date().toISOString(),
     };
     if (notes !== undefined && notes !== null) {
-      updatePayload.barangay_response_notes = notes;
+      const assignmentMarker = (currentReport.barangay_response_notes || '').match(/^\[ASSIGNED:[^\]]+\]/)?.[0];
+      updatePayload.barangay_response_notes = [assignmentMarker, notes].filter(Boolean).join(' ');
     }
     if (mdrrmo_notes !== undefined && mdrrmo_notes !== null) {
       updatePayload.mdrrmo_coordination_notes = mdrrmo_notes;
@@ -1267,11 +1298,27 @@ router.patch('/reports/:id/respond', authenticateBarangay, requireRole(['captain
 router.post('/reports/:id/close', authenticateBarangay, requireRole(['captain', 'team_leader']), async (req: any, res: Response) => {
   try {
     const { resolved_notes } = req.body;
+    if (typeof resolved_notes !== 'string' || !resolved_notes.trim()) {
+      res.status(400).json({ error: 'A resolution summary is required to close the incident' });
+      return;
+    }
+    if (req.barangayUser.role === 'team_leader') {
+      const { data: currentReport, error: accessError } = await supabaseAdmin
+        .from('incident_reports').select('barangay_response_notes, barangay_responded_by')
+        .eq('id', req.params.id).eq('barangay_id', req.barangayUser.barangayId).maybeSingle();
+      if (accessError) throw accessError;
+      if (!currentReport) { res.status(404).json({ error: 'Incident report not found' }); return; }
+      const assignedMatch = (currentReport.barangay_response_notes || '').match(/^\[ASSIGNED:([^\]]+)\]/);
+      const assignedIds = assignedMatch ? assignedMatch[1].split(',').map((id: string) => id.trim()) : [];
+      if (currentReport.barangay_responded_by !== req.barangayUser.userId && !assignedIds.includes(req.barangayUser.userId)) {
+        res.status(403).json({ error: 'Only an assigned team leader can close this incident' }); return;
+      }
+    }
     const { data, error } = await supabaseAdmin
       .from('incident_reports')
       .update({
         barangay_response_status: 'resolved',
-        resolved_notes: resolved_notes || null,
+        resolved_notes: resolved_notes.trim(),
         resolved_at: new Date().toISOString(),
         status: 'resolved',
       })
