@@ -987,8 +987,8 @@ router.get('/reports', authenticateBarangay, async (req: any, res: Response) => 
       const resident = report.reporter_id ? residentContacts.get(report.reporter_id) : null;
       const reporterPhone = typeof report.reporter_phone === 'string' && !report.reporter_phone.includes('@')
         ? report.reporter_phone
-        : resident?.phone || null;
-      const reporterEmail = resident?.email || (typeof report.reporter_phone === 'string' && report.reporter_phone.includes('@') ? report.reporter_phone : null);
+        : (typeof resident?.phone === 'string' && !resident.phone.includes('@') ? resident.phone : null);
+      const reporterEmail = report.reporter_email || resident?.email || (typeof report.reporter_phone === 'string' && report.reporter_phone.includes('@') ? report.reporter_phone : null);
 
       return formatIncidentReport({
         ...report,

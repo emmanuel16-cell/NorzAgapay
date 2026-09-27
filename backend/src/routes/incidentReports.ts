@@ -189,7 +189,10 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
     const submittedEmail = typeof submittedReporterEmail === 'string' ? submittedReporterEmail.trim() : '';
     const submittedContact = typeof contact_number === 'string' ? contact_number.trim() : '';
     const reporterEmail = residentProfile?.email || submittedEmail || (submittedContact.includes('@') ? submittedContact : null);
-    const reporterPhone = residentProfile?.phone || (submittedContact.includes('@') ? null : submittedContact || null);
+    const profilePhone = typeof residentProfile?.phone === 'string' && !residentProfile.phone.includes('@')
+      ? residentProfile.phone.trim()
+      : '';
+    const reporterPhone = profilePhone || (submittedContact.includes('@') ? null : submittedContact || null);
 
     // Resolve barangay: use provided or nearest by lat/lng
     let resolvedBarangayId = barangay_id || null;
@@ -318,9 +321,10 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
       if (res.error) throw res.error;
       report = res.data;
     } catch (colErr) {
-      // Fallback: database might lack proof_urls or send_to column
+      // Fallback for older schemas without proof_urls, send_to, or reporter_email.
       const safePayload = { ...insertPayload };
       delete safePayload.send_to;
+      delete safePayload.reporter_email;
       const res = await supabaseAdmin
         .from('incident_reports')
         .insert(safePayload)

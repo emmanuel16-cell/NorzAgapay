@@ -270,6 +270,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
         id: user.id,
         full_name: user.full_name,
         email: user.email,
+        phone: user.phone || null,
         role: user.role,
         unit_type: unitType,
         barangay_name: user.barangay_name || null,
