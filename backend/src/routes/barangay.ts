@@ -1248,7 +1248,7 @@ router.patch('/reports/:id/escalate', authenticateBarangay, requireRole(['captai
       .update({
         mdrrmo_coordination_notes: escalationNotes,
         mdrrmo_response_notes: escalationNotes,
-        status: 'verified',
+        status: 'escalated',
         mdrrmo_response_status: 'responding',
         barangay_response_notes: `Escalated to MDRRMO: ${escalationNotes}`,
       })

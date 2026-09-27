@@ -469,7 +469,6 @@ router.get('/', async (req: Request, res: Response) => {
         const mdrrmoReports = formatted.filter(r => {
           if (r.send_to === 'barangay') {
             const isEscalated = r.status === 'escalated' || 
-                                r.beyond_barangay_capability || 
                                 r.mdrrmo_response_status === 'responding' ||
                                 (r.barangay_response_notes && r.barangay_response_notes.toLowerCase().includes('escalated'));
             return isEscalated;
