@@ -11,6 +11,8 @@ interface IncidentReport {
   specifics?: string;
   description: string;
   status: string;
+  send_to?: string;
+  mdrrmo_response_status?: string;
   severity?: string;
   latitude: number;
   longitude: number;
@@ -89,7 +91,18 @@ export default function ReportsPage() {
       const res = await reportAPI.list();
       let data: IncidentReport[] = [];
       if (Array.isArray(res.data)) {
-        data = res.data;
+        // This is the MDRRMO report queue: hide reports routed only to a
+        // barangay unless that barangay has escalated them for coordination.
+        data = res.data.filter((report: IncidentReport) => {
+          const specifics = report.specifics || '';
+          const routedTo = report.send_to || specifics.match(/\[SEND_TO:([^\]]+)\]/)?.[1];
+          if (routedTo === 'barangay') {
+            return report.status === 'escalated' ||
+              report.mdrrmo_response_status === 'responding' ||
+              Boolean(report.barangay_response_notes?.toLowerCase().includes('escalated'));
+          }
+          return routedTo === 'mdrrmo';
+        });
       }
       setReports(data);
     } catch (err) {

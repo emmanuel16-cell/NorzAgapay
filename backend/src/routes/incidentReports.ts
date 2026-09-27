@@ -465,7 +465,9 @@ router.get('/', async (req: Request, res: Response) => {
         }
 
         const formatted = (reports || []).map(formatIncidentReport);
-        // MDRRMO only sees reports intended for MDRRMO or escalated reports
+        // MDRRMO sees reports explicitly routed to them, plus barangay reports
+        // that have been escalated. Legacy/unspecified `all` values must not
+        // cause a barangay-bound resident report to appear in the MDRRMO queue.
         const mdrrmoReports = formatted.filter(r => {
           if (r.send_to === 'barangay') {
             const isEscalated = r.status === 'escalated' || 
@@ -473,7 +475,7 @@ router.get('/', async (req: Request, res: Response) => {
                                 (r.barangay_response_notes && r.barangay_response_notes.toLowerCase().includes('escalated'));
             return isEscalated;
           }
-          return true;
+          return r.send_to === 'mdrrmo';
         });
 
         res.json(mdrrmoReports);
