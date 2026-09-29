@@ -43,16 +43,21 @@ export const emailService = {
   /**
    * Send 6-digit OTP email for registration or password change
    */
-  async sendOtpEmail(toEmail: string, otp: string, purpose: 'registration' | 'password_change' | 'barangay_password_change'): Promise<boolean> {
-    const isRegistration = purpose === 'registration';
+  async sendOtpEmail(toEmail: string, otp: string, purpose: 'registration' | 'password_change' | 'barangay_password_change' | 'barangay_registration'): Promise<boolean> {
+    const isRegistration = purpose === 'registration' || purpose === 'barangay_registration';
+    const isBarangayRegistration = purpose === 'barangay_registration';
     const isBarangayPasswordChange = purpose === 'barangay_password_change';
-    const subject = isRegistration
+    const subject = isBarangayRegistration
+      ? 'NorzAgapay - Barangay Account Verification Code'
+      : isRegistration
       ? 'NorzAgapay - Citizen Account Verification Code'
       : isBarangayPasswordChange
         ? 'NorzAgapay - Barangay Account Password Change OTP'
         : 'NorzAgapay - Password Change OTP Code';
 
-    const actionText = isRegistration
+    const actionText = isBarangayRegistration
+      ? 'complete your NorzAgapay Barangay Administrator registration'
+      : isRegistration
       ? 'complete your NorzAgapay citizen registration'
       : isBarangayPasswordChange
         ? 'update your NorzAgapay barangay account password'
@@ -96,7 +101,7 @@ export const emailService = {
   /**
    * Send temporary password after OTP verification
    */
-  async sendTemporaryPasswordEmail(toEmail: string, tempPass: string, fullName: string): Promise<boolean> {
+  async sendTemporaryPasswordEmail(toEmail: string, tempPass: string, fullName: string, audience: 'resident' | 'barangay' = 'resident'): Promise<boolean> {
     const subject = 'NorzAgapay - Your Temporary Login Password';
 
     const html = `
@@ -112,8 +117,8 @@ export const emailService = {
               NorzAgapay sent a temporary password. Don't share this to anyone. If it's not you that requested it, please ignore.
             </p>
           </div>
-          <p style="font-size: 14px; line-height: 1.5; color: #475569;">
-            Your temporary password for logging into the NorzAgapay Resident App is:
+            <p style="font-size: 14px; line-height: 1.5; color: #475569;">
+            Your temporary password for logging into the NorzAgapay ${audience === 'barangay' ? 'Barangay App' : 'Resident App'} is:
           </p>
           <div style="margin: 20px 0; text-align: center;">
             <div style="display: inline-block; background: #eff6ff; border: 1.5px solid #93c5fd; border-radius: 10px; padding: 12px 24px;">
@@ -135,7 +140,7 @@ export const emailService = {
       toEmail,
       subject,
       html,
-      `NorzAgapay sent a temporary password: ${tempPass}. Don't share this to anyone. If it's not you that requested it, please ignore. You can use this temporary password to login and change your password in Profile settings.`,
+      `NorzAgapay sent a temporary password for the NorzAgapay ${audience === 'barangay' ? 'Barangay' : 'Resident'} App: ${tempPass}. Do not share it. You can change your password in Profile settings.`,
     );
   },
 };

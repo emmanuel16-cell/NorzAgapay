@@ -177,8 +177,8 @@ const createCenterSchema = z.object({
 
 router.post('/', authenticateBarangay, async (req: any, res: Response): Promise<void> => {
   try {
-    if (!['captain', 'team_leader'].includes(req.barangayUser?.role)) {
-      res.status(403).json({ error: 'Only captains and team leaders can add evacuation centers' });
+    if (!['admin', 'captain', 'team_leader', 'responder', 'staff'].includes(req.barangayUser?.role)) {
+      res.status(403).json({ error: 'Your account cannot add evacuation centers.' });
       return;
     }
 
@@ -213,7 +213,7 @@ router.post('/', authenticateBarangay, async (req: any, res: Response): Promise<
 
 router.patch('/:id', authenticateBarangay, async (req: any, res: Response): Promise<void> => {
   try {
-    if (!['captain', 'team_leader'].includes(req.barangayUser?.role)) {
+    if (!['admin', 'captain', 'team_leader', 'responder', 'staff'].includes(req.barangayUser?.role)) {
       res.status(403).json({ error: 'Insufficient permissions' });
       return;
     }
@@ -240,8 +240,8 @@ router.patch('/:id', authenticateBarangay, async (req: any, res: Response): Prom
 
 router.delete('/:id', authenticateBarangay, async (req: any, res: Response): Promise<void> => {
   try {
-    if (req.barangayUser?.role !== 'captain') {
-      res.status(403).json({ error: 'Only captains can delete evacuation centers' });
+    if (!['admin', 'captain'].includes(req.barangayUser?.role)) {
+      res.status(403).json({ error: 'Only barangay administrators can remove evacuation centers.' });
       return;
     }
 

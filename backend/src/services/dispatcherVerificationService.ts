@@ -378,6 +378,47 @@ export class DispatcherVerificationService {
     return updated;
   }
 
+  static async updateAuthorizationDetails(
+    userId: string,
+    officialName: string,
+    officialPosition: string,
+  ): Promise<DispatcherVerification> {
+    const existing = await this.getByUserId(userId);
+    if (!existing) throw new Error('Coordination request has not been initialized.');
+    const now = new Date().toISOString();
+    const updated: DispatcherVerification = {
+      ...existing,
+      punong_barangay_name: officialName,
+      punong_barangay_position: officialPosition,
+      updated_at: now,
+      verification_history: [
+        ...existing.verification_history,
+        {
+          action: 'Authorization details updated',
+          timestamp: now,
+          note: `Authorized by ${officialName}, ${officialPosition}.`,
+          actor: existing.full_name,
+        },
+      ],
+    };
+    const { error } = await supabaseAdmin
+      .from('barangay_dispatcher_verifications')
+      .update({
+        punong_barangay_name: officialName,
+        punong_barangay_position: officialPosition,
+        updated_at: now,
+        verification_history: updated.verification_history,
+      })
+      .eq('user_id', userId);
+    if (error) throw error;
+    const items = ensureStorage();
+    const index = items.findIndex((item) => item.user_id === userId);
+    if (index >= 0) items[index] = updated;
+    else items.push(updated);
+    saveLocalStorage(items);
+    return updated;
+  }
+
   /**
    * Reset status to allow resubmission if rejected
    */
@@ -871,17 +912,17 @@ export class DispatcherVerificationService {
         doc
           .font('Times-Roman')
           .fontSize(11)
-          .text('Punong Barangay / Authorized Barangay Official', sigBlockX, doc.y, {
+          .text((params.officialPosition || 'Punong Barangay / Authorized Barangay Official').trim(), sigBlockX, doc.y, {
             align: 'center',
             width: sigBlockWidth,
           });
 
-        // 6. MDRRMO Verification Reference No.: - aligned left bold (left blank)
+        // 6. Display the tracking reference assigned when the request was created.
         doc.y = 720;
         doc
           .font('Times-Bold')
           .fontSize(12)
-          .text('MDRRMO Verification Reference No.: ', 60, doc.y, { align: 'left' });
+          .text(`Reference No: ${params.referenceNo || ''}`, 60, doc.y, { align: 'left' });
 
         doc.end();
       } catch (err) {
