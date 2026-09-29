@@ -580,7 +580,11 @@ router.get('/me', authenticateBarangay, async (req: any, res: Response) => {
       const verification = (user.role === 'captain' || user.role === 'dispatcher')
         ? await DispatcherVerificationService.getByUserId(user.id)
         : null;
-      const verificationStatus = verification ? verification.status : (user.is_active ? 'verified' : 'pending_document');
+      // An active barangay account was authorized by its administrator. Keep
+      // that account active even if an old verification row is still pending.
+      const verificationStatus = user.is_active
+        ? 'verified'
+        : (verification?.status || 'pending_document');
 
       res.json({
         ...user,
@@ -972,10 +976,20 @@ router.get(
   authenticateBarangay,
   async (req: any, res: Response): Promise<void> => {
     try {
-      const targetUserId = req.query?.userId || req.barangayUser?.userId;
+      const targetUserId = req.barangayUser?.userId;
       let verification = await DispatcherVerificationService.getByUserId(targetUserId);
-      if (!verification && targetUserId) {
-        verification = await DispatcherVerificationService.getById(targetUserId);
+      const { data: user } = await supabaseAdmin
+        .from('barangay_users')
+        .select('role, is_active')
+        .eq('id', targetUserId)
+        .maybeSingle();
+
+      // A team account created and activated by the barangay administrator may
+      // not have a separate dispatcher verification row. The active account is
+      // the source of truth in that case, including for cached app sessions.
+      if (user?.is_active && ['captain', 'dispatcher'].includes(user.role)) {
+        res.json({ verification: { ...(verification || {}), status: 'verified' } });
+        return;
       }
       if (!verification) {
         res.status(404).json({ error: 'Verification record not found' });
