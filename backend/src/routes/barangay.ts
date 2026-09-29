@@ -72,6 +72,73 @@ router.get('/list', async (_req: Request, res: Response) => {
   }
 });
 
+// Public: residents can look up the published hotline list for a barangay.
+router.get('/hotlines/:barangayId', async (req: Request, res: Response) => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('barangay_hotline_settings')
+      .select('hotlines')
+      .eq('barangay_id', req.params.barangayId)
+      .maybeSingle();
+
+    if (error) throw error;
+    res.json({ entries: Array.isArray(data?.hotlines) ? data.hotlines : [] });
+  } catch (err) {
+    console.error('Fetch barangay hotlines error:', err);
+    res.status(500).json({ error: 'Failed to fetch barangay hotlines.' });
+  }
+});
+
+// Public: download all published hotline entries for resident offline use.
+router.get('/hotlines', async (_req: Request, res: Response) => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('barangay_hotline_settings')
+      .select('barangay_id, hotlines');
+
+    if (error) throw error;
+    res.json(data ?? []);
+  } catch (err) {
+    console.error('Fetch all barangay hotlines error:', err);
+    res.status(500).json({ error: 'Failed to fetch barangay hotlines.' });
+  }
+});
+
+const barangayHotlinesSchema = z.object({
+  entries: z.array(z.object({
+    purpose: z.string().trim().min(1).max(120),
+    numbers: z.array(z.string().trim().min(7).max(32)).min(1),
+  })).max(100),
+});
+
+// Dispatcher-only: replace the current shared hotline list for their barangay.
+router.put('/hotlines', authenticateBarangay, requireRole(['captain', 'dispatcher']), async (req: any, res: Response) => {
+  const parsed = barangayHotlinesSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid hotline entries.', details: parsed.error.flatten() });
+    return;
+  }
+
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('barangay_hotline_settings')
+      .upsert({
+        barangay_id: req.barangayUser.barangayId,
+        hotlines: parsed.data.entries,
+        updated_by: req.barangayUser.userId,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'barangay_id' })
+      .select('hotlines')
+      .single();
+
+    if (error) throw error;
+    res.json({ entries: Array.isArray(data.hotlines) ? data.hotlines : [] });
+  } catch (err) {
+    console.error('Save barangay hotlines error:', err);
+    res.status(500).json({ error: 'Failed to save barangay hotlines.' });
+  }
+});
+
 // ─── POST /api/barangay/register ────────────────────────────────────────────
 // Register a new barangay dispatcher/captain.
 // Saves ONLY to barangay_dispatcher_verifications (pending).
