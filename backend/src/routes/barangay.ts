@@ -24,7 +24,7 @@ const upload = multer({ storage: multer.memoryStorage() });
 interface BarangayPayload {
   userId: string;
   barangayId: string;
-  role: 'admin' | 'captain' | 'dispatcher' | 'barangay_dispatcher' | 'responder' | 'staff' | 'team_leader' | 'volunteer';
+  role: 'admin' | 'captain' | 'dispatcher' | 'responder' | 'staff' | 'team_leader' | 'volunteer';
 }
 
 const authenticateBarangay = async (req: AuthRequest, res: Response, next: any) => {
@@ -1054,7 +1054,7 @@ const addMemberSchema = z.object({
   email: z.string().trim().email().transform((value) => value.toLowerCase()),
   password: z.string().min(8),
   phone: z.string().optional(),
-  role: z.enum(['team_leader', 'volunteer', 'barangay_dispatcher', 'responder', 'staff']),
+  role: z.enum(['team_leader', 'volunteer', 'dispatcher', 'responder', 'staff']),
 });
 
 router.post('/team', authenticateBarangay, requireRole(['admin', 'captain', 'team_leader', 'responder']), async (req: any, res: Response): Promise<void> => {
@@ -1113,7 +1113,7 @@ router.patch('/team/:id', authenticateBarangay, requireRole(['admin', 'captain']
       full_name: z.string().trim().min(2).max(120),
       email: z.string().trim().email(),
       phone: z.string().trim().max(20).optional().nullable(),
-      role: z.enum(['team_leader', 'volunteer', 'barangay_dispatcher', 'responder', 'staff']),
+      role: z.enum(['team_leader', 'volunteer', 'dispatcher', 'responder', 'staff']),
       password: z.string().min(8).optional().or(z.literal('')),
     });
     const parsed = schema.safeParse(req.body);
