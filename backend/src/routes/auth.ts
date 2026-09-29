@@ -17,7 +17,7 @@ const router = Router();
 
 const registerSchema = z.object({
   full_name: z.string().min(2, 'Full name is required'),
-  email: z.string().email('Invalid email address'),
+  email: z.string().trim().email('Invalid email address').transform((value) => value.toLowerCase()),
   phone: z.string().max(30).optional().nullable(),
   password: z.string().min(6, 'Password must be at least 6 characters'),
   role: z.enum(['volunteer_specialist', 'volunteer_general', 'professional_unit']),
@@ -33,7 +33,7 @@ const registerSchema = z.object({
 });
 
 const loginSchema = z.object({
-  email: z.string().min(1, 'Email or phone number is required'),
+  email: z.string().trim().email('A valid email address is required').transform((value) => value.toLowerCase()),
   password: z.string().min(1, 'Password is required'),
 });
 
@@ -161,49 +161,29 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const { email: identifier, password } = parsed.data;
+    const { email, password } = parsed.data;
 
-    // Fetch user by email or phone
-    let query = supabaseAdmin.from('users').select('*');
-    if (identifier.includes('@')) {
-      query = query.eq('email', identifier.toLowerCase().trim());
-    } else {
-      query = query.or(`phone.eq.${identifier.trim()},email.eq.${identifier.trim()}`);
-    }
-    const { data: staffUser, error } = await query.maybeSingle();
+    // Dashboard / MDRRMO accounts authenticate only against the dashboard users table.
+    const { data: user, error } = await supabaseAdmin
+      .from('users')
+      .select('*')
+      .eq('email', email)
+      .maybeSingle();
     if (error) {
       console.error('Login lookup error:', error);
       res.status(500).json({ error: 'Unable to look up account.' });
       return;
     }
 
-    let user: any = staffUser;
-    let userTable = 'users';
-    if (!user && identifier.includes('@')) {
-      const { data: residentUser, error: residentError } = await supabaseAdmin
-        .from('resident_user')
-        .select('*')
-        .eq('email', identifier.toLowerCase().trim())
-        .maybeSingle();
-      if (residentError) {
-        console.error('Resident login lookup error:', residentError);
-        res.status(500).json({ error: 'Unable to look up resident account.' });
-        return;
-      }
-      user = residentUser;
-      if (residentUser) userTable = 'resident_user';
-    }
-
     if (!user) {
-      res.status(401).json({ error: 'Invalid email/phone or password.' });
+      res.status(401).json({ error: 'Invalid email or password.' });
       return;
     }
-    if (userTable === 'resident_user') user.role = 'resident';
 
     // Verify password
     const passwordMatch = await bcrypt.compare(password, user.password_hash);
     if (!passwordMatch) {
-      res.status(401).json({ error: 'Invalid email/phone or password.' });
+      res.status(401).json({ error: 'Invalid email or password.' });
       return;
     }
 
@@ -260,7 +240,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
 
     // Update last_seen
     await supabaseAdmin
-      .from(userTable)
+      .from('users')
       .update({ last_seen: new Date().toISOString() })
       .eq('id', user.id);
 
@@ -281,6 +261,62 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
     });
   } catch (err) {
     console.error('Login error:', err);
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+// POST /api/auth/resident/login — resident-only email/password authentication
+router.post('/resident/login', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const parsed = loginSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Enter a valid email address and password.' });
+      return;
+    }
+
+    const { email, password } = parsed.data;
+    const { data: user, error } = await supabaseAdmin
+      .from('resident_user')
+      .select('*')
+      .eq('email', email)
+      .maybeSingle();
+    if (error) {
+      console.error('Resident login lookup error:', error);
+      res.status(500).json({ error: 'Unable to look up resident account.' });
+      return;
+    }
+    if (!user || !(await bcrypt.compare(password, user.password_hash))) {
+      res.status(401).json({ error: 'Invalid email or password.' });
+      return;
+    }
+    if (user.status === 'inactive' || user.status === 'rejected' || user.status === 'pending_verification') {
+      res.status(403).json({ error: 'This resident account is not active.' });
+      return;
+    }
+
+    const token = jwt.sign(
+      { userId: user.id, email: user.email, role: 'resident', unitType: user.unit_type || null },
+      config.jwtSecret,
+      { expiresIn: config.jwtExpiresIn as any }
+    );
+    await supabaseAdmin.from('resident_user').update({ last_seen: new Date().toISOString() }).eq('id', user.id);
+
+    res.json({
+      message: 'Login successful.',
+      user: {
+        id: user.id,
+        full_name: user.full_name,
+        email: user.email,
+        phone: user.phone || null,
+        role: 'resident',
+        barangay_name: user.barangay_name || null,
+        status: user.status,
+        verified: user.verified,
+      },
+      token,
+    });
+  } catch (err) {
+    console.error('Resident login error:', err);
     res.status(500).json({ error: 'Internal server error.' });
   }
 });
@@ -527,9 +563,20 @@ router.post('/resident/register-otp', async (req: Request, res: Response): Promi
       return;
     }
 
+    const key = String(email).toLowerCase().trim();
+    const { data: existingResident, error: residentLookupError } = await supabaseAdmin
+      .from('resident_user')
+      .select('id')
+      .eq('email', key)
+      .maybeSingle();
+    if (residentLookupError) throw residentLookupError;
+    if (existingResident) {
+      res.status(409).json({ error: 'This email already has a resident account. Sign in instead.' });
+      return;
+    }
+
     // Generate 6-digit OTP
     const otp = randomInt(100000, 1000000).toString();
-    const key = email.toLowerCase().trim();
 
     // Store in Redis with 10-minute TTL (survives restarts)
     await setOtp(key, {
@@ -605,73 +652,39 @@ router.post('/resident/verify-register-otp', async (req: Request, res: Response)
     const contactNumber = record.contactNumber || null;
     const barangayName = record.barangayName || 'Poblacion';
 
-    // Resident accounts live separately from MDRRMO staff and barangay accounts.
+    // Prevent duplicate resident accounts while allowing the same email in other apps.
     const { data: existingUser } = await supabaseAdmin
       .from('resident_user')
       .select('id, email')
       .eq('email', key)
       .maybeSingle();
-
-    if (!existingUser) {
-      const { data: staffUser } = await supabaseAdmin
-        .from('users')
-        .select('id')
-        .eq('email', key)
-        .maybeSingle();
-      if (staffUser) {
-        res.status(409).json({ error: 'This email is already registered for a staff account.' });
-        return;
-      }
+    if (existingUser) {
+      res.status(409).json({ error: 'This email already has a resident account. Sign in instead.' });
+      return;
     }
 
-    let userId: string;
-    let finalUser: any;
+    const { data: finalUser, error: insertError } = await supabaseAdmin
+      .from('resident_user')
+      .insert({
+        full_name: fullName,
+        email: key,
+        phone: contactNumber,
+        password_hash,
+        barangay_name: barangayName,
+        status: 'active',
+        verified: true,
+      })
+      .select('*')
+      .single();
 
-    if (existingUser) {
-      const { data: updated, error: updateError } = await supabaseAdmin
-        .from('resident_user')
-        .update({
-          full_name: fullName,
-          phone: contactNumber,
-          password_hash,
-          barangay_name: barangayName,
-          status: 'active',
-          verified: true,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', existingUser.id)
-        .select('*')
-        .single();
-
-      if (updateError) {
-        console.error('Failed to update resident:', updateError);
-        res.status(500).json({ error: 'Failed to complete registration.' });
+    if (insertError || !finalUser) {
+      if (insertError?.code === '23505') {
+        res.status(409).json({ error: 'This email already has a resident account. Sign in instead.' });
         return;
       }
-      userId = updated.id;
-      finalUser = updated;
-    } else {
-      const { data: inserted, error: insertError } = await supabaseAdmin
-        .from('resident_user')
-        .insert({
-          full_name: fullName,
-          email: key,
-          phone: contactNumber,
-          password_hash,
-          barangay_name: barangayName,
-          status: 'active',
-          verified: true,
-        })
-        .select('*')
-        .single();
-
-      if (insertError) {
-        console.error('Failed to insert resident:', insertError);
-        res.status(500).json({ error: 'Failed to create resident account.' });
-        return;
-      }
-      userId = inserted.id;
-      finalUser = inserted;
+      console.error('Failed to insert resident:', insertError);
+      res.status(500).json({ error: 'Failed to create resident account.' });
+      return;
     }
 
     // Clean up OTP from Redis

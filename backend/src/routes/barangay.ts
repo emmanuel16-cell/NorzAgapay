@@ -171,7 +171,7 @@ const registerSchema = z.object({
 
 const barangayRegistrationOtpSchema = z.object({
   full_name: z.string().trim().min(2).max(120),
-  email: z.string().trim().email(),
+  email: z.string().trim().email().transform((value) => value.toLowerCase()),
   phone: z.string().trim().max(30).optional().nullable(),
   barangay_id: z.string().uuid(),
   position_designation: z.string().trim().min(2).max(120),
@@ -185,15 +185,16 @@ router.post('/register-otp', async (req: Request, res: Response): Promise<void> 
       return;
     }
     const body = parsed.data;
-    const email = body.email.toLowerCase();
-    const [{ data: barangayUser }, { data: resident }, { data: staff }] = await Promise.all([
-      supabaseAdmin.from('barangay_users').select('id').eq('email', email).maybeSingle(),
-      supabaseAdmin.from('resident_user').select('id').eq('email', email).maybeSingle(),
-      supabaseAdmin.from('users').select('id').eq('email', email).maybeSingle(),
-    ]);
+    const email = body.email;
+    const { data: barangayUser, error: barangayLookupError } = await supabaseAdmin
+      .from('barangay_users')
+      .select('id')
+      .eq('email', email)
+      .maybeSingle();
+    if (barangayLookupError) throw barangayLookupError;
     const pending = await DispatcherVerificationService.findByEmail(email);
-    if (barangayUser || resident || staff || (pending && pending.status !== 'rejected')) {
-      res.status(409).json({ error: 'This email is already registered. Sign in or use another email.' });
+    if (barangayUser || (pending && pending.status !== 'rejected')) {
+      res.status(409).json({ error: 'This email already has a Barangay App account. Sign in or use another email.' });
       return;
     }
     const otp = randomInt(100000, 1000000).toString();
@@ -413,8 +414,9 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
 
 router.post('/login', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { email, password } = req.body;
-    if (!email || !password) {
+    const email = typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+    const { password } = req.body;
+    if (!z.string().email().safeParse(email).success || !password) {
       res.status(400).json({ error: 'Email and password required' });
       return;
     }
@@ -1049,7 +1051,7 @@ router.get('/team', authenticateBarangay, async (req: any, res: Response) => {
 
 const addMemberSchema = z.object({
   full_name: z.string().min(2),
-  email: z.string().email(),
+  email: z.string().trim().email().transform((value) => value.toLowerCase()),
   password: z.string().min(8),
   phone: z.string().optional(),
   role: z.enum(['team_leader', 'volunteer', 'barangay_dispatcher', 'responder', 'staff']),
