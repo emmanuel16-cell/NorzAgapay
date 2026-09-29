@@ -910,7 +910,7 @@ router.post(
 
 // ─── GET /api/barangay/dispatcher/verification-status ────────────────────────
 
-router.get('/dispatcher/coordination-request', authenticateBarangay, requireRole(['admin', 'captain', 'dispatcher']), async (req: any, res: Response): Promise<void> => {
+router.get('/dispatcher/coordination-request', authenticateBarangay, requireRole(['admin', 'captain']), async (req: any, res: Response): Promise<void> => {
   try {
     const verification = await DispatcherVerificationService.getByUserId(req.barangayUser.userId);
     res.json({ configured: Boolean(verification), verification });
@@ -920,7 +920,7 @@ router.get('/dispatcher/coordination-request', authenticateBarangay, requireRole
   }
 });
 
-router.put('/dispatcher/coordination-request', authenticateBarangay, requireRole(['admin', 'captain', 'dispatcher']), async (req: any, res: Response): Promise<void> => {
+router.put('/dispatcher/coordination-request', authenticateBarangay, requireRole(['admin', 'captain']), async (req: any, res: Response): Promise<void> => {
   const parsed = z.object({
     official_name: z.string().trim().min(2).max(120),
     official_position: z.string().trim().min(2).max(120),
