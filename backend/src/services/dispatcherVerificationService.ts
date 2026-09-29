@@ -85,6 +85,13 @@ export function generateReferenceNo(): string {
   return `MDRRMO-VREF-${dateStr}-${randomSuffix}`;
 }
 
+export function normalizePositionDesignation(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const position = value.trim();
+  if (!position || position.toLowerCase() === 'barangay dispatcher') return null;
+  return position;
+}
+
 /** Generate a UUID v4 compatible string */
 function generateUUID(): string {
   return crypto.randomUUID();
@@ -121,7 +128,7 @@ export class DispatcherVerificationService {
       full_name: params.fullName,
       email: params.email,
       phone: params.phone || null,
-      position_designation: params.positionDesignation || 'Barangay Dispatcher',
+      position_designation: normalizePositionDesignation(params.positionDesignation) || '',
       punong_barangay_name: params.punongBarangayName || 'Punong Barangay / Authorized Official',
       punong_barangay_position: params.punongBarangayPosition || 'Punong Barangay',
       reference_no: referenceNo,
@@ -823,7 +830,7 @@ export class DispatcherVerificationService {
 
         const barangay = (params.barangayName || 'Barangay').replace(/^Brgy\.?\s*/i, '').trim();
         const fullName = (params.dispatcherName || '').trim();
-        const position = (params.positionDesignation || 'Barangay Dispatcher').trim();
+        const position = normalizePositionDesignation(params.positionDesignation) || '';
         const officialName = (params.officialName || '').trim();
 
         // 1. Title (Centered, Bold)
@@ -851,7 +858,9 @@ export class DispatcherVerificationService {
           .fontSize(12)
           .lineGap(5)
           .text(
-            `This is to certify that ${fullName}, a ${position} at Barangay ${barangay}, is an authorized representative of Barangay ${barangay}, Municipality of Norzagaray, Bulacan, and is hereby authorized to act as a Barangay Dispatcher for the purpose of coordinating and communicating disaster, emergency, and incident-related information through the NorzAgapay Real-Time Crisis Management and Volunteer Logistics Application.`,
+            position
+              ? `This is to certify that ${fullName}, serving as ${position} at Barangay ${barangay}, is an authorized representative of Barangay ${barangay}, Municipality of Norzagaray, Bulacan, and is hereby authorized to act as a Barangay Dispatcher for the purpose of coordinating and communicating disaster, emergency, and incident-related information through the NorzAgapay Real-Time Crisis Management and Volunteer Logistics Application.`
+              : `This is to certify that ${fullName} is an authorized representative of Barangay ${barangay}, Municipality of Norzagaray, Bulacan, and is hereby authorized to act as a Barangay Dispatcher for the purpose of coordinating and communicating disaster, emergency, and incident-related information through the NorzAgapay Real-Time Crisis Management and Volunteer Logistics Application.`,
             { align: 'justify' }
           );
 
@@ -885,16 +894,6 @@ export class DispatcherVerificationService {
         const sigBlockWidth = 360;
         const sigBlockX = (pageWidth - sigBlockWidth) / 2;
 
-        doc
-          .font('Times-Roman')
-          .fontSize(12)
-          .text('________________________________________________', sigBlockX, doc.y, {
-            align: 'center',
-            width: sigBlockWidth,
-          });
-
-        doc.moveDown(0.5);
-
         const displayedOfficialName = officialName.length > 0
           ? officialName
           : '[NAME OF PUNONG BARANGAY / AUTHORIZED OFFICIAL]';
@@ -907,7 +906,17 @@ export class DispatcherVerificationService {
             width: sigBlockWidth,
           });
 
-        doc.moveDown(0.3);
+        doc.moveDown(0.5);
+
+        doc
+          .font('Times-Roman')
+          .fontSize(12)
+          .text('________________________________________________', sigBlockX, doc.y, {
+            align: 'center',
+            width: sigBlockWidth,
+          });
+
+        doc.moveDown(0.5);
 
         doc
           .font('Times-Roman')

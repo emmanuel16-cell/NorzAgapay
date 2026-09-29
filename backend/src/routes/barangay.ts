@@ -11,7 +11,7 @@ import { supabaseAdmin } from '../config/supabase';
 import { setOtp, getOtp, deleteOtp } from '../config/redis';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { io } from '../server';
-import { DispatcherVerificationService } from '../services/dispatcherVerificationService';
+import { DispatcherVerificationService, normalizePositionDesignation } from '../services/dispatcherVerificationService';
 import { emailService } from '../services/emailService';
 import { getVerifiedBarangayIds, isBarangayVerified } from '../services/verifiedBarangayService';
 import { formatIncidentReport } from './incidentReports';
@@ -355,7 +355,7 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
       fullName: body.full_name,
       email: body.email,
       phone: body.phone || null,
-      positionDesignation: body.position_designation || 'Barangay Dispatcher',
+      positionDesignation: normalizePositionDesignation(body.position_designation) || '',
       punongBarangayName: body.punong_barangay_name || 'Punong Barangay / Authorized Barangay Official',
       punongBarangayPosition: body.punong_barangay_position || 'Punong Barangay',
       passwordHash: password_hash,
@@ -680,7 +680,7 @@ router.get('/dispatcher/authorization-pdf', async (req: Request, res: Response):
           fullName: bUser.full_name,
           email: bUser.email,
           phone: bUser.phone,
-          positionDesignation: bUser.position_designation || 'Barangay Dispatcher',
+          positionDesignation: normalizePositionDesignation(bUser.position_designation) || '',
           punongBarangayName: '[AUTHORIZED BARANGAY OFFICIAL]',
           punongBarangayPosition: 'Authorized Barangay Official',
         });
@@ -700,7 +700,7 @@ router.get('/dispatcher/authorization-pdf', async (req: Request, res: Response):
 
     const pdfBuffer = await DispatcherVerificationService.generateAuthorizationPDF({
       dispatcherName: verification.full_name,
-      positionDesignation: verification.position_designation || 'Barangay Dispatcher',
+      positionDesignation: normalizePositionDesignation(verification.position_designation) || '',
       barangayName: verification.barangay_name || 'Barangay',
       officialName: verification.punong_barangay_name || '[NAME OF PUNONG BARANGAY / AUTHORIZED OFFICIAL]',
       officialPosition: verification.punong_barangay_position || 'Punong Barangay',
@@ -778,7 +778,7 @@ router.get('/dispatcher/certification-data', async (req: Request, res: Response)
           fullName: bUser.full_name,
           email: bUser.email,
           phone: bUser.phone,
-          positionDesignation: bUser.position_designation || 'Barangay Dispatcher',
+          positionDesignation: normalizePositionDesignation(bUser.position_designation) || '',
           punongBarangayName: '[AUTHORIZED BARANGAY OFFICIAL]',
           punongBarangayPosition: 'Authorized Barangay Official',
         });
@@ -802,7 +802,7 @@ router.get('/dispatcher/certification-data', async (req: Request, res: Response)
       title: 'BARANGAY DISPATCHER AUTHORIZATION AND CERTIFICATION',
       date: currentDate,
       full_name: verification.full_name,
-      position_designation: verification.position_designation || 'Barangay Dispatcher',
+      position_designation: normalizePositionDesignation(verification.position_designation) || 'Not provided',
       barangay: barangayName,
       municipality: 'Municipality of Norzagaray, Bulacan',
       contact_info: verification.phone || '',
@@ -810,7 +810,9 @@ router.get('/dispatcher/certification-data', async (req: Request, res: Response)
       official_position: verification.punong_barangay_position || 'Authorized Barangay Official',
       reference_no: verification.reference_no,
       paragraphs: [
-        `This is to certify that ${verification.full_name}, a ${verification.position_designation || 'Barangay Dispatcher'} at Barangay ${barangayName}, is an authorized representative of Barangay ${barangayName}, Municipality of Norzagaray, Bulacan, and is hereby authorized to act as a Barangay Dispatcher for the purpose of coordinating and communicating disaster, emergency, and incident-related information through the NorzAgapay Real-Time Crisis Management and Volunteer Logistics Application.`,
+        normalizePositionDesignation(verification.position_designation)
+          ? `This is to certify that ${verification.full_name}, serving as ${normalizePositionDesignation(verification.position_designation)} at Barangay ${barangayName}, is an authorized representative of Barangay ${barangayName}, Municipality of Norzagaray, Bulacan, and is hereby authorized to act as a Barangay Dispatcher for the purpose of coordinating and communicating disaster, emergency, and incident-related information through the NorzAgapay Real-Time Crisis Management and Volunteer Logistics Application.`
+          : `This is to certify that ${verification.full_name} is an authorized representative of Barangay ${barangayName}, Municipality of Norzagaray, Bulacan, and is hereby authorized to act as a Barangay Dispatcher for the purpose of coordinating and communicating disaster, emergency, and incident-related information through the NorzAgapay Real-Time Crisis Management and Volunteer Logistics Application.`,
         `This authorization is issued for official barangay disaster risk reduction and management coordination purposes. The dispatcher is expected to use the account responsibly and only for legitimate activities related to emergency preparedness, response, and coordination.`,
         `This certification is issued upon the request of the above-named individual for the purpose of account verification and activation as a Barangay Dispatcher in the NorzAgapay Application.`,
       ],
@@ -947,7 +949,7 @@ router.put('/dispatcher/coordination-request', authenticateBarangay, requireRole
         fullName: user.full_name,
         email: user.email,
         phone: user.phone,
-        positionDesignation: user.position_designation || 'Barangay Administrator',
+        positionDesignation: normalizePositionDesignation(user.position_designation) || '',
         punongBarangayName: parsed.data.official_name,
         punongBarangayPosition: parsed.data.official_position,
       });
