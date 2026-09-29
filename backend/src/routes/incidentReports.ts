@@ -7,6 +7,7 @@ import { supabaseAdmin } from '../config/supabase';
 import { AuthPayload, AuthRequest, authenticate, authorize } from '../middleware/auth';
 import { io } from '../server';
 import { matchRespondersToIncident } from '../services/matchingEngine';
+import { isBarangayVerified } from '../services/verifiedBarangayService';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -216,6 +217,13 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
           const dist = 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
           if (dist < minDist) { minDist = dist; resolvedBarangayId = b.id; }
         }
+      }
+    }
+
+    if (targetSendTo === 'barangay') {
+      if (!resolvedBarangayId || !await isBarangayVerified(resolvedBarangayId)) {
+        res.status(403).json({ error: 'This barangay is not yet approved to receive reports through NorzAgapay. Please route the report to MDRRMO or choose an approved barangay.' });
+        return;
       }
     }
 

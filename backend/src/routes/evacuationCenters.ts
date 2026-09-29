@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { supabaseAdmin } from '../config/supabase';
 import { authenticateBarangay } from './barangay';
 import { authenticate, AuthRequest } from '../middleware/auth';
+import { getVerifiedBarangayIds } from '../services/verifiedBarangayService';
 
 const router = Router();
 
@@ -26,6 +27,7 @@ const haversineDistance = (lat1: number, lon1: number, lat2: number, lon2: numbe
 router.get('/', async (req: Request, res: Response) => {
   try {
     const { barangay_id } = req.query;
+    const verifiedOnly = req.query.verified_only === 'true' || req.query.verified_only === '1';
 
     let query = supabaseAdmin
       .from('evacuation_centers')
@@ -52,8 +54,10 @@ router.get('/', async (req: Request, res: Response) => {
     if (error) throw error;
 
     // Attach occupancy counts
+    const verifiedIds = verifiedOnly ? new Set(await getVerifiedBarangayIds()) : null;
+    const visibleCenters = (centers || []).filter((center: any) => !verifiedIds || verifiedIds.has(center.barangay_id));
     const centersWithOccupancy = await Promise.all(
-      (centers || []).map(async (center: any) => {
+      visibleCenters.map(async (center: any) => {
         const { data: registrations } = await supabaseAdmin
           .from('evacuee_registrations')
           .select('person_count, has_infants, has_elderly, has_pwd, has_pregnant')

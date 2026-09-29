@@ -13,6 +13,7 @@ import { authenticate, AuthRequest } from '../middleware/auth';
 import { io } from '../server';
 import { DispatcherVerificationService } from '../services/dispatcherVerificationService';
 import { emailService } from '../services/emailService';
+import { getVerifiedBarangayIds, isBarangayVerified } from '../services/verifiedBarangayService';
 import { formatIncidentReport } from './incidentReports';
 
 const router = Router();
@@ -60,15 +61,20 @@ const requireRole = (roles: string[]) => (req: any, res: Response, next: any) =>
 // ─── GET /api/barangay/list ──────────────────────────────────────────────────
 // Public: get all barangays (for dropdowns in resident app)
 
-router.get('/list', async (_req: Request, res: Response) => {
+router.get('/list', async (req: Request, res: Response) => {
   try {
+    const verifiedOnly = req.query.verified_only === 'true' || req.query.verified_only === '1';
+    const verifiedIds = verifiedOnly ? await getVerifiedBarangayIds() : null;
     const { data, error } = await supabaseAdmin
       .from('barangays')
       .select('id, name, municipality, latitude, longitude')
       .order('name', { ascending: true });
 
     if (error) throw error;
-    res.json(data);
+    const barangays = (data || [])
+      .filter((barangay: any) => !verifiedIds || verifiedIds.includes(barangay.id))
+      .map((barangay: any) => ({ ...barangay, is_verified: verifiedIds ? true : undefined }));
+    res.json(barangays);
   } catch (err) {
     console.error('Fetch barangays error:', err);
     res.status(500).json({ error: 'Failed to fetch barangays' });
@@ -78,6 +84,10 @@ router.get('/list', async (_req: Request, res: Response) => {
 // Public: residents can look up the published hotline list for a barangay.
 router.get('/hotlines/:barangayId', async (req: Request, res: Response) => {
   try {
+    if (!await isBarangayVerified(req.params.barangayId)) {
+      res.json({ entries: [] });
+      return;
+    }
     const { data, error } = await supabaseAdmin
       .from('barangay_hotline_settings')
       .select('hotlines')
@@ -95,12 +105,13 @@ router.get('/hotlines/:barangayId', async (req: Request, res: Response) => {
 // Public: download all published hotline entries for resident offline use.
 router.get('/hotlines', async (_req: Request, res: Response) => {
   try {
+    const verifiedIds = await getVerifiedBarangayIds();
     const { data, error } = await supabaseAdmin
       .from('barangay_hotline_settings')
       .select('barangay_id, hotlines');
 
     if (error) throw error;
-    res.json(data ?? []);
+    res.json((data ?? []).filter((row: any) => verifiedIds.includes(row.barangay_id)));
   } catch (err) {
     console.error('Fetch all barangay hotlines error:', err);
     res.status(500).json({ error: 'Failed to fetch barangay hotlines.' });
