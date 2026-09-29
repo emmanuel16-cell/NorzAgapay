@@ -590,7 +590,7 @@ export class DispatcherVerificationService {
           email: record.email,
           phone: record.phone || null,
           barangay_id: record.barangay_id,
-          role: 'captain',
+          role: 'dispatcher',
           is_active: true,
         };
         // Include password_hash if available from local store

@@ -646,7 +646,7 @@ router.post('/:id/field-media', optionalAuthenticate, upload.single('media'), as
       type: mediaType,
       uploader_id: req.user?.userId || null,
       uploader_name: uploader_name || (req.user as any)?.name || 'Responder',
-      role: role || (req.user as any)?.role || 'team_leader',
+      role: role || (req.user as any)?.role || 'responder',
       created_at: new Date().toISOString()
     };
 

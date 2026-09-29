@@ -169,7 +169,7 @@ router.get('/:id', async (req: Request, res: Response) => {
 });
 
 // ─── POST /api/evacuation-centers ─────────────────────────────────────────────
-// Barangay captain/team leader: create new evac center
+// Administrator, responder, or staff: create new evac center
 
 const createCenterSchema = z.object({
   name: z.string().min(2),
@@ -181,7 +181,7 @@ const createCenterSchema = z.object({
 
 router.post('/', authenticateBarangay, async (req: any, res: Response): Promise<void> => {
   try {
-    if (!['admin', 'captain', 'team_leader', 'responder', 'staff'].includes(req.barangayUser?.role)) {
+    if (!['admin', 'responder', 'staff'].includes(req.barangayUser?.role)) {
       res.status(403).json({ error: 'Your account cannot add evacuation centers.' });
       return;
     }
@@ -217,7 +217,7 @@ router.post('/', authenticateBarangay, async (req: any, res: Response): Promise<
 
 router.patch('/:id', authenticateBarangay, async (req: any, res: Response): Promise<void> => {
   try {
-    if (!['admin', 'captain', 'team_leader', 'responder', 'staff'].includes(req.barangayUser?.role)) {
+    if (!['admin', 'responder', 'staff'].includes(req.barangayUser?.role)) {
       res.status(403).json({ error: 'Insufficient permissions' });
       return;
     }
@@ -244,7 +244,7 @@ router.patch('/:id', authenticateBarangay, async (req: any, res: Response): Prom
 
 router.delete('/:id', authenticateBarangay, async (req: any, res: Response): Promise<void> => {
   try {
-    if (!['admin', 'captain'].includes(req.barangayUser?.role)) {
+    if (req.barangayUser?.role !== 'admin') {
       res.status(403).json({ error: 'Only barangay administrators can remove evacuation centers.' });
       return;
     }

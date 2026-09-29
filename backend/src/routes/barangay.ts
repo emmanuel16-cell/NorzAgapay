@@ -24,7 +24,7 @@ const upload = multer({ storage: multer.memoryStorage() });
 interface BarangayPayload {
   userId: string;
   barangayId: string;
-  role: 'admin' | 'captain' | 'dispatcher' | 'responder' | 'staff' | 'team_leader' | 'volunteer';
+  role: 'admin' | 'dispatcher' | 'responder' | 'staff';
 }
 
 const authenticateBarangay = async (req: AuthRequest, res: Response, next: any) => {
@@ -43,7 +43,15 @@ const authenticateBarangay = async (req: AuthRequest, res: Response, next: any) 
       res.status(403).json({ error: 'Not a barangay user token' });
       return;
     }
-    (req as any).barangayUser = decoded;
+    const legacyRoleMap: Record<string, string> = {
+      captain: 'dispatcher',
+      team_leader: 'responder',
+      volunteer: 'staff',
+    };
+    (req as any).barangayUser = {
+      ...decoded,
+      role: legacyRoleMap[decoded.role] || decoded.role,
+    };
     next();
   } catch {
     res.status(401).json({ error: 'Invalid or expired token' });
@@ -125,8 +133,8 @@ const barangayHotlinesSchema = z.object({
   })).max(100),
 });
 
-// Dispatcher-only: replace the current shared hotline list for their barangay.
-router.put('/hotlines', authenticateBarangay, requireRole(['admin', 'captain', 'dispatcher', 'staff']), async (req: any, res: Response) => {
+// Administrators and staff can replace the current shared hotline list.
+router.put('/hotlines', authenticateBarangay, requireRole(['admin', 'staff']), async (req: any, res: Response) => {
   const parsed = barangayHotlinesSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: 'Invalid hotline entries.', details: parsed.error.flatten() });
@@ -154,20 +162,9 @@ router.put('/hotlines', authenticateBarangay, requireRole(['admin', 'captain', '
 });
 
 // ─── POST /api/barangay/register ────────────────────────────────────────────
-// Register a new barangay dispatcher/captain.
+// Register a new dispatcher account pending MDRRMO verification.
 // Saves ONLY to barangay_dispatcher_verifications (pending).
 // barangay_users entry is created only after MDRRMO approval.
-
-const registerSchema = z.object({
-  full_name: z.string().min(2),
-  email: z.string().email(),
-  password: z.string().min(8),
-  phone: z.string().optional(),
-  barangay_id: z.string().uuid(),
-  position_designation: z.string().optional(),
-  punong_barangay_name: z.string().optional(),
-  punong_barangay_position: z.string().optional(),
-});
 
 const barangayRegistrationOtpSchema = z.object({
   full_name: z.string().trim().min(2).max(120),
@@ -299,117 +296,6 @@ router.post('/register', (_req: Request, res: Response): void => {
   res.status(410).json({ error: 'Passwordless OTP registration is required. Use the registration form in the current Barangay App.' });
 });
 
-router.post('/register', async (req: Request, res: Response): Promise<void> => {
-  try {
-    const body = registerSchema.parse(req.body);
-
-    // Check if an active captain already exists in barangay_users for this barangay
-    const { data: existingApproved } = await supabaseAdmin
-      .from('barangay_users')
-      .select('id, is_active')
-      .eq('barangay_id', body.barangay_id)
-      .eq('role', 'captain')
-      .eq('is_active', true)
-      .maybeSingle();
-
-    if (existingApproved) {
-      res.status(409).json({ error: 'An active captain already exists for this barangay. Contact them to add you as a member.' });
-      return;
-    }
-
-    // Check if a pending dispatcher with this email already exists
-    const existingPending = await DispatcherVerificationService.findByEmail(body.email);
-    if (existingPending && existingPending.status !== 'rejected') {
-      res.status(409).json({ error: 'A pending registration already exists for this email.' });
-      return;
-    }
-
-    // Check email uniqueness in barangay_users as well
-    const { data: existingUser } = await supabaseAdmin
-      .from('barangay_users')
-      .select('id')
-      .eq('email', body.email)
-      .maybeSingle();
-    if (existingUser) {
-      res.status(409).json({ error: 'Email already registered' });
-      return;
-    }
-
-    // Hash password — stored locally with verification record for login during pending state
-    const password_hash = await bcrypt.hash(body.password, 12);
-
-    // Fetch barangay name
-    const { data: barangay } = await supabaseAdmin
-      .from('barangays')
-      .select('name, municipality')
-      .eq('id', body.barangay_id)
-      .maybeSingle();
-
-    const barangayName = barangay?.name || 'Barangay';
-
-    // Create verification record ONLY — no barangay_users entry yet
-    const verification = await DispatcherVerificationService.createVerification({
-      // userId not provided → service generates a UUID that will persist to barangay_users on approval
-      barangayId: body.barangay_id,
-      barangayName,
-      fullName: body.full_name,
-      email: body.email,
-      phone: body.phone || null,
-      positionDesignation: normalizePositionDesignation(body.position_designation) || '',
-      punongBarangayName: body.punong_barangay_name || 'Punong Barangay / Authorized Barangay Official',
-      punongBarangayPosition: body.punong_barangay_position || 'Punong Barangay',
-      passwordHash: password_hash,
-    });
-
-    // Issue JWT using the verification's user_id (the UUID that will become barangay_users.id)
-    const token = jwt.sign(
-      {
-        userId: verification.user_id,
-        barangayId: body.barangay_id,
-        role: 'captain',
-        email: body.email,
-        isPendingDispatcher: true,
-      },
-      config.jwtSecret,
-      { expiresIn: '30d' }
-    );
-
-    // Notify MDRRMO commanders of new pending dispatcher
-    try {
-      io.to('commanders').emit('verification:dispatcher_new', {
-        id: verification.id,
-        applicant: body.full_name,
-        barangay: barangayName,
-        reference_no: verification.reference_no,
-      });
-    } catch (_) {}
-
-    res.status(201).json({
-      token,
-      user: {
-        id: verification.user_id,
-        full_name: body.full_name,
-        email: body.email,
-        phone: body.phone || null,
-        role: 'captain',
-        barangay_id: body.barangay_id,
-        barangay_name: barangayName,
-        municipality: barangay?.municipality || 'Norzagaray',
-        is_active: false,
-        verification_status: 'pending_document',
-        verification,
-      },
-    });
-  } catch (err: any) {
-    if (err?.name === 'ZodError') {
-      res.status(400).json({ error: err.errors });
-      return;
-    }
-    console.error('Barangay register error:', err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
 // ─── POST /api/barangay/login ────────────────────────────────────────────────
 
 router.post('/login', async (req: Request, res: Response): Promise<void> => {
@@ -421,7 +307,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // ── Path A: Check barangay_users (approved dispatchers, team leaders, volunteers) ──
+    // ── Path A: Check active barangay accounts ──
     const { data: user } = await supabaseAdmin
       .from('barangay_users')
       .select('id, full_name, email, phone, role, barangay_id, password_hash, is_active, position_designation')
@@ -442,9 +328,9 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
         .eq('id', user.barangay_id)
         .maybeSingle();
 
-      // Dispatcher/captain in barangay_users — they are approved (is_active=true)
+      // Dispatchers in barangay_users are approved when their account is active.
       // Check for a verification record to return full details
-      if (user.role === 'captain' || user.role === 'dispatcher') {
+      if (user.role === 'dispatcher') {
         const verification = await DispatcherVerificationService.getByUserId(user.id);
         const token = jwt.sign(
           { userId: user.id, barangayId: user.barangay_id, role: user.role, email: user.email },
@@ -471,9 +357,9 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
         return;
       }
 
-      // Team leader or volunteer
+      // Responder or staff
       if (!user.is_active) {
-        res.status(403).json({ error: 'Account has been deactivated. Contact your barangay captain.' });
+        res.status(403).json({ error: 'Account has been deactivated. Contact your barangay administrator.' });
         return;
       }
 
@@ -523,7 +409,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
         {
           userId: pendingRecord.user_id,
           barangayId: pendingRecord.barangay_id,
-          role: 'captain',
+          role: 'dispatcher',
           email: pendingRecord.email,
           isPendingDispatcher: true,
         },
@@ -538,7 +424,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
           full_name: pendingRecord.full_name,
           email: pendingRecord.email,
           phone: pendingRecord.phone,
-          role: 'captain',
+          role: 'dispatcher',
           barangay_id: pendingRecord.barangay_id,
           barangay_name: barangay?.name || pendingRecord.barangay_name || '',
           municipality: barangay?.municipality || 'Norzagaray',
@@ -563,7 +449,7 @@ router.get('/me', authenticateBarangay, async (req: any, res: Response) => {
   try {
     const userId = req.barangayUser.userId;
 
-    // First try barangay_users (approved dispatchers, team leaders, volunteers)
+    // First try barangay_users (approved barangay accounts)
     const { data: user } = await supabaseAdmin
       .from('barangay_users')
       .select('id, full_name, email, phone, role, barangay_id, is_active, created_at')
@@ -577,7 +463,7 @@ router.get('/me', authenticateBarangay, async (req: any, res: Response) => {
         .eq('id', user.barangay_id)
         .maybeSingle();
 
-      const verification = (user.role === 'captain' || user.role === 'dispatcher')
+      const verification = user.role === 'dispatcher'
         ? await DispatcherVerificationService.getByUserId(user.id)
         : null;
       // An active barangay account was authorized by its administrator. Keep
@@ -610,7 +496,7 @@ router.get('/me', authenticateBarangay, async (req: any, res: Response) => {
         full_name: verification.full_name,
         email: verification.email,
         phone: verification.phone,
-        role: 'captain',
+        role: 'dispatcher',
         barangay_id: verification.barangay_id,
         barangay_name: barangay?.name || verification.barangay_name,
         municipality: barangay?.municipality || 'Norzagaray',
@@ -914,7 +800,7 @@ router.post(
 
 // ─── GET /api/barangay/dispatcher/verification-status ────────────────────────
 
-router.get('/dispatcher/coordination-request', authenticateBarangay, requireRole(['admin', 'captain']), async (req: any, res: Response): Promise<void> => {
+router.get('/dispatcher/coordination-request', authenticateBarangay, requireRole(['admin']), async (req: any, res: Response): Promise<void> => {
   try {
     const verification = await DispatcherVerificationService.getByUserId(req.barangayUser.userId);
     res.json({ configured: Boolean(verification), verification });
@@ -924,7 +810,7 @@ router.get('/dispatcher/coordination-request', authenticateBarangay, requireRole
   }
 });
 
-router.put('/dispatcher/coordination-request', authenticateBarangay, requireRole(['admin', 'captain']), async (req: any, res: Response): Promise<void> => {
+router.put('/dispatcher/coordination-request', authenticateBarangay, requireRole(['admin']), async (req: any, res: Response): Promise<void> => {
   const parsed = z.object({
     official_name: z.string().trim().min(2).max(120),
     official_position: z.string().trim().min(2).max(120),
@@ -987,7 +873,7 @@ router.get(
       // A team account created and activated by the barangay administrator may
       // not have a separate dispatcher verification row. The active account is
       // the source of truth in that case, including for cached app sessions.
-      if (user?.is_active && ['captain', 'dispatcher'].includes(user.role)) {
+      if (user?.is_active && user.role === 'dispatcher') {
         res.json({ verification: { ...(verification || {}), status: 'verified' } });
         return;
       }
@@ -1030,9 +916,8 @@ router.get('/team', authenticateBarangay, async (req: any, res: Response) => {
       .eq('barangay_id', req.barangayUser.barangayId)
       .order('role', { ascending: true });
 
-    // Volunteers can only see their team leader and other volunteers they're linked to
-    // Team leaders see their own volunteers; captain sees all
-    if (req.barangayUser.role === 'volunteer') {
+    // Staff can only see themselves and the members linked to their account.
+    if (req.barangayUser.role === 'staff') {
       query = query.or(`id.eq.${req.barangayUser.userId},added_by.eq.${req.barangayUser.userId}`);
     }
 
@@ -1063,25 +948,44 @@ router.get('/team', authenticateBarangay, async (req: any, res: Response) => {
 });
 
 // ─── POST /api/barangay/team ─────────────────────────────────────────────────
-// Captain adds team leader; team leader adds volunteer
+// Administrators manage all team roles; responders may add staff only.
 
 const addMemberSchema = z.object({
   full_name: z.string().min(2),
   email: z.string().trim().email().transform((value) => value.toLowerCase()),
   password: z.string().min(8),
   phone: z.string().optional(),
-  role: z.enum(['team_leader', 'volunteer', 'dispatcher', 'responder', 'staff']),
+  role: z.enum(['dispatcher', 'responder', 'staff']),
 });
 
-router.post('/team', authenticateBarangay, requireRole(['admin', 'captain', 'team_leader', 'responder']), async (req: any, res: Response): Promise<void> => {
+router.post('/team', authenticateBarangay, requireRole(['admin', 'responder']), async (req: any, res: Response): Promise<void> => {
   try {
+    // Only an active account in this barangay may create team accounts.
+    const { data: creator, error: creatorError } = await supabaseAdmin
+      .from('barangay_users')
+      .select('role, is_active, barangay_id')
+      .eq('id', req.barangayUser.userId)
+      .maybeSingle();
+    if (creatorError) throw creatorError;
+    if (!creator?.is_active || creator.role !== req.barangayUser.role || creator.barangay_id !== req.barangayUser.barangayId) {
+      res.status(403).json({ error: 'An active barangay team account is required to add team members.' });
+      return;
+    }
+
     const body = addMemberSchema.parse(req.body);
 
-    // Captains can add team leaders or volunteers
-    // Team leaders can only add volunteers
-    if (['team_leader', 'responder'].includes(req.barangayUser.role) && body.role !== 'volunteer') {
-      res.status(403).json({ error: 'Team leaders can only add volunteers' });
+    // Responders can add staff accounts only.
+    if (req.barangayUser.role === 'responder' && body.role !== 'staff') {
+      res.status(403).json({ error: 'Responders can only add staff accounts.' });
       return;
+    }
+
+    if (req.barangayUser.role === 'admin' && body.role === 'dispatcher') {
+      const coordination = await DispatcherVerificationService.getByUserId(req.barangayUser.userId);
+      if (coordination?.status !== 'verified') {
+        res.status(403).json({ error: 'The MDRRMO coordination request must be verified before adding a dispatcher.' });
+        return;
+      }
     }
 
     const password_hash = await bcrypt.hash(body.password, 12);
@@ -1095,7 +999,7 @@ router.post('/team', authenticateBarangay, requireRole(['admin', 'captain', 'tea
         barangay_id: req.barangayUser.barangayId,
         role: body.role,
         added_by: req.barangayUser.userId,
-        is_active: true,  // Team leaders and volunteers are active immediately
+        is_active: true,
       })
       .select('id, full_name, email, phone, role, barangay_id, is_active, created_at')
       .single();
@@ -1123,19 +1027,26 @@ router.post('/team', authenticateBarangay, requireRole(['admin', 'captain', 'tea
 
 // ─── DELETE /api/barangay/team/:id ──────────────────────────────────────────
 
-router.patch('/team/:id', authenticateBarangay, requireRole(['admin', 'captain']), async (req: any, res: Response): Promise<void> => {
+router.patch('/team/:id', authenticateBarangay, requireRole(['admin']), async (req: any, res: Response): Promise<void> => {
   try {
     const schema = z.object({
       full_name: z.string().trim().min(2).max(120),
       email: z.string().trim().email(),
       phone: z.string().trim().max(20).optional().nullable(),
-      role: z.enum(['team_leader', 'volunteer', 'dispatcher', 'responder', 'staff']),
+      role: z.enum(['dispatcher', 'responder', 'staff']),
       password: z.string().min(8).optional().or(z.literal('')),
     });
     const parsed = schema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: 'Please check the member details and try again.' });
       return;
+    }
+    if (parsed.data.role === 'dispatcher') {
+      const coordination = await DispatcherVerificationService.getByUserId(req.barangayUser.userId);
+      if (coordination?.status !== 'verified') {
+        res.status(403).json({ error: 'The MDRRMO coordination request must be verified before assigning the dispatcher role.' });
+        return;
+      }
     }
     const update: Record<string, unknown> = {
       full_name: parsed.data.full_name,
@@ -1149,8 +1060,7 @@ router.patch('/team/:id', authenticateBarangay, requireRole(['admin', 'captain']
       .update(update)
       .eq('id', req.params.id)
       .eq('barangay_id', req.barangayUser.barangayId)
-      .neq('role', 'captain')
-      .neq('role', 'dispatcher')
+      .neq('role', 'admin')
       .select('id, full_name, email, phone, role, barangay_id, is_active, created_at, added_by')
       .maybeSingle();
     if (error?.code === '23505') { res.status(409).json({ error: 'Email already registered.' }); return; }
@@ -1163,7 +1073,7 @@ router.patch('/team/:id', authenticateBarangay, requireRole(['admin', 'captain']
   }
 });
 
-router.delete('/team/:id', authenticateBarangay, requireRole(['admin', 'captain']), async (req: any, res: Response) => {
+router.delete('/team/:id', authenticateBarangay, requireRole(['admin']), async (req: any, res: Response) => {
   try {
     const { error } = await supabaseAdmin
       .from('barangay_users')
@@ -1183,7 +1093,7 @@ router.delete('/team/:id', authenticateBarangay, requireRole(['admin', 'captain'
 // ─── GET /api/barangay/reports ───────────────────────────────────────────────
 // Get incident reports assigned to this barangay
 
-router.get('/reports', authenticateBarangay, requireRole(['captain', 'dispatcher', 'team_leader', 'responder']), async (req: any, res: Response) => {
+router.get('/reports', authenticateBarangay, requireRole(['dispatcher', 'responder']), async (req: any, res: Response) => {
   try {
     const { status } = req.query;
     let query = supabaseAdmin
@@ -1293,12 +1203,12 @@ router.get('/reports', authenticateBarangay, requireRole(['captain', 'dispatcher
 });
 
 // ─── POST /api/barangay/reports/:id/field-media ──────────────────────────────
-// Attach field photo / video from team leader or responder
+// Attach field photo / video from responder or responder
 
-router.post('/reports/:id/field-media', authenticateBarangay, requireRole(['captain', 'dispatcher', 'team_leader', 'responder']), upload.single('media'), async (req: any, res: Response) => {
+router.post('/reports/:id/field-media', authenticateBarangay, requireRole(['dispatcher', 'responder']), upload.single('media'), async (req: any, res: Response) => {
   try {
     const { id } = req.params;
-    if (!['team_leader', 'responder', 'captain', 'dispatcher'].includes(req.barangayUser.role)) {
+    if (!['responder', 'dispatcher'].includes(req.barangayUser.role)) {
       res.status(403).json({ error: 'Only response staff can upload field documentation.' });
       return;
     }
@@ -1308,11 +1218,11 @@ router.post('/reports/:id/field-media', authenticateBarangay, requireRole(['capt
     if (accessError) throw accessError;
     if (!reportAccess) { res.status(404).json({ error: 'Incident report not found.' }); return; }
     if (reportAccess.barangay_response_status === 'resolved') { res.status(409).json({ error: 'Resolved incidents cannot receive new field media.' }); return; }
-    if (['team_leader', 'responder'].includes(req.barangayUser.role)) {
+    if (req.barangayUser.role === 'responder') {
       const assigned = (reportAccess.barangay_response_notes || '').match(/^\[ASSIGNED:([^\]]+)\]/)?.[1]
         ?.split(',').map((value: string) => value.trim()) || [];
       if (reportAccess.barangay_responded_by !== req.barangayUser.userId && !assigned.includes(req.barangayUser.userId)) {
-        res.status(403).json({ error: 'This incident has not been assigned to your team leader account.' });
+        res.status(403).json({ error: 'This incident has not been assigned to your responder account.' });
         return;
       }
     }
@@ -1354,8 +1264,8 @@ router.post('/reports/:id/field-media', authenticateBarangay, requireRole(['capt
       .eq('id', req.barangayUser.userId)
       .maybeSingle();
 
-    const uploaderName = userRow?.full_name || 'Team Leader';
-    const uploaderRole = userRow?.role || req.barangayUser.role || 'team_leader';
+    const uploaderName = userRow?.full_name || 'Responder';
+    const uploaderRole = userRow?.role || req.barangayUser.role || 'responder';
 
     const newMediaItem = {
       id: `media_${timestamp}`,
@@ -1427,9 +1337,9 @@ router.post('/reports/:id/field-media', authenticateBarangay, requireRole(['capt
 });
 
 // ─── PATCH /api/barangay/reports/:id/dispatch ───────────────────────────────
-// Dispatch report to one or multiple available team leaders (only Dispatcher / Captain)
+// Dispatcher assigns an incident to one or more responders.
 
-router.patch('/reports/:id/dispatch', authenticateBarangay, requireRole(['captain', 'dispatcher', 'team_leader', 'responder']), async (req: any, res: Response) => {
+router.patch('/reports/:id/dispatch', authenticateBarangay, requireRole(['dispatcher']), async (req: any, res: Response) => {
   try {
     const { team_leader_id, team_leader_ids, notes } = req.body;
     const ids: string[] = Array.isArray(team_leader_ids) && team_leader_ids.length > 0
@@ -1437,7 +1347,7 @@ router.patch('/reports/:id/dispatch', authenticateBarangay, requireRole(['captai
       : (team_leader_id ? [team_leader_id] : []);
 
     if (ids.length === 0) {
-      res.status(400).json({ error: 'At least one team leader ID is required' });
+      res.status(400).json({ error: 'At least one responder ID is required' });
       return;
     }
 
@@ -1501,9 +1411,9 @@ router.patch('/reports/:id/dispatch', authenticateBarangay, requireRole(['captai
 });
 
 // ─── PATCH /api/barangay/reports/:id/escalate ───────────────────────────────
-// Escalate report to MDRRMO with reason notes (only Dispatcher / Captain)
+// Dispatcher escalates a report to MDRRMO with reason notes.
 
-router.patch('/reports/:id/escalate', authenticateBarangay, requireRole(['captain', 'dispatcher', 'team_leader', 'responder']), async (req: any, res: Response) => {
+router.patch('/reports/:id/escalate', authenticateBarangay, requireRole(['dispatcher']), async (req: any, res: Response) => {
   try {
     const { notes } = req.body;
     if (!notes || !notes.trim()) {
@@ -1581,9 +1491,9 @@ router.patch('/reports/:id/escalate', authenticateBarangay, requireRole(['captai
 });
 
 // ─── PATCH /api/barangay/reports/:id/respond ────────────────────────────────
-// Mark initial response dispatched or accepted by team leader
+// Mark initial response dispatched or accepted by responder
 
-router.patch('/reports/:id/respond', authenticateBarangay, requireRole(['captain', 'dispatcher', 'team_leader', 'responder']), async (req: any, res: Response) => {
+router.patch('/reports/:id/respond', authenticateBarangay, requireRole(['dispatcher', 'responder']), async (req: any, res: Response) => {
   try {
     const { notes, mdrrmo_notes } = req.body;
     const { data: currentReport, error: currentError } = await supabaseAdmin
@@ -1591,11 +1501,11 @@ router.patch('/reports/:id/respond', authenticateBarangay, requireRole(['captain
       .eq('id', req.params.id).eq('barangay_id', req.barangayUser.barangayId).maybeSingle();
     if (currentError) throw currentError;
     if (!currentReport) { res.status(404).json({ error: 'Incident report not found' }); return; }
-    if (['team_leader', 'responder'].includes(req.barangayUser.role)) {
+    if (req.barangayUser.role === 'responder') {
       const assignedMatch = (currentReport.barangay_response_notes || '').match(/^\[ASSIGNED:([^\]]+)\]/);
       const assignedIds = assignedMatch ? assignedMatch[1].split(',').map((id: string) => id.trim()) : [];
       if (currentReport.barangay_responded_by !== req.barangayUser.userId && !assignedIds.includes(req.barangayUser.userId)) {
-        res.status(403).json({ error: 'This incident has not been assigned to your team leader account' }); return;
+        res.status(403).json({ error: 'This incident has not been assigned to your responder account' }); return;
       }
     }
     const updatePayload: any = {
@@ -1666,14 +1576,14 @@ router.patch('/reports/:id/respond', authenticateBarangay, requireRole(['captain
 // ─── POST /api/barangay/reports/:id/close ───────────────────────────────────
 // Close and record the incident
 
-router.post('/reports/:id/close', authenticateBarangay, requireRole(['captain', 'team_leader', 'responder']), async (req: any, res: Response) => {
+router.post('/reports/:id/close', authenticateBarangay, requireRole(['dispatcher', 'responder']), async (req: any, res: Response) => {
   try {
     const { resolved_notes } = req.body;
     if (typeof resolved_notes !== 'string' || !resolved_notes.trim()) {
       res.status(400).json({ error: 'A resolution summary is required to close the incident' });
       return;
     }
-    if (['team_leader', 'responder'].includes(req.barangayUser.role)) {
+    if (req.barangayUser.role === 'responder') {
       const { data: currentReport, error: accessError } = await supabaseAdmin
         .from('incident_reports').select('barangay_response_notes, barangay_responded_by')
         .eq('id', req.params.id).eq('barangay_id', req.barangayUser.barangayId).maybeSingle();
@@ -1682,7 +1592,7 @@ router.post('/reports/:id/close', authenticateBarangay, requireRole(['captain', 
       const assignedMatch = (currentReport.barangay_response_notes || '').match(/^\[ASSIGNED:([^\]]+)\]/);
       const assignedIds = assignedMatch ? assignedMatch[1].split(',').map((id: string) => id.trim()) : [];
       if (currentReport.barangay_responded_by !== req.barangayUser.userId && !assignedIds.includes(req.barangayUser.userId)) {
-        res.status(403).json({ error: 'Only an assigned team leader can close this incident' }); return;
+        res.status(403).json({ error: 'Only an assigned responder can close this incident' }); return;
       }
     }
     const { data, error } = await supabaseAdmin
@@ -1710,7 +1620,7 @@ router.post('/reports/:id/close', authenticateBarangay, requireRole(['captain', 
 });
 
 // ─── POST /api/barangay/assistance-requests ──────────────────────────────────
-// Team Leader submits an assistance request to the Captain
+// Responder submits an assistance request to the Dispatcher
 
 const assistanceRequestSchema = z.object({
   incident_report_id: z.string().uuid().nullable().optional(),
@@ -1722,7 +1632,7 @@ const assistanceRequestSchema = z.object({
   explanation: z.string().min(10),
 });
 
-router.post('/assistance-requests', authenticateBarangay, requireRole(['team_leader', 'responder']), async (req: any, res: Response) => {
+router.post('/assistance-requests', authenticateBarangay, requireRole(['responder']), async (req: any, res: Response) => {
   try {
     const parsed = assistanceRequestSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -1753,7 +1663,7 @@ router.post('/assistance-requests', authenticateBarangay, requireRole(['team_lea
       return;
     }
 
-    // Notify captain via socket
+// Notify dispatcher via socket
     io.to(`barangay:${req.barangayUser.barangayId}`).emit('assistance:new_request', { request: data });
 
     res.status(201).json({ message: 'Assistance request submitted successfully.', request: data });
@@ -1764,9 +1674,9 @@ router.post('/assistance-requests', authenticateBarangay, requireRole(['team_lea
 });
 
 // ─── GET /api/barangay/assistance-requests ───────────────────────────────────
-// Captain views all assistance requests for their barangay
+// Dispatcher views all assistance requests for their barangay
 
-router.get('/assistance-requests', authenticateBarangay, requireRole(['captain']), async (req: any, res: Response) => {
+router.get('/assistance-requests', authenticateBarangay, requireRole(['dispatcher']), async (req: any, res: Response) => {
   try {
     const { data, error } = await supabaseAdmin
       .from('barangay_assistance_requests')
@@ -1788,9 +1698,9 @@ router.get('/assistance-requests', authenticateBarangay, requireRole(['captain']
 });
 
 // ─── GET /api/barangay/my-assistance-requests ────────────────────────────────
-// Team Leader views their own submitted requests
+// Responder views their own submitted requests
 
-router.get('/my-assistance-requests', authenticateBarangay, requireRole(['team_leader', 'responder']), async (req: any, res: Response) => {
+router.get('/my-assistance-requests', authenticateBarangay, requireRole(['responder']), async (req: any, res: Response) => {
   try {
     const { data, error } = await supabaseAdmin
       .from('barangay_assistance_requests')
@@ -1812,9 +1722,9 @@ router.get('/my-assistance-requests', authenticateBarangay, requireRole(['team_l
 });
 
 // ─── PATCH /api/barangay/assistance-requests/:id/edit ────────────────────────
-// Team Leader edits their own assistance request
+// Responder edits their own assistance request
 
-router.patch('/assistance-requests/:id/edit', authenticateBarangay, requireRole(['team_leader', 'responder']), async (req: any, res: Response) => {
+router.patch('/assistance-requests/:id/edit', authenticateBarangay, requireRole(['responder']), async (req: any, res: Response) => {
   try {
     const parsed = assistanceRequestSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -1843,7 +1753,7 @@ router.patch('/assistance-requests/:id/edit', authenticateBarangay, requireRole(
       return;
     }
 
-    // Notify captain via socket
+// Notify dispatcher via socket
     io.to(`barangay:${req.barangayUser.barangayId}`).emit('assistance:new_request', { request: data });
 
     res.json({ message: 'Assistance request updated successfully.', request: data });
@@ -1854,11 +1764,11 @@ router.patch('/assistance-requests/:id/edit', authenticateBarangay, requireRole(
 });
 
 // ─── PATCH /api/barangay/assistance-requests/:id/decide ──────────────────────
-// Captain decides: provide_barangay_assistance or coordinate_mdrrmo
+// Dispatcher decides: provide_barangay_assistance or coordinate_mdrrmo
 
-router.patch('/assistance-requests/:id/decide', authenticateBarangay, requireRole(['captain']), async (req: any, res: Response) => {
+router.patch('/assistance-requests/:id/decide', authenticateBarangay, requireRole(['dispatcher']), async (req: any, res: Response) => {
   try {
-    const { decision, captain_notes } = req.body;
+    const { decision, dispatcher_notes } = req.body;
     const validDecisions = ['provide_barangay_assistance', 'coordinate_mdrrmo'];
     if (!validDecisions.includes(decision)) {
       res.status(400).json({ error: 'Invalid decision. Must be: provide_barangay_assistance or coordinate_mdrrmo.' });
@@ -1870,7 +1780,7 @@ router.patch('/assistance-requests/:id/decide', authenticateBarangay, requireRol
       .update({
         status: 'actioned',
         decision,
-        captain_notes: captain_notes || null,
+        dispatcher_notes: dispatcher_notes || null,
         decided_at: new Date().toISOString(),
         decided_by: req.barangayUser.userId,
       })
@@ -1885,7 +1795,7 @@ router.patch('/assistance-requests/:id/decide', authenticateBarangay, requireRol
       return;
     }
 
-    // Notify team leader via socket
+    // Notify responder via socket
     io.to(`barangay:${req.barangayUser.barangayId}`).emit('assistance:decision', { request: data, decision });
 
     res.json({ message: `Request actioned: ${decision}.`, request: data });
@@ -1896,9 +1806,9 @@ router.patch('/assistance-requests/:id/decide', authenticateBarangay, requireRol
 });
 
 // ─── PATCH /api/barangay/assistance-requests/:id/team-action ─────────────────
-// Team Leader acknowledges or cancels their own request
+// Responder acknowledges or cancels their own request
 
-router.patch('/assistance-requests/:id/team-action', authenticateBarangay, requireRole(['team_leader', 'responder']), async (req: any, res: Response) => {
+router.patch('/assistance-requests/:id/team-action', authenticateBarangay, requireRole(['responder']), async (req: any, res: Response) => {
   try {
     const { action } = req.body;
     if (!['acknowledge', 'cancel'].includes(action)) {
@@ -1977,7 +1887,7 @@ router.get('/broadcasts/mdrrmo', async (req: any, res: Response) => {
 
 // POST /api/barangay/broadcasts/:id/repost
 // Reposts an MDRRMO broadcast to a barangay feed
-router.post('/broadcasts/:id/repost', authenticateBarangay, requireRole(['admin', 'captain', 'dispatcher', 'staff']), async (req: any, res: Response) => {
+router.post('/broadcasts/:id/repost', authenticateBarangay, requireRole(['admin', 'staff']), async (req: any, res: Response) => {
   try {
     const { id } = req.params;
     const { data: original, error: fetchErr } = await supabaseAdmin
@@ -2093,7 +2003,7 @@ router.get('/broadcasts', authenticateBarangay, async (req: any, res: Response) 
 });
 
 // POST /api/barangay/broadcasts
-router.post('/broadcasts', authenticateBarangay, requireRole(['admin', 'captain', 'dispatcher', 'staff']), upload.array('media'), async (req: any, res: Response) => {
+router.post('/broadcasts', authenticateBarangay, requireRole(['admin', 'staff']), upload.array('media'), async (req: any, res: Response) => {
   try {
     const { category, content, links } = req.body;
     let parsedLinks: string[] = [];
@@ -2190,7 +2100,7 @@ router.post('/broadcasts', authenticateBarangay, requireRole(['admin', 'captain'
 });
 
 // PATCH /api/barangay/broadcasts/:id
-router.patch('/broadcasts/:id', authenticateBarangay, requireRole(['admin', 'captain', 'dispatcher', 'staff']), upload.array('media'), async (req: any, res: Response) => {
+router.patch('/broadcasts/:id', authenticateBarangay, requireRole(['admin', 'staff']), upload.array('media'), async (req: any, res: Response) => {
   try {
     const { category, content, links } = req.body;
     let parsedLinks: string[] = [];
@@ -2303,7 +2213,7 @@ router.patch('/broadcasts/:id', authenticateBarangay, requireRole(['admin', 'cap
 });
 
 // DELETE /api/barangay/broadcasts/:id
-router.delete('/broadcasts/:id', authenticateBarangay, requireRole(['admin', 'captain', 'dispatcher', 'staff']), async (req: any, res: Response) => {
+router.delete('/broadcasts/:id', authenticateBarangay, requireRole(['admin', 'staff']), async (req: any, res: Response) => {
   try {
     await supabaseAdmin
       .from('public_broadcasts')

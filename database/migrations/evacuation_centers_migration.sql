@@ -56,7 +56,7 @@ WHERE NOT EXISTS (
 
 DO $$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'barangay_role') THEN
-        CREATE TYPE barangay_role AS ENUM ('captain', 'team_leader', 'volunteer');
+        CREATE TYPE barangay_role AS ENUM ('admin', 'dispatcher', 'responder', 'staff');
     END IF;
 END $$;
 
@@ -67,7 +67,7 @@ CREATE TABLE IF NOT EXISTS barangay_users (
   email TEXT UNIQUE NOT NULL DEFAULT '',
   phone VARCHAR(15),
   password_hash TEXT NOT NULL DEFAULT '',
-  role barangay_role NOT NULL DEFAULT 'volunteer',
+  role barangay_role NOT NULL DEFAULT 'staff',
   added_by UUID REFERENCES barangay_users(id) ON DELETE SET NULL,
   is_active BOOLEAN NOT NULL DEFAULT true,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -79,7 +79,7 @@ ALTER TABLE barangay_users ADD COLUMN IF NOT EXISTS full_name TEXT NOT NULL DEFA
 ALTER TABLE barangay_users ADD COLUMN IF NOT EXISTS email TEXT;
 ALTER TABLE barangay_users ADD COLUMN IF NOT EXISTS phone VARCHAR(15);
 ALTER TABLE barangay_users ADD COLUMN IF NOT EXISTS password_hash TEXT NOT NULL DEFAULT '';
-ALTER TABLE barangay_users ADD COLUMN IF NOT EXISTS role barangay_role NOT NULL DEFAULT 'volunteer';
+ALTER TABLE barangay_users ADD COLUMN IF NOT EXISTS role barangay_role NOT NULL DEFAULT 'staff';
 ALTER TABLE barangay_users ADD COLUMN IF NOT EXISTS added_by UUID REFERENCES barangay_users(id) ON DELETE SET NULL;
 ALTER TABLE barangay_users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true;
 ALTER TABLE barangay_users ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now();
