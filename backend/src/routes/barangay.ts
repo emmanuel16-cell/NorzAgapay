@@ -916,11 +916,6 @@ router.get('/team', authenticateBarangay, async (req: any, res: Response) => {
       .eq('barangay_id', req.barangayUser.barangayId)
       .order('role', { ascending: true });
 
-    // Staff can only see themselves and the members linked to their account.
-    if (req.barangayUser.role === 'staff') {
-      query = query.or(`id.eq.${req.barangayUser.userId},added_by.eq.${req.barangayUser.userId}`);
-    }
-
     const { data, error } = await query;
     if (error) throw error;
 
