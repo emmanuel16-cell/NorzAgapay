@@ -820,10 +820,10 @@ export default function VerificationPage({ category }: { category: 'officers' | 
         .disp-review-contact { grid-area: contact; }
         .disp-review-document { grid-area: document; }
         .disp-review-side { grid-area: side; display: flex; flex-direction: column; min-height: 0; background: #0e1d33; border: 1px solid #1a4161; border-radius: 10px; padding: 12px; margin-bottom: 16px; }
-        .disp-review-history { flex: 1; min-height: 0; display: flex; flex-direction: column; margin: 0 0 10px; padding: 0; background: transparent; border: 0; }
-        .disp-review-history .timeline-list { flex: 1; min-height: 0; overflow-y: auto; padding: 10px; margin-top: 0; border: 1px solid #167c9d; border-radius: 9px; }
+        .disp-review-side .disp-review-history { flex: 1; min-height: 0; display: flex; flex-direction: column; margin: 0 0 10px; padding: 0; background: transparent; border: 0; }
+        .disp-review-side .disp-review-history .timeline-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 6px 0 0; margin-top: 0; border: 0; }
         .disp-modal-actions { flex: 0 0 auto; }
-        .disp-review-document { align-self: end; margin-bottom: 0; display: flex; flex-direction: column; }
+        .disp-review-document { align-self: start; margin-bottom: 0; display: flex; flex-direction: column; }
 
         @media (max-width: 800px) {
           .disp-modal {
