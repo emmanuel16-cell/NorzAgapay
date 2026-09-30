@@ -37,6 +37,11 @@ interface DispatcherVerification {
   updated_at: string;
 }
 
+const resolveDocumentUrl = (url: string) =>
+  /^https?:\/\//i.test(url)
+    ? url
+    : `${API_BASE.replace(/\/api\/?$/, '')}${url.startsWith('/') ? '' : '/'}${url}`;
+
 export default function VerificationPage({ category }: { category: 'officers' | 'barangay' }) {
   const [pending, setPending] = useState<PendingUser[]>([]);
   const [archived, setArchived] = useState<PendingUser[]>([]);
@@ -49,6 +54,7 @@ export default function VerificationPage({ category }: { category: 'officers' | 
 
   const [selectedUser, setSelectedUser] = useState<PendingUser | null>(null);
   const [selectedDispatcher, setSelectedDispatcher] = useState<DispatcherVerification | null>(null);
+  const [isDispatcherDocumentOpen, setIsDispatcherDocumentOpen] = useState(false);
 
   // Rejection & Correction Modals
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
@@ -794,33 +800,70 @@ export default function VerificationPage({ category }: { category: 'officers' | 
 
         .disp-modal {
           max-width: min(1280px, calc(100vw - 48px));
-          max-height: 90vh;
-          overflow-y: auto;
+          width: 100%;
+          height: min(90vh, 900px);
+          overflow: hidden;
           display: grid;
-          grid-template-columns: 1.2fr 0.95fr;
+          grid-template-columns: 1.55fr 0.95fr;
+          grid-template-rows: auto auto auto minmax(0, 1fr);
           grid-template-areas:
             "head head"
-            "info document"
-            "contact document"
-            "history document"
-            "actions actions";
-          gap: 0 16px;
+            "info side"
+            "contact side"
+            "document side";
+          gap: 0 14px;
+          padding: 22px;
         }
 
         .disp-modal-header { grid-area: head; }
         .disp-review-info { grid-area: info; }
         .disp-review-contact { grid-area: contact; }
         .disp-review-document { grid-area: document; }
-        .disp-review-history { grid-area: history; }
-        .disp-modal-actions { grid-area: actions; }
-        .disp-review-document { display: flex; flex-direction: column; }
-        .disp-review-document .doc-preview-box { flex: 1; min-height: 280px; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+        .disp-review-side { grid-area: side; display: flex; flex-direction: column; min-height: 0; background: #0e1d33; border: 1px solid #1a4161; border-radius: 10px; padding: 12px; margin-bottom: 16px; }
+        .disp-review-history { flex: 1; min-height: 0; display: flex; flex-direction: column; margin: 0 0 10px; padding: 0; background: transparent; border: 0; }
+        .disp-review-history .timeline-list { flex: 1; min-height: 0; overflow-y: auto; padding: 10px; margin-top: 0; border: 1px solid #167c9d; border-radius: 9px; }
+        .disp-modal-actions { flex: 0 0 auto; }
+        .disp-review-document { align-self: end; margin-bottom: 0; display: flex; flex-direction: column; }
 
         @media (max-width: 800px) {
           .disp-modal {
+            height: min(94vh, 900px);
+            max-width: calc(100vw - 24px);
+            padding: 16px;
             grid-template-columns: 1fr;
-            grid-template-areas: "head" "info" "contact" "document" "history" "actions";
+            grid-template-rows: auto auto auto minmax(110px, 1fr) auto;
+            grid-template-areas: "head" "info" "contact" "document" "side";
+            gap: 0;
           }
+          .disp-review-side { min-height: 180px; }
+          .disp-review-history { margin-bottom: 8px; }
+          .disp-review-side { margin-bottom: 0; }
+          .disp-modal-actions { gap: 6px !important; }
+          .disp-modal-actions button { font-size: 11px !important; }
+          .disp-review-document { align-self: stretch; }
+        }
+
+        @media (max-height: 720px) and (min-width: 801px) {
+          .disp-modal { height: 94vh; padding: 16px; }
+          .disp-modal .review-section { padding: 12px; margin-bottom: 10px; }
+          .disp-review-document { margin-bottom: 0 !important; }
+        }
+
+        .dispatcher-document-backdrop {
+          position: fixed; inset: 0; z-index: 1200; background: rgba(0, 0, 0, 0.94);
+          display: flex; flex-direction: column; padding: 12px 18px 18px;
+        }
+        .dispatcher-document-toolbar {
+          flex: 0 0 auto; min-height: 46px; display: flex; align-items: center;
+          justify-content: space-between; color: #fff; font-weight: 700;
+        }
+        .dispatcher-document-view {
+          flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center;
+        }
+        .dispatcher-document-view img { max-width: 100%; max-height: 100%; object-fit: contain; }
+        .dispatcher-document-view iframe { width: 100%; height: 100%; border: 0; background: #fff; border-radius: 6px; }
+        @media (max-width: 520px) {
+          .dispatcher-document-backdrop { padding: 8px; }
         }
 
         @keyframes oqPopIn {
@@ -1398,69 +1441,31 @@ export default function VerificationPage({ category }: { category: 'officers' | 
                 <span>📑</span>
                 <span>Submitted Certification</span>
               </div>
-
-              {selectedDispatcher.document_url ? (
-                <div>
-                  <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 12 }}>
-                    <a
-                      href={selectedDispatcher.document_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="oq-btn-review"
-                      style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}
-                    >
-                      <span>🔍</span>
-                      <span>View Full Document</span>
-                    </a>
-
-                    <a
-                      href={`${API_BASE}/barangay/dispatcher/authorization-pdf?userId=${selectedDispatcher.user_id}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="oq-cancel-btn"
-                      style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}
-                    >
-                      <span>🖨️</span>
-                      <span>View System-Generated PDF</span>
-                    </a>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+                <div style={{ color: selectedDispatcher.document_url ? '#cbd5e1' : '#94a3b8' }}>
+                  <div style={{ fontWeight: 600 }}>
+                    {selectedDispatcher.document_url ? 'Signed certification submitted.' : 'Signed certification not submitted yet.'}
                   </div>
-
-                  {/* Document preview container */}
-                  <div className="doc-preview-box">
-                    {selectedDispatcher.document_url.toLowerCase().endsWith('.pdf') ? (
-                      <div style={{ padding: 20 }}>
-                        <div style={{ fontSize: 32, marginBottom: 8 }}>📄</div>
-                        <div style={{ color: '#ffffff', fontWeight: 600 }}>PDF Certification Document</div>
-                        <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>
-                          Click "View Full Document" above to inspect the signed & sealed PDF.
-                        </div>
-                      </div>
-                    ) : (
-                      <img
-                        src={selectedDispatcher.document_url}
-                        alt="Submitted Certification"
-                        style={{
-                          maxWidth: '100%',
-                          maxHeight: 280,
-                          objectFit: 'contain',
-                          borderRadius: 6,
-                          border: '1px solid #1e3a8a',
-                        }}
-                      />
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <div className="doc-preview-box" style={{ color: '#94a3b8' }}>
-                  <div style={{ fontSize: 24, marginBottom: 6 }}>⏳</div>
-                  <div>Dispatcher has not yet uploaded the signed certification.</div>
                   <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>
-                    Waiting for the applicant to print, get signature/seal, and submit.
+                    {selectedDispatcher.document_url
+                      ? 'Select View to inspect the submitted file.'
+                      : 'Waiting for the administrator to print, sign, and submit the document.'}
                   </div>
                 </div>
-              )}
+                {selectedDispatcher.document_url && (
+                  <button
+                    type="button"
+                    className="oq-btn-review"
+                    style={{ minWidth: 140, padding: '10px 18px', flex: '0 0 auto' }}
+                    onClick={() => setIsDispatcherDocumentOpen(true)}
+                  >
+                    View
+                  </button>
+                )}
+              </div>
             </div>
 
+            <div className="disp-review-side">
             {/* Section 4: Verification History */}
             <div className="review-section disp-review-history">
               <div className="review-section-title">
@@ -1484,7 +1489,7 @@ export default function VerificationPage({ category }: { category: 'officers' | 
               </div>
             </div>
 
-            {/* Modal Bottom Actions (Approve, Reject, Request Correction) */}
+            {/* Review actions stay below history in the right column. */}
             <div className="disp-modal-actions" style={{ display: 'flex', gap: 10, marginTop: 4 }}>
               {selectedDispatcher.status === 'verified' ? (
                 <button
@@ -1527,6 +1532,36 @@ export default function VerificationPage({ category }: { category: 'officers' | 
                 </>
               )}
             </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isDispatcherDocumentOpen && selectedDispatcher?.document_url && (
+        <div
+          className="dispatcher-document-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Submitted certification document"
+          onClick={() => setIsDispatcherDocumentOpen(false)}
+        >
+          <div className="dispatcher-document-toolbar" onClick={(event) => event.stopPropagation()}>
+            <span>Submitted Certification · {selectedDispatcher.full_name}</span>
+            <button
+              type="button"
+              aria-label="Close document viewer"
+              onClick={() => setIsDispatcherDocumentOpen(false)}
+              style={{ border: 0, background: 'transparent', color: '#cbd5e1', fontSize: 28, cursor: 'pointer' }}
+            >
+              ×
+            </button>
+          </div>
+          <div className="dispatcher-document-view" onClick={(event) => event.stopPropagation()}>
+            {selectedDispatcher.document_url.toLowerCase().split('?')[0].endsWith('.pdf') ? (
+              <iframe title="Submitted certification PDF" src={resolveDocumentUrl(selectedDispatcher.document_url)} />
+            ) : (
+              <img src={resolveDocumentUrl(selectedDispatcher.document_url)} alt="Submitted certification" />
+            )}
           </div>
         </div>
       )}
