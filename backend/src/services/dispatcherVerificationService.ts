@@ -848,7 +848,7 @@ export class DispatcherVerificationService {
   }
 
   /**
-   * Generate the prefilled Barangay Dispatcher Authorization and Certification PDF
+   * Generate the prefilled Barangay Dispatcher Account Authorization Request PDF
    * Standard A4, Times-Roman 12pt, justified text, official signature block & blank MDRRMO Ref No.
    */
   static generateAuthorizationPDF(params: {
@@ -866,9 +866,9 @@ export class DispatcherVerificationService {
           size: 'A4',
           margins: { top: 60, bottom: 60, left: 60, right: 60 },
           info: {
-            Title: 'Barangay Dispatcher Authorization and Certification',
+            Title: 'Barangay Dispatcher Account Authorization Request',
             Author: 'NorzAgapay Crisis Management System',
-            Subject: 'Barangay Dispatcher Authorization',
+            Subject: 'Barangay Dispatcher Account Authorization Request',
           },
         });
 
@@ -895,7 +895,7 @@ export class DispatcherVerificationService {
         doc
           .font('Times-Bold')
           .fontSize(13)
-          .text('BARANGAY DISPATCHER AUTHORIZATION AND CERTIFICATION', {
+          .text('BARANGAY DISPATCHER ACCOUNT AUTHORIZATION REQUEST', {
             align: 'center',
           });
 
@@ -916,22 +916,22 @@ export class DispatcherVerificationService {
           .lineGap(5)
           .text(
             position
-              ? `This is to certify that ${fullName}, serving as ${position} at Barangay ${barangay}, is an authorized representative of Barangay ${barangay}, Municipality of Norzagaray, Bulacan, and is hereby authorized to act as a Barangay Dispatcher for the purpose of coordinating and communicating disaster, emergency, and incident-related information through the NorzAgapay Real-Time Crisis Management and Volunteer Logistics Application.`
-              : `This is to certify that ${fullName} is an authorized representative of Barangay ${barangay}, Municipality of Norzagaray, Bulacan, and is hereby authorized to act as a Barangay Dispatcher for the purpose of coordinating and communicating disaster, emergency, and incident-related information through the NorzAgapay Real-Time Crisis Management and Volunteer Logistics Application.`,
+              ? `This is to certify that ${fullName}, serving as ${position} at Barangay ${barangay}, is authorized by Barangay ${barangay}, Municipality of Norzagaray, Bulacan, to submit this request to add a designated Barangay Dispatcher account to the barangay team in the NorzAgapay Emergency Response and Crisis Management Coordination Application. The dispatcher will coordinate incident reports and official emergency information with the MDRRMO.`
+              : `This is to certify that ${fullName} is an authorized representative of Barangay ${barangay}, Municipality of Norzagaray, Bulacan, and is authorized to submit this request to add a designated Barangay Dispatcher account to the barangay team in the NorzAgapay Emergency Response and Crisis Management Coordination Application. The dispatcher will coordinate incident reports and official emergency information with the MDRRMO.`,
             { align: 'justify' }
           );
 
         doc.moveDown(1.2);
 
         doc.text(
-          `This authorization is issued for official barangay disaster risk reduction and management coordination purposes. The dispatcher is expected to use the account responsibly and only for legitimate activities related to emergency preparedness, response, and coordination.`,
+          `The requested dispatcher account is for use by a person designated by the barangay to relay incident reports, receive official alerts, and communicate with the MDRRMO. The barangay administrator is responsible for ensuring the account is assigned to an authorized team member and used only for official emergency preparedness and response coordination.`,
           { align: 'justify' }
         );
 
         doc.moveDown(1.2);
 
         doc.text(
-          `This certification is issued upon the request of the above-named individual for the purpose of account verification and activation as a Barangay Dispatcher in the NorzAgapay Application.`,
+          `This signed authorization supports the barangay's request to add a dispatcher account. The account may be created and activated only after the MDRRMO verifies this document.`,
           { align: 'justify' }
         );
 

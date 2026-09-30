@@ -709,7 +709,7 @@ router.get('/dispatcher/certification-data', async (req: Request, res: Response)
     const barangayName = (verification.barangay_name || 'Barangay').replace(/^Brgy\.?\s*/i, '').trim();
 
     res.json({
-      title: 'BARANGAY DISPATCHER AUTHORIZATION AND CERTIFICATION',
+      title: 'BARANGAY DISPATCHER ACCOUNT AUTHORIZATION REQUEST',
       date: currentDate,
       full_name: verification.full_name,
       position_designation: normalizePositionDesignation(verification.position_designation) || 'Not provided',
@@ -721,10 +721,10 @@ router.get('/dispatcher/certification-data', async (req: Request, res: Response)
       reference_no: verification.reference_no,
       paragraphs: [
         normalizePositionDesignation(verification.position_designation)
-          ? `This is to certify that ${verification.full_name}, serving as ${normalizePositionDesignation(verification.position_designation)} at Barangay ${barangayName}, is an authorized representative of Barangay ${barangayName}, Municipality of Norzagaray, Bulacan, and is hereby authorized to act as a Barangay Dispatcher for the purpose of coordinating and communicating disaster, emergency, and incident-related information through the NorzAgapay Real-Time Crisis Management and Volunteer Logistics Application.`
-          : `This is to certify that ${verification.full_name} is an authorized representative of Barangay ${barangayName}, Municipality of Norzagaray, Bulacan, and is hereby authorized to act as a Barangay Dispatcher for the purpose of coordinating and communicating disaster, emergency, and incident-related information through the NorzAgapay Real-Time Crisis Management and Volunteer Logistics Application.`,
-        `This authorization is issued for official barangay disaster risk reduction and management coordination purposes. The dispatcher is expected to use the account responsibly and only for legitimate activities related to emergency preparedness, response, and coordination.`,
-        `This certification is issued upon the request of the above-named individual for the purpose of account verification and activation as a Barangay Dispatcher in the NorzAgapay Application.`,
+          ? `This is to certify that ${verification.full_name}, serving as ${normalizePositionDesignation(verification.position_designation)} at Barangay ${barangayName}, is authorized by Barangay ${barangayName}, Municipality of Norzagaray, Bulacan, to submit this request to add a designated Barangay Dispatcher account to the barangay team in the NorzAgapay Emergency Response and Crisis Management Coordination Application. The dispatcher will coordinate incident reports and official emergency information with the MDRRMO.`
+          : `This is to certify that ${verification.full_name} is an authorized representative of Barangay ${barangayName}, Municipality of Norzagaray, Bulacan, and is authorized to submit this request to add a designated Barangay Dispatcher account to the barangay team in the NorzAgapay Emergency Response and Crisis Management Coordination Application. The dispatcher will coordinate incident reports and official emergency information with the MDRRMO.`,
+        `The requested dispatcher account is for use by a person designated by the barangay to relay incident reports, receive official alerts, and communicate with the MDRRMO. The barangay administrator is responsible for ensuring the account is assigned to an authorized team member and used only for official emergency preparedness and response coordination.`,
+        `This signed authorization supports the barangay's request to add a dispatcher account. The account may be created and activated only after the MDRRMO verifies this document.`,
       ],
     });
   } catch (err) {
