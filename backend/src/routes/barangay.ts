@@ -19,6 +19,18 @@ import { formatIncidentReport } from './incidentReports';
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
+async function getAccountPositionDesignation(userId: string, fallback?: string | null): Promise<string> {
+  const { data: account } = await supabaseAdmin
+    .from('barangay_users')
+    .select('position_designation')
+    .eq('id', userId)
+    .maybeSingle();
+
+  return normalizePositionDesignation(account?.position_designation)
+    || normalizePositionDesignation(fallback)
+    || '';
+}
+
 // ─── Middleware: Barangay Auth ───────────────────────────────────────────────
 
 interface BarangayPayload {
@@ -472,7 +484,7 @@ router.get('/me', authenticateBarangay, async (req: any, res: Response) => {
     // First try barangay_users (approved barangay accounts)
     const { data: user } = await supabaseAdmin
       .from('barangay_users')
-      .select('id, full_name, email, phone, role, barangay_id, is_active, created_at')
+      .select('id, full_name, email, phone, role, barangay_id, position_designation, is_active, created_at')
       .eq('id', userId)
       .maybeSingle();
 
@@ -610,7 +622,10 @@ router.get('/dispatcher/authorization-pdf', async (req: Request, res: Response):
 
     const pdfBuffer = await DispatcherVerificationService.generateAuthorizationPDF({
       dispatcherName: verification.full_name,
-      positionDesignation: normalizePositionDesignation(verification.position_designation) || '',
+      positionDesignation: await getAccountPositionDesignation(
+        lookupId,
+        verification.position_designation,
+      ),
       barangayName: verification.barangay_name || 'Barangay',
       officialName: verification.punong_barangay_name || '[NAME OF PUNONG BARANGAY / AUTHORIZED OFFICIAL]',
       officialPosition: verification.punong_barangay_position || 'Punong Barangay',
@@ -708,11 +723,16 @@ router.get('/dispatcher/certification-data', async (req: Request, res: Response)
 
     const barangayName = (verification.barangay_name || 'Barangay').replace(/^Brgy\.?\s*/i, '').trim();
 
+    const positionDesignation = await getAccountPositionDesignation(
+      lookupId,
+      verification.position_designation,
+    );
+
     res.json({
       title: 'BARANGAY DISPATCHER ACCOUNT AUTHORIZATION REQUEST',
       date: currentDate,
       full_name: verification.full_name,
-      position_designation: normalizePositionDesignation(verification.position_designation) || 'Not provided',
+      position_designation: positionDesignation || 'Not provided',
       barangay: barangayName,
       municipality: 'Municipality of Norzagaray, Bulacan',
       contact_info: verification.phone || '',
@@ -720,8 +740,8 @@ router.get('/dispatcher/certification-data', async (req: Request, res: Response)
       official_position: verification.punong_barangay_position || 'Authorized Barangay Official',
       reference_no: verification.reference_no,
       paragraphs: [
-        normalizePositionDesignation(verification.position_designation)
-          ? `This is to certify that ${verification.full_name}, serving as ${normalizePositionDesignation(verification.position_designation)} at Barangay ${barangayName}, is authorized by Barangay ${barangayName}, Municipality of Norzagaray, Bulacan, to submit this request to add a designated Barangay Dispatcher account to the barangay team in the NorzAgapay Emergency Response and Crisis Management Coordination Application. The dispatcher will coordinate incident reports and official emergency information with the MDRRMO.`
+        positionDesignation
+          ? `This is to certify that ${verification.full_name}, serving as ${positionDesignation} at Barangay ${barangayName}, is authorized by Barangay ${barangayName}, Municipality of Norzagaray, Bulacan, to submit this request to add a designated Barangay Dispatcher account to the barangay team in the NorzAgapay Emergency Response and Crisis Management Coordination Application. The dispatcher will coordinate incident reports and official emergency information with the MDRRMO.`
           : `This is to certify that ${verification.full_name} is an authorized representative of Barangay ${barangayName}, Municipality of Norzagaray, Bulacan, and is authorized to submit this request to add a designated Barangay Dispatcher account to the barangay team in the NorzAgapay Emergency Response and Crisis Management Coordination Application. The dispatcher will coordinate incident reports and official emergency information with the MDRRMO.`,
         `The requested dispatcher account is for use by a person designated by the barangay to relay incident reports, receive official alerts, and communicate with the MDRRMO. The barangay administrator is responsible for ensuring the account is assigned to an authorized team member and used only for official emergency preparedness and response coordination.`,
         `This signed authorization supports the barangay's request to add a dispatcher account. The account may be created and activated only after the MDRRMO verifies this document.`,
