@@ -342,7 +342,7 @@ a:hover { color: var(--info); }
 }
 
 .nav-expandable {
-  justify-content: space-between;
+  justify-content: flex-start;
 }
 
 .nav-expand-icon {
