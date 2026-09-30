@@ -801,11 +801,12 @@ export default function VerificationPage({ category }: { category: 'officers' | 
         .disp-modal {
           max-width: min(1280px, calc(100vw - 48px));
           width: 100%;
-          height: min(90vh, 900px);
+          height: auto;
+          max-height: calc(100vh - 36px);
           overflow: hidden;
           display: grid;
           grid-template-columns: 1.55fr 0.95fr;
-          grid-template-rows: auto auto auto minmax(0, 1fr);
+          grid-template-rows: auto auto auto auto;
           grid-template-areas:
             "head head"
             "info side"
@@ -821,21 +822,23 @@ export default function VerificationPage({ category }: { category: 'officers' | 
         .disp-review-document { grid-area: document; }
         .disp-review-side { grid-area: side; display: flex; flex-direction: column; min-height: 0; background: #0e1d33; border: 1px solid #1a4161; border-radius: 10px; padding: 12px; margin-bottom: 16px; }
         .disp-review-side .disp-review-history { flex: 1; min-height: 0; display: flex; flex-direction: column; margin: 0 0 10px; padding: 0; background: transparent; border: 0; }
-        .disp-review-side .disp-review-history .timeline-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 6px 0 0; margin-top: 0; border: 0; }
+        .disp-review-side .disp-review-history .timeline-list { flex: 1 1 370px; min-height: 120px; max-height: min(370px, 50vh); overflow-y: auto; padding: 0 6px 0 0; margin-top: 0; border: 0; }
         .disp-modal-actions { flex: 0 0 auto; }
         .disp-review-document { align-self: start; margin-bottom: 0; display: flex; flex-direction: column; }
 
         @media (max-width: 800px) {
           .disp-modal {
-            height: min(94vh, 900px);
+            height: auto;
+            max-height: calc(100vh - 24px);
             max-width: calc(100vw - 24px);
             padding: 16px;
             grid-template-columns: 1fr;
-            grid-template-rows: auto auto auto minmax(110px, 1fr) auto;
+            grid-template-rows: auto auto auto auto auto;
             grid-template-areas: "head" "info" "contact" "document" "side";
             gap: 0;
           }
           .disp-review-side { min-height: 180px; }
+          .disp-review-side .disp-review-history .timeline-list { flex-basis: 24vh; max-height: 24vh; min-height: 90px; }
           .disp-review-history { margin-bottom: 8px; }
           .disp-review-side { margin-bottom: 0; }
           .disp-modal-actions { gap: 6px !important; }
@@ -844,9 +847,10 @@ export default function VerificationPage({ category }: { category: 'officers' | 
         }
 
         @media (max-height: 720px) and (min-width: 801px) {
-          .disp-modal { height: 94vh; padding: 16px; }
+          .disp-modal { max-height: calc(100vh - 24px); padding: 16px; }
           .disp-modal .review-section { padding: 12px; margin-bottom: 10px; }
           .disp-review-document { margin-bottom: 0 !important; }
+          .disp-review-side .disp-review-history .timeline-list { flex-basis: min(320px, 45vh); max-height: min(320px, 45vh); }
         }
 
         .dispatcher-document-backdrop {
