@@ -37,7 +37,7 @@ interface DispatcherVerification {
   updated_at: string;
 }
 
-export default function VerificationPage() {
+export default function VerificationPage({ category }: { category: 'officers' | 'barangay' }) {
   const [pending, setPending] = useState<PendingUser[]>([]);
   const [archived, setArchived] = useState<PendingUser[]>([]);
   const [pendingDispatchers, setPendingDispatchers] = useState<DispatcherVerification[]>([]);
@@ -45,7 +45,6 @@ export default function VerificationPage() {
   const [approvedDispatchers, setApprovedDispatchers] = useState<DispatcherVerification[]>([]);
 
   const [loading, setLoading] = useState(true);
-  const [queueCategory, setQueueCategory] = useState<'officers' | 'dispatchers'>('officers');
   const [viewMode, setViewMode] = useState<'pending' | 'approved' | 'archived'>('pending');
 
   const [selectedUser, setSelectedUser] = useState<PendingUser | null>(null);
@@ -977,49 +976,17 @@ export default function VerificationPage() {
       {/* Fixed Page Header */}
       <div className="page-header">
         <h1 className="page-title oq-title" style={{ fontSize: 20, fontWeight: 800, margin: 0 }}>
-          {queueCategory === 'officers'
-            ? viewMode === 'pending'
-              ? 'Officer Verification Queue'
-              : 'Officer Archive'
+          {category === 'officers'
+            ? viewMode === 'archived' ? 'Archived Officer Verifications' : 'Pending Officer Verification'
             : viewMode === 'pending'
-            ? 'Pending Dispatcher Verifications'
+            ? 'Pending Barangay Verification'
             : viewMode === 'approved'
-            ? 'Approved Barangay Accounts'
-            : 'Rejected Barangay Archive'}
+            ? 'Approved Barangay Verification'
+            : 'Archived Barangay Verification'}
         </h1>
 
         <div className="oq-header-right">
-          {/* Officer badge */}
-          <div
-            className={`oq-badge ${queueCategory === 'officers' ? 'active-queue' : ''}`}
-            onClick={() => {
-              setQueueCategory('officers');
-              if (viewMode === 'approved') setViewMode('pending');
-              setIsMultiSelect(false);
-              setSelectedIds(new Set());
-            }}
-            style={{ cursor: 'pointer' }}
-            title="Switch to Officer Verification Queue"
-          >
-            👮 Officers <span style={{ opacity: 0.75 }}>{viewMode === 'archived' ? archived.length : pending.length}</span>
-          </div>
-
-          {/* Barangay Dispatcher badge beside the officer badge */}
-          <div
-            className={`oq-badge oq-badge-dispatcher ${queueCategory === 'dispatchers' ? 'active-queue' : ''}`}
-            onClick={() => {
-              setQueueCategory('dispatchers');
-              setViewMode('pending');
-              setIsMultiSelect(false);
-              setSelectedIds(new Set());
-            }}
-            style={{ cursor: 'pointer' }}
-            title="Switch to Barangay Dispatcher Verifications"
-          >
-            🏘 Barangay <span style={{ opacity: 0.75 }}>{dispatcherPendingCount}</span>
-          </div>
-
-          {queueCategory === 'dispatchers' ? (
+          {category === 'barangay' ? (
             <div style={{ display: 'flex', gap: 8 }}>
               {([
                 ['pending', 'Pending', dispatcherPendingCount],
@@ -1070,7 +1037,7 @@ export default function VerificationPage() {
       <div className="page-content oq-container">
 
       {/* Main Content Area */}
-      {queueCategory === 'officers' ? (
+      {category === 'officers' ? (
         /* ========================================================================= */
         /* OFFICER VERIFICATION QUEUE                                                */
         /* ========================================================================= */

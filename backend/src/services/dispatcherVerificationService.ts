@@ -141,9 +141,9 @@ export class DispatcherVerificationService {
       reviewed_by: null,
       verification_history: [
         {
-          action: 'Account Registered',
+          action: 'Dispatcher Account Request Started',
           timestamp: now,
-          note: 'Dispatcher account created. Pending authorization certification.',
+          note: 'Barangay administrator started a request to add a dispatcher account. Authorization verification is pending.',
           actor: params.fullName,
         },
       ],

@@ -49,7 +49,9 @@ function AppRoutes() {
         <Route path="missions" element={<MissionsPage />} />
         <Route path="requests" element={<ResourceRequestsPage />} />
         <Route path="evacuation-centers" element={<EvacuationCentersPage />} />
-        <Route path="verification" element={<VerificationPage />} />
+        <Route path="verification" element={<Navigate to="/verification/officers" replace />} />
+        <Route path="verification/officers" element={<VerificationPage category="officers" />} />
+        <Route path="verification/barangay" element={<VerificationPage category="barangay" />} />
         <Route path="respond-units" element={<RespondUnitsPage />} />
         <Route path="shipments" element={<ShipmentsPage />} />
         <Route path="users" element={<UsersPage />} />
