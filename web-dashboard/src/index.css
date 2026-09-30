@@ -947,8 +947,7 @@ tbody tr:last-child td { border-bottom: none; }
   left: -50%;
   width: 200%;
   height: 200%;
-  background: linear-gradient(rgba(246, 249, 252, 0.92), rgba(246, 249, 252, 0.94)),
-              radial-gradient(circle at 30% 40%, rgba(27, 79, 114, 0.12) 0%, transparent 50%),
+  background: radial-gradient(circle at 30% 40%, rgba(27, 79, 114, 0.12) 0%, transparent 50%),
               radial-gradient(circle at 70% 60%, rgba(231, 76, 60, 0.08) 0%, transparent 50%);
   animation: bgFloat 20s ease-in-out infinite;
 }
