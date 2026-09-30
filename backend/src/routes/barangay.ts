@@ -58,7 +58,6 @@ const authenticateBarangay = async (req: AuthRequest, res: Response, next: any) 
     const legacyRoleMap: Record<string, string> = {
       captain: 'dispatcher',
       team_leader: 'responder',
-      volunteer: 'staff',
     };
     (req as any).barangayUser = {
       ...decoded,
@@ -1360,7 +1359,7 @@ router.post('/reports/:id/field-media', authenticateBarangay, requireRole(['disp
     const formatted = formatIncidentReport(updatedReport);
 
     io.emit('incident_report:updated', formatted);
-    io.to('commanders').emit('incident_report:updated', formatted);
+    io.to('dashboard_staff').emit('incident_report:updated', formatted);
     if (formatted.barangay_id) {
       io.to(`barangay:${formatted.barangay_id}`).emit('incident_report:updated', formatted);
       io.to(`barangay:${formatted.barangay_id}`).emit('barangay:report_updated', formatted);
@@ -1501,7 +1500,7 @@ router.patch('/reports/:id/escalate', authenticateBarangay, requireRole(['dispat
 
     const barangayName = bData?.name || 'Barangay';
 
-    io.to('commanders').emit('barangay:escalated', {
+    io.to('dashboard_staff').emit('barangay:escalated', {
       reportId: req.params.id,
       barangayId: req.barangayUser.barangayId,
       barangayName: barangayName,
@@ -1584,7 +1583,7 @@ router.patch('/reports/:id/respond', authenticateBarangay, requireRole(['dispatc
     const responderName = responder?.full_name || 'Barangay Responder';
 
     // Notify MDRRMO dashboard
-    io.to('commanders').emit('barangay:responding', {
+    io.to('dashboard_staff').emit('barangay:responding', {
       reportId: req.params.id,
       barangayId: req.barangayUser.barangayId,
       barangayName: barangayName,
@@ -1647,7 +1646,7 @@ router.post('/reports/:id/close', authenticateBarangay, requireRole(['dispatcher
 
     if (error) throw error;
 
-    io.to('commanders').emit('barangay:incident_closed', { reportId: req.params.id });
+    io.to('dashboard_staff').emit('barangay:incident_closed', { reportId: req.params.id });
 
     res.json(data);
   } catch (err) {

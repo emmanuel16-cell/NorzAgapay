@@ -375,7 +375,7 @@ export class DispatcherVerificationService {
 
     // Notify command center via socket
     try {
-      getIO()?.to('commanders').emit('verification:dispatcher_submitted', {
+      getIO()?.to('dashboard_staff').emit('verification:dispatcher_submitted', {
         id: updated.id,
         applicant: updated.full_name,
         barangay: updated.barangay_name,

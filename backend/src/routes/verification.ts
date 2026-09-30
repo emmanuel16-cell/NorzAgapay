@@ -32,7 +32,7 @@ async function approveUserById(userId: string, adminUserId: string) {
     throw new Error('Failed to approve user.');
   }
 
-  if (user.role === 'professional_unit') {
+  if (user.role === 'responder' && user.unit_type) {
     const { data: specCerts } = await supabaseAdmin
       .from('certifications')
       .select('cert_type')
@@ -71,7 +71,7 @@ async function approveUserById(userId: string, adminUserId: string) {
         }]);
 
       if (officerError) {
-        console.error('Error adding professional unit to officers table:', officerError);
+        console.error('Error adding responder to officers table:', officerError);
       }
     }
   }
@@ -326,7 +326,7 @@ router.post(
 );
 
 // ============================================
-// POST /api/verification/:userId/approve — approve specialist
+// POST /api/verification/:userId/approve — approve responder
 // ============================================
 
 router.post(
@@ -338,9 +338,7 @@ router.post(
       const { userId } = req.params;
       const user = await approveUserById(userId, req.user!.userId);
 
-      const approvalMessage = user.role === 'professional_unit'
-        ? 'MDRRMO Officer approved successfully.'
-        : 'Volunteer approved successfully.';
+      const approvalMessage = 'Responder approved successfully.';
 
       res.json({ message: approvalMessage });
     } catch (err: any) {

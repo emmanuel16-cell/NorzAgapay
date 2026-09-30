@@ -127,7 +127,7 @@ export const matchingAPI = {
 export const analyticsAPI = {
   overview: () => api.get('/reports/overview'),
   missions: () => api.get('/reports/incidents'),
-  responders: () => api.get('/reports/volunteers'),
+  responders: () => api.get('/reports/responders'),
 };
 
 // Dispatch Units

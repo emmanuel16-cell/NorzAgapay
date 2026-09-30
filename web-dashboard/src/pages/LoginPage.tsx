@@ -145,7 +145,7 @@ export default function LoginPage() {
               id="login-email"
               type="email"
               className="form-input"
-              placeholder="commander@mdrrmo.gov.ph"
+              placeholder="admin@mdrrmo.gov.ph"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required

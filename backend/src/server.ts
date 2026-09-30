@@ -24,7 +24,7 @@ import requestRoutes from './routes/requests';
 import dispatchUnitRoutes from './routes/dispatchUnits';
 import officerRoutes from './routes/officers';
 import respondUnitRoutes from './routes/respondUnits';
-import volunteerDispatchRoutes from './routes/volunteerDispatch';
+import responderDispatchRoutes from './routes/responderDispatch';
 import storageRoutes from './routes/storages';
 import weatherRoutes, { fetchOpenMeteoWeather } from './routes/weather';
 import barangayRoutes from './routes/barangay';
@@ -91,7 +91,7 @@ app.use('/api/requests', requestRoutes);
 app.use('/api/dispatch-units', dispatchUnitRoutes);
 app.use('/api/officers', officerRoutes);
 app.use('/api/respond-units', respondUnitRoutes);
-app.use('/api/volunteer-dispatch', volunteerDispatchRoutes);
+app.use('/api/responder-dispatch', responderDispatchRoutes);
 app.use('/api/storages', storageRoutes);
 app.use('/api/weather', weatherRoutes);
 app.use('/api/barangay', barangayRoutes);
@@ -115,8 +115,8 @@ io.on('connection', (socket) => {
     try {
       console.log(`GPS Update received for user ${data.userId}: ${data.latitude}, ${data.longitude}`);
       await setUserGPS(data.userId, data.latitude, data.longitude);
-      // Broadcast to all connected commander dashboards
-      io.to('commanders').emit('gps:location', data);
+      // Broadcast responder GPS updates to dashboard staff.
+      io.to('dashboard_staff').emit('gps:location', data);
     } catch (err) {
       console.error('GPS update error:', err);
     }
@@ -124,11 +124,11 @@ io.on('connection', (socket) => {
 
   // Join role-based rooms
   socket.on('join:role', (role: string) => {
-    if (['admin', 'commander'].includes(role)) {
-      socket.join('commanders');
+    if (['master_admin', 'admin', 'logistics', 'dispatcher'].includes(role)) {
+      socket.join('dashboard_staff');
     }
-    if (role === 'professional_unit') {
-      socket.join('professional_units');
+    if (role === 'responder') {
+      socket.join('responders');
     }
     socket.join(`role:${role}`);
     console.log(`Socket ${socket.id} joined room: ${role}`);
@@ -147,26 +147,26 @@ io.on('connection', (socket) => {
 
   // Task status updates
   socket.on('task:statusUpdate', (data: { taskId: string; status: string; userId: string }) => {
-    io.to('commanders').emit('task:statusChanged', data);
+    io.to('dashboard_staff').emit('task:statusChanged', data);
   });
 
   // New incident broadcast
   socket.on('incident:new', (incident: any) => {
-    io.to('professional_units').emit('incident:alert', incident);
-    io.to('commanders').emit('incident:new', incident);
+    io.to('responders').emit('incident:alert', incident);
+    io.to('dashboard_staff').emit('incident:new', incident);
   });
 
   // Inventory updates
   socket.on('inventory:update', (data: any) => {
-    io.to('commanders').emit('inventory:changed', data);
+    io.to('dashboard_staff').emit('inventory:changed', data);
   });
 
   // Resource request from professional unit
   socket.on('resource:request', (data: any) => {
-    io.to('commanders').emit('resource:request', data);
+    io.to('dashboard_staff').emit('resource:request', data);
   });
 
-  // Request all GPS locations (commander dashboard)
+  // Request all GPS locations (dashboard staff)
   socket.on('gps:requestAll', async () => {
     try {
       const locations = await getAllActiveGPS();

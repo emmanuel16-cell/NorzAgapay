@@ -20,7 +20,6 @@ interface AuthContextType {
   debugLogin: (accountId: string) => Promise<void>;
   logout: () => void;
   isAdmin: boolean;
-  isCommander: boolean;
   isMasterAdmin: boolean;
   canAccessDashboard: boolean;
 }
@@ -72,12 +71,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const isAdmin = user?.role === 'admin';
-  const isCommander = user?.role === 'commander';
-  const isMasterAdmin = user?.role === 'master_admin' || isCommander;
+  const isMasterAdmin = user?.role === 'master_admin';
   const canAccessDashboard = isMasterAdmin || ['admin', 'logistics', 'dispatcher'].includes(user?.role || '');
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, debugLogin, logout, isAdmin, isCommander, isMasterAdmin, canAccessDashboard }}>
+    <AuthContext.Provider value={{ user, token, loading, login, debugLogin, logout, isAdmin, isMasterAdmin, canAccessDashboard }}>
       {children}
     </AuthContext.Provider>
   );

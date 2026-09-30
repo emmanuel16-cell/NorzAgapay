@@ -5,7 +5,7 @@ import { io } from '../server';
 
 const router = Router();
 
-// GET /api/volunteer-dispatch - list all dispatches
+// GET /api/responder-dispatch - list all responder dispatches
 router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const { data, error } = await supabaseAdmin
@@ -20,7 +20,7 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
   }
 });
 
-// POST /api/volunteer-dispatch - create new dispatch
+// POST /api/responder-dispatch - create new responder dispatch
 router.post('/', authenticate, authorize('dispatcher'), async (req: AuthRequest, res: Response) => {
   try {
     const { 
@@ -32,7 +32,7 @@ router.post('/', authenticate, authorize('dispatcher'), async (req: AuthRequest,
       meetup_longitude,
       destination, 
       mission_id, 
-      volunteer_ids 
+      responder_ids
     } = req.body;
     
     if (!team_name || !dispatch_date || !dispatch_time || !meetup_location || !destination) {
@@ -52,15 +52,15 @@ router.post('/', authenticate, authorize('dispatcher'), async (req: AuthRequest,
         meetup_longitude,
         destination, 
         mission_id: mission_id || null, 
-        volunteer_ids: volunteer_ids || [] 
+        volunteer_ids: responder_ids || []
       }])
       .select()
       .single();
 
     if (dispatchError) throw dispatchError;
 
-    // 2. Create tasks for each volunteer if any are selected
-    if (volunteer_ids && volunteer_ids.length > 0) {
+    // 2. Create tasks for each responder if any are selected
+    if (responder_ids && responder_ids.length > 0) {
       let finalMissionId = mission_id;
 
       // If no mission_id, find or create a "General Dispatch" incident
@@ -68,7 +68,7 @@ router.post('/', authenticate, authorize('dispatcher'), async (req: AuthRequest,
         const { data: generalIncident, error: findError } = await supabaseAdmin
           .from('incidents')
           .select('id')
-          .eq('title', 'General Volunteer Dispatch')
+          .eq('title', 'General Responder Dispatch')
           .limit(1)
           .maybeSingle();
 
@@ -83,7 +83,7 @@ router.post('/', authenticate, authorize('dispatcher'), async (req: AuthRequest,
           const { data: newIncident, error: createError } = await supabaseAdmin
             .from('incidents')
             .insert({
-              title: 'General Volunteer Dispatch',
+              title: 'General Responder Dispatch',
               type: 'emergency',
               severity: 'moderate',
               latitude: 14.904246495288923, // MDRRMO Headquarters, Norzagaray
@@ -106,7 +106,7 @@ router.post('/', authenticate, authorize('dispatcher'), async (req: AuthRequest,
       if (finalMissionId) {
         const taskToCreate = {
           incident_id: finalMissionId,
-          title: `Volunteer Dispatch: ${team_name}`,
+          title: `Responder Dispatch: ${team_name}`,
           description: `You will be dispatched to ${destination}.\n\n📅 Date: ${dispatch_date}\n⏰ Time: ${dispatch_time}\n📍 Meet-up: ${meetup_location}`,
           task_type: 'general_labor',
           assigned_to: null,
@@ -125,7 +125,7 @@ router.post('/', authenticate, authorize('dispatcher'), async (req: AuthRequest,
         } else {
           console.log(`Successfully created open task for dispatch team ${team_name}`);
           // Notify via Socket
-          volunteer_ids.forEach((vId: string) => {
+          responder_ids.forEach((vId: string) => {
             io.to(`user:${vId}`).emit('task:new');
           });
         }
@@ -140,7 +140,7 @@ router.post('/', authenticate, authorize('dispatcher'), async (req: AuthRequest,
   }
 });
 
-// DELETE /api/volunteer-dispatch/:id - delete dispatch
+// DELETE /api/responder-dispatch/:id - delete dispatch
 router.delete('/:id', authenticate, authorize('dispatcher'), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;

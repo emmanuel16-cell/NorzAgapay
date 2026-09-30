@@ -17,22 +17,21 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response): Promise<v
 
     let query = supabaseAdmin
       .from('tasks')
-      .select('*, incident:incidents(*), assigned_user:users!assigned_to(full_name, role, phone), volunteers:task_volunteers(volunteer_id)')
+      .select('*, incident:incidents(*), assigned_user:users!assigned_to(full_name, role, phone), responders:task_volunteers(responder_id:volunteer_id)')
       .order('created_at', { ascending: false });
 
-    // Non-admin users can see all tasks matching their role type
-    if (!['admin', 'commander'].includes(user.role)) {
-      const allowedTypes = ['general_labor'];
-      if (user.role === 'volunteer_specialist' || user.role === 'professional_unit') {
-        allowedTypes.push('specialist');
-      }
-      
-      query = query.in('task_type', allowedTypes);
+    const canManageTasks = ['master_admin', 'dispatcher'].includes(user.role);
+    if (!canManageTasks && user.role !== 'responder') {
+      res.status(403).json({ error: 'Access denied.' });
+      return;
+    }
+    if (!canManageTasks) {
+      query = query.in('task_type', ['general_labor', 'specialist']);
     }
 
     if (status) query = query.eq('status', status as string);
     if (incident_id) query = query.eq('incident_id', incident_id as string);
-    if (assigned_to && ['admin', 'commander'].includes(user.role)) {
+    if (assigned_to && canManageTasks) {
       query = query.eq('assigned_to', assigned_to as string);
     }
 
@@ -67,17 +66,11 @@ router.get('/:id', authenticate, async (req: AuthRequest, res: Response): Promis
       return;
     }
 
-    // Non-admin users can only view tasks of their allowed types
+    // Only dashboard task managers and responders can view task details.
     const user = req.user!;
-    if (!['admin', 'commander'].includes(user.role)) {
-      const allowedTypes = ['general_labor'];
-      if (user.role === 'volunteer_specialist' || user.role === 'professional_unit') {
-        allowedTypes.push('specialist');
-      }
-      if (!allowedTypes.includes(task.task_type)) {
-        res.status(403).json({ error: 'Access denied.' });
-        return;
-      }
+    if (!['master_admin', 'dispatcher', 'responder'].includes(user.role)) {
+      res.status(403).json({ error: 'Access denied.' });
+      return;
     }
 
     res.json({ task });
@@ -88,7 +81,7 @@ router.get('/:id', authenticate, async (req: AuthRequest, res: Response): Promis
 });
 
 // ============================================
-// POST /api/tasks — create task (admin/commander)
+// POST /api/tasks — create task (dispatcher/master admin)
 // ============================================
 
 const createTaskSchema = z.object({
@@ -155,10 +148,10 @@ router.patch('/:id/status', authenticate, async (req: AuthRequest, res: Response
 
     const { status, proof_photo_url } = parsed.data;
 
-    // Fetch task details with existing volunteers
+    // Fetch task details with existing responders
     const { data: existingTask, error: fetchError } = await supabaseAdmin
       .from('tasks')
-      .select('*, volunteers:task_volunteers(volunteer_id, status)')
+      .select('*, responders:task_volunteers(responder_id:volunteer_id, status)')
       .eq('id', req.params.id)
       .single();
 
@@ -169,40 +162,10 @@ router.patch('/:id/status', authenticate, async (req: AuthRequest, res: Response
 
     const user = req.user!;
 
-    // DEV MODE: Allow any volunteer to accept any task for testing
-    // Enforce role-based task acceptance rules (DISABLED FOR DEV)
-    /*
-    if (status === 'accepted') {
-      if (user.role === 'volunteer_general' && existingTask.task_type !== 'general_labor') {
-        res.status(403).json({ error: 'General volunteers can only accept general labor tasks.' });
-        return;
-      }
-      if (user.role === 'volunteer_specialist' && existingTask.task_type !== 'specialist') {
-        res.status(403).json({ error: 'Specialist volunteers can only accept specialized rescue tasks.' });
-        return;
-      }
+    if (!['master_admin', 'dispatcher', 'responder'].includes(user.role)) {
+      res.status(403).json({ error: 'Access denied.' });
+      return;
     }
-    */
-
-    // NEW: Check if volunteer already has an active task (DISABLED FOR DEV)
-    /*
-    if (!['admin', 'commander'].includes(user.role) && ['accepted', 'in_progress'].includes(status)) {
-      const { data: otherActiveTasks } = await supabaseAdmin
-        .from('task_volunteers')
-        .select('task_id')
-        .eq('volunteer_id', user.userId)
-        .eq('status', 'joined')
-        .neq('task_id', req.params.id)
-        .limit(1);
-
-      if (otherActiveTasks && otherActiveTasks.length > 0 && status === 'accepted') {
-        res.status(400).json({ 
-          error: 'You already have an active task. Please complete your current task before accepting a new one.' 
-        });
-        return;
-      }
-    }
-    */
 
     // If completing, require proof photo (only for production)
     if (status === 'completed' && !proof_photo_url && process.env.NODE_ENV === 'production') {
@@ -210,8 +173,8 @@ router.patch('/:id/status', authenticate, async (req: AuthRequest, res: Response
       return;
     }
 
-    // Volunteers always use the junction table
-    if (!['admin', 'commander'].includes(user.role)) {
+    // Responders use the junction table so multiple responders may join a task.
+    if (user.role === 'responder') {
       if (['accepted', 'in_progress'].includes(status)) {
         const { error: joinError } = await supabaseAdmin
           .from('task_volunteers')
@@ -243,12 +206,12 @@ router.patch('/:id/status', authenticate, async (req: AuthRequest, res: Response
         }
         
         // Broadcast update
-        io.to('commanders').emit('task:statusChanged', { taskId: req.params.id, status, userId: user.userId });
+        io.to('dashboard_staff').emit('task:statusChanged', { taskId: req.params.id, status, userId: user.userId });
         
         // Re-fetch updated task to return full state
         const { data: updatedTask } = await supabaseAdmin
           .from('tasks')
-          .select('*, volunteers:task_volunteers(volunteer_id, status)')
+          .select('*, responders:task_volunteers(responder_id:volunteer_id, status)')
           .eq('id', req.params.id)
           .single();
 
@@ -273,7 +236,7 @@ router.patch('/:id/status', authenticate, async (req: AuthRequest, res: Response
         // Mark user as active again
         await supabaseAdmin.from('users').update({ status: 'active' }).eq('id', user.userId);
         
-        // Check if ALL volunteers have completed (optional, for now just update task status if it's the only one)
+        // Check whether all assigned responders have completed.
         // For simplicity, we mark the main task as completed too
         await supabaseAdmin.from('tasks').update({ 
           status: 'completed',
@@ -282,14 +245,14 @@ router.patch('/:id/status', authenticate, async (req: AuthRequest, res: Response
         }).eq('id', req.params.id);
 
         // Broadcast update
-        io.to('commanders').emit('task:statusChanged', { taskId: req.params.id, status: 'completed', userId: user.userId });
+          io.to('dashboard_staff').emit('task:statusChanged', { taskId: req.params.id, status: 'completed', userId: user.userId });
         
         res.json({ message: 'Task marked as completed.' });
         return;
       }
     }
 
-    // Admin/Commander direct status update for the whole task
+    // Dispatcher or master admin direct status update for the whole task
     const updateData: Record<string, unknown> = { status };
     if (proof_photo_url) updateData.proof_photo_url = proof_photo_url;
     if (status === 'completed') updateData.completed_at = new Date().toISOString();
@@ -307,7 +270,7 @@ router.patch('/:id/status', authenticate, async (req: AuthRequest, res: Response
     }
 
     // Broadcast update
-    io.to('commanders').emit('task:statusChanged', { taskId: req.params.id, status, userId: user.userId });
+    io.to('dashboard_staff').emit('task:statusChanged', { taskId: req.params.id, status, userId: user.userId });
 
     res.json({ message: `Task status updated to ${status}.`, task });
   } catch (err) {
@@ -317,7 +280,7 @@ router.patch('/:id/status', authenticate, async (req: AuthRequest, res: Response
 });
 
 // ============================================
-// PATCH /api/tasks/:id/reassign — reassign task (admin/commander)
+// PATCH /api/tasks/:id/reassign — reassign task (dispatcher/master admin)
 // ============================================
 
 router.patch(
@@ -377,7 +340,7 @@ router.post('/:id/members', authenticate, async (req: AuthRequest, res: Response
       return;
     }
 
-    // Add each member into task_volunteers
+    // Add each responder into task_volunteers
     for (const memberId of member_ids) {
       let resolvedUserId = memberId;
 
@@ -415,12 +378,12 @@ router.post('/:id/members', authenticate, async (req: AuthRequest, res: Response
     }
 
     // Emit real-time notification
-    io.to('commanders').emit('task:membersUpdated', { taskId: id, memberIds: member_ids });
+    io.to('dashboard_staff').emit('task:membersUpdated', { taskId: id, memberIds: member_ids });
 
-    // Fetch updated task with full volunteers
+    // Fetch updated task with all assigned responders
     const { data: updatedTask } = await supabaseAdmin
       .from('tasks')
-      .select('*, incident:incidents(*), volunteers:task_volunteers(volunteer_id, status)')
+      .select('*, incident:incidents(*), responders:task_volunteers(responder_id:volunteer_id, status)')
       .eq('id', id)
       .single();
 

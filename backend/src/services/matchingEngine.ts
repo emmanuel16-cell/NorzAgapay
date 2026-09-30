@@ -3,14 +3,14 @@
  * 
  * This is the academic core of the system. It implements a multi-tier
  * responder matching algorithm that classifies incidents, identifies
- * appropriate professional units and volunteers, and coordinates
+ * appropriate responder units, and coordinates
  * dynamic routing with obstacle avoidance.
  * 
  * Algorithm Steps:
  * 1. Classify incident → determine required skills
  * 2. Scan professional units → dispatch closest matching units
  * 3. Scan certified specialists → match by skill within 5km radius
- * 4. Scan general labor volunteers → assign non-specialized tasks within 5km
+ * 4. Scan general responders → assign non-specialized tasks within 5km
  * 5. Dynamic routing → Mapbox Directions with blocked route avoidance
  * 6. Logistics trigger → auto-flag relief goods for mobilization
  */
@@ -158,8 +158,8 @@ export function classifyIncident(incidentType: string): SkillRequirement {
 
 export interface MatchResult {
   dispatchedProfessionalUnits: DispatchedUnit[];
-  matchedSpecialists: MatchedVolunteer[];
-  assignedGeneralLabor: MatchedVolunteer[];
+  matchedSpecialists: MatchedResponder[];
+  assignedGeneralLabor: MatchedResponder[];
   createdTasks: string[];
   logisticsTriggered: boolean;
   logisticsDetails?: string;
@@ -173,7 +173,7 @@ interface DispatchedUnit {
   taskId?: string;
 }
 
-interface MatchedVolunteer {
+interface MatchedResponder {
   userId: string;
   fullName: string;
   role: string;
@@ -231,7 +231,8 @@ export async function matchRespondersToIncident(incidentId: string, unitId?: str
       const { data: allOfficers } = await supabaseAdmin
         .from('users')
         .select('id')
-        .eq('role', 'professional_unit')
+        .eq('role', 'responder')
+        .not('unit_type', 'is', null)
         .eq('status', 'active');
       
       if (allOfficers && allOfficers.length > 0) {
@@ -259,7 +260,7 @@ export async function matchRespondersToIncident(incidentId: string, unitId?: str
     if (preSelectedPersonnelIds.length > 0) {
       query.in('id', preSelectedPersonnelIds);
     } else {
-      query.eq('role', 'professional_unit');
+      query.eq('role', 'responder').not('unit_type', 'is', null);
     }
 
     let { data: personnel } = await query;
@@ -312,27 +313,11 @@ export async function matchRespondersToIncident(incidentId: string, unitId?: str
           .select('id')
           .single();
 
-        if (unit.role === 'professional_unit') {
+        if (unit.role === 'responder') {
           result.dispatchedProfessionalUnits.push({
             userId: unit.id,
             fullName: unit.full_name,
             unitType: unit.unit_type || 'unknown',
-            distanceKm: Math.round(unit.distance * 100) / 100,
-            taskId: task?.id,
-          });
-        } else if (unit.role === 'volunteer_specialist') {
-          result.matchedSpecialists.push({
-            userId: unit.id,
-            fullName: unit.full_name,
-            role: unit.role,
-            distanceKm: Math.round(unit.distance * 100) / 100,
-            taskId: task?.id,
-          });
-        } else {
-          result.assignedGeneralLabor.push({
-            userId: unit.id,
-            fullName: unit.full_name,
-            role: unit.role,
             distanceKm: Math.round(unit.distance * 100) / 100,
             taskId: task?.id,
           });
@@ -360,7 +345,8 @@ export async function matchRespondersToIncident(incidentId: string, unitId?: str
         id, full_name, latitude, longitude,
         certifications(cert_type, verified)
       `)
-      .eq('role', 'volunteer_specialist')
+      .eq('role', 'responder')
+      .is('unit_type', null)
       .eq('verified', true)
       .eq('status', 'active');
 
@@ -414,7 +400,7 @@ export async function matchRespondersToIncident(incidentId: string, unitId?: str
         result.matchedSpecialists.push({
           userId: spec.id,
           fullName: spec.full_name,
-          role: 'volunteer_specialist',
+          role: 'responder',
           distanceKm: Math.round(spec.distance * 100) / 100,
           matchedSkill: spec.matchingCert,
           taskId: task?.id,
@@ -426,17 +412,18 @@ export async function matchRespondersToIncident(incidentId: string, unitId?: str
   }
 
   // ============================================
-  // STEP 4: Scan for General Labor Volunteers (within 5km)
+  // STEP 4: Scan for General Responders (within 5km)
   // ============================================
 
-  const { data: generalVolunteers } = await supabaseAdmin
+  const { data: generalResponders } = await supabaseAdmin
     .from('users')
     .select('id, full_name, latitude, longitude')
-    .eq('role', 'volunteer_general')
+    .eq('role', 'responder')
+    .is('unit_type', null)
     .eq('status', 'active');
 
-  if (generalVolunteers && generalVolunteers.length > 0) {
-    const nearbyGeneralLabor = generalVolunteers
+  if (generalResponders && generalResponders.length > 0) {
+    const nearbyGeneralLabor = generalResponders
       .map((v) => {
         const redisGps = gpsMap.get(v.id);
         const lat = redisGps?.latitude ?? v.latitude;
@@ -449,7 +436,7 @@ export async function matchRespondersToIncident(incidentId: string, unitId?: str
           distance: haversineDistance(incidentLat, incidentLng, lat, lng),
         };
       })
-      .filter((v): v is any => v !== null && v.distance <= 5)
+      .filter((v): v is any => v !== null && v.distance <= 5 && !result.matchedSpecialists.some((specialist) => specialist.userId === v.id))
       .sort((a, b) => a.distance - b.distance);
 
     // Assign non-specialized tasks to top 10 matches
@@ -487,7 +474,7 @@ export async function matchRespondersToIncident(incidentId: string, unitId?: str
       result.assignedGeneralLabor.push({
         userId: vol.id,
         fullName: vol.full_name,
-        role: 'volunteer_general',
+        role: 'responder',
         distanceKm: Math.round(vol.distance * 100) / 100,
         taskId: task?.id,
       });
@@ -548,7 +535,7 @@ export interface RouteInfo {
 }
 
 /**
- * Get route from volunteer/unit location to incident location
+ * Get route from responder/unit location to incident location
  * using Project OSRM (Open Source Routing Machine) - Free/No Token Required.
  */
 export async function getRoute(

@@ -20,15 +20,15 @@ const registerSchema = z.object({
   email: z.string().trim().email('Invalid email address').transform((value) => value.toLowerCase()),
   phone: z.string().max(30).optional().nullable(),
   password: z.string().min(6, 'Password must be at least 6 characters'),
-  role: z.enum(['volunteer_specialist', 'volunteer_general', 'professional_unit']),
+  role: z.enum(['responder']),
   unit_type: z.string().nullable().optional(),
 }).refine(data => {
-  if (data.role === 'professional_unit' && !data.unit_type) {
+  if (!data.unit_type) {
     return false;
   }
   return true;
 }, {
-  message: 'unit_type is required for professional unit registration.',
+  message: 'A responder specialization is required.',
   path: ['unit_type'],
 });
 
@@ -47,7 +47,7 @@ async function hasMasterAdmin() {
   const { data, error } = await supabaseAdmin
     .from('users')
     .select('id')
-    .in('role', ['master_admin', 'commander'])
+    .eq('role', 'master_admin')
     .limit(1);
   if (error) throw error;
   return (data?.length ?? 0) > 0;
@@ -129,10 +129,10 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
     const password_hash = await bcrypt.hash(password, 12);
 
     // Insert user
-    const isAutoActive = role === 'volunteer_general';
-    const initialStatus = isAutoActive ? 'active' : 'pending_verification';
+    const isAutoActive = false;
+    const initialStatus = 'pending_verification';
 
-    // Parse specializations for professional unit
+    // Preserve responder specializations for mission matching.
     const rawUnitType = unit_type || '';
     const specs = rawUnitType
       .split(',')
@@ -148,7 +148,7 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
         phone: phone || null,
         password_hash,
         role,
-        unit_type: role === 'professional_unit' ? primaryUnitType : null,
+        unit_type: primaryUnitType,
         status: initialStatus,
         verified: isAutoActive,
       })
@@ -161,8 +161,8 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // If professional unit, store all specializations in certifications table
-    if (role === 'professional_unit' && specs.length > 0) {
+    // Store each selected responder specialization for verification and matching.
+    if (specs.length > 0) {
       const certRows = specs.map((spec: string) => ({
         user_id: newUser.id,
         cert_type: spec,
@@ -181,7 +181,7 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
     // If account requires verification, return pending response without auth token
     if (newUser.status === 'pending_verification') {
       res.status(201).json({
-        message: 'Registration successful! Your MDRRMO officer account has been submitted and is pending verification by an administrator at the Web Dashboard.',
+        message: 'Registration successful! Your Responder account is pending administrator verification in the Web Dashboard.',
         user: returnUser,
         requiresVerification: true,
       });
@@ -265,9 +265,9 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // If professional unit, fetch all specializations from certifications table or officers table
+    // Load all responder specializations from certifications or the officers directory.
     let unitType = user.unit_type || null;
-    if (user.role === 'professional_unit') {
+    if (user.role === 'responder') {
       const { data: specCerts } = await supabaseAdmin
         .from('certifications')
         .select('cert_type')
@@ -384,47 +384,6 @@ router.post('/resident/login', async (req: Request, res: Response): Promise<void
 });
 
 // ============================================
-// POST /api/auth/upgrade — request specialist status
-// ============================================
-router.post('/upgrade', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const userId = req.user!.userId;
-
-    // Check if already specialist
-    const { data: user } = await supabaseAdmin
-      .from('users')
-      .select('role')
-      .eq('id', userId)
-      .single();
-
-    if (user?.role === 'volunteer_specialist') {
-      res.status(400).json({ error: 'You are already a specialist or have a pending request.' });
-      return;
-    }
-
-    // Update role to specialist but set status to pending_verification
-    const { error } = await supabaseAdmin
-      .from('users')
-      .update({
-        role: 'volunteer_specialist',
-        status: 'pending_verification',
-        verified: false,
-      })
-      .eq('id', userId);
-
-    if (error) {
-      res.status(500).json({ error: 'Failed to request upgrade.' });
-      return;
-    }
-
-    res.json({ message: 'Upgrade request submitted. Please upload your certifications.' });
-  } catch (err) {
-    console.error('Upgrade request error:', err);
-    res.status(500).json({ error: 'Internal server error.' });
-  }
-});
-
-// ============================================
 // PATCH /api/auth/status — update active/inactive status
 // ============================================
 router.patch('/status', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
@@ -473,7 +432,7 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response): Promise
       return;
     }
 
-    if (user.role === 'professional_unit') {
+    if (user.role === 'responder') {
       const { data: specCerts } = await supabaseAdmin
         .from('certifications')
         .select('cert_type')
@@ -538,7 +497,7 @@ router.patch('/resident/profile', authenticate, async (req: AuthRequest, res: Re
 });
 
 // ============================================
-// POST /api/auth/create-admin — (admin-only) create admin/commander accounts
+// POST /api/auth/create-admin — master-admin-only admin account creation
 // ============================================
 
 router.post(

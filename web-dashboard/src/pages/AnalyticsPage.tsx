@@ -15,7 +15,7 @@ export default function AnalyticsPage() {
     Promise.all([
       analyticsAPI.overview().then(r => setStats(r.data.stats)),
       analyticsAPI.missions().then(r => setMissions(r.data.incidents || [])),
-      analyticsAPI.responders().then(r => setResponders(r.data.volunteers || r.data.responders || [])),
+      analyticsAPI.responders().then(r => setResponders(r.data.responders || [])),
     ]).catch(() => toast.error('Failed to load analytics')).finally(() => setLoading(false));
   }, []);
 
@@ -47,7 +47,7 @@ export default function AnalyticsPage() {
           <div className="stats-grid" style={{padding:0,marginBottom:'24px'}}>
             {[
               { label:'Total Users', value: stats.totalUsers, icon:'👥', color:'var(--primary)' },
-              { label:'Active Officers', value: stats.activeOfficers ?? stats.activeVolunteers ?? 0, icon:'🎖️', color:'var(--success)' },
+              { label:'Active Responders', value: stats.activeResponders ?? 0, icon:'🎖️', color:'var(--success)' },
               { label:'Total Missions', value: missions.length, icon:'🚨', color:'var(--accent)' },
               { label:'Tasks Completed', value: stats.completedTasks, icon:'✅', color:'var(--warning)' },
             ].map(s => (

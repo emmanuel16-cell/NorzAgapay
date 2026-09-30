@@ -120,7 +120,7 @@ export default function ResourceRequestsPage() {
                     </td>
                     <td>
                       <div style={{ textTransform: 'capitalize', fontWeight: 500 }}>
-                        {req.request_type === 'volunteers' ? 'Personnel' : req.request_type}
+                        {req.request_type === 'volunteers' || req.request_type === 'responders' ? 'Responders' : req.request_type}
                       </div>
                       {req.sub_type && (
                         <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>

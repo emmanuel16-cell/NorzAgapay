@@ -308,8 +308,8 @@ export default function VerificationPage({ category }: { category: 'officers' | 
 
   const getRoleLabel = (role: string) => {
     switch (role) {
-      case 'professional_unit':
-        return 'MDRRMO OFFICER';
+      case 'responder':
+        return 'RESPONDER';
       default:
         return role.replace(/_/g, ' ').toUpperCase();
     }

@@ -68,7 +68,7 @@ router.get('/my-unit', authenticate, async (req: AuthRequest, res: Response): Pr
       return (officerId && u.officer_ids.includes(officerId)) || u.officer_ids.includes(user.userId);
     });
 
-    if (!myUnit && (allUnits || []).length > 0 && user.role === 'professional_unit') {
+    if (!myUnit && (allUnits || []).length > 0 && user.role === 'responder') {
       myUnit = allUnits![0];
     }
 

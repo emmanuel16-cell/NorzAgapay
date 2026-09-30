@@ -373,8 +373,8 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
         console.warn('Could not auto-create initial task:', taskErr);
       }
 
-      // Emit socket event for real-time notification to MDRRMO commanders
-      io.to('commanders').emit('incident_report:new', formattedReport);
+      // Emit socket event for real-time dashboard notification.
+      io.to('dashboard_staff').emit('incident_report:new', formattedReport);
     }
 
     // If sent to Barangay: notify specific barangay room ONLY
@@ -450,7 +450,7 @@ router.get('/resident', async (req: Request, res: Response) => {
 
 /**
  * GET /api/incident-reports
- * List all incident reports (Admin/Commander only)
+ * List all incident reports (Admin and master admin only)
  */
 router.get('/', async (req: Request, res: Response) => {
     try {
@@ -588,7 +588,7 @@ router.patch('/:id', optionalAuthenticate, upload.any(), async (req: AuthRequest
     });
 
     io.emit('incident_report:updated', formatted);
-    io.to('commanders').emit('incident_report:updated', formatted);
+    io.to('dashboard_staff').emit('incident_report:updated', formatted);
     if (formatted.barangay_id) {
       io.to(`barangay:${formatted.barangay_id}`).emit('incident_report:updated', formatted);
       io.to(`barangay:${formatted.barangay_id}`).emit('barangay:report_updated', formatted);
@@ -696,7 +696,7 @@ router.post('/:id/field-media', optionalAuthenticate, upload.single('media'), as
     const formatted = formatIncidentReport(updatedReport);
 
     io.emit('incident_report:updated', formatted);
-    io.to('commanders').emit('incident_report:updated', formatted);
+    io.to('dashboard_staff').emit('incident_report:updated', formatted);
     if (formatted.barangay_id) {
       io.to(`barangay:${formatted.barangay_id}`).emit('incident_report:updated', formatted);
       io.to(`barangay:${formatted.barangay_id}`).emit('barangay:report_updated', formatted);
@@ -767,8 +767,8 @@ router.patch('/:id/mdrrmo-respond', optionalAuthenticate, async (req: AuthReques
             mdrrmo_responder_name: responderName
         };
 
-        // Broadcast real-time to commanders (web-dashboard)
-        io.to('commanders').emit('incident_report:mdrrmo_responding', formatted);
+        // Broadcast real-time to dashboard staff.
+        io.to('dashboard_staff').emit('incident_report:mdrrmo_responding', formatted);
         io.emit('incident_report:updated', formatted);
 
         // Broadcast real-time to specific barangay room
@@ -786,9 +786,9 @@ router.patch('/:id/mdrrmo-respond', optionalAuthenticate, async (req: AuthReques
 
 /**
  * POST /api/incident-reports/:id/verify
- * Verifies a report: Creates a Mission and creates verification tasks for all active volunteers.
+ * Verifies a report: Creates a Mission and verification tasks for active responders.
  */
-router.post('/:id/verify', authenticate, authorize('admin', 'commander'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/:id/verify', authenticate, authorize('admin', 'master_admin'), async (req: AuthRequest, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
         const { address } = req.body;
@@ -838,7 +838,7 @@ router.post('/:id/verify', authenticate, authorize('admin', 'commander'), async 
             console.error(`Matching Engine Error for Verified Incident ${incident.id}:`, err);
         });
 
-        // 4. Create an Emergency Task for volunteers to join
+        // 4. Create an Emergency Task for responders to join
         console.log(`Creating emergency verification task for report: ${report.title}`);
         
         const task = {
@@ -861,13 +861,13 @@ router.post('/:id/verify', authenticate, authorize('admin', 'commander'), async 
             console.error('Error creating verification task:', taskError);
         } else {
             console.log('Verification task created successfully');
-            // Notify all volunteers via Socket
+            // Notify all responders via Socket
             io.emit('task:new');
         }
 
         // 6. Notify via Socket
-        io.to('commanders').emit('incident:new', incident);
-        io.to('commanders').emit('incident_report:verified', { reportId: id, incidentId: incident.id });
+        io.to('dashboard_staff').emit('incident:new', incident);
+        io.to('dashboard_staff').emit('incident_report:verified', { reportId: id, incidentId: incident.id });
 
         res.json({ message: 'Report verified, mission created, and tasks assigned.', incidentId: incident.id });
     } catch (err) {

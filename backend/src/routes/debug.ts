@@ -38,7 +38,7 @@ router.get('/accounts', debugOnly, async (req: Request, res: Response) => {
     // Enrich professional units with multi-specializations
     const users = data || [];
     for (const u of users) {
-      if (u.role === 'professional_unit') {
+      if (u.role === 'responder') {
         const { data: specCerts } = await supabaseAdmin
           .from('certifications')
           .select('cert_type')
@@ -100,7 +100,7 @@ router.post('/quick-login', debugOnly, async (req: Request, res: Response) => {
       return;
     }
 
-    if (user.role === 'professional_unit') {
+    if (user.role === 'responder') {
       const { data: specCerts } = await supabaseAdmin
         .from('certifications')
         .select('cert_type')

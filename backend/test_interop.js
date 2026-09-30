@@ -116,7 +116,7 @@ async function runTests() {
       .single();
 
     let resolvedUnitType = user.unit_type;
-    if (user.role === 'professional_unit') {
+    if (user.role === 'responder') {
       const { data: off } = await supabase
         .from('officers')
         .select('specialization')

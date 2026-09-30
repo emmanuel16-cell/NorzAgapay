@@ -8,21 +8,21 @@ import { setUserGPS } from '../config/redis';
 const router = Router();
 
 // ============================================
-// GET /api/users — list all users (admin/commander)
+// GET /api/users — list dashboard users or responder profiles
 // ============================================
 
 router.get(
   '/',
   authenticate,
-  authorize('admin', 'commander', 'master_admin', 'professional_unit'),
+  authorize('admin', 'master_admin', 'responder'),
   async (req: AuthRequest, res: Response): Promise<void> => {
     try {
       const user = req.user!;
       let { role, status, verified } = req.query;
 
-      // Non-admin/commander can only view professional units
-      if (!['admin', 'commander', 'master_admin'].includes(user.role)) {
-        role = 'professional_unit';
+      // Responders may use this directory to find other responder profiles.
+      if (user.role === 'responder') {
+        role = 'responder';
       }
 
       let query = supabaseAdmin
@@ -31,8 +31,7 @@ router.get(
         .order('created_at', { ascending: false });
 
       if (user.role === 'admin') query = query.in('role', ['logistics', 'dispatcher']);
-      if (role === 'master_admin') query = query.in('role', ['master_admin', 'commander']);
-      else if (role) query = query.eq('role', role as string);
+      if (role) query = query.eq('role', role as string);
       if (status) query = query.eq('status', status as string);
       if (verified !== undefined) query = query.eq('verified', verified === 'true');
 
@@ -43,9 +42,9 @@ router.get(
         return;
       }
 
-      // Enrich professional units with multi-specializations from certifications or officers
+      // Enrich responders with multi-specializations from certifications or officers.
       const userList = data || [];
-      const proUserIds = userList.filter((u: any) => u.role === 'professional_unit').map((u: any) => u.id);
+      const proUserIds = userList.filter((u: any) => u.role === 'responder').map((u: any) => u.id);
       if (proUserIds.length > 0) {
         const { data: specCerts } = await supabaseAdmin
           .from('certifications')
@@ -103,7 +102,7 @@ router.post('/', authenticate, authorize('admin', 'master_admin'), async (req: A
     return;
   }
   const { role, full_name, email, password } = parsed.data;
-  if (!['master_admin', 'commander'].includes(req.user!.role) && role === 'admin') {
+  if (req.user!.role !== 'master_admin' && role === 'admin') {
     res.status(403).json({ error: 'Only a master admin can create admin accounts.' });
     return;
   }
@@ -139,7 +138,7 @@ router.get('/:id', authenticate, async (req: AuthRequest, res: Response): Promis
     const user = req.user!;
 
     // Non-admin can only view their own profile
-    if (!['admin', 'commander', 'master_admin'].includes(user.role) && user.userId !== req.params.id) {
+    if (!['admin', 'master_admin'].includes(user.role) && user.userId !== req.params.id) {
       res.status(403).json({ error: 'Access denied.' });
       return;
     }
@@ -170,7 +169,7 @@ router.get('/:id', authenticate, async (req: AuthRequest, res: Response): Promis
     const specCerts = allCerts.filter((c: any) => c.cert_number === 'SPECIALIZATION');
     const otherCerts = allCerts.filter((c: any) => c.cert_number !== 'SPECIALIZATION');
 
-    if (data.role === 'professional_unit') {
+    if (data.role === 'responder') {
       if (specCerts.length > 0) {
         data.unit_type = specCerts.map((c: any) => c.cert_type).join(', ');
       } else {
@@ -207,7 +206,7 @@ router.get('/:id', authenticate, async (req: AuthRequest, res: Response): Promis
 const updateUserSchema = z.object({
   full_name: z.string().optional(),
   phone: z.string().max(15).optional(),
-  role: z.enum(['admin', 'commander', 'master_admin', 'logistics', 'dispatcher', 'volunteer_specialist', 'volunteer_general', 'professional_unit']).optional(),
+  role: z.enum(['master_admin', 'admin', 'logistics', 'dispatcher', 'responder']).optional(),
   unit_type: z.enum([
     'police', 
     'fire', 
@@ -241,12 +240,12 @@ router.patch(
         return;
       }
 
-      if (parsed.data.role && !['master_admin', 'commander'].includes(req.user!.role)) {
+      if (parsed.data.role && req.user!.role !== 'master_admin') {
         res.status(403).json({ error: 'Only a master admin can change account roles.' });
         return;
       }
 
-      if (!['master_admin', 'commander'].includes(req.user!.role)) {
+      if (req.user!.role !== 'master_admin') {
         const { data: target } = await supabaseAdmin.from('users').select('role').eq('id', req.params.id).maybeSingle();
         if (!target || !['logistics', 'dispatcher'].includes(target.role)) {
           res.status(403).json({ error: 'Admins may only manage logistics and dispatcher accounts.' });

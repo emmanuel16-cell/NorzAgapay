@@ -7,7 +7,7 @@
 
 DO $$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_role') THEN
-        CREATE TYPE user_role AS ENUM ('admin', 'commander', 'volunteer_specialist', 'volunteer_general', 'professional_unit');
+        CREATE TYPE user_role AS ENUM ('master_admin', 'admin', 'logistics', 'dispatcher', 'responder');
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'unit_type') THEN
         CREATE TYPE unit_type AS ENUM ('police', 'fire', 'medical');
@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS users (
   email TEXT UNIQUE NOT NULL,
   phone VARCHAR(15),
   password_hash TEXT NOT NULL,
-  role user_role NOT NULL DEFAULT 'volunteer_general',
+  role user_role NOT NULL DEFAULT 'responder',
   unit_type unit_type,
   status user_status NOT NULL DEFAULT 'active',
   verified BOOLEAN NOT NULL DEFAULT false,
@@ -151,7 +151,7 @@ CREATE TABLE IF NOT EXISTS blocked_routes (
 CREATE TABLE IF NOT EXISTS resource_requests (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   requested_by UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  request_type TEXT NOT NULL, -- 'volunteers' or 'goods'
+  request_type TEXT NOT NULL, -- 'responders' or 'goods'
   sub_type TEXT,
   details TEXT NOT NULL,
   incident_id UUID REFERENCES incidents(id) ON DELETE SET NULL,
@@ -286,7 +286,7 @@ DO $$ BEGIN
         CREATE POLICY "Users can view own profile" ON users FOR SELECT USING (auth.uid() = id);
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Admins view all users') THEN
-        CREATE POLICY "Admins view all users" ON users FOR SELECT USING (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'commander')));
+        CREATE POLICY "Admins view all users" ON users FOR SELECT USING (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'master_admin')));
     END IF;
 
     -- Incidents Policies
@@ -294,12 +294,12 @@ DO $$ BEGIN
         CREATE POLICY "Authenticated users view incidents" ON incidents FOR SELECT USING (auth.uid() IS NOT NULL);
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Admins create incidents') THEN
-        CREATE POLICY "Admins create incidents" ON incidents FOR INSERT WITH CHECK (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'commander')));
+        CREATE POLICY "Admins create incidents" ON incidents FOR INSERT WITH CHECK (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'master_admin')));
     END IF;
 
     -- Tasks Policies
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'View own tasks') THEN
-        CREATE POLICY "View own tasks" ON tasks FOR SELECT USING (assigned_to = auth.uid() OR EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'commander')));
+        CREATE POLICY "View own tasks" ON tasks FOR SELECT USING (assigned_to = auth.uid() OR EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'master_admin')));
     END IF;
 
     -- Resource Requests policies
@@ -307,10 +307,10 @@ DO $$ BEGIN
         CREATE POLICY "Users can view own requests" ON resource_requests FOR SELECT USING (requested_by = auth.uid());
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Admins view all requests') THEN
-        CREATE POLICY "Admins view all requests" ON resource_requests FOR SELECT USING (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'commander')));
+        CREATE POLICY "Admins view all requests" ON resource_requests FOR SELECT USING (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'master_admin')));
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Authorized users can create requests') THEN
-        CREATE POLICY "Authorized users can create requests" ON resource_requests FOR INSERT WITH CHECK (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'commander', 'professional_unit')));
+        CREATE POLICY "Authorized users can create requests" ON resource_requests FOR INSERT WITH CHECK (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'master_admin', 'responder')));
     END IF;
 END $$;
 
@@ -453,7 +453,7 @@ DO $$ BEGIN
         CREATE POLICY "Authenticated users can view officers" ON officers FOR SELECT USING (auth.uid() IS NOT NULL);
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Admins can manage officers') THEN
-        CREATE POLICY "Admins can manage officers" ON officers FOR ALL USING (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'commander')));
+        CREATE POLICY "Admins can manage officers" ON officers FOR ALL USING (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'master_admin')));
     END IF;
 
     -- Respond Units Policies
@@ -461,7 +461,7 @@ DO $$ BEGIN
         CREATE POLICY "Authenticated users can view respond units" ON respond_units FOR SELECT USING (auth.uid() IS NOT NULL);
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Admins can manage respond units') THEN
-        CREATE POLICY "Admins can manage respond units" ON respond_units FOR ALL USING (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'commander')));
+        CREATE POLICY "Admins can manage respond units" ON respond_units FOR ALL USING (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'master_admin')));
     END IF;
 
     -- Volunteer Dispatches Policies
@@ -469,7 +469,7 @@ DO $$ BEGIN
         CREATE POLICY "Authenticated users can view dispatches" ON volunteer_dispatches FOR SELECT USING (auth.uid() IS NOT NULL);
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Admins can manage dispatches') THEN
-        CREATE POLICY "Admins can manage dispatches" ON volunteer_dispatches FOR ALL USING (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'commander')));
+        CREATE POLICY "Admins can manage dispatches" ON volunteer_dispatches FOR ALL USING (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'master_admin')));
     END IF;
 END $$;
 
@@ -505,7 +505,7 @@ DO $$ BEGIN
         CREATE POLICY "Authenticated users can view storages" ON storages FOR SELECT USING (auth.uid() IS NOT NULL);
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Admins can manage storages') THEN
-        CREATE POLICY "Admins can manage storages" ON storages FOR ALL USING (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'commander')));
+        CREATE POLICY "Admins can manage storages" ON storages FOR ALL USING (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'master_admin')));
     END IF;
 END $$;
 
@@ -575,14 +575,14 @@ DO $$ BEGIN
         CREATE POLICY "Public can create reports" ON incident_reports FOR INSERT WITH CHECK (true);
     END IF;
 
-    -- Authenticated users (volunteers/staff) can view their own reports
+    -- Authenticated responders and staff can view their own reports
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Users can view own incident reports') THEN
         CREATE POLICY "Users can view own incident reports" ON incident_reports FOR SELECT USING (reporter_id = auth.uid());
     END IF;
 
-    -- Admins and Commanders can view and manage all reports
+    -- Admins and master admins can view and manage all reports
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Admins manage incident reports') THEN
-        CREATE POLICY "Admins manage incident reports" ON incident_reports FOR ALL USING (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'commander')));
+        CREATE POLICY "Admins manage incident reports" ON incident_reports FOR ALL USING (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'master_admin')));
     END IF;
 END $$;
 
@@ -715,14 +715,14 @@ DO $$ BEGIN
         CREATE POLICY "Authenticated users can view advisories" ON weather_advisories FOR SELECT USING (auth.uid() IS NOT NULL);
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Admins can manage advisories') THEN
-        CREATE POLICY "Admins can manage advisories" ON weather_advisories FOR ALL USING (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'commander')));
+        CREATE POLICY "Admins can manage advisories" ON weather_advisories FOR ALL USING (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'master_admin')));
     END IF;
     -- Hazard Zones
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Authenticated users can view hazard zones') THEN
         CREATE POLICY "Authenticated users can view hazard zones" ON hazard_zones FOR SELECT USING (auth.uid() IS NOT NULL);
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Admins can manage hazard zones') THEN
-        CREATE POLICY "Admins can manage hazard zones" ON hazard_zones FOR ALL USING (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'commander')));
+        CREATE POLICY "Admins can manage hazard zones" ON hazard_zones FOR ALL USING (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'master_admin')));
     END IF;
 END $$;
 
@@ -858,21 +858,21 @@ DO $$ BEGIN
         CREATE POLICY "Authenticated users can view earthquakes" ON earthquakes FOR SELECT USING (auth.uid() IS NOT NULL);
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Admins can manage earthquakes') THEN
-        CREATE POLICY "Admins can manage earthquakes" ON earthquakes FOR ALL USING (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'commander')));
+        CREATE POLICY "Admins can manage earthquakes" ON earthquakes FOR ALL USING (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'master_admin')));
     END IF;
     -- River Stations
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Authenticated users can view river stations') THEN
         CREATE POLICY "Authenticated users can view river stations" ON river_stations FOR SELECT USING (auth.uid() IS NOT NULL);
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Admins can manage river stations') THEN
-        CREATE POLICY "Admins can manage river stations" ON river_stations FOR ALL USING (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'commander')));
+        CREATE POLICY "Admins can manage river stations" ON river_stations FOR ALL USING (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'master_admin')));
     END IF;
     -- River Levels
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Authenticated users can view river levels') THEN
         CREATE POLICY "Authenticated users can view river levels" ON river_levels FOR SELECT USING (auth.uid() IS NOT NULL);
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Admins can manage river levels') THEN
-        CREATE POLICY "Admins can manage river levels" ON river_levels FOR ALL USING (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'commander')));
+        CREATE POLICY "Admins can manage river levels" ON river_levels FOR ALL USING (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'master_admin')));
     END IF;
 END $$;
 
@@ -972,14 +972,14 @@ DO $$ BEGIN
         CREATE POLICY "Authenticated users can view dam stations" ON dam_stations FOR SELECT USING (auth.uid() IS NOT NULL);
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Admins can manage dam stations') THEN
-        CREATE POLICY "Admins can manage dam stations" ON dam_stations FOR ALL USING (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'commander')));
+        CREATE POLICY "Admins can manage dam stations" ON dam_stations FOR ALL USING (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'master_admin')));
     END IF;
     -- Dam Levels
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Authenticated users can view dam levels') THEN
         CREATE POLICY "Authenticated users can view dam levels" ON dam_levels FOR SELECT USING (auth.uid() IS NOT NULL);
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Admins can manage dam levels') THEN
-        CREATE POLICY "Admins can manage dam levels" ON dam_levels FOR ALL USING (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'commander')));
+        CREATE POLICY "Admins can manage dam levels" ON dam_levels FOR ALL USING (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'master_admin')));
     END IF;
 END $$;
 
@@ -1177,7 +1177,7 @@ DO $$ BEGIN
         CREATE POLICY "Authenticated users can view alerts" ON alerts FOR SELECT USING (auth.uid() IS NOT NULL);
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Admins can manage alerts') THEN
-        CREATE POLICY "Admins can manage alerts" ON alerts FOR ALL USING (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'commander')));
+        CREATE POLICY "Admins can manage alerts" ON alerts FOR ALL USING (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'master_admin')));
     END IF;
     
     -- Activity Feed

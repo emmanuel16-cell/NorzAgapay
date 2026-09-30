@@ -10,13 +10,12 @@ interface User {
 }
 
 const roleColors: Record<string,string> = {
-  admin:'badge-critical', commander:'badge-high',
-  professional_unit:'badge-open'
+  master_admin:'badge-high', admin:'badge-critical', responder:'badge-open',
 };
 
 export default function UsersPage() {
   const { user } = useAuth();
-  const isMasterAdmin = user?.role === 'master_admin' || user?.role === 'commander';
+  const isMasterAdmin = user?.role === 'master_admin';
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [roleFilter, setRoleFilter] = useState('');
@@ -38,7 +37,7 @@ export default function UsersPage() {
 
   const openEdit = (u: User) => {
     setEditUser(u);
-    setEditForm({ status: u.status, role: u.role === 'commander' ? 'master_admin' : u.role });
+    setEditForm({ status: u.status, role: u.role });
   };
 
   const handleSave = async () => {
@@ -79,9 +78,7 @@ export default function UsersPage() {
           <option value="logistics">Logistics</option>
           <option value="dispatcher">Dispatcher</option>
           {isMasterAdmin && <>
-            <option value="professional_unit">MDRRMO Officer</option>
-            <option value="volunteer_specialist">Volunteer Specialist</option>
-            <option value="volunteer_general">Volunteer General</option>
+            <option value="responder">Responder</option>
           </>}
         </select>
         <button className="btn btn-primary" onClick={() => setShowCreate(true)}>Create Account</button>
@@ -102,7 +99,7 @@ export default function UsersPage() {
                   <tr key={u.id}>
                     <td style={{fontWeight:600,color:'var(--text-primary)'}}>{u.full_name}</td>
                     <td>{u.email}</td>
-                    <td><span className={`badge ${roleColors[u.role]||'badge-low'}`}>{u.role === 'professional_unit' ? 'MDRRMO Officer' : u.role === 'commander' ? 'Master Admin' : u.role.replace(/_/g,' ')}</span></td>
+                    <td><span className={`badge ${roleColors[u.role]||'badge-low'}`}>{u.role.replace(/_/g,' ')}</span></td>
                     <td>{u.unit_type || '—'}</td>
                     <td><span className={`badge ${u.status==='active'?'badge-low':'badge-pending'}`}>{u.status}</span></td>
                     <td>{u.verified ? '✅' : '❌'}</td>
@@ -130,9 +127,7 @@ export default function UsersPage() {
                   <option value="admin">Admin</option>
                   <option value="logistics">Logistics</option>
                   <option value="dispatcher">Dispatcher</option>
-                  <option value="professional_unit">MDRRMO Officer</option>
-                  <option value="volunteer_specialist">Volunteer Specialist</option>
-                  <option value="volunteer_general">Volunteer General</option>
+                  <option value="responder">Responder</option>
                 </select>
               ) : <input className="form-input" value={editForm.role.replace(/_/g, ' ')} disabled />}
             </div>

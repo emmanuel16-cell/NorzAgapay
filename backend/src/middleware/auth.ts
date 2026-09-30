@@ -48,9 +48,7 @@ export function authorize(...allowedRoles: string[]) {
       return;
     }
 
-    // `commander` is the legacy master-admin role. Keep it privileged while
-    // newly bootstrapped accounts use the explicit `master_admin` role.
-    if (!['master_admin', 'commander'].includes(req.user.role) && !allowedRoles.includes(req.user.role)) {
+    if (req.user.role !== 'master_admin' && !allowedRoles.includes(req.user.role)) {
       res.status(403).json({ error: 'Insufficient permissions. Access denied.' });
       return;
     }

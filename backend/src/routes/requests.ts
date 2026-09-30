@@ -6,7 +6,7 @@ import { authenticate, authorize, AuthRequest } from '../middleware/auth';
 const router = Router();
 
 // ============================================
-// GET /api/requests — list resource requests (Admin/Commander only)
+// GET /api/requests — list resource requests (Logistics and master admin)
 // ============================================
 router.get('/', authenticate, authorize('logistics'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -31,13 +31,13 @@ router.get('/', authenticate, authorize('logistics'), async (req: AuthRequest, r
 // POST /api/requests — create new resource request
 // ============================================
 const createRequestSchema = z.object({
-  request_type: z.enum(['volunteers', 'goods']),
+  request_type: z.enum(['responders', 'goods']),
   sub_type: z.string().optional(),
   details: z.string(),
   incident_id: z.string().uuid().nullable().optional(),
 });
 
-router.post('/', authenticate, authorize('professional_unit', 'logistics'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/', authenticate, authorize('responder', 'logistics'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const parsed = createRequestSchema.safeParse(req.body);
     if (!parsed.success) {
