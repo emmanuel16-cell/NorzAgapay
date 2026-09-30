@@ -20,7 +20,7 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
 });
 
 // POST /api/storages - create new storage
-router.post('/', authenticate, authorize('admin', 'commander'), async (req: AuthRequest, res: Response) => {
+router.post('/', authenticate, authorize('logistics'), async (req: AuthRequest, res: Response) => {
   try {
     const { name, address, capacity, status, latitude, longitude } = req.body;
     
@@ -43,7 +43,7 @@ router.post('/', authenticate, authorize('admin', 'commander'), async (req: Auth
 });
 
 // PATCH /api/storages/:id - update storage
-router.patch('/:id', authenticate, authorize('admin', 'commander'), async (req: AuthRequest, res: Response) => {
+router.patch('/:id', authenticate, authorize('logistics'), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const updates = req.body;
@@ -63,7 +63,7 @@ router.patch('/:id', authenticate, authorize('admin', 'commander'), async (req: 
 });
 
 // DELETE /api/storages/:id - delete storage
-router.delete('/:id', authenticate, authorize('admin', 'commander'), async (req: AuthRequest, res: Response) => {
+router.delete('/:id', authenticate, authorize('logistics'), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { error } = await supabaseAdmin

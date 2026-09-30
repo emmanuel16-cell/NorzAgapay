@@ -43,6 +43,8 @@ export default api;
 // Auth
 export const authAPI = {
   login: (email: string, password: string) => api.post('/auth/login', { email, password }),
+  masterAdminSetupStatus: () => api.get('/auth/master-admin-setup/status'),
+  createMasterAdmin: (data: { full_name: string; email: string; password: string }) => api.post('/auth/master-admin-setup', data),
   register: (data: any) => api.post('/auth/register', data),
   me: () => api.get('/auth/me'),
 };
@@ -72,6 +74,7 @@ export const taskAPI = {
 // Users
 export const userAPI = {
   list: (params?: any) => api.get('/users', { params }),
+  create: (data: { full_name: string; email: string; password: string; role: string }) => api.post('/users', data),
   get: (id: string) => api.get(`/users/${id}`),
   update: (id: string, data: any) => api.patch(`/users/${id}`, data),
 };

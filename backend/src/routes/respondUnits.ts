@@ -121,7 +121,7 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
 });
 
 // POST /api/respond-units - create new unit
-router.post('/', authenticate, authorize('admin', 'commander'), async (req: AuthRequest, res: Response) => {
+router.post('/', authenticate, authorize('logistics'), async (req: AuthRequest, res: Response) => {
   try {
     const { unit_name, specialization, officer_ids, team_leader_id } = req.body;
     
@@ -172,7 +172,7 @@ router.post('/', authenticate, authorize('admin', 'commander'), async (req: Auth
 });
 
 // PATCH /api/respond-units/:id - update unit
-router.patch('/:id', authenticate, authorize('admin', 'commander'), async (req: AuthRequest, res: Response) => {
+router.patch('/:id', authenticate, authorize('logistics'), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const updates = { ...req.body };
@@ -264,7 +264,7 @@ router.post('/:id/members', authenticate, async (req: AuthRequest, res: Response
 });
 
 // DELETE /api/respond-units/:id - delete unit
-router.delete('/:id', authenticate, authorize('admin', 'commander'), async (req: AuthRequest, res: Response) => {
+router.delete('/:id', authenticate, authorize('logistics'), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { error } = await supabaseAdmin

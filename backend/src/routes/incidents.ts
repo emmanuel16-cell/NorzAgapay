@@ -92,7 +92,7 @@ const createIncidentSchema = z.object({
 router.post(
   '/',
   authenticate,
-  authorize('admin', 'commander'),
+  authorize('dispatcher'),
   async (req: AuthRequest, res: Response): Promise<void> => {
     try {
       const parsed = createIncidentSchema.safeParse(req.body);
@@ -145,7 +145,7 @@ const updateIncidentSchema = z.object({
 router.patch(
   '/:id',
   authenticate,
-  authorize('admin', 'commander'),
+  authorize('dispatcher'),
   async (req: AuthRequest, res: Response): Promise<void> => {
     try {
       const parsed = updateIncidentSchema.safeParse(req.body);

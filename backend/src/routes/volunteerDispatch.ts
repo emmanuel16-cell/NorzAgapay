@@ -21,7 +21,7 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
 });
 
 // POST /api/volunteer-dispatch - create new dispatch
-router.post('/', authenticate, authorize('admin', 'commander'), async (req: AuthRequest, res: Response) => {
+router.post('/', authenticate, authorize('dispatcher'), async (req: AuthRequest, res: Response) => {
   try {
     const { 
       team_name, 
@@ -141,7 +141,7 @@ router.post('/', authenticate, authorize('admin', 'commander'), async (req: Auth
 });
 
 // DELETE /api/volunteer-dispatch/:id - delete dispatch
-router.delete('/:id', authenticate, authorize('admin', 'commander'), async (req: AuthRequest, res: Response) => {
+router.delete('/:id', authenticate, authorize('dispatcher'), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { error } = await supabaseAdmin

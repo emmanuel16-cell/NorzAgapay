@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { userAPI } from '../lib/api';
 import toast from 'react-hot-toast';
+import { useAuth } from '../context/AuthContext';
 
 interface User {
   id: string; full_name: string; email: string; phone?: string;
@@ -14,11 +15,16 @@ const roleColors: Record<string,string> = {
 };
 
 export default function UsersPage() {
+  const { user } = useAuth();
+  const isMasterAdmin = user?.role === 'master_admin' || user?.role === 'commander';
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [roleFilter, setRoleFilter] = useState('');
   const [editUser, setEditUser] = useState<User|null>(null);
   const [editForm, setEditForm] = useState({ status:'', role:'' });
+  const [showCreate, setShowCreate] = useState(false);
+  const [createForm, setCreateForm] = useState({ full_name:'', email:'', password:'', role:'logistics' });
+  const [creating, setCreating] = useState(false);
 
   const fetchUsers = () => {
     setLoading(true);
@@ -32,7 +38,7 @@ export default function UsersPage() {
 
   const openEdit = (u: User) => {
     setEditUser(u);
-    setEditForm({ status: u.status, role: u.role });
+    setEditForm({ status: u.status, role: u.role === 'commander' ? 'master_admin' : u.role });
   };
 
   const handleSave = async () => {
@@ -45,16 +51,41 @@ export default function UsersPage() {
     } catch { toast.error('Update failed'); }
   };
 
+  const handleCreate = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setCreating(true);
+    try {
+      await userAPI.create(createForm);
+      toast.success(`${createForm.role.replace(/_/g, ' ')} account created`);
+      setShowCreate(false);
+      setCreateForm({ full_name:'', email:'', password:'', role:'logistics' });
+      fetchUsers();
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || 'Account creation failed');
+    } finally {
+      setCreating(false);
+    }
+  };
+
   return (
     <>
       <div className="page-header">
         <h1 className="page-title">User Management</h1>
+        <div style={{display:'flex',alignItems:'center',gap:12}}>
         <select className="form-select" style={{width:'auto'}} value={roleFilter} onChange={e=>setRoleFilter(e.target.value)}>
           <option value="">All Roles</option>
-          <option value="admin">Admin</option>
-          <option value="commander">Commander</option>
-          <option value="professional_unit">MDRRMO Officer</option>
+          {isMasterAdmin && <option value="master_admin">Master Admin</option>}
+          {isMasterAdmin && <option value="admin">Admin</option>}
+          <option value="logistics">Logistics</option>
+          <option value="dispatcher">Dispatcher</option>
+          {isMasterAdmin && <>
+            <option value="professional_unit">MDRRMO Officer</option>
+            <option value="volunteer_specialist">Volunteer Specialist</option>
+            <option value="volunteer_general">Volunteer General</option>
+          </>}
         </select>
+        <button className="btn btn-primary" onClick={() => setShowCreate(true)}>Create Account</button>
+        </div>
       </div>
 
       <div className="page-content">
@@ -71,7 +102,7 @@ export default function UsersPage() {
                   <tr key={u.id}>
                     <td style={{fontWeight:600,color:'var(--text-primary)'}}>{u.full_name}</td>
                     <td>{u.email}</td>
-                    <td><span className={`badge ${roleColors[u.role]||'badge-low'}`}>{u.role === 'professional_unit' ? 'MDRRMO Officer' : u.role.replace(/_/g,' ')}</span></td>
+                    <td><span className={`badge ${roleColors[u.role]||'badge-low'}`}>{u.role === 'professional_unit' ? 'MDRRMO Officer' : u.role === 'commander' ? 'Master Admin' : u.role.replace(/_/g,' ')}</span></td>
                     <td>{u.unit_type || '—'}</td>
                     <td><span className={`badge ${u.status==='active'?'badge-low':'badge-pending'}`}>{u.status}</span></td>
                     <td>{u.verified ? '✅' : '❌'}</td>
@@ -94,11 +125,16 @@ export default function UsersPage() {
             </div>
             <div className="form-group">
               <label className="form-label">Role</label>
-              <select className="form-select" value={editForm.role} onChange={e=>setEditForm({...editForm,role:e.target.value})}>
-                <option value="admin">Admin</option>
-                <option value="commander">Commander</option>
-                <option value="professional_unit">MDRRMO Officer</option>
-              </select>
+              {isMasterAdmin ? (
+                <select className="form-select" value={editForm.role} onChange={e=>setEditForm({...editForm,role:e.target.value})}>
+                  <option value="admin">Admin</option>
+                  <option value="logistics">Logistics</option>
+                  <option value="dispatcher">Dispatcher</option>
+                  <option value="professional_unit">MDRRMO Officer</option>
+                  <option value="volunteer_specialist">Volunteer Specialist</option>
+                  <option value="volunteer_general">Volunteer General</option>
+                </select>
+              ) : <input className="form-input" value={editForm.role.replace(/_/g, ' ')} disabled />}
             </div>
             <div className="form-group">
               <label className="form-label">Status</label>
@@ -113,6 +149,41 @@ export default function UsersPage() {
               <button className="btn btn-primary" onClick={handleSave}>Save Changes</button>
             </div>
           </div>
+        </div>
+      )}
+
+      {showCreate && (
+        <div className="modal-backdrop" onClick={() => setShowCreate(false)}>
+          <form className="modal" onSubmit={handleCreate} onClick={event => event.stopPropagation()}>
+            <div className="modal-header">
+              <h2 className="modal-title">Create Dashboard Account</h2>
+              <button type="button" className="modal-close" onClick={() => setShowCreate(false)}>✕</button>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Full Name</label>
+              <input className="form-input" required minLength={2} value={createForm.full_name} onChange={event => setCreateForm({...createForm,full_name:event.target.value})} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Email</label>
+              <input className="form-input" type="email" required value={createForm.email} onChange={event => setCreateForm({...createForm,email:event.target.value})} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Temporary Password (minimum 8 characters)</label>
+              <input className="form-input" type="password" required minLength={8} value={createForm.password} onChange={event => setCreateForm({...createForm,password:event.target.value})} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Role</label>
+              <select className="form-select" value={createForm.role} onChange={event => setCreateForm({...createForm,role:event.target.value})}>
+                {isMasterAdmin && <option value="admin">Admin</option>}
+                <option value="logistics">Logistics</option>
+                <option value="dispatcher">Dispatcher</option>
+              </select>
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-outline" onClick={() => setShowCreate(false)}>Cancel</button>
+              <button type="submit" className="btn btn-primary" disabled={creating}>{creating ? 'Creating…' : 'Create Account'}</button>
+            </div>
+          </form>
         </div>
       )}
     </>

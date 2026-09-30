@@ -8,7 +8,7 @@ const router = Router();
 router.post(
   '/dispatch/:incidentId',
   authenticate,
-  authorize('admin', 'commander'),
+  authorize('dispatcher'),
   async (req: AuthRequest, res: Response): Promise<void> => {
     try {
       const { incidentId } = req.params;

@@ -52,7 +52,7 @@ const addInventorySchema = z.object({
 router.post(
   '/',
   authenticate,
-  authorize('admin', 'commander'),
+  authorize('logistics'),
   async (req: AuthRequest, res: Response): Promise<void> => {
     try {
       const parsed = addInventorySchema.safeParse(req.body);
@@ -87,7 +87,7 @@ router.post(
 router.patch(
   '/:id',
   authenticate,
-  authorize('admin', 'commander'),
+  authorize('logistics'),
   async (req: AuthRequest, res: Response): Promise<void> => {
     try {
       const updateSchema = z.object({
@@ -166,7 +166,7 @@ const createShipmentSchema = z.object({
 router.post(
   '/shipments',
   authenticate,
-  authorize('admin', 'commander'),
+  authorize('logistics'),
   async (req: AuthRequest, res: Response): Promise<void> => {
     try {
       const parsed = createShipmentSchema.safeParse(req.body);

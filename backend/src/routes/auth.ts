@@ -37,6 +37,68 @@ const loginSchema = z.object({
   password: z.string().min(1, 'Password is required'),
 });
 
+const masterAdminSetupSchema = z.object({
+  full_name: z.string().trim().min(2).max(120),
+  email: z.string().trim().email().transform((value) => value.toLowerCase()),
+  password: z.string().min(12).max(128),
+});
+
+async function hasMasterAdmin() {
+  const { data, error } = await supabaseAdmin
+    .from('users')
+    .select('id')
+    .in('role', ['master_admin', 'commander'])
+    .limit(1);
+  if (error) throw error;
+  return (data?.length ?? 0) > 0;
+}
+
+// First-run status is public so the login page can offer account setup.
+router.get('/master-admin-setup/status', async (_req: Request, res: Response): Promise<void> => {
+  try {
+    res.json({ setupRequired: !(await hasMasterAdmin()) });
+  } catch (err) {
+    console.error('Master admin setup status error:', err);
+    res.status(500).json({ error: 'Unable to check initial setup status.' });
+  }
+});
+
+// Public only until the first master admin exists. A database unique index
+// makes concurrent requests safe: only one account can win the first setup.
+router.post('/master-admin-setup', async (req: Request, res: Response): Promise<void> => {
+  const parsed = masterAdminSetupSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Validation failed', details: parsed.error.flatten() });
+    return;
+  }
+  try {
+    if (await hasMasterAdmin()) {
+      res.status(409).json({ error: 'Master admin setup is already complete.' });
+      return;
+    }
+    const { full_name, email, password } = parsed.data;
+    const password_hash = await bcrypt.hash(password, 12);
+    const { data, error } = await supabaseAdmin
+      .from('users')
+      .insert({ full_name, email, password_hash, role: 'master_admin', status: 'active', verified: true })
+      .select('id, full_name, email, role, status, verified')
+      .single();
+    if (error?.code === '23505') {
+      res.status(409).json({ error: 'Setup was completed already, or this email is already registered.' });
+      return;
+    }
+    if (error || !data) {
+      console.error('Master admin setup create error:', error);
+      res.status(500).json({ error: 'Could not create the master admin account.' });
+      return;
+    }
+    res.status(201).json({ user: data });
+  } catch (err) {
+    console.error('Master admin setup create error:', err);
+    res.status(500).json({ error: 'Could not create the master admin account.' });
+  }
+});
+
 // ============================================
 // POST /api/auth/register
 // ============================================
@@ -482,14 +544,14 @@ router.patch('/resident/profile', authenticate, async (req: AuthRequest, res: Re
 router.post(
   '/create-admin',
   authenticate,
-  authorize('admin'),
+  authorize('master_admin'),
   async (req: AuthRequest, res: Response): Promise<void> => {
     try {
       const schema = z.object({
         full_name: z.string().min(2),
         email: z.string().email(),
         password: z.string().min(6),
-        role: z.enum(['admin', 'commander']),
+        role: z.enum(['admin']),
       });
 
       const parsed = schema.safeParse(req.body);

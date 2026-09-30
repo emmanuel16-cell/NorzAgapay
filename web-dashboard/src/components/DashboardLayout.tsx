@@ -56,7 +56,7 @@ const navItems: NavItem[] = [
 ];
 
 export default function DashboardLayout() {
-  const { user, logout } = useAuth();
+  const { user, logout, isMasterAdmin } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
@@ -101,6 +101,16 @@ export default function DashboardLayout() {
     .toUpperCase()
     .slice(0, 2) || 'NA';
 
+  const roleNav = isMasterAdmin
+    ? navItems
+    : user?.role === 'admin'
+      ? navItems.filter(item => ['Administration', '/verification/officers', '/users', '/alert-broadcasts', '/officers', '/analytics'].includes(item.path || item.label))
+      : user?.role === 'logistics'
+        ? navItems.filter(item => ['Logistics', '/evacuation-centers', '/requests', '/respond-units', '/shipments'].includes(item.path || item.label))
+        : user?.role === 'dispatcher'
+          ? navItems.filter(item => ['Operations', '/', '/reports', '/missions'].includes(item.path || item.label))
+          : [];
+
   return (
     <div className={`app-layout ${isCollapsed ? 'sidebar-collapsed' : ''}`}>
       <aside className={`sidebar ${isCollapsed ? 'collapsed' : ''}`}>
@@ -138,7 +148,7 @@ export default function DashboardLayout() {
         </div>
 
         <nav className="sidebar-nav">
-          {navItems.map((item, i) =>
+          {roleNav.map((item, i) =>
             item.section ? (
               <div
                 key={i}

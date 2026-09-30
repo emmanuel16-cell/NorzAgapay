@@ -20,16 +20,26 @@ import EvacuationCentersPage from './pages/EvacuationCentersPage';
 
 import './index.css';
 
+function homeForRole(role?: string) {
+  if (role === 'admin') return '/users';
+  if (role === 'logistics') return '/evacuation-centers';
+  if (role === 'dispatcher') return '/';
+  return '/';
+}
+
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { user, loading, isAdmin, isCommander } = useAuth();
+  const { user, loading, canAccessDashboard } = useAuth();
   if (loading) return <div className="loading-overlay"><div className="spinner"/></div>;
   if (!user) return <Navigate to="/login" replace />;
-  
-  // Only allow admin and commander to access dashboard
-  if (!isAdmin && !isCommander) {
-    return <Navigate to="/login" replace />;
+  if (!canAccessDashboard) return <Navigate to="/login" replace />;
+  return <>{children}</>;
+}
+
+function RoleAccess({ roles, children }: { roles: string[]; children: React.ReactNode }) {
+  const { user, isMasterAdmin } = useAuth();
+  if (!isMasterAdmin && !roles.includes(user?.role || '')) {
+    return <Navigate to={homeForRole(user?.role)} replace />;
   }
-  
   return <>{children}</>;
 }
 
@@ -41,23 +51,23 @@ function AppRoutes() {
     <Routes>
       <Route path="/login" element={user ? <Navigate to="/" replace /> : <LoginPage />} />
       <Route path="/" element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
-        <Route index element={<CommandCenter />} />
-        <Route path="weather-monitoring" element={<WeatherMonitoringV2 />} />
+        <Route index element={<RoleAccess roles={['dispatcher']}><CommandCenter /></RoleAccess>} />
+        <Route path="weather-monitoring" element={<RoleAccess roles={[]}><WeatherMonitoringV2 /></RoleAccess>} />
         <Route path="advisories" element={<Navigate to="/weather-monitoring" replace />} />
         <Route path="earthquakes" element={<Navigate to="/weather-monitoring" replace />} />
-        <Route path="reports" element={<ReportsPage />} />
-        <Route path="missions" element={<MissionsPage />} />
-        <Route path="requests" element={<ResourceRequestsPage />} />
-        <Route path="evacuation-centers" element={<EvacuationCentersPage />} />
+        <Route path="reports" element={<RoleAccess roles={['dispatcher']}><ReportsPage /></RoleAccess>} />
+        <Route path="missions" element={<RoleAccess roles={['dispatcher']}><MissionsPage /></RoleAccess>} />
+        <Route path="requests" element={<RoleAccess roles={['logistics']}><ResourceRequestsPage /></RoleAccess>} />
+        <Route path="evacuation-centers" element={<RoleAccess roles={['logistics']}><EvacuationCentersPage /></RoleAccess>} />
         <Route path="verification" element={<Navigate to="/verification/officers" replace />} />
-        <Route path="verification/officers" element={<VerificationPage category="officers" />} />
-        <Route path="verification/barangay" element={<VerificationPage category="barangay" />} />
-        <Route path="respond-units" element={<RespondUnitsPage />} />
-        <Route path="shipments" element={<ShipmentsPage />} />
-        <Route path="users" element={<UsersPage />} />
-        <Route path="alert-broadcasts" element={<AlertBroadcastsPage />} />
-        <Route path="officers" element={<OfficersPage />} />
-        <Route path="analytics" element={<AnalyticsPage />} />
+        <Route path="verification/officers" element={<RoleAccess roles={['admin']}><VerificationPage category="officers" /></RoleAccess>} />
+        <Route path="verification/barangay" element={<RoleAccess roles={['admin']}><VerificationPage category="barangay" /></RoleAccess>} />
+        <Route path="respond-units" element={<RoleAccess roles={['logistics']}><RespondUnitsPage /></RoleAccess>} />
+        <Route path="shipments" element={<RoleAccess roles={['logistics']}><ShipmentsPage /></RoleAccess>} />
+        <Route path="users" element={<RoleAccess roles={['admin']}><UsersPage /></RoleAccess>} />
+        <Route path="alert-broadcasts" element={<RoleAccess roles={['admin']}><AlertBroadcastsPage /></RoleAccess>} />
+        <Route path="officers" element={<RoleAccess roles={['admin']}><OfficersPage /></RoleAccess>} />
+        <Route path="analytics" element={<RoleAccess roles={['admin']}><AnalyticsPage /></RoleAccess>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

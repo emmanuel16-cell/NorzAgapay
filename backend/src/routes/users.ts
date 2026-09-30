@@ -1,5 +1,6 @@
 import { Router, Response } from 'express';
 import { z } from 'zod';
+import bcrypt from 'bcryptjs';
 import { supabaseAdmin } from '../config/supabase';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth';
 import { setUserGPS } from '../config/redis';
@@ -13,14 +14,14 @@ const router = Router();
 router.get(
   '/',
   authenticate,
-  authorize('admin', 'commander', 'professional_unit'),
+  authorize('admin', 'commander', 'master_admin', 'professional_unit'),
   async (req: AuthRequest, res: Response): Promise<void> => {
     try {
       const user = req.user!;
       let { role, status, verified } = req.query;
 
       // Non-admin/commander can only view professional units
-      if (!['admin', 'commander'].includes(user.role)) {
+      if (!['admin', 'commander', 'master_admin'].includes(user.role)) {
         role = 'professional_unit';
       }
 
@@ -29,7 +30,9 @@ router.get(
         .select('id, full_name, email, phone, role, unit_type, status, verified, latitude, longitude, last_seen, created_at')
         .order('created_at', { ascending: false });
 
-      if (role) query = query.eq('role', role as string);
+      if (user.role === 'admin') query = query.in('role', ['logistics', 'dispatcher']);
+      if (role === 'master_admin') query = query.in('role', ['master_admin', 'commander']);
+      else if (role) query = query.eq('role', role as string);
       if (status) query = query.eq('status', status as string);
       if (verified !== undefined) query = query.eq('verified', verified === 'true');
 
@@ -85,6 +88,48 @@ router.get(
   }
 );
 
+// Create dashboard accounts. A master admin may create every dashboard role;
+// an admin may create logistics and dispatcher accounts only.
+router.post('/', authenticate, authorize('admin', 'master_admin'), async (req: AuthRequest, res: Response): Promise<void> => {
+  const schema = z.object({
+    full_name: z.string().trim().min(2).max(120),
+    email: z.string().trim().email().transform((value) => value.toLowerCase()),
+    password: z.string().min(8).max(128),
+    role: z.enum(['admin', 'logistics', 'dispatcher']),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Validation failed', details: parsed.error.flatten() });
+    return;
+  }
+  const { role, full_name, email, password } = parsed.data;
+  if (!['master_admin', 'commander'].includes(req.user!.role) && role === 'admin') {
+    res.status(403).json({ error: 'Only a master admin can create admin accounts.' });
+    return;
+  }
+  try {
+    const password_hash = await bcrypt.hash(password, 12);
+    const { data, error } = await supabaseAdmin
+      .from('users')
+      .insert({ full_name, email, password_hash, role, status: 'active', verified: true })
+      .select('id, full_name, email, role, status, verified, created_at')
+      .single();
+    if (error?.code === '23505') {
+      res.status(409).json({ error: 'An account with this email already exists.' });
+      return;
+    }
+    if (error || !data) {
+      console.error('Create dashboard user error:', error);
+      res.status(500).json({ error: 'Failed to create account.' });
+      return;
+    }
+    res.status(201).json({ user: data });
+  } catch (err) {
+    console.error('Create dashboard user error:', err);
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
 // ============================================
 // GET /api/users/:id — get user detail
 // ============================================
@@ -94,7 +139,7 @@ router.get('/:id', authenticate, async (req: AuthRequest, res: Response): Promis
     const user = req.user!;
 
     // Non-admin can only view their own profile
-    if (!['admin', 'commander'].includes(user.role) && user.userId !== req.params.id) {
+    if (!['admin', 'commander', 'master_admin'].includes(user.role) && user.userId !== req.params.id) {
       res.status(403).json({ error: 'Access denied.' });
       return;
     }
@@ -107,6 +152,11 @@ router.get('/:id', authenticate, async (req: AuthRequest, res: Response): Promis
 
     if (error || !data) {
       res.status(404).json({ error: 'User not found.' });
+      return;
+    }
+
+    if (user.role === 'admin' && !['logistics', 'dispatcher'].includes(data.role)) {
+      res.status(403).json({ error: 'Admins may only view logistics and dispatcher accounts.' });
       return;
     }
 
@@ -157,7 +207,7 @@ router.get('/:id', authenticate, async (req: AuthRequest, res: Response): Promis
 const updateUserSchema = z.object({
   full_name: z.string().optional(),
   phone: z.string().max(15).optional(),
-  role: z.enum(['admin', 'commander', 'volunteer_specialist', 'volunteer_general', 'professional_unit']).optional(),
+  role: z.enum(['admin', 'commander', 'master_admin', 'logistics', 'dispatcher', 'volunteer_specialist', 'volunteer_general', 'professional_unit']).optional(),
   unit_type: z.enum([
     'police', 
     'fire', 
@@ -182,13 +232,26 @@ const updateUserSchema = z.object({
 router.patch(
   '/:id',
   authenticate,
-  authorize('admin'),
+  authorize('admin', 'master_admin'),
   async (req: AuthRequest, res: Response): Promise<void> => {
     try {
       const parsed = updateUserSchema.safeParse(req.body);
       if (!parsed.success) {
         res.status(400).json({ error: 'Validation failed', details: parsed.error.flatten() });
         return;
+      }
+
+      if (parsed.data.role && !['master_admin', 'commander'].includes(req.user!.role)) {
+        res.status(403).json({ error: 'Only a master admin can change account roles.' });
+        return;
+      }
+
+      if (!['master_admin', 'commander'].includes(req.user!.role)) {
+        const { data: target } = await supabaseAdmin.from('users').select('role').eq('id', req.params.id).maybeSingle();
+        if (!target || !['logistics', 'dispatcher'].includes(target.role)) {
+          res.status(403).json({ error: 'Admins may only manage logistics and dispatcher accounts.' });
+          return;
+        }
       }
 
       const { data: user, error } = await supabaseAdmin

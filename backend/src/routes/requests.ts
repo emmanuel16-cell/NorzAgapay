@@ -8,7 +8,7 @@ const router = Router();
 // ============================================
 // GET /api/requests — list resource requests (Admin/Commander only)
 // ============================================
-router.get('/', authenticate, authorize('admin', 'commander'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.get('/', authenticate, authorize('logistics'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { data, error } = await supabaseAdmin
       .from('resource_requests')
@@ -37,7 +37,7 @@ const createRequestSchema = z.object({
   incident_id: z.string().uuid().nullable().optional(),
 });
 
-router.post('/', authenticate, authorize('professional_unit', 'commander', 'admin'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/', authenticate, authorize('professional_unit', 'logistics'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const parsed = createRequestSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -71,7 +71,7 @@ router.post('/', authenticate, authorize('professional_unit', 'commander', 'admi
 // ============================================
 // PATCH /api/requests/:id/status — update request status
 // ============================================
-router.patch('/:id/status', authenticate, authorize('admin', 'commander'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.patch('/:id/status', authenticate, authorize('logistics'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { status } = req.body;
     if (!['pending', 'approved', 'rejected', 'fulfilled'].includes(status)) {

@@ -1009,6 +1009,23 @@ tbody tr:last-child td { border-bottom: none; }
   box-shadow: 0 4px 12px rgba(7, 137, 200, 0.22);
 }
 
+.login-setup-toggle {
+  display: block;
+  margin: 18px auto 0;
+  padding: 4px;
+  border: 0;
+  background: transparent;
+  color: #0789c8;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.login-setup-toggle:hover {
+  color: #0678b0;
+  text-decoration: underline;
+}
+
 .login-card > p:last-child {
   color: #64748b !important;
 }

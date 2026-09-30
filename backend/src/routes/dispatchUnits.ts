@@ -38,7 +38,7 @@ router.get('/', authenticate, (req: AuthRequest, res: Response) => {
 });
 
 // POST /api/dispatch-units - create new unit
-router.post('/', authenticate, authorize('admin', 'commander'), (req: AuthRequest, res: Response) => {
+router.post('/', authenticate, authorize('logistics'), (req: AuthRequest, res: Response) => {
   const { name, type, personnel } = req.body;
   if (!name || !type) {
     res.status(400).json({ error: 'Name and type are required' });
@@ -59,7 +59,7 @@ router.post('/', authenticate, authorize('admin', 'commander'), (req: AuthReques
 });
 
 // DELETE /api/dispatch-units/:id - delete unit
-router.delete('/:id', authenticate, authorize('admin', 'commander'), (req: AuthRequest, res: Response) => {
+router.delete('/:id', authenticate, authorize('logistics'), (req: AuthRequest, res: Response) => {
   const { id } = req.params;
   let units = getUnits();
   const filtered = units.filter((u: any) => u.id !== id);

@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { debugAPI } from '../lib/api';
+import { authAPI, debugAPI } from '../lib/api';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -11,8 +11,17 @@ export default function LoginPage() {
   const [showDebugAccounts, setShowDebugAccounts] = useState(false);
   const [debugAccounts, setDebugAccounts] = useState<Array<{ id: string; full_name: string; email: string; role: string }>>([]);
   const [debugLoading, setDebugLoading] = useState(false);
-  const { login, debugLogin, user, isAdmin, isCommander, logout } = useAuth();
+  const [setupRequired, setSetupRequired] = useState(false);
+  const [showSetup, setShowSetup] = useState(false);
+  const [setupName, setSetupName] = useState('');
+  const { login, debugLogin, user, canAccessDashboard, logout } = useAuth();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    authAPI.masterAdminSetupStatus()
+      .then((res) => setSetupRequired(Boolean(res.data.setupRequired)))
+      .catch(() => setSetupRequired(false));
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -23,6 +32,20 @@ export default function LoginPage() {
       // The login call in AuthContext updates state, we check it here
     } catch (err: any) {
       setError(err.response?.data?.error || 'Login failed. Please try again.');
+      setLoading(false);
+    }
+  };
+
+  const handleMasterAdminSetup = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setError('');
+    setLoading(true);
+    try {
+      await authAPI.createMasterAdmin({ full_name: setupName, email, password });
+      setSetupRequired(false);
+      await login(email, password);
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Master admin setup failed. Please try again.');
       setLoading(false);
     }
   };
@@ -62,14 +85,14 @@ export default function LoginPage() {
   // Separate effect to handle redirection after login state is updated
   React.useEffect(() => {
     if (user) {
-      if (isAdmin || isCommander) {
+      if (canAccessDashboard) {
         navigate('/');
       } else {
-        setError('Access Denied: This dashboard is restricted to Commanders and Administrators. Please use the mobile app.');
+        setError('This account does not have web dashboard access. Please use the mobile app.');
         logout(); // Log them out immediately
       }
     }
-  }, [user, isAdmin, isCommander, navigate, logout]);
+  }, [user, canAccessDashboard, navigate, logout]);
 
   return (
     <div className="login-page">
@@ -77,8 +100,8 @@ export default function LoginPage() {
         <button className="login-logo" type="button" onClick={toggleDebugAccounts} title="Click logo to toggle Debug Quick Login">
           <img src="/NA-icon.png" alt="NorzAgapay" />
         </button>
-        <h1 className="login-title">NorzAgapay</h1>
-        <p className="login-subtitle">Crisis Management Command Center</p>
+        <h1 className="login-title">{showSetup ? 'Create Master Admin' : 'NorzAgapay'}</h1>
+        <p className="login-subtitle">{showSetup ? 'Set up the first command center account' : 'Crisis Management Command Center'}</p>
 
         {error && (
           <div style={{
@@ -94,7 +117,28 @@ export default function LoginPage() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit}>
+        {showSetup ? (
+          <form onSubmit={handleMasterAdminSetup}>
+            <div className="form-group">
+              <label className="form-label">Full Name</label>
+              <input className="form-input" autoComplete="name" value={setupName} onChange={event => setSetupName(event.target.value)} required minLength={2} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Email Address</label>
+              <input className="form-input" type="email" autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} required />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Password (at least 12 characters)</label>
+              <input className="form-input" type="password" autoComplete="new-password" value={password} onChange={event => setPassword(event.target.value)} required minLength={12} />
+            </div>
+            <button type="submit" className="btn btn-primary btn-lg" style={{ width: '100%', marginTop: '8px' }} disabled={loading}>
+              {loading ? 'Creating account…' : 'Create Master Admin'}
+            </button>
+            <button type="button" className="login-setup-toggle" onClick={() => { setShowSetup(false); setError(''); }}>
+              Back to sign in
+            </button>
+          </form>
+        ) : <form onSubmit={handleSubmit}>
           <div className="form-group">
             <label className="form-label">Email Address</label>
             <input
@@ -128,7 +172,13 @@ export default function LoginPage() {
           >
             {loading ? 'Signing in...' : 'Sign In'}
           </button>
-        </form>
+        </form>}
+
+        {!showSetup && setupRequired && (
+          <button type="button" className="login-setup-toggle" onClick={() => { setShowSetup(true); setError(''); }}>
+            First time here? Create the Master Admin account
+          </button>
+        )}
 
         {showDebugAccounts && (
           <div className="debug-dropdown">

@@ -83,7 +83,7 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response): Promise<
 router.patch(
   '/:id',
   authenticate,
-  authorize('admin', 'commander'),
+  authorize('dispatcher'),
   async (req: AuthRequest, res: Response): Promise<void> => {
     try {
       const { active } = req.body;

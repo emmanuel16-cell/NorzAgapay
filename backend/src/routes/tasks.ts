@@ -103,7 +103,7 @@ const createTaskSchema = z.object({
 router.post(
   '/',
   authenticate,
-  authorize('admin', 'commander'),
+  authorize('dispatcher'),
   async (req: AuthRequest, res: Response): Promise<void> => {
     try {
       const parsed = createTaskSchema.safeParse(req.body);
@@ -323,7 +323,7 @@ router.patch('/:id/status', authenticate, async (req: AuthRequest, res: Response
 router.patch(
   '/:id/reassign',
   authenticate,
-  authorize('admin', 'commander'),
+  authorize('dispatcher'),
   async (req: AuthRequest, res: Response): Promise<void> => {
     try {
       const { assigned_to } = req.body;
