@@ -52,6 +52,22 @@ const authenticateBarangay = async (req: AuthRequest, res: Response, next: any) 
       ...decoded,
       role: legacyRoleMap[decoded.role] || decoded.role,
     };
+    if (decoded.role === 'dispatcher' && !decoded.isPendingDispatcher) {
+      const { data: account, error: accountError } = await supabaseAdmin
+        .from('barangay_users')
+        .select('is_active')
+        .eq('id', decoded.userId)
+        .maybeSingle();
+      if (accountError) throw accountError;
+      if (account && account.is_active !== true) {
+        res.status(403).json({ error: 'This dispatcher account is inactive.' });
+        return;
+      }
+      if (!(await DispatcherVerificationService.isBarangayActive(decoded.barangayId))) {
+        res.status(403).json({ error: 'This barangay is deactivated by MDRRMO. Dispatchers cannot access the portal.' });
+        return;
+      }
+    }
     next();
   } catch {
     res.status(401).json({ error: 'Invalid or expired token' });
@@ -331,6 +347,10 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       // Dispatchers in barangay_users are approved when their account is active.
       // Check for a verification record to return full details
       if (user.role === 'dispatcher') {
+        if (!user.is_active || !(await DispatcherVerificationService.isBarangayActive(user.barangay_id))) {
+          res.status(403).json({ error: 'This barangay is deactivated by MDRRMO. Dispatchers cannot log in.' });
+          return;
+        }
         const verification = await DispatcherVerificationService.getByUserId(user.id);
         const token = jwt.sign(
           { userId: user.id, barangayId: user.barangay_id, role: user.role, email: user.email },
@@ -719,6 +739,7 @@ router.get('/dispatcher/certification-data', async (req: Request, res: Response)
 router.post(
   '/dispatcher/submit-certification',
   authenticateBarangay,
+  requireRole(['admin']),
   upload.single('file'),
   async (req: any, res: Response): Promise<void> => {
     try {
@@ -894,6 +915,7 @@ router.get(
 router.post(
   '/dispatcher/resubmit',
   authenticateBarangay,
+  requireRole(['admin']),
   async (req: any, res: Response): Promise<void> => {
     try {
       const updated = await DispatcherVerificationService.allowResubmission(req.barangayUser.userId);
@@ -977,8 +999,8 @@ router.post('/team', authenticateBarangay, requireRole(['admin', 'responder']), 
 
     if (req.barangayUser.role === 'admin' && body.role === 'dispatcher') {
       const coordination = await DispatcherVerificationService.getByUserId(req.barangayUser.userId);
-      if (coordination?.status !== 'verified') {
-        res.status(403).json({ error: 'The MDRRMO coordination request must be verified before adding a dispatcher.' });
+      if (coordination?.status !== 'verified' || !(await DispatcherVerificationService.isBarangayActive(req.barangayUser.barangayId))) {
+        res.status(403).json({ error: 'The barangay must have an active MDRRMO coordination request before adding a dispatcher.' });
         return;
       }
     }
@@ -1038,8 +1060,8 @@ router.patch('/team/:id', authenticateBarangay, requireRole(['admin']), async (r
     }
     if (parsed.data.role === 'dispatcher') {
       const coordination = await DispatcherVerificationService.getByUserId(req.barangayUser.userId);
-      if (coordination?.status !== 'verified') {
-        res.status(403).json({ error: 'The MDRRMO coordination request must be verified before assigning the dispatcher role.' });
+      if (coordination?.status !== 'verified' || !(await DispatcherVerificationService.isBarangayActive(req.barangayUser.barangayId))) {
+        res.status(403).json({ error: 'The barangay must have an active MDRRMO coordination request before assigning the dispatcher role.' });
         return;
       }
     }

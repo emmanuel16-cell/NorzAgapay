@@ -27,6 +27,7 @@ interface DispatcherVerification {
   reference_no: string;
   document_url?: string | null;
   status: 'pending_document' | 'under_review' | 'verified' | 'rejected' | 'needs_correction';
+  is_active?: boolean;
   rejection_reason?: string | null;
   submitted_at?: string | null;
   reviewed_at?: string | null;
@@ -41,10 +42,11 @@ export default function VerificationPage() {
   const [archived, setArchived] = useState<PendingUser[]>([]);
   const [pendingDispatchers, setPendingDispatchers] = useState<DispatcherVerification[]>([]);
   const [archivedDispatchers, setArchivedDispatchers] = useState<DispatcherVerification[]>([]);
+  const [approvedDispatchers, setApprovedDispatchers] = useState<DispatcherVerification[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [queueCategory, setQueueCategory] = useState<'officers' | 'dispatchers'>('officers');
-  const [viewMode, setViewMode] = useState<'pending' | 'archived'>('pending');
+  const [viewMode, setViewMode] = useState<'pending' | 'approved' | 'archived'>('pending');
 
   const [selectedUser, setSelectedUser] = useState<PendingUser | null>(null);
   const [selectedDispatcher, setSelectedDispatcher] = useState<DispatcherVerification | null>(null);
@@ -65,11 +67,12 @@ export default function VerificationPage() {
   const fetchVerifications = async () => {
     setLoading(true);
     try {
-      const [pendingRes, archivedRes, dispPendingRes, dispArchivedRes] = await Promise.allSettled([
+      const [pendingRes, archivedRes, dispPendingRes, dispArchivedRes, dispApprovedRes] = await Promise.allSettled([
         verificationAPI.pending(),
         verificationAPI.archived(),
         verificationAPI.dispatcherPending(),
         verificationAPI.dispatcherArchived(),
+        verificationAPI.dispatcherApproved(),
       ]);
 
       if (pendingRes.status === 'fulfilled') {
@@ -84,6 +87,9 @@ export default function VerificationPage() {
       if (dispArchivedRes.status === 'fulfilled') {
         setArchivedDispatchers(dispArchivedRes.value.data.archived_dispatchers || []);
       }
+      if (dispApprovedRes.status === 'fulfilled') {
+        setApprovedDispatchers(dispApprovedRes.value.data.approved_dispatchers || []);
+      }
     } catch {
       toast.error('Failed to load verifications');
     } finally {
@@ -96,11 +102,15 @@ export default function VerificationPage() {
   }, []);
 
   // Officer list
-  const currentOfficerList = viewMode === 'pending' ? pending : archived;
+  const currentOfficerList = viewMode === 'archived' ? archived : pending;
   const officerCount = currentOfficerList.length;
 
   // Dispatcher list
-  const currentDispatcherList = viewMode === 'pending' ? pendingDispatchers : archivedDispatchers;
+  const currentDispatcherList = viewMode === 'pending'
+    ? pendingDispatchers
+    : viewMode === 'approved'
+    ? approvedDispatchers
+    : archivedDispatchers;
   const dispatcherPendingCount = pendingDispatchers.length;
 
   // Officer handlers
@@ -236,7 +246,7 @@ export default function VerificationPage() {
     setActionLoading(true);
     try {
       await verificationAPI.approveDispatcher(id);
-      toast.success('Barangay Dispatcher approved and activated!');
+      toast.success('Barangay coordination request approved and activated.');
       setSelectedDispatcher(null);
       fetchVerifications();
     } catch {
@@ -250,7 +260,7 @@ export default function VerificationPage() {
     setActionLoading(true);
     try {
       await verificationAPI.rejectDispatcher(id, reason);
-      toast.success('Dispatcher verification rejected and restricted');
+      toast.success('Barangay request rejected and moved to archive.');
       setRejectModalOpen(false);
       setSelectedDispatcher(null);
       fetchVerifications();
@@ -265,12 +275,27 @@ export default function VerificationPage() {
     setActionLoading(true);
     try {
       await verificationAPI.requestCorrectionDispatcher(id, reason);
-      toast.success('Correction requested for Dispatcher certification');
+      toast.success('Correction requested for the barangay certification.');
       setCorrectionModalOpen(false);
       setSelectedDispatcher(null);
       fetchVerifications();
     } catch {
       toast.error('Correction request failed');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleSetDispatcherActive = async (dispatcher: DispatcherVerification, isActive: boolean) => {
+    setActionLoading(true);
+    try {
+      const response = await verificationAPI.setDispatcherActive(dispatcher.id, isActive);
+      const updated = response.data.verification as DispatcherVerification;
+      setSelectedDispatcher((current) => current?.id === dispatcher.id ? { ...current, ...updated, is_active: isActive } : current);
+      toast.success(`Barangay ${isActive ? 'activated' : 'deactivated'}.`);
+      await fetchVerifications();
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error || 'Could not update dispatcher access.');
     } finally {
       setActionLoading(false);
     }
@@ -301,14 +326,14 @@ export default function VerificationPage() {
     }
   };
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: string, isActive?: boolean) => {
     switch (status) {
       case 'under_review':
         return <span className="status-pill status-review">● Under Review</span>;
       case 'pending_document':
         return <span className="status-pill status-pending">○ Awaiting Document</span>;
       case 'verified':
-        return <span className="status-pill status-verified">✓ Verified / Active</span>;
+        return <span className="status-pill status-verified">✓ Verified / {isActive === false ? 'Deactivated' : 'Active'}</span>;
       case 'needs_correction':
         return <span className="status-pill status-correction">⚠ Needs Correction</span>;
       case 'rejected':
@@ -769,9 +794,34 @@ export default function VerificationPage() {
         }
 
         .disp-modal {
-          max-width: 680px;
+          max-width: min(1280px, calc(100vw - 48px));
           max-height: 90vh;
           overflow-y: auto;
+          display: grid;
+          grid-template-columns: 1.2fr 0.95fr;
+          grid-template-areas:
+            "head head"
+            "info document"
+            "contact document"
+            "history document"
+            "actions actions";
+          gap: 0 16px;
+        }
+
+        .disp-modal-header { grid-area: head; }
+        .disp-review-info { grid-area: info; }
+        .disp-review-contact { grid-area: contact; }
+        .disp-review-document { grid-area: document; }
+        .disp-review-history { grid-area: history; }
+        .disp-modal-actions { grid-area: actions; }
+        .disp-review-document { display: flex; flex-direction: column; }
+        .disp-review-document .doc-preview-box { flex: 1; min-height: 280px; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+
+        @media (max-width: 800px) {
+          .disp-modal {
+            grid-template-columns: 1fr;
+            grid-template-areas: "head" "info" "contact" "document" "history" "actions";
+          }
         }
 
         @keyframes oqPopIn {
@@ -933,7 +983,9 @@ export default function VerificationPage() {
               : 'Officer Archive'
             : viewMode === 'pending'
             ? 'Pending Dispatcher Verifications'
-            : 'Archived Dispatchers'}
+            : viewMode === 'approved'
+            ? 'Approved Barangay Accounts'
+            : 'Rejected Barangay Archive'}
         </h1>
 
         <div className="oq-header-right">
@@ -942,15 +994,14 @@ export default function VerificationPage() {
             className={`oq-badge ${queueCategory === 'officers' ? 'active-queue' : ''}`}
             onClick={() => {
               setQueueCategory('officers');
+              if (viewMode === 'approved') setViewMode('pending');
               setIsMultiSelect(false);
               setSelectedIds(new Set());
             }}
             style={{ cursor: 'pointer' }}
             title="Switch to Officer Verification Queue"
           >
-            {viewMode === 'pending' ? '🥇' : '📦'}{' '}
-            {officerCount} {viewMode === 'pending' ? 'PENDING OFFICER' : 'ARCHIVED OFFICER'}
-            {officerCount === 1 ? '' : 'S'}
+            👮 Officers <span style={{ opacity: 0.75 }}>{viewMode === 'archived' ? archived.length : pending.length}</span>
           </div>
 
           {/* Barangay Dispatcher badge beside the officer badge */}
@@ -958,27 +1009,44 @@ export default function VerificationPage() {
             className={`oq-badge oq-badge-dispatcher ${queueCategory === 'dispatchers' ? 'active-queue' : ''}`}
             onClick={() => {
               setQueueCategory('dispatchers');
+              setViewMode('pending');
               setIsMultiSelect(false);
               setSelectedIds(new Set());
             }}
             style={{ cursor: 'pointer' }}
             title="Switch to Barangay Dispatcher Verifications"
           >
-            📋 {dispatcherPendingCount} PENDING DISPATCHER
-            {dispatcherPendingCount === 1 ? '' : 'S'}
+            🏘 Barangay <span style={{ opacity: 0.75 }}>{dispatcherPendingCount}</span>
           </div>
 
-          {/* Archive Icon Button */}
-          <button
-            className={`oq-archive-btn ${viewMode === 'archived' ? 'active' : ''}`}
-            onClick={() => {
-              setViewMode((v) => (v === 'pending' ? 'archived' : 'pending'));
-              setIsMultiSelect(false);
-              setSelectedIds(new Set());
-            }}
-            title={viewMode === 'pending' ? 'View Archive' : 'Back to Verification Queue'}
-            aria-label="Toggle archive view"
-          >
+          {queueCategory === 'dispatchers' ? (
+            <div style={{ display: 'flex', gap: 8 }}>
+              {([
+                ['pending', 'Pending', dispatcherPendingCount],
+                ['approved', 'Approve', approvedDispatchers.length],
+                ['archived', 'Archive', archivedDispatchers.length],
+              ] as const).map(([mode, label, count]) => (
+                <button
+                  key={mode}
+                  className={`oq-archive-btn ${viewMode === mode ? 'active' : ''}`}
+                  onClick={() => { setViewMode(mode); setSelectedIds(new Set()); }}
+                  style={{ width: 'auto', minWidth: 100, padding: '0 14px', fontSize: 12, fontWeight: 700 }}
+                >
+                  {label} <span style={{ opacity: 0.75 }}>{count}</span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <button
+              className={`oq-archive-btn ${viewMode === 'archived' ? 'active' : ''}`}
+              onClick={() => {
+                setViewMode((v) => (v === 'archived' ? 'pending' : 'archived'));
+                setIsMultiSelect(false);
+                setSelectedIds(new Set());
+              }}
+              title={viewMode === 'archived' ? 'Back to Verification Queue' : 'View Archive'}
+              aria-label="Toggle archive view"
+            >
             <svg
               width="20"
               height="20"
@@ -993,7 +1061,8 @@ export default function VerificationPage() {
               <rect x="1" y="3" width="22" height="5" />
               <line x1="10" y1="12" x2="14" y2="12" />
             </svg>
-          </button>
+            </button>
+          )}
         </div>
       </div>
 
@@ -1132,8 +1201,10 @@ export default function VerificationPage() {
           <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ fontSize: 14, color: '#94a3b8' }}>
               {viewMode === 'pending'
-                ? 'Review submitted certifications from Barangay Dispatchers for system activation.'
-                : 'Archived and rejected Barangay Dispatcher applications.'}
+                ? 'Review barangay coordination requests and submitted authorizations.'
+                : viewMode === 'approved'
+                ? 'Manage approved barangay access. Deactivation blocks dispatcher login for the whole barangay.'
+                : 'Rejected barangay coordination requests.'}
             </div>
             <button
               className="oq-cancel-btn"
@@ -1150,13 +1221,16 @@ export default function VerificationPage() {
               <div className="spinner" />
             </div>
           ) : currentDispatcherList.length === 0 ? (
-            null
+            <div style={{ textAlign: 'center', padding: '100px 20px', color: '#64748b' }}>
+              <div style={{ fontSize: 30, marginBottom: 12 }}>{viewMode === 'pending' ? '📋' : viewMode === 'approved' ? '✓' : '🗃️'}</div>
+              <div>{viewMode === 'pending' ? 'No pending requests found' : viewMode === 'approved' ? 'No approved barangay accounts found' : 'No rejected requests found'}</div>
+            </div>
           ) : (
             <div className="disp-table-wrapper">
               <table className="disp-table">
                 <thead>
                   <tr>
-                    <th>Applicant</th>
+                    <th>Barangay Administrator</th>
                     <th>Barangay</th>
                     <th>Document</th>
                     <th>Status</th>
@@ -1192,7 +1266,7 @@ export default function VerificationPage() {
                           </div>
                         )}
                       </td>
-                      <td>{getStatusBadge(disp.status)}</td>
+                      <td>{getStatusBadge(disp.status, disp.is_active)}</td>
                       <td style={{ textAlign: 'center' }}>
                         <button
                           className="oq-btn-review"
@@ -1276,17 +1350,17 @@ export default function VerificationPage() {
         <div className="oq-modal-backdrop" onClick={() => setSelectedDispatcher(null)}>
           <div className="oq-modal disp-modal" onClick={(e) => e.stopPropagation()}>
             {/* Modal Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+            <div className="disp-modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
               <div>
                 <div style={{ fontSize: 18, fontWeight: 800, color: '#ffffff', letterSpacing: -0.3 }}>
-                  Dispatcher Verification Review
+                  Barangay Verification Review
                 </div>
                 <div style={{ fontSize: 12, color: '#38bdf8', fontWeight: 600, marginTop: 2 }}>
                   Ref No: {selectedDispatcher.reference_no}
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                {getStatusBadge(selectedDispatcher.status)}
+                {getStatusBadge(selectedDispatcher.status, selectedDispatcher.is_active)}
                 <button
                   style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: 20, cursor: 'pointer', padding: 4 }}
                   onClick={() => setSelectedDispatcher(null)}
@@ -1297,10 +1371,10 @@ export default function VerificationPage() {
             </div>
 
             {/* Section 1: Dispatcher Information & Barangay */}
-            <div className="review-section">
+            <div className="review-section disp-review-info">
               <div className="review-section-title">
                 <span>👤</span>
-                <span>Dispatcher & Barangay Information</span>
+                <span>Barangay Administrator Information</span>
               </div>
               <div className="review-grid">
                 <div>
@@ -1326,7 +1400,7 @@ export default function VerificationPage() {
             </div>
 
             {/* Section 2: Contact Information & Submission Date */}
-            <div className="review-section">
+            <div className="review-section disp-review-contact">
               <div className="review-section-title">
                 <span>📞</span>
                 <span>Contact & Submission Details</span>
@@ -1352,7 +1426,7 @@ export default function VerificationPage() {
             </div>
 
             {/* Section 3: Submitted Certification Document */}
-            <div className="review-section">
+            <div className="review-section disp-review-document">
               <div className="review-section-title">
                 <span>📑</span>
                 <span>Submitted Certification</span>
@@ -1421,7 +1495,7 @@ export default function VerificationPage() {
             </div>
 
             {/* Section 4: Verification History */}
-            <div className="review-section">
+            <div className="review-section disp-review-history">
               <div className="review-section-title">
                 <span>🕒</span>
                 <span>Verification History</span>
@@ -1444,42 +1518,47 @@ export default function VerificationPage() {
             </div>
 
             {/* Modal Bottom Actions (Approve, Reject, Request Correction) */}
-            <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
-              <button
-                className="oq-btn-accept"
-                style={{ flex: 1.2, padding: '10px 0' }}
-                disabled={actionLoading}
-                onClick={() => handleApproveDispatcher(selectedDispatcher.id)}
-              >
-                ✓ Approve & Activate
-              </button>
-
-              <button
-                className="oq-btn-reject"
-                style={{ flex: 1, padding: '10px 0' }}
-                disabled={actionLoading}
-                onClick={() => setRejectModalOpen(true)}
-              >
-                ✕ Reject
-              </button>
-
-              <button
-                style={{
-                  flex: 1.2,
-                  padding: '10px 0',
-                  backgroundColor: '#7c3aed',
-                  color: '#ffffff',
-                  border: 'none',
-                  borderRadius: 6,
-                  fontWeight: 600,
-                  fontSize: 13,
-                  cursor: 'pointer',
-                }}
-                disabled={actionLoading}
-                onClick={() => setCorrectionModalOpen(true)}
-              >
-                ✎ Request Correction
-              </button>
+            <div className="disp-modal-actions" style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+              {selectedDispatcher.status === 'verified' ? (
+                <button
+                  className={selectedDispatcher.is_active === false ? 'oq-btn-accept' : 'oq-btn-reject'}
+                  style={{ flex: 1, padding: '12px 0' }}
+                  disabled={actionLoading}
+                  onClick={() => handleSetDispatcherActive(selectedDispatcher, selectedDispatcher.is_active === false)}
+                >
+                  {selectedDispatcher.is_active === false ? '✓ Activate Barangay' : '⊘ Deactivate Barangay'}
+                </button>
+              ) : selectedDispatcher.status === 'rejected' ? (
+                <div style={{ flex: 1, color: '#f87171', textAlign: 'center', padding: 10, fontWeight: 700 }}>
+                  ✕ Rejected and archived
+                </div>
+              ) : (
+                <>
+                  <button
+                    className="oq-btn-accept"
+                    style={{ flex: 1.2, padding: '10px 0' }}
+                    disabled={actionLoading || !selectedDispatcher.document_url}
+                    onClick={() => handleApproveDispatcher(selectedDispatcher.id)}
+                  >
+                    ✓ Approve & Activate
+                  </button>
+                  <button
+                    className="oq-btn-reject"
+                    style={{ flex: 1, padding: '10px 0' }}
+                    disabled={actionLoading}
+                    onClick={() => setRejectModalOpen(true)}
+                  >
+                    ✕ Reject
+                  </button>
+                  <button
+                    style={{ flex: 1.2, padding: '10px 0', backgroundColor: '#7c3aed', color: '#ffffff', border: 'none', borderRadius: 6, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}
+                    disabled={actionLoading}
+                    onClick={() => setCorrectionModalOpen(true)}
+                  >
+                    ✎ Request Correction
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -1492,10 +1571,10 @@ export default function VerificationPage() {
         <div className="oq-modal-backdrop" style={{ zIndex: 1100 }}>
           <div className="oq-modal" style={{ maxWidth: 420 }}>
             <div style={{ fontSize: 16, fontWeight: 700, color: '#ef4444', marginBottom: 8 }}>
-              Reject Dispatcher Verification
+              Reject Barangay Coordination Request
             </div>
             <p style={{ fontSize: 13, color: '#94a3b8', marginBottom: 14 }}>
-              The dispatcher's account will remain restricted. Provide a reason so they can resubmit the correct documents.
+              This request will move to the rejected archive. Dispatcher access stays blocked until the barangay is approved.
             </p>
 
             <textarea
@@ -1544,10 +1623,10 @@ export default function VerificationPage() {
         <div className="oq-modal-backdrop" style={{ zIndex: 1100 }}>
           <div className="oq-modal" style={{ maxWidth: 420 }}>
             <div style={{ fontSize: 16, fontWeight: 700, color: '#a855f7', marginBottom: 8 }}>
-              Request Document Correction
+              Request Barangay Certification Correction
             </div>
             <p style={{ fontSize: 13, color: '#94a3b8', marginBottom: 14 }}>
-              Explain to the applicant what needs to be fixed before their account can be approved.
+              Explain what the barangay administrator needs to correct before the coordination request can be approved.
             </p>
 
             <textarea

@@ -100,9 +100,11 @@ export const verificationAPI = {
   // Barangay Dispatcher Verifications
   dispatcherPending: () => api.get('/verification/dispatchers/pending'),
   dispatcherArchived: () => api.get('/verification/dispatchers/archived'),
+  dispatcherApproved: () => api.get('/verification/dispatchers/approved'),
   approveDispatcher: (id: string, notes?: string) => api.post(`/verification/dispatchers/${id}/approve`, { notes }),
   rejectDispatcher: (id: string, reason: string) => api.post(`/verification/dispatchers/${id}/reject`, { reason }),
   requestCorrectionDispatcher: (id: string, reason: string) => api.post(`/verification/dispatchers/${id}/request-correction`, { reason }),
+  setDispatcherActive: (id: string, is_active: boolean) => api.patch(`/verification/dispatchers/${id}/active`, { is_active }),
 };
 
 // Resource Requests

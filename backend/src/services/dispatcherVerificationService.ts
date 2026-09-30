@@ -42,6 +42,7 @@ export interface DispatcherVerification {
   verification_history: VerificationHistoryEntry[];
   created_at: string;
   updated_at: string;
+  is_active?: boolean;
   // Stored locally only — never pushed to Supabase
   _password_hash?: string;
 }
@@ -501,7 +502,7 @@ export class DispatcherVerificationService {
       const { data, error } = await supabaseAdmin
         .from('barangay_dispatcher_verifications')
         .select('*, barangays(name)')
-        .in('status', ['rejected', 'verified'])
+        .eq('status', 'rejected')
         .order('reviewed_at', { ascending: false });
 
       if (!error && data && data.length > 0) {
@@ -513,7 +514,67 @@ export class DispatcherVerificationService {
     } catch (_) {}
 
     const items = ensureStorage();
-    return items.filter((i) => ['rejected', 'verified'].includes(i.status));
+    return items.filter((i) => i.status === 'rejected');
+  }
+
+  static async getApproved(): Promise<DispatcherVerification[]> {
+    const { data, error } = await supabaseAdmin
+      .from('barangay_dispatcher_verifications')
+      .select('*, barangays(name)')
+      .eq('status', 'verified')
+      .order('reviewed_at', { ascending: false });
+    if (error) throw error;
+    return (data || []).map((record: any) => ({
+      ...record,
+      barangay_name: record.barangays?.name || record.barangay_name || 'Barangay',
+      is_active: record.is_active !== false,
+    }));
+  }
+
+  static async setActive(idOrRef: string, isActive: boolean, adminUserId?: string): Promise<DispatcherVerification> {
+    const record = await this.getById(idOrRef);
+    if (!record) throw new Error('Verification record not found');
+    if (record.status !== 'verified') throw new Error('Only approved barangays can be activated or deactivated.');
+
+    const now = new Date().toISOString();
+    const action = isActive ? 'Barangay Access Activated' : 'Barangay Access Deactivated';
+    const updated: DispatcherVerification = {
+      ...record,
+      is_active: isActive,
+      updated_at: now,
+      verification_history: [
+        ...record.verification_history,
+        { action, timestamp: now, note: `MDRRMO ${isActive ? 'activated' : 'deactivated'} dispatcher access for the barangay.`, actor: adminUserId || 'MDRRMO Command Center' },
+      ],
+    };
+    const { error: activationError } = await supabaseAdmin
+      .from('barangay_dispatcher_verifications')
+      .update({ is_active: isActive, updated_at: now })
+      .eq('barangay_id', record.barangay_id)
+      .eq('status', 'verified');
+    if (activationError) throw activationError;
+    const { error: historyError } = await supabaseAdmin
+      .from('barangay_dispatcher_verifications')
+      .update({ verification_history: updated.verification_history })
+      .eq('id', record.id);
+    if (historyError) throw historyError;
+    const items = ensureStorage();
+    const index = items.findIndex((item) => item.user_id === record.user_id);
+    if (index >= 0) items[index] = { ...updated, _password_hash: items[index]._password_hash };
+    saveLocalStorage(items);
+    getIO()?.to(`barangay:${record.barangay_id}`).emit('dispatcher:barangay_access_changed', { barangayId: record.barangay_id, isActive });
+    return updated;
+  }
+
+  static async isBarangayActive(barangayId: string): Promise<boolean> {
+    const { data, error } = await supabaseAdmin
+      .from('barangay_dispatcher_verifications')
+      .select('status, is_active')
+      .eq('barangay_id', barangayId)
+      .eq('status', 'verified')
+      .order('reviewed_at', { ascending: false, nullsFirst: false });
+    if (error) throw error;
+    return Boolean(data?.length) && data!.every((record: any) => record.is_active !== false);
   }
 
   /**
@@ -523,14 +584,15 @@ export class DispatcherVerificationService {
   static async approve(idOrRef: string, adminUserId?: string, note?: string): Promise<DispatcherVerification> {
     const record = await this.getById(idOrRef);
     if (!record) throw new Error('Verification record not found');
+    if (!record.document_url) throw new Error('A signed authorization document must be submitted before approval.');
 
     const now = new Date().toISOString();
     const updatedHistory: VerificationHistoryEntry[] = [
       ...record.verification_history,
       {
-        action: 'Account Approved & Activated',
+        action: 'Barangay Approved & Activated',
         timestamp: now,
-        note: note || 'MDRRMO verified signed authorization. Account activated.',
+        note: note || 'MDRRMO verified the signed authorization and activated the barangay.',
         actor: 'MDRRMO Command Center',
       },
     ];
@@ -547,10 +609,11 @@ export class DispatcherVerificationService {
 
     // 1. Update verification record status in Supabase
     try {
-      await supabaseAdmin
+      const { error: verificationUpdateError } = await supabaseAdmin
         .from('barangay_dispatcher_verifications')
         .update({
           status: 'verified',
+          is_active: true,
           rejection_reason: null,
           reviewed_at: now,
           reviewed_by: adminUserId || null,
@@ -558,8 +621,10 @@ export class DispatcherVerificationService {
           verification_history: updatedHistory,
         })
         .or(`id.eq.${record.id},user_id.eq.${record.user_id}`);
+      if (verificationUpdateError) throw verificationUpdateError;
     } catch (e: any) {
       console.error('[DispatcherVerification] Error updating verification status on approval:', e?.message);
+      throw new Error('Could not save the approval. Confirm the barangay activation migration has been applied.');
     }
 
     // 2. Create (or activate) the barangay_users entry — this gives full app access
@@ -692,14 +757,6 @@ export class DispatcherVerificationService {
           verification_history: updatedHistory,
         })
         .or(`id.eq.${record.id},user_id.eq.${record.user_id}`);
-    } catch (_) {}
-
-    // Ensure account remains restricted if it exists in barangay_users
-    try {
-      await supabaseAdmin
-        .from('barangay_users')
-        .update({ is_active: false })
-        .eq('id', record.user_id);
     } catch (_) {}
 
     // Save local store

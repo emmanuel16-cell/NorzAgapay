@@ -432,6 +432,20 @@ router.get(
   }
 );
 
+router.get(
+  '/dispatchers/approved',
+  authenticate,
+  authorize('admin'),
+  async (_req: AuthRequest, res: Response): Promise<void> => {
+    try {
+      res.json({ approved_dispatchers: await DispatcherVerificationService.getApproved() });
+    } catch (err) {
+      console.error('Fetch approved dispatcher accounts error:', err);
+      res.status(500).json({ error: 'Failed to fetch approved dispatcher accounts.' });
+    }
+  }
+);
+
 // POST /api/verification/dispatchers/:id/approve — approve dispatcher & activate account
 router.post(
   '/dispatchers/:id/approve',
@@ -491,6 +505,29 @@ router.post(
     } catch (err: any) {
       console.error('Request correction dispatcher verification error:', err);
       res.status(500).json({ error: err.message || 'Failed to request correction.' });
+    }
+  }
+);
+
+router.patch(
+  '/dispatchers/:id/active',
+  authenticate,
+  authorize('admin'),
+  async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+      if (typeof req.body?.is_active !== 'boolean') {
+        res.status(400).json({ error: 'is_active must be a boolean.' });
+        return;
+      }
+      const verification = await DispatcherVerificationService.setActive(
+        req.params.id,
+        req.body.is_active,
+        req.user?.userId,
+      );
+      res.json({ message: `Barangay ${req.body.is_active ? 'activated' : 'deactivated'} successfully.`, verification });
+    } catch (err: any) {
+      console.error('Update barangay activation error:', err);
+      res.status(400).json({ error: err.message || 'Failed to update barangay activation.' });
     }
   }
 );
