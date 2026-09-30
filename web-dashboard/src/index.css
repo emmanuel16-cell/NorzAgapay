@@ -1024,8 +1024,8 @@ tbody tr:last-child td { border-bottom: none; }
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 64px;
-  height: 64px;
+  width: 84px;
+  height: 84px;
   border: 0;
   background: transparent;
   padding: 0;
