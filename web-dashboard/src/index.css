@@ -934,7 +934,7 @@ tbody tr:last-child td { border-bottom: none; }
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg-primary);
+  background: var(--bg-primary) url('/login-background.jfif') center / cover no-repeat;
   position: relative;
   overflow: hidden;
 }
@@ -946,7 +946,8 @@ tbody tr:last-child td { border-bottom: none; }
   left: -50%;
   width: 200%;
   height: 200%;
-  background: radial-gradient(circle at 30% 40%, rgba(27, 79, 114, 0.12) 0%, transparent 50%),
+  background: linear-gradient(rgba(5, 12, 24, 0.48), rgba(5, 12, 24, 0.62)),
+              radial-gradient(circle at 30% 40%, rgba(27, 79, 114, 0.12) 0%, transparent 50%),
               radial-gradient(circle at 70% 60%, rgba(231, 76, 60, 0.08) 0%, transparent 50%);
   animation: bgFloat 20s ease-in-out infinite;
 }
