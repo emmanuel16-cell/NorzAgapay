@@ -31,6 +31,15 @@ async function getAccountPositionDesignation(userId: string, fallback?: string |
     || '';
 }
 
+function normalizeBarangayRole(role: string): string {
+  const legacyRoleMap: Record<string, string> = {
+    captain: 'dispatcher',
+    team_leader: 'responder',
+    volunteer: 'staff',
+  };
+  return legacyRoleMap[role] || role;
+}
+
 // ─── Middleware: Barangay Auth ───────────────────────────────────────────────
 
 interface BarangayPayload {
@@ -55,27 +64,54 @@ const authenticateBarangay = async (req: AuthRequest, res: Response, next: any) 
       res.status(403).json({ error: 'Not a barangay user token' });
       return;
     }
-    const legacyRoleMap: Record<string, string> = {
-      captain: 'dispatcher',
-      team_leader: 'responder',
-    };
+    const role = normalizeBarangayRole(decoded.role);
     (req as any).barangayUser = {
       ...decoded,
-      role: legacyRoleMap[decoded.role] || decoded.role,
+      role,
     };
-    if (decoded.role === 'dispatcher' && !decoded.isPendingDispatcher) {
+    const requestStatusRead =
+      req.method === 'GET' && req.path === '/dispatcher/verification-status';
+    let pendingDispatcherFullyApproved = false;
+    if (role === 'dispatcher' && decoded.isPendingDispatcher) {
       const { data: account, error: accountError } = await supabaseAdmin
         .from('barangay_users')
         .select('is_active')
         .eq('id', decoded.userId)
         .maybeSingle();
       if (accountError) throw accountError;
-      if (account && account.is_active !== true) {
+      pendingDispatcherFullyApproved = account?.is_active === true &&
+        await DispatcherVerificationService.isDispatcherApproved(decoded.userId) &&
+        await DispatcherVerificationService.isBarangayActive(decoded.barangayId);
+
+      const allowedPendingPaths = new Set([
+        'GET /me',
+        'GET /dispatcher/authorization-pdf',
+        'GET /dispatcher/certification-data',
+        'GET /dispatcher/verification-status',
+      ]);
+      if (!pendingDispatcherFullyApproved && !allowedPendingPaths.has(`${req.method} ${req.path}`)) {
+        res.status(403).json({ error: 'Dispatcher access requires an approved MDRRMO coordination request.' });
+        return;
+      }
+    }
+    if (role === 'dispatcher' && !requestStatusRead &&
+        (!decoded.isPendingDispatcher || pendingDispatcherFullyApproved)) {
+      const { data: account, error: accountError } = await supabaseAdmin
+        .from('barangay_users')
+        .select('is_active')
+        .eq('id', decoded.userId)
+        .maybeSingle();
+      if (accountError) throw accountError;
+      if (!account || account.is_active !== true) {
         res.status(403).json({ error: 'This dispatcher account is inactive.' });
         return;
       }
+      if (!(await DispatcherVerificationService.isDispatcherApproved(decoded.userId))) {
+        res.status(403).json({ error: 'This dispatcher account has not been approved.' });
+        return;
+      }
       if (!(await DispatcherVerificationService.isBarangayActive(decoded.barangayId))) {
-        res.status(403).json({ error: 'This barangay is deactivated by MDRRMO. Dispatchers cannot access the portal.' });
+        res.status(403).json({ error: 'Dispatcher access requires an approved and active MDRRMO coordination request.' });
         return;
       }
     }
@@ -342,6 +378,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       .maybeSingle();
 
     if (user) {
+      const role = normalizeBarangayRole(user.role);
       const valid = await bcrypt.compare(password, user.password_hash);
       if (!valid) {
         res.status(401).json({ error: 'Invalid email or password' });
@@ -357,14 +394,23 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
 
       // Dispatchers in barangay_users are approved when their account is active.
       // Check for a verification record to return full details
-      if (user.role === 'dispatcher') {
-        if (!user.is_active || !(await DispatcherVerificationService.isBarangayActive(user.barangay_id))) {
-          res.status(403).json({ error: 'This barangay is deactivated by MDRRMO. Dispatchers cannot log in.' });
+      if (role === 'dispatcher') {
+        const coordinationVerified = await DispatcherVerificationService.isBarangayActive(user.barangay_id);
+        const verification = await DispatcherVerificationService.getPersistedByUserId(user.id);
+        if (!user.is_active) {
+          res.status(403).json({ error: 'This dispatcher account is inactive.' });
           return;
         }
-        const verification = await DispatcherVerificationService.getByUserId(user.id);
+        if (verification && (verification.status !== 'verified' || verification.is_active === false)) {
+          res.status(403).json({ error: 'This dispatcher account has not been approved.' });
+          return;
+        }
+        if (!coordinationVerified) {
+          res.status(403).json({ error: 'Dispatcher access requires an approved and active MDRRMO coordination request.' });
+          return;
+        }
         const token = jwt.sign(
-          { userId: user.id, barangayId: user.barangay_id, role: user.role, email: user.email },
+          { userId: user.id, barangayId: user.barangay_id, role, email: user.email },
           config.jwtSecret,
           { expiresIn: '30d' }
         );
@@ -375,12 +421,13 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
             full_name: user.full_name,
             email: user.email,
             phone: user.phone,
-            role: user.role,
+            role,
             barangay_id: user.barangay_id,
             position_designation: user.position_designation,
             barangay_name: barangay?.name || '',
             municipality: barangay?.municipality || 'Norzagaray',
             is_active: user.is_active,
+            coordination_verified: coordinationVerified,
             verification_status: verification?.status || (user.is_active ? 'verified' : 'pending_document'),
             verification: verification || null,
           },
@@ -395,7 +442,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       }
 
       const token = jwt.sign(
-        { userId: user.id, barangayId: user.barangay_id, role: user.role, email: user.email },
+        { userId: user.id, barangayId: user.barangay_id, role, email: user.email },
         config.jwtSecret,
         { expiresIn: '30d' }
       );
@@ -406,12 +453,13 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
           full_name: user.full_name,
           email: user.email,
           phone: user.phone,
-          role: user.role,
+          role,
           barangay_id: user.barangay_id,
           position_designation: user.position_designation,
           barangay_name: barangay?.name || '',
           municipality: barangay?.municipality || 'Norzagaray',
           is_active: true,
+          coordination_verified: await DispatcherVerificationService.isBarangayActive(user.barangay_id),
           verification_status: 'verified',
         },
       });
@@ -460,6 +508,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
           barangay_name: barangay?.name || pendingRecord.barangay_name || '',
           municipality: barangay?.municipality || 'Norzagaray',
           is_active: false,
+          coordination_verified: false,
           verification_status: pendingRecord.status,
           verification: pendingRecord,
         },
@@ -494,25 +543,33 @@ router.get('/me', authenticateBarangay, async (req: any, res: Response) => {
         .eq('id', user.barangay_id)
         .maybeSingle();
 
-      const verification = user.role === 'dispatcher'
-        ? await DispatcherVerificationService.getByUserId(user.id)
+      const role = normalizeBarangayRole(user.role);
+      const verification = role === 'dispatcher'
+        ? await DispatcherVerificationService.getPersistedByUserId(user.id)
         : null;
       // An explicit request record tracks the latest authorization cycle. Only
       // fall back to account activation for legacy accounts without a record.
       const verificationStatus = verification?.status || (user.is_active ? 'verified' : 'pending_document');
+      const coordinationVerified = role === 'dispatcher'
+        ? await DispatcherVerificationService.isBarangayActive(user.barangay_id)
+        : false;
 
       res.json({
         ...user,
+        role,
         barangay_name: barangay?.name,
         municipality: barangay?.municipality,
         verification_status: verificationStatus,
+        coordination_verified: coordinationVerified,
         verification,
       });
       return;
     }
 
     // Fallback: pending dispatcher (not yet in barangay_users)
-    const verification = await DispatcherVerificationService.getByUserId(userId);
+    const verification = req.barangayUser.isPendingDispatcher
+      ? await DispatcherVerificationService.getByUserId(userId)
+      : await DispatcherVerificationService.getPersistedByUserId(userId);
     if (verification) {
       const { data: barangay } = await supabaseAdmin
         .from('barangays')
@@ -530,6 +587,7 @@ router.get('/me', authenticateBarangay, async (req: any, res: Response) => {
         barangay_name: barangay?.name || verification.barangay_name,
         municipality: barangay?.municipality || 'Norzagaray',
         is_active: false,
+        coordination_verified: await DispatcherVerificationService.isBarangayActive(verification.barangay_id),
         verification_status: verification.status,
         verification,
       });
@@ -547,7 +605,11 @@ router.get('/me', authenticateBarangay, async (req: any, res: Response) => {
 // Download / view prefilled Authorization & Certification PDF
 // Supports inline preview and attachment download via ?download=true
 
-router.get('/dispatcher/authorization-pdf', async (req: Request, res: Response): Promise<void> => {
+router.get(
+  '/dispatcher/authorization-pdf',
+  authenticateBarangay,
+  requireRole(['admin', 'dispatcher']),
+  async (req: Request, res: Response): Promise<void> => {
   try {
     let userId: string | undefined;
 
@@ -556,23 +618,32 @@ router.get('/dispatcher/authorization-pdf', async (req: Request, res: Response):
     const token = authHeader?.startsWith('Bearer ')
       ? authHeader.split(' ')[1]
       : (req.query.token as string);
+    let decodedToken: any;
 
     if (token) {
       try {
-        const decoded = jwt.verify(token, config.jwtSecret) as any;
-        userId = decoded.userId;
+        decodedToken = jwt.verify(token, config.jwtSecret) as any;
+        userId = decodedToken.userId;
       } catch (_) {}
     }
 
-    if (!userId) {
+    if (!userId || !decodedToken) {
       res.status(401).json({ error: 'Authentication is required to generate the authorization PDF.' });
+      return;
+    }
+
+    const role = normalizeBarangayRole(decodedToken.role);
+    if (role !== 'admin' && !(role === 'dispatcher' && decodedToken.isPendingDispatcher === true)) {
+      res.status(403).json({ error: 'Only a barangay administrator or pending dispatcher can view this document.' });
       return;
     }
 
     const lookupId = userId;
 
     // 2. Fetch or dynamically generate verification record from existing user registration data
-    let verification = await DispatcherVerificationService.getByUserId(lookupId);
+    let verification = decodedToken.isPendingDispatcher
+      ? await DispatcherVerificationService.getByUserId(lookupId)
+      : await DispatcherVerificationService.getPersistedByUserId(lookupId);
     if (!verification) {
       verification = await DispatcherVerificationService.getById(lookupId);
     }
@@ -643,12 +714,17 @@ router.get('/dispatcher/authorization-pdf', async (req: Request, res: Response):
     console.error('Generate authorization PDF error:', err);
     res.status(500).json({ error: 'Failed to generate authorization PDF' });
   }
-});
+  },
+);
 
 // ─── GET /api/barangay/dispatcher/certification-data ────────────────────────
 // Retrieve prefilled certification data for in-app viewing & printing
 
-router.get('/dispatcher/certification-data', async (req: Request, res: Response): Promise<void> => {
+router.get(
+  '/dispatcher/certification-data',
+  authenticateBarangay,
+  requireRole(['admin', 'dispatcher']),
+  async (req: Request, res: Response): Promise<void> => {
   try {
     let userId: string | undefined;
 
@@ -656,22 +732,31 @@ router.get('/dispatcher/certification-data', async (req: Request, res: Response)
     const token = authHeader?.startsWith('Bearer ')
       ? authHeader.split(' ')[1]
       : (req.query.token as string);
+    let decodedToken: any;
 
     if (token) {
       try {
-        const decoded = jwt.verify(token, config.jwtSecret) as any;
-        userId = decoded.userId;
+        decodedToken = jwt.verify(token, config.jwtSecret) as any;
+        userId = decodedToken.userId;
       } catch (_) {}
     }
 
-    if (!userId) {
+    if (!userId || !decodedToken) {
       res.status(401).json({ error: 'Authentication is required to fetch certification data.' });
+      return;
+    }
+
+    const role = normalizeBarangayRole(decodedToken.role);
+    if (role !== 'admin' && !(role === 'dispatcher' && decodedToken.isPendingDispatcher === true)) {
+      res.status(403).json({ error: 'Only a barangay administrator or pending dispatcher can view this document.' });
       return;
     }
 
     const lookupId = userId;
 
-    let verification = await DispatcherVerificationService.getByUserId(lookupId);
+    let verification = decodedToken.isPendingDispatcher
+      ? await DispatcherVerificationService.getByUserId(lookupId)
+      : await DispatcherVerificationService.getPersistedByUserId(lookupId);
     if (!verification) {
       verification = await DispatcherVerificationService.getById(lookupId);
     }
@@ -740,7 +825,8 @@ router.get('/dispatcher/certification-data', async (req: Request, res: Response)
     console.error('Fetch certification data error:', err);
     res.status(500).json({ error: 'Failed to fetch certification data' });
   }
-});
+  },
+);
 
 // ─── POST /api/barangay/dispatcher/submit-certification ──────────────────────
 // Upload signed and sealed certification document
@@ -832,8 +918,9 @@ router.post(
 
 router.get('/dispatcher/coordination-request', authenticateBarangay, requireRole(['admin']), async (req: any, res: Response): Promise<void> => {
   try {
-    const verification = await DispatcherVerificationService.getByUserId(req.barangayUser.userId);
-    res.json({ configured: Boolean(verification), verification });
+      const verification = await DispatcherVerificationService.getPersistedByUserId(req.barangayUser.userId);
+    const coordinationVerified = await DispatcherVerificationService.isBarangayActive(req.barangayUser.barangayId);
+    res.json({ configured: Boolean(verification), verification, coordination_verified: coordinationVerified });
   } catch (err) {
     console.error('Load coordination request error:', err);
     res.status(500).json({ error: 'Failed to load coordination request.' });
@@ -851,7 +938,7 @@ router.put('/dispatcher/coordination-request', authenticateBarangay, requireRole
   }
   try {
     const userId = req.barangayUser.userId;
-    let verification = await DispatcherVerificationService.getByUserId(userId);
+    let verification = await DispatcherVerificationService.getPersistedByUserId(userId);
     if (!verification) {
       const { data: user, error: userError } = await supabaseAdmin
         .from('barangay_users')
@@ -873,6 +960,7 @@ router.put('/dispatcher/coordination-request', authenticateBarangay, requireRole
         punongBarangayName: parsed.data.official_name,
         punongBarangayPosition: parsed.data.official_position,
       });
+      await DispatcherVerificationService.broadcastCoordinationAccessChanged(user.barangay_id);
     } else {
       verification = await DispatcherVerificationService.updateAuthorizationDetails(
         userId,
@@ -880,7 +968,8 @@ router.put('/dispatcher/coordination-request', authenticateBarangay, requireRole
         parsed.data.official_position,
       );
     }
-    res.json({ verification });
+    const coordinationVerified = await DispatcherVerificationService.isBarangayActive(req.barangayUser.barangayId);
+    res.json({ verification, coordination_verified: coordinationVerified });
   } catch (err: any) {
     console.error('Save coordination request error:', err);
     res.status(500).json({ error: err.message || 'Failed to save coordination request.' });
@@ -893,7 +982,10 @@ router.get(
   async (req: any, res: Response): Promise<void> => {
     try {
       const targetUserId = req.barangayUser?.userId;
-      let verification = await DispatcherVerificationService.getByUserId(targetUserId);
+      const coordinationVerified = await DispatcherVerificationService.isBarangayActive(req.barangayUser.barangayId);
+      let verification = req.barangayUser.isPendingDispatcher
+        ? await DispatcherVerificationService.getByUserId(targetUserId)
+        : await DispatcherVerificationService.getPersistedByUserId(targetUserId);
       const { data: user } = await supabaseAdmin
         .from('barangay_users')
         .select('role, is_active')
@@ -902,15 +994,19 @@ router.get(
 
       // An active legacy team account may not have a request record. Respect an
       // existing record first so edits and resubmissions cannot look approved.
-      if (!verification && user?.is_active && user.role === 'dispatcher') {
-        res.json({ verification: { ...(verification || {}), status: 'verified' } });
+      if (!verification && user?.is_active && normalizeBarangayRole(user.role) === 'dispatcher') {
+        res.json({ verification: { status: 'verified' }, coordination_verified: coordinationVerified });
         return;
       }
       if (!verification) {
+        if (user && normalizeBarangayRole(user.role) === 'dispatcher') {
+          res.json({ verification: { status: user.is_active ? 'verified' : 'pending_document' }, coordination_verified: coordinationVerified });
+          return;
+        }
         res.status(404).json({ error: 'Verification record not found' });
         return;
       }
-      res.json({ verification });
+      res.json({ verification, coordination_verified: coordinationVerified });
     } catch (err) {
       console.error('Get verification status error:', err);
       res.status(500).json({ error: 'Failed to retrieve verification status' });
@@ -1066,7 +1162,17 @@ router.patch('/team/:id', authenticateBarangay, requireRole(['admin']), async (r
       res.status(400).json({ error: 'Please check the member details and try again.' });
       return;
     }
-    if (parsed.data.role === 'dispatcher') {
+    const { data: currentMember, error: currentMemberError } = await supabaseAdmin
+      .from('barangay_users')
+      .select('role')
+      .eq('id', req.params.id)
+      .eq('barangay_id', req.barangayUser.barangayId)
+      .neq('role', 'admin')
+      .maybeSingle();
+    if (currentMemberError) throw currentMemberError;
+    if (!currentMember) { res.status(404).json({ error: 'Team member not found.' }); return; }
+
+    if (parsed.data.role === 'dispatcher' && currentMember.role !== 'dispatcher') {
       const coordination = await DispatcherVerificationService.getByUserId(req.barangayUser.userId);
       if (coordination?.status !== 'verified' || !(await DispatcherVerificationService.isBarangayActive(req.barangayUser.barangayId))) {
         res.status(403).json({ error: 'The barangay must have an active MDRRMO coordination request before assigning the dispatcher role.' });
@@ -1091,6 +1197,9 @@ router.patch('/team/:id', authenticateBarangay, requireRole(['admin']), async (r
     if (error?.code === '23505') { res.status(409).json({ error: 'Email already registered.' }); return; }
     if (error) throw error;
     if (!data) { res.status(404).json({ error: 'Team member not found.' }); return; }
+    if (currentMember.role === 'dispatcher' && parsed.data.role !== 'dispatcher') {
+      await DispatcherVerificationService.removeDispatcherRoomAccess(req.barangayUser.barangayId, req.params.id);
+    }
     res.json(data);
   } catch (err) {
     console.error('Update team member error:', err);
@@ -1107,6 +1216,8 @@ router.delete('/team/:id', authenticateBarangay, requireRole(['admin']), async (
       .eq('barangay_id', req.barangayUser.barangayId);
 
     if (error) throw error;
+
+    await DispatcherVerificationService.removeDispatcherRoomAccess(req.barangayUser.barangayId, req.params.id);
 
     res.json({ message: 'Member deactivated' });
   } catch (err) {

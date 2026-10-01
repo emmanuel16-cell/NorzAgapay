@@ -194,12 +194,16 @@ export class DispatcherVerificationService {
         } else {
           console.error('[DispatcherVerification] Supabase insert error:', res.error.message, res.error.details);
         }
+        throw new Error('Could not save the MDRRMO coordination request. Please confirm the dispatcher verification database migration is applied.');
       } else if (res.data) {
         record.id = res.data.id;
         console.log('[DispatcherVerification] Successfully saved to Supabase barangay_dispatcher_verifications, id:', res.data.id);
+      } else {
+        throw new Error('The MDRRMO coordination request was not saved. Please try again.');
       }
     } catch (e: any) {
       console.error('[DispatcherVerification] Supabase insert exception:', e?.message || e);
+      throw e;
     }
 
     // Always persist to local JSON store
@@ -262,37 +266,41 @@ export class DispatcherVerificationService {
   static async getByUserId(userId: string): Promise<DispatcherVerification | null> {
     if (!userId) return null;
     try {
-      const { data, error } = await supabaseAdmin
-        .from('barangay_dispatcher_verifications')
-        .select('*, barangays(name)')
-        .or(`user_id.eq.${userId},id.eq.${userId}`)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (!error && data) {
-        const item: DispatcherVerification = {
-          ...data,
-          barangay_name: data.barangays?.name || data.barangay_name || 'Barangay',
-          _password_hash: data.password_hash || undefined,
-        };
-        const items = ensureStorage();
-        const idx = items.findIndex((i) => i.user_id === userId || i.id === userId);
-        if (idx >= 0) {
-          if (!item._password_hash && items[idx]._password_hash) {
-            item._password_hash = items[idx]._password_hash;
-          }
-          items[idx] = { ...items[idx], ...item };
-        } else {
-          items.push(item);
-        }
-        saveLocalStorage(items);
-        return item;
-      }
+      const item = await this.getPersistedByUserId(userId);
+      if (item) return item;
     } catch (_) {}
 
     const items = ensureStorage();
     return items.find((i) => i.user_id === userId || i.id === userId) || null;
+  }
+
+  static async getPersistedByUserId(userId: string): Promise<DispatcherVerification | null> {
+    if (!userId) return null;
+    const { data, error } = await supabaseAdmin
+      .from('barangay_dispatcher_verifications')
+      .select('*, barangays(name)')
+      .or(`user_id.eq.${userId},id.eq.${userId}`)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return null;
+
+    const item: DispatcherVerification = {
+      ...data,
+      barangay_name: data.barangays?.name || data.barangay_name || 'Barangay',
+      _password_hash: data.password_hash || undefined,
+    };
+    const items = ensureStorage();
+    const idx = items.findIndex((i) => i.user_id === userId || i.id === userId);
+    if (idx >= 0) {
+      if (!item._password_hash && items[idx]._password_hash) item._password_hash = items[idx]._password_hash;
+      items[idx] = { ...items[idx], ...item };
+    } else {
+      items.push(item);
+    }
+    saveLocalStorage(items);
+    return item;
   }
 
   /**
@@ -351,20 +359,20 @@ export class DispatcherVerificationService {
       verification_history: updatedHistory,
     };
 
-    // Try Supabase update
-    try {
-      await supabaseAdmin
-        .from('barangay_dispatcher_verifications')
-        .update({
-          document_url: documentUrl,
-          status: 'under_review',
-          rejection_reason: null,
-          submitted_at: now,
-          updated_at: now,
-          verification_history: updatedHistory,
-        })
-        .eq('user_id', userId);
-    } catch (_) {}
+    const { data: savedRows, error: updateError } = await supabaseAdmin
+      .from('barangay_dispatcher_verifications')
+      .update({
+        document_url: documentUrl,
+        status: 'under_review',
+        rejection_reason: null,
+        submitted_at: now,
+        updated_at: now,
+        verification_history: updatedHistory,
+      })
+      .eq('user_id', userId)
+      .select('user_id');
+    if (updateError) throw updateError;
+    if (!savedRows?.length) throw new Error('The submitted certificate could not be saved to the coordination request.');
 
     // Save to local store
     const items = ensureStorage();
@@ -372,6 +380,9 @@ export class DispatcherVerificationService {
     if (idx >= 0) items[idx] = { ...updated, _password_hash: items[idx]._password_hash };
     else items.push(updated);
     saveLocalStorage(items);
+
+    await this.removeDispatcherRoomAccess(updated.barangay_id, userId);
+    await this.broadcastCoordinationAccessChanged(updated.barangay_id);
 
     // Notify command center via socket
     try {
@@ -416,11 +427,13 @@ export class DispatcherVerificationService {
       document_url: authorizationChanged ? null : existing.document_url,
       submitted_at: authorizationChanged ? null : existing.submitted_at,
       rejection_reason: authorizationChanged ? null : existing.rejection_reason,
+      reviewed_at: authorizationChanged ? null : existing.reviewed_at,
+      reviewed_by: authorizationChanged ? null : existing.reviewed_by,
       is_active: authorizationChanged ? false : existing.is_active,
       updated_at: now,
       verification_history: updatedHistory,
     };
-    const { error } = await supabaseAdmin
+    const { data: savedRows, error } = await supabaseAdmin
       .from('barangay_dispatcher_verifications')
       .update({
         punong_barangay_name: officialName,
@@ -429,17 +442,22 @@ export class DispatcherVerificationService {
         document_url: updated.document_url,
         submitted_at: updated.submitted_at,
         rejection_reason: updated.rejection_reason,
+        reviewed_at: authorizationChanged ? null : existing.reviewed_at,
+        reviewed_by: authorizationChanged ? null : existing.reviewed_by,
         is_active: updated.is_active,
         updated_at: now,
         verification_history: updated.verification_history,
       })
-      .eq('user_id', userId);
+      .eq('user_id', userId)
+      .select('user_id');
     if (error) throw error;
+    if (!savedRows?.length) throw new Error('The authorizing official details could not be saved to the coordination request.');
     const items = ensureStorage();
     const index = items.findIndex((item) => item.user_id === userId);
     if (index >= 0) items[index] = { ...updated, _password_hash: items[index]._password_hash };
     else items.push(updated);
     saveLocalStorage(items);
+    await this.broadcastCoordinationAccessChanged(updated.barangay_id);
     return updated;
   }
 
@@ -471,24 +489,28 @@ export class DispatcherVerificationService {
       verification_history: updatedHistory,
     };
 
-    try {
-      await supabaseAdmin
-        .from('barangay_dispatcher_verifications')
-        .update({
-          status: 'pending_document',
-          rejection_reason: null,
-          reviewed_at: null,
-          reviewed_by: null,
-          updated_at: now,
-          verification_history: updatedHistory,
-        })
-        .eq('user_id', userId);
-    } catch (_) {}
+    const { data: savedRows, error } = await supabaseAdmin
+      .from('barangay_dispatcher_verifications')
+      .update({
+        status: 'pending_document',
+        rejection_reason: null,
+        reviewed_at: null,
+        reviewed_by: null,
+        updated_at: now,
+        verification_history: updatedHistory,
+      })
+      .eq('user_id', userId)
+      .select('user_id');
+    if (error) throw error;
+    if (!savedRows?.length) throw new Error('The resubmission status could not be saved.');
 
     const items = ensureStorage();
     const idx = items.findIndex((i) => i.user_id === userId);
     if (idx >= 0) items[idx] = { ...updated, _password_hash: items[idx]._password_hash };
     saveLocalStorage(items);
+
+    await this.removeDispatcherRoomAccess(updated.barangay_id, userId);
+    await this.broadcastCoordinationAccessChanged(updated.barangay_id);
 
     return updated;
   }
@@ -569,12 +591,14 @@ export class DispatcherVerificationService {
         { action, timestamp: now, note: `MDRRMO ${isActive ? 'activated' : 'deactivated'} dispatcher access for the barangay.`, actor: adminUserId || 'MDRRMO Command Center' },
       ],
     };
-    const { error: activationError } = await supabaseAdmin
+    const { data: activatedRows, error: activationError } = await supabaseAdmin
       .from('barangay_dispatcher_verifications')
       .update({ is_active: isActive, updated_at: now })
       .eq('barangay_id', record.barangay_id)
-      .eq('status', 'verified');
+      .eq('status', 'verified')
+      .select('user_id');
     if (activationError) throw activationError;
+    if (!activatedRows?.length) throw new Error('The barangay activation status could not be saved.');
     const { error: historyError } = await supabaseAdmin
       .from('barangay_dispatcher_verifications')
       .update({ verification_history: updated.verification_history })
@@ -585,18 +609,77 @@ export class DispatcherVerificationService {
     if (index >= 0) items[index] = { ...updated, _password_hash: items[index]._password_hash };
     saveLocalStorage(items);
     getIO()?.to(`barangay:${record.barangay_id}`).emit('dispatcher:barangay_access_changed', { barangayId: record.barangay_id, isActive });
+    if (!isActive) await this.removeDispatcherRoomAccess(record.barangay_id, record.user_id);
+    await this.broadcastCoordinationAccessChanged(record.barangay_id);
     return updated;
   }
 
   static async isBarangayActive(barangayId: string): Promise<boolean> {
-    const { data, error } = await supabaseAdmin
+    const { data: admins, error: adminError } = await supabaseAdmin
+      .from('barangay_users')
+      .select('id')
+      .eq('barangay_id', barangayId)
+      .eq('role', 'admin')
+      .eq('is_active', true)
+      .order('created_at', { ascending: true });
+    if (adminError) throw adminError;
+    const adminIds = (admins || []).map((admin: any) => admin.id).filter(Boolean);
+    if (adminIds.length === 0) return false;
+
+    // The newest request made by a current barangay administrator controls
+    // dispatcher access. Older verified records must not override a newer
+    // pending, rejected, or deactivated coordination request.
+    const { data: request, error } = await supabaseAdmin
+      .from('barangay_dispatcher_verifications')
+      .select('status, is_active, updated_at')
+      .in('user_id', adminIds)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    return request?.status === 'verified' && request.is_active !== false;
+  }
+
+  static async isDispatcherApproved(userId: string): Promise<boolean> {
+    const { data: verification, error } = await supabaseAdmin
       .from('barangay_dispatcher_verifications')
       .select('status, is_active')
-      .eq('barangay_id', barangayId)
-      .eq('status', 'verified')
-      .order('reviewed_at', { ascending: false, nullsFirst: false });
+      .eq('user_id', userId)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
     if (error) throw error;
-    return Boolean(data?.length) && data!.every((record: any) => record.is_active !== false);
+    // Older team accounts may predate per-dispatcher verification records.
+    // Their active barangay_users row remains the approval source.
+    return !verification || (verification.status === 'verified' && verification.is_active !== false);
+  }
+
+  static async broadcastCoordinationAccessChanged(barangayId: string): Promise<void> {
+    try {
+      const coordinationVerified = await this.isBarangayActive(barangayId);
+      if (!coordinationVerified) await this.removeDispatcherRoomAccess(barangayId);
+      getIO()?.to(`barangay:coordination:${barangayId}`).emit('dispatcher:coordination_access_changed', {
+        barangayId,
+        coordination_verified: coordinationVerified,
+      });
+    } catch (err) {
+      await this.removeDispatcherRoomAccess(barangayId);
+      console.warn('[DispatcherVerification] Could not broadcast coordination access update:', err);
+    }
+  }
+
+  static async removeDispatcherRoomAccess(barangayId: string, userId?: string): Promise<void> {
+    try {
+      const io = getIO();
+      if (!io) return;
+      const room = `barangay:${barangayId}`;
+      const sockets = await io.in(room).fetchSockets();
+      await Promise.all(sockets
+        .filter((socket: any) => socket.data?.barangayRole === 'dispatcher' && (!userId || socket.data.userId === userId))
+        .map((socket: any) => socket.leave(room)));
+    } catch (err) {
+      console.warn('[DispatcherVerification] Could not remove dispatcher from barangay room:', err);
+    }
   }
 
   /**
@@ -631,7 +714,7 @@ export class DispatcherVerificationService {
 
     // 1. Update verification record status in Supabase
     try {
-      const { error: verificationUpdateError } = await supabaseAdmin
+      const { data: updatedRows, error: verificationUpdateError } = await supabaseAdmin
         .from('barangay_dispatcher_verifications')
         .update({
           status: 'verified',
@@ -642,8 +725,10 @@ export class DispatcherVerificationService {
           updated_at: now,
           verification_history: updatedHistory,
         })
-        .or(`id.eq.${record.id},user_id.eq.${record.user_id}`);
+        .or(`id.eq.${record.id},user_id.eq.${record.user_id}`)
+        .select('user_id');
       if (verificationUpdateError) throw verificationUpdateError;
+      if (!updatedRows?.length) throw new Error('The approval did not match a saved verification record.');
     } catch (e: any) {
       console.error('[DispatcherVerification] Error updating verification status on approval:', e?.message);
       throw new Error('Could not save the approval. Confirm the barangay activation migration has been applied.');
@@ -727,7 +812,7 @@ export class DispatcherVerificationService {
 
     // 4. Real-time broadcast to mobile app & dashboard
     try {
-      getIO()?.to(`barangay:${record.barangay_id}`).emit('dispatcher:verified', {
+      getIO()?.to(`user:${record.user_id}`).emit('dispatcher:verified', {
         userId: record.user_id,
         status: 'verified',
         message: 'Your account has been verified and activated by MDRRMO.',
@@ -736,6 +821,7 @@ export class DispatcherVerificationService {
         userId: record.user_id,
         status: 'verified',
       });
+      await this.broadcastCoordinationAccessChanged(record.barangay_id);
     } catch (_) {}
 
     return updated;
@@ -772,29 +858,31 @@ export class DispatcherVerificationService {
       verification_history: updatedHistory,
     };
 
-    try {
-      await supabaseAdmin
-        .from('barangay_dispatcher_verifications')
-        .update({
-          status: 'rejected',
-          rejection_reason: finalReason,
-          reviewed_at: now,
-          reviewed_by: adminUserId || null,
-          updated_at: now,
-          verification_history: updatedHistory,
-        })
-        .or(`id.eq.${record.id},user_id.eq.${record.user_id}`);
-    } catch (_) {}
+    const { data: savedRows, error } = await supabaseAdmin
+      .from('barangay_dispatcher_verifications')
+      .update({
+        status: 'rejected',
+        rejection_reason: finalReason,
+        reviewed_at: now,
+        reviewed_by: adminUserId || null,
+        updated_at: now,
+        verification_history: updatedHistory,
+      })
+      .or(`id.eq.${record.id},user_id.eq.${record.user_id}`)
+      .select('user_id');
+    if (error) throw error;
+    if (!savedRows?.length) throw new Error('The rejection could not be saved to the verification record.');
 
     // Save local store
     const items = ensureStorage();
     const idx = items.findIndex((i) => i.id === record.id || i.user_id === record.user_id);
     if (idx >= 0) items[idx] = { ...updated, _password_hash: items[idx]._password_hash };
     saveLocalStorage(items);
+    await this.removeDispatcherRoomAccess(record.barangay_id, record.user_id);
 
     // Real-time broadcast to mobile app
     try {
-      getIO()?.to(`barangay:${record.barangay_id}`).emit('dispatcher:rejected', {
+      getIO()?.to(`user:${record.user_id}`).emit('dispatcher:rejected', {
         userId: record.user_id,
         status: 'rejected',
         reason: finalReason,
@@ -804,6 +892,7 @@ export class DispatcherVerificationService {
         status: 'rejected',
         reason: finalReason,
       });
+      await this.broadcastCoordinationAccessChanged(record.barangay_id);
     } catch (_) {}
 
     return updated;
@@ -839,27 +928,29 @@ export class DispatcherVerificationService {
       verification_history: updatedHistory,
     };
 
-    try {
-      await supabaseAdmin
-        .from('barangay_dispatcher_verifications')
-        .update({
-          status: 'needs_correction',
-          rejection_reason: correctionReason,
-          reviewed_at: now,
-          reviewed_by: adminUserId || null,
-          updated_at: now,
-          verification_history: updatedHistory,
-        })
-        .or(`id.eq.${record.id},user_id.eq.${record.user_id}`);
-    } catch (_) {}
+    const { data: savedRows, error } = await supabaseAdmin
+      .from('barangay_dispatcher_verifications')
+      .update({
+        status: 'needs_correction',
+        rejection_reason: correctionReason,
+        reviewed_at: now,
+        reviewed_by: adminUserId || null,
+        updated_at: now,
+        verification_history: updatedHistory,
+      })
+      .or(`id.eq.${record.id},user_id.eq.${record.user_id}`)
+      .select('user_id');
+    if (error) throw error;
+    if (!savedRows?.length) throw new Error('The correction request could not be saved to the verification record.');
 
     const items = ensureStorage();
     const idx = items.findIndex((i) => i.id === record.id || i.user_id === record.user_id);
     if (idx >= 0) items[idx] = { ...updated, _password_hash: items[idx]._password_hash };
     saveLocalStorage(items);
+    await this.removeDispatcherRoomAccess(record.barangay_id, record.user_id);
 
     try {
-      getIO()?.to(`barangay:${record.barangay_id}`).emit('dispatcher:correction', {
+      getIO()?.to(`user:${record.user_id}`).emit('dispatcher:correction', {
         userId: record.user_id,
         status: 'needs_correction',
         reason: correctionReason,
@@ -869,6 +960,7 @@ export class DispatcherVerificationService {
         status: 'needs_correction',
         reason: correctionReason,
       });
+      await this.broadcastCoordinationAccessChanged(record.barangay_id);
     } catch (_) {}
 
     return updated;

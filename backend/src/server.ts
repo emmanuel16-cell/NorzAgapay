@@ -2,11 +2,13 @@ import path from 'path';
 import express from 'express';
 import cors from 'cors';
 import http from 'http';
+import jwt from 'jsonwebtoken';
 import { Server as SocketIOServer } from 'socket.io';
 import rateLimit from 'express-rate-limit';
 import { config } from './config';
 import { setUserGPS, getAllActiveGPS } from './config/redis';
 import { supabaseAdmin } from './config/supabase';
+import { DispatcherVerificationService } from './services/dispatcherVerificationService';
 
 // Import routes
 import authRoutes from './routes/auth';
@@ -48,6 +50,25 @@ const io = new SocketIOServer(server, {
     methods: ['GET', 'POST'],
   },
 });
+
+function getSocketTokenPayload(socket: any): any | null {
+  const token = socket.handshake.auth?.token;
+  if (typeof token !== 'string' || !token) return null;
+  try {
+    return jwt.verify(token, config.jwtSecret) as any;
+  } catch (_) {
+    return null;
+  }
+}
+
+function normalizeSocketRole(role: string): string {
+  const legacyRoleMap: Record<string, string> = {
+    captain: 'dispatcher',
+    team_leader: 'responder',
+    volunteer: 'staff',
+  };
+  return legacyRoleMap[role] || role;
+}
 
 // ============================================
 // Middleware
@@ -122,8 +143,11 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Join role-based rooms
+  // Only a signed command-center token may join dashboard role rooms. A
+  // barangay dispatcher token must never gain dashboard-wide visibility.
   socket.on('join:role', (role: string) => {
+    const decoded = getSocketTokenPayload(socket);
+    if (!decoded || decoded.barangayId || normalizeSocketRole(decoded.role) !== role) return;
     if (['master_admin', 'admin', 'logistics', 'dispatcher'].includes(role)) {
       socket.join('dashboard_staff');
     }
@@ -134,14 +158,49 @@ io.on('connection', (socket) => {
     console.log(`Socket ${socket.id} joined room: ${role}`);
   });
 
-  // Join barangay-specific room for real-time report notifications
-  socket.on('join:barangay', (barangayId: string) => {
-    socket.join(`barangay:${barangayId}`);
-    console.log(`Socket ${socket.id} joined barangay room: ${barangayId}`);
+  // Join the sensitive barangay room only for an active account. Dispatchers
+  // also need both their own approval and the administrator's active request.
+  socket.on('join:barangay', async (barangayId: string) => {
+    try {
+      const decoded = getSocketTokenPayload(socket);
+      const role = decoded ? normalizeSocketRole(decoded.role) : '';
+      if (!decoded || decoded.barangayId !== barangayId) return;
+
+      const { data: account, error } = await supabaseAdmin
+        .from('barangay_users')
+        .select('role, is_active')
+        .eq('id', decoded.userId)
+        .eq('barangay_id', barangayId)
+        .maybeSingle();
+      if (error || !account || account.is_active !== true || normalizeSocketRole(account.role) !== role) return;
+      if (role === 'dispatcher' && (
+        !(await DispatcherVerificationService.isDispatcherApproved(decoded.userId)) ||
+        !(await DispatcherVerificationService.isBarangayActive(barangayId))
+      )) return;
+
+      socket.data.userId = decoded.userId;
+      socket.data.barangayId = barangayId;
+      socket.data.barangayRole = role;
+      socket.join(`barangay:${barangayId}`);
+      console.log(`Socket ${socket.id} joined authorized barangay room: ${barangayId}`);
+    } catch (err) {
+      console.error('Socket barangay room authorization failed:', err);
+    }
+  });
+
+  // Coordination status is safe to read while access is pending, but it is
+  // isolated from incident and report events in the main barangay room.
+  socket.on('join:coordination', (barangayId: string) => {
+    const decoded = getSocketTokenPayload(socket);
+    const role = decoded ? normalizeSocketRole(decoded.role) : '';
+    if (!decoded || decoded.barangayId !== barangayId || !['admin', 'dispatcher'].includes(role)) return;
+    socket.join(`barangay:coordination:${barangayId}`);
   });
 
   // Join user-specific room for targeted notifications
   socket.on('join:user', (userId: string) => {
+    const decoded = getSocketTokenPayload(socket);
+    if (!decoded || decoded.userId !== userId) return;
     socket.join(`user:${userId}`);
   });
 
