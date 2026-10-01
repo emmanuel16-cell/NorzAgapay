@@ -381,7 +381,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
             barangay_name: barangay?.name || '',
             municipality: barangay?.municipality || 'Norzagaray',
             is_active: user.is_active,
-            verification_status: user.is_active ? 'verified' : 'pending_document',
+            verification_status: verification?.status || (user.is_active ? 'verified' : 'pending_document'),
             verification: verification || null,
           },
         });
@@ -497,11 +497,9 @@ router.get('/me', authenticateBarangay, async (req: any, res: Response) => {
       const verification = user.role === 'dispatcher'
         ? await DispatcherVerificationService.getByUserId(user.id)
         : null;
-      // An active barangay account was authorized by its administrator. Keep
-      // that account active even if an old verification row is still pending.
-      const verificationStatus = user.is_active
-        ? 'verified'
-        : (verification?.status || 'pending_document');
+      // An explicit request record tracks the latest authorization cycle. Only
+      // fall back to account activation for legacy accounts without a record.
+      const verificationStatus = verification?.status || (user.is_active ? 'verified' : 'pending_document');
 
       res.json({
         ...user,
@@ -566,17 +564,12 @@ router.get('/dispatcher/authorization-pdf', async (req: Request, res: Response):
       } catch (_) {}
     }
 
-    if (!userId && req.query.userId) {
-      userId = req.query.userId as string;
-    }
-
-    // Support query by verification id or reference number if provided
-    const lookupId = userId || (req.query.id as string) || (req.query.ref as string);
-
-    if (!lookupId) {
-      res.status(401).json({ error: 'Authentication or userId required to generate authorization PDF' });
+    if (!userId) {
+      res.status(401).json({ error: 'Authentication is required to generate the authorization PDF.' });
       return;
     }
+
+    const lookupId = userId;
 
     // 2. Fetch or dynamically generate verification record from existing user registration data
     let verification = await DispatcherVerificationService.getByUserId(lookupId);
@@ -671,15 +664,12 @@ router.get('/dispatcher/certification-data', async (req: Request, res: Response)
       } catch (_) {}
     }
 
-    if (!userId && req.query.userId) {
-      userId = req.query.userId as string;
-    }
-
-    const lookupId = userId || (req.query.id as string);
-    if (!lookupId) {
-      res.status(401).json({ error: 'Authentication or userId required' });
+    if (!userId) {
+      res.status(401).json({ error: 'Authentication is required to fetch certification data.' });
       return;
     }
+
+    const lookupId = userId;
 
     let verification = await DispatcherVerificationService.getByUserId(lookupId);
     if (!verification) {
@@ -910,10 +900,9 @@ router.get(
         .eq('id', targetUserId)
         .maybeSingle();
 
-      // A team account created and activated by the barangay administrator may
-      // not have a separate dispatcher verification row. The active account is
-      // the source of truth in that case, including for cached app sessions.
-      if (user?.is_active && user.role === 'dispatcher') {
+      // An active legacy team account may not have a request record. Respect an
+      // existing record first so edits and resubmissions cannot look approved.
+      if (!verification && user?.is_active && user.role === 'dispatcher') {
         res.json({ verification: { ...(verification || {}), status: 'verified' } });
         return;
       }

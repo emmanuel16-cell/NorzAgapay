@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS barangay_dispatcher_verifications (
   reviewed_at TIMESTAMPTZ,
   reviewed_by UUID REFERENCES users(id) ON DELETE SET NULL,
   verification_history JSONB NOT NULL DEFAULT '[]'::jsonb,
+  is_active BOOLEAN NOT NULL DEFAULT true,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -34,3 +35,16 @@ CREATE INDEX IF NOT EXISTS idx_dispatcher_verifications_ref_no ON barangay_dispa
 
 ALTER TABLE barangay_users ADD COLUMN IF NOT EXISTS verification_status VARCHAR(32) DEFAULT 'pending_document';
 ALTER TABLE barangay_users ADD COLUMN IF NOT EXISTS verification_ref_no VARCHAR(64);
+ALTER TABLE barangay_users ADD COLUMN IF NOT EXISTS position_designation TEXT;
+ALTER TABLE barangay_dispatcher_verifications ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true;
+
+UPDATE barangay_users AS bu
+SET position_designation = dv.position_designation
+FROM barangay_dispatcher_verifications AS dv
+WHERE dv.user_id = bu.id
+  AND NULLIF(BTRIM(dv.position_designation), '') IS NOT NULL
+  AND (
+    bu.position_designation IS NULL
+    OR BTRIM(bu.position_designation) = ''
+    OR LOWER(BTRIM(bu.position_designation)) = 'barangay dispatcher'
+  );

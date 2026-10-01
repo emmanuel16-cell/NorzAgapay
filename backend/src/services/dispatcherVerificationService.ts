@@ -394,26 +394,42 @@ export class DispatcherVerificationService {
     const existing = await this.getByUserId(userId);
     if (!existing) throw new Error('Coordination request has not been initialized.');
     const now = new Date().toISOString();
+    const authorizationChanged =
+      existing.punong_barangay_name.trim() !== officialName.trim() ||
+      existing.punong_barangay_position.trim() !== officialPosition.trim();
+    const updatedHistory = authorizationChanged
+      ? [
+          ...existing.verification_history,
+          {
+            action: 'Authorization details updated',
+            timestamp: now,
+            note: `Authorized by ${officialName}, ${officialPosition}.${existing.document_url ? ' The previous certificate was invalidated; a new signed and sealed certificate is required.' : ''}`,
+            actor: existing.full_name,
+          },
+        ]
+      : existing.verification_history;
     const updated: DispatcherVerification = {
       ...existing,
       punong_barangay_name: officialName,
       punong_barangay_position: officialPosition,
+      status: authorizationChanged ? 'pending_document' : existing.status,
+      document_url: authorizationChanged ? null : existing.document_url,
+      submitted_at: authorizationChanged ? null : existing.submitted_at,
+      rejection_reason: authorizationChanged ? null : existing.rejection_reason,
+      is_active: authorizationChanged ? false : existing.is_active,
       updated_at: now,
-      verification_history: [
-        ...existing.verification_history,
-        {
-          action: 'Authorization details updated',
-          timestamp: now,
-          note: `Authorized by ${officialName}, ${officialPosition}.`,
-          actor: existing.full_name,
-        },
-      ],
+      verification_history: updatedHistory,
     };
     const { error } = await supabaseAdmin
       .from('barangay_dispatcher_verifications')
       .update({
         punong_barangay_name: officialName,
         punong_barangay_position: officialPosition,
+        status: updated.status,
+        document_url: updated.document_url,
+        submitted_at: updated.submitted_at,
+        rejection_reason: updated.rejection_reason,
+        is_active: updated.is_active,
         updated_at: now,
         verification_history: updated.verification_history,
       })
@@ -421,7 +437,7 @@ export class DispatcherVerificationService {
     if (error) throw error;
     const items = ensureStorage();
     const index = items.findIndex((item) => item.user_id === userId);
-    if (index >= 0) items[index] = updated;
+    if (index >= 0) items[index] = { ...updated, _password_hash: items[index]._password_hash };
     else items.push(updated);
     saveLocalStorage(items);
     return updated;
@@ -448,6 +464,9 @@ export class DispatcherVerificationService {
     const updated: DispatcherVerification = {
       ...existing,
       status: 'pending_document',
+      rejection_reason: null,
+      reviewed_at: null,
+      reviewed_by: null,
       updated_at: now,
       verification_history: updatedHistory,
     };
@@ -457,6 +476,9 @@ export class DispatcherVerificationService {
         .from('barangay_dispatcher_verifications')
         .update({
           status: 'pending_document',
+          rejection_reason: null,
+          reviewed_at: null,
+          reviewed_by: null,
           updated_at: now,
           verification_history: updatedHistory,
         })
@@ -643,9 +665,12 @@ export class DispatcherVerificationService {
 
       if (existingUser) {
         // User already exists (e.g., was created before this flow) — just activate
+        const existingUserUpdates: Record<string, unknown> = { is_active: true };
+        const positionDesignation = normalizePositionDesignation(record.position_designation);
+        if (positionDesignation) existingUserUpdates.position_designation = positionDesignation;
         await supabaseAdmin
           .from('barangay_users')
-          .update({ is_active: true })
+          .update(existingUserUpdates)
           .eq('id', record.user_id);
         console.log('[DispatcherVerification] Activated existing barangay_user:', record.user_id);
       } else {
@@ -658,6 +683,8 @@ export class DispatcherVerificationService {
           role: 'dispatcher',
           is_active: true,
         };
+        const positionDesignation = normalizePositionDesignation(record.position_designation);
+        if (positionDesignation) insertPayload.position_designation = positionDesignation;
         // Include password_hash if available from local store
         if (passwordHash) {
           insertPayload.password_hash = passwordHash;
