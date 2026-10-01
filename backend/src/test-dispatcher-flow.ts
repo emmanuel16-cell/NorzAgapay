@@ -9,7 +9,7 @@ async function runTest() {
   // Test 1: PDF Generation
   console.log('\n[Test 1] Generating Prefilled PDF...');
   const pdfBuffer = await DispatcherVerificationService.generateAuthorizationPDF({
-    dispatcherName: 'Juan Dela Cruz',
+    adminName: 'Juan Dela Cruz',
     positionDesignation: 'Chief Barangay Tanod / Dispatcher',
     barangayName: 'Poblacion',
     officialName: 'Hon. Maria Santos',

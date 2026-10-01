@@ -70,50 +70,77 @@ const authenticateBarangay = async (req: AuthRequest, res: Response, next: any) 
       role,
     };
     const requestStatusRead =
-      req.method === 'GET' && req.path === '/dispatcher/verification-status';
-    let pendingDispatcherFullyApproved = false;
-    if (role === 'dispatcher' && decoded.isPendingDispatcher) {
-      const { data: account, error: accountError } = await supabaseAdmin
-        .from('barangay_users')
-        .select('is_active')
-        .eq('id', decoded.userId)
-        .maybeSingle();
-      if (accountError) throw accountError;
-      pendingDispatcherFullyApproved = account?.is_active === true &&
-        await DispatcherVerificationService.isDispatcherApproved(decoded.userId) &&
-        await DispatcherVerificationService.isBarangayActive(decoded.barangayId);
+      req.method === 'GET' && (req.path === '/account-request/status' || req.path === '/dispatcher/verification-status');
+    const accountRequestPaths = new Set([
+      'GET /me',
+      'GET /account-request',
+      'PUT /account-request',
+      'POST /account-request/activation',
+      'GET /account-request/certificate',
+      'GET /account-request/certificate-data',
+      'POST /account-request/certificate',
+      'POST /account-request/resubmit',
+      'GET /account-request/status',
+      // Keep the old URLs working for already-installed app builds.
+      'GET /dispatcher/coordination-request',
+      'PUT /dispatcher/coordination-request',
+      'GET /dispatcher/authorization-pdf',
+      'GET /dispatcher/certification-data',
+      'POST /dispatcher/submit-certification',
+      'POST /dispatcher/resubmit',
+      'GET /dispatcher/verification-status',
+    ]);
 
-      const allowedPendingPaths = new Set([
+    // Old pending dispatcher registrations may inspect their status/document,
+    // but cannot use operational routes. New requests belong to the admin.
+    if (role === 'dispatcher' && decoded.isPendingDispatcher) {
+      const legacyReadPaths = new Set([
         'GET /me',
+        'GET /account-request/certificate',
+        'GET /account-request/certificate-data',
+        'GET /account-request/status',
         'GET /dispatcher/authorization-pdf',
         'GET /dispatcher/certification-data',
         'GET /dispatcher/verification-status',
       ]);
-      if (!pendingDispatcherFullyApproved && !allowedPendingPaths.has(`${req.method} ${req.path}`)) {
-        res.status(403).json({ error: 'Dispatcher access requires an approved MDRRMO coordination request.' });
+      if (!legacyReadPaths.has(`${req.method} ${req.path}`)) {
+        res.status(403).json({ error: 'Barangay access requires an approved and active Barangay Account Request.' });
         return;
       }
+      next();
+      return;
     }
-    if (role === 'dispatcher' && !requestStatusRead &&
-        (!decoded.isPendingDispatcher || pendingDispatcherFullyApproved)) {
-      const { data: account, error: accountError } = await supabaseAdmin
-        .from('barangay_users')
-        .select('is_active')
-        .eq('id', decoded.userId)
-        .maybeSingle();
-      if (accountError) throw accountError;
-      if (!account || account.is_active !== true) {
-        res.status(403).json({ error: 'This dispatcher account is inactive.' });
-        return;
-      }
-      if (!(await DispatcherVerificationService.isDispatcherApproved(decoded.userId))) {
-        res.status(403).json({ error: 'This dispatcher account has not been approved.' });
-        return;
-      }
-      if (!(await DispatcherVerificationService.isBarangayActive(decoded.barangayId))) {
-        res.status(403).json({ error: 'Dispatcher access requires an approved and active MDRRMO coordination request.' });
-        return;
-      }
+
+    const { data: account, error: accountError } = await supabaseAdmin
+      .from('barangay_users')
+      .select('role, is_active, barangay_id')
+      .eq('id', decoded.userId)
+      .maybeSingle();
+    if (accountError) throw accountError;
+    if (!account || account.barangay_id !== decoded.barangayId || normalizeBarangayRole(account.role) !== role || account.is_active !== true) {
+      res.status(403).json({ error: 'This barangay account is inactive.' });
+      return;
+    }
+
+    const accountRequestActive = await DispatcherVerificationService.isBarangayActive(decoded.barangayId);
+    if (!accountRequestActive && requestStatusRead) {
+      next();
+      return;
+    }
+    if (!accountRequestActive && role !== 'admin') {
+      res.status(403).json({ error: 'Barangay access requires an approved and active Barangay Account Request.' });
+      return;
+    }
+    if (!accountRequestActive && role === 'admin' && !accountRequestPaths.has(`${req.method} ${req.path}`)) {
+      res.status(403).json({ error: 'This Barangay Account Request is not active. Complete the request to restore barangay access.' });
+      return;
+    }
+
+    // Even when active, a status read is permitted for every role so a
+    // connected app can refresh its local access state after MDRRMO changes.
+    if (requestStatusRead) {
+      next();
+      return;
     }
     next();
   } catch {
@@ -225,7 +252,7 @@ router.put('/hotlines', authenticateBarangay, requireRole(['admin', 'staff']), a
 });
 
 // ─── POST /api/barangay/register ────────────────────────────────────────────
-// Register a new dispatcher account pending MDRRMO verification.
+// Create a barangay administrator account before the Barangay Account Request.
 // Saves ONLY to barangay_dispatcher_verifications (pending).
 // barangay_users entry is created only after MDRRMO approval.
 
@@ -346,7 +373,7 @@ router.post('/verify-register-otp', async (req: Request, res: Response): Promise
       success: true,
       message: 'Email verified. Your temporary password was sent to your email.',
       temporaryPassword,
-      user: { ...user, barangay_name: barangay.name, municipality: barangay.municipality, coordination_prompt_pending: true },
+      user: { ...user, barangay_name: barangay.name, municipality: barangay.municipality, coordination_verified: false, verification_status: 'pending_document', coordination_prompt_pending: false },
       token,
     });
   } catch (err: any) {
@@ -392,54 +419,23 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
         .eq('id', user.barangay_id)
         .maybeSingle();
 
-      // Dispatchers in barangay_users are approved when their account is active.
-      // Check for a verification record to return full details
-      if (role === 'dispatcher') {
-        const coordinationVerified = await DispatcherVerificationService.isBarangayActive(user.barangay_id);
-        const verification = await DispatcherVerificationService.getPersistedByUserId(user.id);
-        if (!user.is_active) {
-          res.status(403).json({ error: 'This dispatcher account is inactive.' });
-          return;
-        }
-        if (verification && (verification.status !== 'verified' || verification.is_active === false)) {
-          res.status(403).json({ error: 'This dispatcher account has not been approved.' });
-          return;
-        }
-        if (!coordinationVerified) {
-          res.status(403).json({ error: 'Dispatcher access requires an approved and active MDRRMO coordination request.' });
-          return;
-        }
-        const token = jwt.sign(
-          { userId: user.id, barangayId: user.barangay_id, role, email: user.email },
-          config.jwtSecret,
-          { expiresIn: '30d' }
-        );
-        res.json({
-          token,
-          user: {
-            id: user.id,
-            full_name: user.full_name,
-            email: user.email,
-            phone: user.phone,
-            role,
-            barangay_id: user.barangay_id,
-            position_designation: user.position_designation,
-            barangay_name: barangay?.name || '',
-            municipality: barangay?.municipality || 'Norzagaray',
-            is_active: user.is_active,
-            coordination_verified: coordinationVerified,
-            verification_status: verification?.status || (user.is_active ? 'verified' : 'pending_document'),
-            verification: verification || null,
-          },
-        });
+      if (!user.is_active) {
+        res.status(403).json({ error: 'This barangay account is inactive. Contact your barangay administrator.' });
         return;
       }
 
-      // Responder or staff
-      if (!user.is_active) {
-        res.status(403).json({ error: 'Account has been deactivated. Contact your barangay administrator.' });
+      const coordinationVerified = await DispatcherVerificationService.isBarangayActive(user.barangay_id);
+      // Keep the barangay administrator able to sign in while access is
+      // pending or deactivated so they can submit or request activation.
+      // All other barangay roles are refused until MDRRMO activates the request.
+      if (role !== 'admin' && !coordinationVerified) {
+        res.status(403).json({ error: 'This barangay is not active. Ask the barangay administrator to submit a Barangay Account Request.' });
         return;
       }
+
+      const verification = role === 'admin'
+        ? await DispatcherVerificationService.getPersistedByUserId(user.id)
+        : null;
 
       const token = jwt.sign(
         { userId: user.id, barangayId: user.barangay_id, role, email: user.email },
@@ -458,15 +454,16 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
           position_designation: user.position_designation,
           barangay_name: barangay?.name || '',
           municipality: barangay?.municipality || 'Norzagaray',
-          is_active: true,
-          coordination_verified: await DispatcherVerificationService.isBarangayActive(user.barangay_id),
-          verification_status: 'verified',
+            is_active: user.is_active,
+            coordination_verified: coordinationVerified,
+            verification_status: verification?.status || (coordinationVerified ? 'verified' : 'pending_document'),
+            verification,
         },
       });
       return;
     }
 
-    // ── Path B: Not in barangay_users — check pending dispatcher verifications ──
+    // ── Path B: Legacy pending dispatcher accounts ──
     const pendingRecord = await DispatcherVerificationService.findByEmail(email);
 
     if (pendingRecord && pendingRecord._password_hash) {
@@ -544,15 +541,13 @@ router.get('/me', authenticateBarangay, async (req: any, res: Response) => {
         .maybeSingle();
 
       const role = normalizeBarangayRole(user.role);
-      const verification = role === 'dispatcher'
+      const verification = role === 'admin'
         ? await DispatcherVerificationService.getPersistedByUserId(user.id)
         : null;
-      // An explicit request record tracks the latest authorization cycle. Only
-      // fall back to account activation for legacy accounts without a record.
-      const verificationStatus = verification?.status || (user.is_active ? 'verified' : 'pending_document');
-      const coordinationVerified = role === 'dispatcher'
-        ? await DispatcherVerificationService.isBarangayActive(user.barangay_id)
-        : false;
+      const verificationStatus = verification?.status || (role === 'admin'
+        ? 'pending_document'
+        : (user.is_active ? 'verified' : 'pending_document'));
+      const coordinationVerified = await DispatcherVerificationService.isBarangayActive(user.barangay_id);
 
       res.json({
         ...user,
@@ -606,7 +601,7 @@ router.get('/me', authenticateBarangay, async (req: any, res: Response) => {
 // Supports inline preview and attachment download via ?download=true
 
 router.get(
-  '/dispatcher/authorization-pdf',
+  ['/account-request/certificate', '/dispatcher/authorization-pdf'],
   authenticateBarangay,
   requireRole(['admin', 'dispatcher']),
   async (req: Request, res: Response): Promise<void> => {
@@ -684,7 +679,7 @@ router.get(
     });
 
     const pdfBuffer = await DispatcherVerificationService.generateAuthorizationPDF({
-      dispatcherName: verification.full_name,
+      adminName: verification.full_name,
       positionDesignation: await getAccountPositionDesignation(
         lookupId,
         verification.position_designation,
@@ -698,8 +693,8 @@ router.get(
 
     const isDownload = req.query.download === 'true' || req.query.download === '1' || req.query.dl === '1';
     const dispositionType = isDownload ? 'attachment' : 'inline';
-    const safeName = (verification.full_name || 'Dispatcher').replace(/[^a-zA-Z0-9_]/g, '_');
-    const filename = `Barangay_Dispatcher_Authorization_${safeName}.pdf`;
+    const safeName = (verification.full_name || 'Administrator').replace(/[^a-zA-Z0-9_]/g, '_');
+    const filename = `Barangay_Account_Request_${safeName}.pdf`;
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader(
@@ -721,7 +716,7 @@ router.get(
 // Retrieve prefilled certification data for in-app viewing & printing
 
 router.get(
-  '/dispatcher/certification-data',
+  ['/account-request/certificate-data', '/dispatcher/certification-data'],
   authenticateBarangay,
   requireRole(['admin', 'dispatcher']),
   async (req: Request, res: Response): Promise<void> => {
@@ -803,7 +798,7 @@ router.get(
     );
 
     res.json({
-      title: 'BARANGAY DISPATCHER ACCOUNT AUTHORIZATION REQUEST',
+      title: 'BARANGAY ACCOUNT REQUEST',
       date: currentDate,
       full_name: verification.full_name,
       position_designation: positionDesignation || 'Not provided',
@@ -815,10 +810,10 @@ router.get(
       reference_no: verification.reference_no,
       paragraphs: [
         positionDesignation
-          ? `This is to certify that ${verification.full_name}, serving as ${positionDesignation} at Barangay ${barangayName}, is authorized by Barangay ${barangayName}, Municipality of Norzagaray, Bulacan, to submit this request to add a designated Barangay Dispatcher account to the barangay team in the NorzAgapay Emergency Response and Crisis Management Coordination Application. The dispatcher will coordinate incident reports and official emergency information with the MDRRMO.`
-          : `This is to certify that ${verification.full_name} is an authorized representative of Barangay ${barangayName}, Municipality of Norzagaray, Bulacan, and is authorized to submit this request to add a designated Barangay Dispatcher account to the barangay team in the NorzAgapay Emergency Response and Crisis Management Coordination Application. The dispatcher will coordinate incident reports and official emergency information with the MDRRMO.`,
-        `The requested dispatcher account is for use by a person designated by the barangay to relay incident reports, receive official alerts, and communicate with the MDRRMO. The barangay administrator is responsible for ensuring the account is assigned to an authorized team member and used only for official emergency preparedness and response coordination.`,
-        `This signed authorization supports the barangay's request to add a dispatcher account. The account may be created and activated only after the MDRRMO verifies this document.`,
+          ? `This is to certify that ${verification.full_name}, serving as ${positionDesignation} at Barangay ${barangayName}, Municipality of Norzagaray, Bulacan, is the barangay administrator and authorized representative submitting a Barangay Account Request to the NorzAgapay Emergency Response and Crisis Management Coordination Application. The request seeks MDRRMO verification and activation of access for authorized accounts belonging to Barangay ${barangayName}.`
+          : `This is to certify that ${verification.full_name} is the barangay administrator and an authorized representative of Barangay ${barangayName}, Municipality of Norzagaray, Bulacan, submitting a Barangay Account Request to the NorzAgapay Emergency Response and Crisis Management Coordination Application. The request seeks MDRRMO verification and activation of access for authorized accounts belonging to Barangay ${barangayName}.`,
+        `The barangay administrator is responsible for managing authorized team accounts and ensuring they are used only for official emergency preparedness, incident reporting, and response coordination.`,
+        `All accounts belonging to the barangay will remain restricted until the MDRRMO verifies and activates this request. MDRRMO may deactivate barangay access at any time; the administrator may then submit a request to restore access.`,
       ],
     });
   } catch (err) {
@@ -832,7 +827,7 @@ router.get(
 // Upload signed and sealed certification document
 
 router.post(
-  '/dispatcher/submit-certification',
+  ['/account-request/certificate', '/dispatcher/submit-certification'],
   authenticateBarangay,
   requireRole(['admin']),
   upload.single('file'),
@@ -916,21 +911,22 @@ router.post(
 
 // ─── GET /api/barangay/dispatcher/verification-status ────────────────────────
 
-router.get('/dispatcher/coordination-request', authenticateBarangay, requireRole(['admin']), async (req: any, res: Response): Promise<void> => {
+router.get(['/account-request', '/dispatcher/coordination-request'], authenticateBarangay, requireRole(['admin']), async (req: any, res: Response): Promise<void> => {
   try {
       const verification = await DispatcherVerificationService.getPersistedByUserId(req.barangayUser.userId);
     const coordinationVerified = await DispatcherVerificationService.isBarangayActive(req.barangayUser.barangayId);
     res.json({ configured: Boolean(verification), verification, coordination_verified: coordinationVerified });
   } catch (err) {
-    console.error('Load coordination request error:', err);
-    res.status(500).json({ error: 'Failed to load coordination request.' });
+    console.error('Load Barangay Account Request error:', err);
+    res.status(500).json({ error: 'Failed to load Barangay Account Request.' });
   }
 });
 
-router.put('/dispatcher/coordination-request', authenticateBarangay, requireRole(['admin']), async (req: any, res: Response): Promise<void> => {
+router.put(['/account-request', '/dispatcher/coordination-request'], authenticateBarangay, requireRole(['admin']), async (req: any, res: Response): Promise<void> => {
   const parsed = z.object({
     official_name: z.string().trim().min(2).max(120),
     official_position: z.string().trim().min(2).max(120),
+    position_designation: z.string().trim().max(120).optional(),
   }).safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: 'Enter the authorizing official’s name and position.' });
@@ -949,6 +945,9 @@ router.put('/dispatcher/coordination-request', authenticateBarangay, requireRole
         res.status(404).json({ error: 'Barangay administrator account was not found.' });
         return;
       }
+      const accountPosition = parsed.data.position_designation !== undefined
+        ? (normalizePositionDesignation(parsed.data.position_designation) || '')
+        : (normalizePositionDesignation(user.position_designation) || '');
       verification = await DispatcherVerificationService.createVerification({
         userId,
         barangayId: user.barangay_id,
@@ -956,28 +955,46 @@ router.put('/dispatcher/coordination-request', authenticateBarangay, requireRole
         fullName: user.full_name,
         email: user.email,
         phone: user.phone,
-        positionDesignation: normalizePositionDesignation(user.position_designation) || '',
+        positionDesignation: accountPosition,
         punongBarangayName: parsed.data.official_name,
         punongBarangayPosition: parsed.data.official_position,
       });
+      if (accountPosition !== (normalizePositionDesignation(user.position_designation) || '')) {
+        const { error: positionUpdateError } = await supabaseAdmin
+          .from('barangay_users')
+          .update({ position_designation: accountPosition })
+          .eq('id', userId)
+          .eq('role', 'admin');
+        if (positionUpdateError) throw positionUpdateError;
+      }
       await DispatcherVerificationService.broadcastCoordinationAccessChanged(user.barangay_id);
     } else {
       verification = await DispatcherVerificationService.updateAuthorizationDetails(
         userId,
         parsed.data.official_name,
         parsed.data.official_position,
+        parsed.data.position_designation,
       );
     }
     const coordinationVerified = await DispatcherVerificationService.isBarangayActive(req.barangayUser.barangayId);
     res.json({ verification, coordination_verified: coordinationVerified });
   } catch (err: any) {
-    console.error('Save coordination request error:', err);
-    res.status(500).json({ error: err.message || 'Failed to save coordination request.' });
+    console.error('Save Barangay Account Request error:', err);
+    res.status(500).json({ error: err.message || 'Failed to save Barangay Account Request.' });
+  }
+});
+
+router.post('/account-request/activation', authenticateBarangay, requireRole(['admin']), async (req: any, res: Response): Promise<void> => {
+  try {
+    const verification = await DispatcherVerificationService.requestActivation(req.barangayUser.userId);
+    res.json({ message: 'Activation request sent to MDRRMO.', verification, coordination_verified: false });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Could not request barangay activation.' });
   }
 });
 
 router.get(
-  '/dispatcher/verification-status',
+  ['/account-request/status', '/dispatcher/verification-status'],
   authenticateBarangay,
   async (req: any, res: Response): Promise<void> => {
     try {
@@ -992,18 +1009,13 @@ router.get(
         .eq('id', targetUserId)
         .maybeSingle();
 
-      // An active legacy team account may not have a request record. Respect an
-      // existing record first so edits and resubmissions cannot look approved.
-      if (!verification && user?.is_active && normalizeBarangayRole(user.role) === 'dispatcher') {
-        res.json({ verification: { status: 'verified' }, coordination_verified: coordinationVerified });
-        return;
-      }
       if (!verification) {
-        if (user && normalizeBarangayRole(user.role) === 'dispatcher') {
-          res.json({ verification: { status: user.is_active ? 'verified' : 'pending_document' }, coordination_verified: coordinationVerified });
-          return;
-        }
-        res.status(404).json({ error: 'Verification record not found' });
+        const isAdmin = normalizeBarangayRole(user?.role || req.barangayUser.role) === 'admin';
+        res.json({
+          verification: null,
+          verification_status: isAdmin ? 'pending_document' : 'verified',
+          coordination_verified: coordinationVerified,
+        });
         return;
       }
       res.json({ verification, coordination_verified: coordinationVerified });
@@ -1017,7 +1029,7 @@ router.get(
 // ─── POST /api/barangay/dispatcher/resubmit ──────────────────────────────────
 
 router.post(
-  '/dispatcher/resubmit',
+  ['/account-request/resubmit', '/dispatcher/resubmit'],
   authenticateBarangay,
   requireRole(['admin']),
   async (req: any, res: Response): Promise<void> => {
@@ -1104,7 +1116,7 @@ router.post('/team', authenticateBarangay, requireRole(['admin', 'responder']), 
     if (req.barangayUser.role === 'admin' && body.role === 'dispatcher') {
       const coordination = await DispatcherVerificationService.getByUserId(req.barangayUser.userId);
       if (coordination?.status !== 'verified' || !(await DispatcherVerificationService.isBarangayActive(req.barangayUser.barangayId))) {
-        res.status(403).json({ error: 'The barangay must have an active MDRRMO coordination request before adding a dispatcher.' });
+        res.status(403).json({ error: 'The Barangay Account Request must be active before adding a dispatcher.' });
         return;
       }
     }
@@ -1175,7 +1187,7 @@ router.patch('/team/:id', authenticateBarangay, requireRole(['admin']), async (r
     if (parsed.data.role === 'dispatcher' && currentMember.role !== 'dispatcher') {
       const coordination = await DispatcherVerificationService.getByUserId(req.barangayUser.userId);
       if (coordination?.status !== 'verified' || !(await DispatcherVerificationService.isBarangayActive(req.barangayUser.barangayId))) {
-        res.status(403).json({ error: 'The barangay must have an active MDRRMO coordination request before assigning the dispatcher role.' });
+        res.status(403).json({ error: 'The Barangay Account Request must be active before assigning the dispatcher role.' });
         return;
       }
     }

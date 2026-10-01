@@ -70,6 +70,20 @@ function normalizeSocketRole(role: string): string {
   return legacyRoleMap[role] || role;
 }
 
+async function canUseBarangaySocket(socket: any): Promise<boolean> {
+  const decoded = getSocketTokenPayload(socket);
+  if (!decoded) return false;
+  if (!decoded.barangayId) return true;
+  const { data: account, error } = await supabaseAdmin
+    .from('barangay_users')
+    .select('role, is_active, barangay_id')
+    .eq('id', decoded.userId)
+    .maybeSingle();
+  if (error || !account || account.is_active !== true || account.barangay_id !== decoded.barangayId) return false;
+  if (normalizeSocketRole(account.role) !== normalizeSocketRole(decoded.role)) return false;
+  return DispatcherVerificationService.isBarangayActive(decoded.barangayId);
+}
+
 // ============================================
 // Middleware
 // ============================================
@@ -134,6 +148,7 @@ io.on('connection', (socket) => {
   // GPS location broadcast
   socket.on('gps:update', async (data: { userId: string; latitude: number; longitude: number }) => {
     try {
+      if (!(await canUseBarangaySocket(socket))) return;
       console.log(`GPS Update received for user ${data.userId}: ${data.latitude}, ${data.longitude}`);
       await setUserGPS(data.userId, data.latitude, data.longitude);
       // Broadcast responder GPS updates to dashboard staff.
@@ -158,8 +173,8 @@ io.on('connection', (socket) => {
     console.log(`Socket ${socket.id} joined room: ${role}`);
   });
 
-  // Join the sensitive barangay room only for an active account. Dispatchers
-  // also need both their own approval and the administrator's active request.
+  // Join the sensitive barangay room only for an active account in a barangay
+  // with an active Barangay Account Request.
   socket.on('join:barangay', async (barangayId: string) => {
     try {
       const decoded = getSocketTokenPayload(socket);
@@ -173,10 +188,7 @@ io.on('connection', (socket) => {
         .eq('barangay_id', barangayId)
         .maybeSingle();
       if (error || !account || account.is_active !== true || normalizeSocketRole(account.role) !== role) return;
-      if (role === 'dispatcher' && (
-        !(await DispatcherVerificationService.isDispatcherApproved(decoded.userId)) ||
-        !(await DispatcherVerificationService.isBarangayActive(barangayId))
-      )) return;
+      if (!(await DispatcherVerificationService.isBarangayActive(barangayId))) return;
 
       socket.data.userId = decoded.userId;
       socket.data.barangayId = barangayId;
@@ -188,13 +200,23 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Coordination status is safe to read while access is pending, but it is
-  // isolated from incident and report events in the main barangay room.
-  socket.on('join:coordination', (barangayId: string) => {
-    const decoded = getSocketTokenPayload(socket);
-    const role = decoded ? normalizeSocketRole(decoded.role) : '';
-    if (!decoded || decoded.barangayId !== barangayId || !['admin', 'dispatcher'].includes(role)) return;
-    socket.join(`barangay:coordination:${barangayId}`);
+  // Account request status is safe to read while access is pending. This room
+  // carries only activation-state events, never incident or report activity.
+  socket.on('join:coordination', async (barangayId: string) => {
+    try {
+      const decoded = getSocketTokenPayload(socket);
+      const role = decoded ? normalizeSocketRole(decoded.role) : '';
+      if (!decoded || decoded.barangayId !== barangayId || !['admin', 'dispatcher', 'responder', 'staff'].includes(role)) return;
+      const { data: account, error } = await supabaseAdmin
+        .from('barangay_users')
+        .select('role, is_active, barangay_id')
+        .eq('id', decoded.userId)
+        .maybeSingle();
+      if (error || !account || account.is_active !== true || account.barangay_id !== barangayId || normalizeSocketRole(account.role) !== role) return;
+      socket.join(`barangay:coordination:${barangayId}`);
+    } catch (err) {
+      console.error('Socket coordination room authorization failed:', err);
+    }
   });
 
   // Join user-specific room for targeted notifications
@@ -206,28 +228,38 @@ io.on('connection', (socket) => {
 
   // Task status updates
   socket.on('task:statusUpdate', (data: { taskId: string; status: string; userId: string }) => {
-    io.to('dashboard_staff').emit('task:statusChanged', data);
+    void canUseBarangaySocket(socket).then((allowed) => {
+      if (allowed) io.to('dashboard_staff').emit('task:statusChanged', data);
+    });
   });
 
   // New incident broadcast
   socket.on('incident:new', (incident: any) => {
-    io.to('responders').emit('incident:alert', incident);
-    io.to('dashboard_staff').emit('incident:new', incident);
+    void canUseBarangaySocket(socket).then((allowed) => {
+      if (!allowed) return;
+      io.to('responders').emit('incident:alert', incident);
+      io.to('dashboard_staff').emit('incident:new', incident);
+    });
   });
 
   // Inventory updates
   socket.on('inventory:update', (data: any) => {
-    io.to('dashboard_staff').emit('inventory:changed', data);
+    void canUseBarangaySocket(socket).then((allowed) => {
+      if (allowed) io.to('dashboard_staff').emit('inventory:changed', data);
+    });
   });
 
   // Resource request from professional unit
   socket.on('resource:request', (data: any) => {
-    io.to('dashboard_staff').emit('resource:request', data);
+    void canUseBarangaySocket(socket).then((allowed) => {
+      if (allowed) io.to('dashboard_staff').emit('resource:request', data);
+    });
   });
 
   // Request all GPS locations (dashboard staff)
   socket.on('gps:requestAll', async () => {
     try {
+      if (!(await canUseBarangaySocket(socket))) return;
       const locations = await getAllActiveGPS();
       socket.emit('gps:allLocations', locations);
     } catch (err) {

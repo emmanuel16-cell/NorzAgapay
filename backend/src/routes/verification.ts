@@ -400,7 +400,7 @@ router.post(
 
 // GET /api/verification/dispatchers/pending — list pending dispatcher verifications
 router.get(
-  '/dispatchers/pending',
+  ['/barangay-accounts/pending', '/dispatchers/pending'],
   authenticate,
   authorize('admin'),
   async (_req: AuthRequest, res: Response): Promise<void> => {
@@ -416,7 +416,7 @@ router.get(
 
 // GET /api/verification/dispatchers/archived — list archived/rejected dispatcher verifications
 router.get(
-  '/dispatchers/archived',
+  ['/barangay-accounts/archived', '/dispatchers/archived'],
   authenticate,
   authorize('admin'),
   async (_req: AuthRequest, res: Response): Promise<void> => {
@@ -431,7 +431,7 @@ router.get(
 );
 
 router.get(
-  '/dispatchers/approved',
+  ['/barangay-accounts/approved', '/dispatchers/approved'],
   authenticate,
   authorize('admin'),
   async (_req: AuthRequest, res: Response): Promise<void> => {
@@ -446,7 +446,7 @@ router.get(
 
 // POST /api/verification/dispatchers/:id/approve — approve dispatcher & activate account
 router.post(
-  '/dispatchers/:id/approve',
+  ['/barangay-accounts/:id/approve', '/dispatchers/:id/approve'],
   authenticate,
   authorize('admin'),
   async (req: AuthRequest, res: Response): Promise<void> => {
@@ -455,7 +455,7 @@ router.post(
       const { notes } = req.body;
       const updated = await DispatcherVerificationService.approve(id, req.user?.userId, notes);
       res.json({
-        message: 'Barangay Dispatcher approved and activated successfully.',
+        message: 'Barangay Account Request approved and activated for all barangay accounts.',
         verification: updated,
       });
     } catch (err: any) {
@@ -467,7 +467,7 @@ router.post(
 
 // POST /api/verification/dispatchers/:id/reject — reject dispatcher certification
 router.post(
-  '/dispatchers/:id/reject',
+  ['/barangay-accounts/:id/reject', '/dispatchers/:id/reject'],
   authenticate,
   authorize('admin'),
   async (req: AuthRequest, res: Response): Promise<void> => {
@@ -476,7 +476,7 @@ router.post(
       const { reason } = req.body;
       const updated = await DispatcherVerificationService.reject(id, req.user?.userId, reason);
       res.json({
-        message: 'Barangay Dispatcher verification rejected.',
+        message: 'Barangay Account Request rejected.',
         verification: updated,
       });
     } catch (err: any) {
@@ -488,7 +488,7 @@ router.post(
 
 // POST /api/verification/dispatchers/:id/request-correction — request correction on dispatcher certification
 router.post(
-  '/dispatchers/:id/request-correction',
+  ['/barangay-accounts/:id/request-correction', '/dispatchers/:id/request-correction'],
   authenticate,
   authorize('admin'),
   async (req: AuthRequest, res: Response): Promise<void> => {
@@ -497,7 +497,7 @@ router.post(
       const { reason } = req.body;
       const updated = await DispatcherVerificationService.requestCorrection(id, req.user?.userId, reason);
       res.json({
-        message: 'Correction requested for Barangay Dispatcher verification.',
+        message: 'Correction requested for the Barangay Account Request.',
         verification: updated,
       });
     } catch (err: any) {
@@ -508,7 +508,7 @@ router.post(
 );
 
 router.patch(
-  '/dispatchers/:id/active',
+  ['/barangay-accounts/:id/active', '/dispatchers/:id/active'],
   authenticate,
   authorize('admin'),
   async (req: AuthRequest, res: Response): Promise<void> => {

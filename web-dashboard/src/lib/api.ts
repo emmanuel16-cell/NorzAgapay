@@ -13,6 +13,7 @@ const api = axios.create({
 });
 
 export const socket = io(SOCKET_BASE, {
+  autoConnect: false,
   extraHeaders: {
     'ngrok-skip-browser-warning': 'true'
   }
@@ -100,14 +101,14 @@ export const verificationAPI = {
   bulkReject: (userIds: string[], reason?: string) => api.post('/verification/bulk-reject', { userIds, reason }),
   bulkRestore: (userIds: string[]) => api.post('/verification/bulk-restore', { userIds }),
 
-  // Barangay Dispatcher Verifications
-  dispatcherPending: () => api.get('/verification/dispatchers/pending'),
-  dispatcherArchived: () => api.get('/verification/dispatchers/archived'),
-  dispatcherApproved: () => api.get('/verification/dispatchers/approved'),
-  approveDispatcher: (id: string, notes?: string) => api.post(`/verification/dispatchers/${id}/approve`, { notes }),
-  rejectDispatcher: (id: string, reason: string) => api.post(`/verification/dispatchers/${id}/reject`, { reason }),
-  requestCorrectionDispatcher: (id: string, reason: string) => api.post(`/verification/dispatchers/${id}/request-correction`, { reason }),
-  setDispatcherActive: (id: string, is_active: boolean) => api.patch(`/verification/dispatchers/${id}/active`, { is_active }),
+  // Barangay Account Requests
+  barangayAccountRequestsPending: () => api.get('/verification/barangay-accounts/pending'),
+  barangayAccountRequestsArchived: () => api.get('/verification/barangay-accounts/archived'),
+  barangayAccountRequestsApproved: () => api.get('/verification/barangay-accounts/approved'),
+  approveBarangayAccountRequest: (id: string, notes?: string) => api.post(`/verification/barangay-accounts/${id}/approve`, { notes }),
+  rejectBarangayAccountRequest: (id: string, reason: string) => api.post(`/verification/barangay-accounts/${id}/reject`, { reason }),
+  requestBarangayAccountCorrection: (id: string, reason: string) => api.post(`/verification/barangay-accounts/${id}/request-correction`, { reason }),
+  setBarangayAccountActive: (id: string, is_active: boolean) => api.patch(`/verification/barangay-accounts/${id}/active`, { is_active }),
 };
 
 // Resource Requests

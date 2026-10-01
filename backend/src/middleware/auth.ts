@@ -7,6 +7,7 @@ export interface AuthPayload {
   email: string;
   role: string;
   unitType?: string;
+  barangayId?: string;
 }
 
 export interface AuthRequest extends Request {
@@ -29,6 +30,13 @@ export function authenticate(req: AuthRequest, res: Response, next: NextFunction
 
   try {
     const decoded = jwt.verify(token, config.jwtSecret) as AuthPayload;
+    // Barangay sessions use their own account lookup and barangay-wide
+    // activation gate in authenticateBarangay. Never let their overlapping
+    // `admin` / `dispatcher` role names authorize command-center APIs.
+    if (decoded.barangayId) {
+      res.status(403).json({ error: 'Use a barangay account endpoint for this session.' });
+      return;
+    }
     req.user = decoded;
     next();
   } catch (err) {

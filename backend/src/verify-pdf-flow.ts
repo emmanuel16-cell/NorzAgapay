@@ -6,7 +6,7 @@ async function verify() {
   // Test 1: Generate PDF using registered user data
   console.log('\n[1] Testing generateAuthorizationPDF with prefilled registration data...');
   const pdfBuffer = await DispatcherVerificationService.generateAuthorizationPDF({
-    dispatcherName: 'Juan Dela Cruz',
+    adminName: 'Juan Dela Cruz',
     positionDesignation: 'Barangay Dispatcher',
     barangayName: 'San Lorenzo',
     officialName: '',

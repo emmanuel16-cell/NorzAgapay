@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
-import { authAPI } from '../lib/api';
+import { authAPI, socket } from '../lib/api';
 import { debugAPI } from '../lib/api';
 
 interface User {
@@ -33,6 +33,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   });
   const [token, setToken] = useState<string | null>(localStorage.getItem('norzagapay_token'));
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (token) {
+      socket.auth = { token };
+      socket.connect();
+    } else {
+      socket.disconnect();
+    }
+  }, [token]);
 
   useEffect(() => {
     if (token) {

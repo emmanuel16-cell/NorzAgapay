@@ -46,7 +46,7 @@ const navItems: NavItem[] = [
     label: 'Verification Queue',
     children: [
       { path: '/verification/officers', label: 'Officer' },
-      { path: '/verification/barangay', label: 'Barangay' },
+      { path: '/verification/barangay', label: 'Barangay Account Requests' },
     ],
   },
   { path: '/users', icon: <Users size={19} strokeWidth={1.8} />, label: 'User Management' },

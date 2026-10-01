@@ -1,12 +1,12 @@
 -- ==============================================================================
 -- Migration: Create Barangay Dispatcher Verifications Table & Supporting Columns
--- Description: Enables authorization certification tracking, prefilled PDF reference
+-- Description: Enables Barangay Account Request tracking, prefilled PDF reference
 --              linking, document upload storage, review status, and audit history.
 -- ==============================================================================
 
 CREATE TABLE IF NOT EXISTS barangay_dispatcher_verifications (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID, -- References barangay_users(id) once approved by MDRRMO
+  user_id UUID, -- References the existing barangay administrator's barangay_users(id)
   barangay_id UUID NOT NULL REFERENCES barangays(id) ON DELETE CASCADE,
   full_name TEXT NOT NULL DEFAULT '',
   email TEXT NOT NULL DEFAULT '',
@@ -17,13 +17,13 @@ CREATE TABLE IF NOT EXISTS barangay_dispatcher_verifications (
   punong_barangay_position TEXT NOT NULL DEFAULT 'Punong Barangay',
   reference_no VARCHAR(64) UNIQUE NOT NULL,
   document_url TEXT,
-  status VARCHAR(32) NOT NULL DEFAULT 'pending_document', -- pending_document | under_review | verified | rejected | needs_correction
+  status VARCHAR(32) NOT NULL DEFAULT 'pending_document', -- pending_document | under_review | verified | rejected | needs_correction | activation_pending
   rejection_reason TEXT,
   submitted_at TIMESTAMPTZ,
   reviewed_at TIMESTAMPTZ,
   reviewed_by UUID REFERENCES users(id) ON DELETE SET NULL,
   verification_history JSONB NOT NULL DEFAULT '[]'::jsonb,
-  is_active BOOLEAN NOT NULL DEFAULT true,
+  is_active BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -37,6 +37,7 @@ ALTER TABLE barangay_users ADD COLUMN IF NOT EXISTS verification_status VARCHAR(
 ALTER TABLE barangay_users ADD COLUMN IF NOT EXISTS verification_ref_no VARCHAR(64);
 ALTER TABLE barangay_users ADD COLUMN IF NOT EXISTS position_designation TEXT;
 ALTER TABLE barangay_dispatcher_verifications ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE barangay_dispatcher_verifications ALTER COLUMN is_active SET DEFAULT false;
 
 UPDATE barangay_users AS bu
 SET position_designation = dv.position_designation
