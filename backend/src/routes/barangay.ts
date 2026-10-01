@@ -1996,40 +1996,44 @@ router.patch('/assistance-requests/:id/team-action', authenticateBarangay, requi
 // ─── Public Alerts / Broadcasts Routes ───────────────────────────────────────
 
 // GET /api/barangay/broadcasts/mdrrmo
-// Returns municipal/MDRRMO broadcasts available across all barangays
+// Returns persistent municipality-wide MDRRMO broadcasts.
 router.get('/broadcasts/mdrrmo', async (req: any, res: Response) => {
   try {
     const { data, error } = await supabaseAdmin
       .from('public_broadcasts')
-      .select('*, author:barangay_users!author_id(full_name), barangay:barangays!barangay_id(name)')
+      .select('*, author:barangay_users!author_id(full_name), dashboard_author:users!author_user_id(full_name), barangay:barangays!barangay_id(name)')
       .eq('is_mdrrmo', true)
+      .is('barangay_id', null)
       .order('created_at', { ascending: false });
 
-    if (error || !data || data.length === 0) {
-      // Fallback demo data if table is empty
-      res.json([]);
+    if (error) {
+      console.error('Get MDRRMO broadcasts query error:', error);
+      res.status(500).json({ error: 'Failed to fetch MDRRMO broadcasts.' });
       return;
     }
 
-    const formatted = data.map((b: any) => ({
+    const formatted = (data || []).map((b: any) => ({
       id: b.id,
-      barangay_id: b.barangay_id,
+      barangay_id: null,
       barangay_name: 'MDRRMO Norzagaray',
-      author_id: b.author_id,
-      author_name: b.author?.full_name || 'MDRRMO Command Center',
+      author_id: b.author_user_id || b.author_id,
+      author_name: b.dashboard_author?.full_name || b.author?.full_name || 'MDRRMO Command Center',
       category: b.category,
       content: b.content,
       links: b.links || [],
       media: b.media || [],
       created_at: b.created_at,
       updated_at: b.updated_at,
+      is_mdrrmo: true,
       is_from_mdrrmo: true,
+      is_pinned: b.is_pinned === true,
+      reposted_by: b.reposted_by || null,
     }));
 
     res.json(formatted);
   } catch (err: any) {
     console.error('Get MDRRMO broadcasts error:', err);
-    res.json([]);
+    res.status(500).json({ error: 'Failed to fetch MDRRMO broadcasts.' });
   }
 });
 
@@ -2042,26 +2046,48 @@ router.post('/broadcasts/:id/repost', authenticateBarangay, requireRole(['admin'
       .from('public_broadcasts')
       .select('*')
       .eq('id', id)
+      .eq('is_mdrrmo', true)
+      .is('barangay_id', null)
       .single();
 
     if (fetchErr || !original) {
-      // Synthesized success response
-      res.status(201).json({
-        id: `repost_${Date.now()}`,
-        barangay_id: req.barangayUser.barangayId,
-        barangay_name: 'Barangay',
-        author_id: req.barangayUser.userId,
-        author_name: 'Barangay Officer',
-        category: 'safety_advisory',
-        content: 'Reposted advisory from MDRRMO',
-        links: [],
-        media: [],
-        created_at: new Date().toISOString(),
+      res.status(404).json({ error: 'MDRRMO broadcast not found.' });
+      return;
+    }
+
+    const { data: priorRepost, error: priorError } = await supabaseAdmin
+      .from('public_broadcasts')
+      .select('*, author:barangay_users!author_id(full_name), barangay:barangays!barangay_id(name)')
+      .eq('reposted_from_id', original.id)
+      .eq('barangay_id', req.barangayUser.barangayId)
+      .maybeSingle();
+    if (priorError) throw priorError;
+    if (priorRepost) {
+      res.json({
+        id: priorRepost.id,
+        barangay_id: priorRepost.barangay_id,
+        barangay_name: priorRepost.barangay?.name || 'Barangay',
+        author_id: priorRepost.author_id,
+        author_name: priorRepost.author?.full_name || 'Barangay Officer',
+        category: priorRepost.category,
+        content: priorRepost.content,
+        links: priorRepost.links || [],
+        media: priorRepost.media || [],
+        created_at: priorRepost.created_at,
+        updated_at: priorRepost.updated_at,
+        is_mdrrmo: false,
         is_from_mdrrmo: true,
-        reposted_by: 'Barangay Dispatcher',
+        is_pinned: priorRepost.is_pinned === true,
+        reposted_by: priorRepost.reposted_by || null,
       });
       return;
     }
+
+    const { data: author } = await supabaseAdmin
+      .from('barangay_users')
+      .select('full_name')
+      .eq('id', req.barangayUser.userId)
+      .maybeSingle();
 
     const { data, error } = await supabaseAdmin
       .from('public_broadcasts')
@@ -2072,27 +2098,16 @@ router.post('/broadcasts/:id/repost', authenticateBarangay, requireRole(['admin'
         content: original.content,
         links: original.links,
         media: original.media,
+        is_mdrrmo: false,
         is_from_mdrrmo: true,
+        reposted_by: author?.full_name || 'Barangay Staff',
+        reposted_from_id: original.id,
       })
       .select('*, author:barangay_users!author_id(full_name), barangay:barangays!barangay_id(name)')
       .single();
 
     if (error || !data) {
-      res.status(201).json({
-        id: `repost_${Date.now()}`,
-        barangay_id: req.barangayUser.barangayId,
-        barangay_name: 'Barangay',
-        author_id: req.barangayUser.userId,
-        author_name: 'Barangay Officer',
-        category: original.category,
-        content: original.content,
-        links: original.links || [],
-        media: original.media || [],
-        created_at: new Date().toISOString(),
-        is_from_mdrrmo: true,
-        reposted_by: 'Barangay Dispatcher',
-      });
-      return;
+      throw error || new Error('Failed to save the repost.');
     }
 
     res.status(201).json({
@@ -2106,7 +2121,11 @@ router.post('/broadcasts/:id/repost', authenticateBarangay, requireRole(['admin'
       links: data.links || [],
       media: data.media || [],
       created_at: data.created_at,
+      updated_at: data.updated_at,
+      is_mdrrmo: false,
       is_from_mdrrmo: true,
+      is_pinned: data.is_pinned === true,
+      reposted_by: data.reposted_by || null,
     });
   } catch (err: any) {
     console.error('Repost broadcast error:', err);
@@ -2124,8 +2143,8 @@ router.get('/broadcasts', authenticateBarangay, async (req: any, res: Response) 
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.warn('Error fetching broadcasts from db, returning empty list:', error.message);
-      res.json([]);
+      console.error('Error fetching broadcasts:', error.message);
+      res.status(500).json({ error: 'Failed to fetch barangay broadcasts.' });
       return;
     }
 
@@ -2141,12 +2160,58 @@ router.get('/broadcasts', authenticateBarangay, async (req: any, res: Response) 
       media: b.media || [],
       created_at: b.created_at,
       updated_at: b.updated_at,
+      is_mdrrmo: false,
+      is_from_mdrrmo: b.is_from_mdrrmo === true,
+      is_pinned: b.is_pinned === true,
+      reposted_by: b.reposted_by || null,
     }));
 
     res.json(formatted);
   } catch (err: any) {
     console.error('Get broadcasts error:', err);
-    res.json([]);
+    res.status(500).json({ error: 'Failed to fetch barangay broadcasts.' });
+  }
+});
+
+// PATCH /api/barangay/broadcasts/:id/pin
+router.patch('/broadcasts/:id/pin', authenticateBarangay, requireRole(['admin', 'staff']), async (req: any, res: Response) => {
+  if (typeof req.body?.is_pinned !== 'boolean') {
+    res.status(400).json({ error: 'is_pinned must be a boolean.' });
+    return;
+  }
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('public_broadcasts')
+      .update({ is_pinned: req.body.is_pinned, updated_at: new Date().toISOString() })
+      .eq('id', req.params.id)
+      .eq('barangay_id', req.barangayUser.barangayId)
+      .select('*, author:barangay_users!author_id(full_name), barangay:barangays!barangay_id(name)')
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) {
+      res.status(404).json({ error: 'Barangay broadcast not found.' });
+      return;
+    }
+    res.json({
+      id: data.id,
+      barangay_id: data.barangay_id,
+      barangay_name: data.barangay?.name || 'Barangay',
+      author_id: data.author_id,
+      author_name: data.author?.full_name || 'Barangay Officer',
+      category: data.category,
+      content: data.content,
+      links: data.links || [],
+      media: data.media || [],
+      created_at: data.created_at,
+      updated_at: data.updated_at,
+      is_mdrrmo: false,
+      is_from_mdrrmo: data.is_from_mdrrmo === true,
+      is_pinned: data.is_pinned === true,
+      reposted_by: data.reposted_by || null,
+    });
+  } catch (err: any) {
+    console.error('Update barangay broadcast pinned status error:', err);
+    res.status(500).json({ error: err?.message || 'Failed to update pinned status.' });
   }
 });
 
@@ -2192,6 +2257,8 @@ router.post('/broadcasts', authenticateBarangay, requireRole(['admin', 'staff'])
           url: publicUrlData.publicUrl,
           type: isVideo ? 'video' : 'image',
         });
+      } else {
+        throw uploadErr || new Error('Could not upload broadcast media.');
       }
     }
 
@@ -2210,19 +2277,7 @@ router.post('/broadcasts', authenticateBarangay, requireRole(['admin', 'staff'])
 
     if (error || !data) {
       console.warn('Broadcast insert error:', error?.message);
-      // Return a synthesized response if table not yet created
-      res.status(201).json({
-        id: `post_${Date.now()}`,
-        barangay_id: req.barangayUser.barangayId,
-        barangay_name: 'Barangay',
-        author_id: req.barangayUser.userId,
-        author_name: 'Barangay Officer',
-        category: category || 'safety_advisory',
-        content: content || '',
-        links: parsedLinks,
-        media: mediaItems,
-        created_at: new Date().toISOString(),
-      });
+      res.status(500).json({ error: error?.message || 'Failed to save the broadcast.' });
       return;
     }
 
@@ -2240,6 +2295,11 @@ router.post('/broadcasts', authenticateBarangay, requireRole(['admin', 'staff'])
       links: data.links || [],
       media: data.media || [],
       created_at: data.created_at,
+      updated_at: data.updated_at,
+      is_mdrrmo: false,
+      is_from_mdrrmo: data.is_from_mdrrmo === true,
+      is_pinned: data.is_pinned === true,
+      reposted_by: data.reposted_by || null,
     });
   } catch (err: any) {
     console.error('Create broadcast error:', err);
@@ -2308,6 +2368,8 @@ router.patch('/broadcasts/:id', authenticateBarangay, requireRole(['admin', 'sta
           url: publicUrlData.publicUrl,
           type: isVideo ? 'video' : 'image',
         });
+      } else {
+        throw uploadErr || new Error('Could not upload broadcast media.');
       }
     }
 
@@ -2327,17 +2389,14 @@ router.patch('/broadcasts/:id', authenticateBarangay, requireRole(['admin', 'sta
       .eq('id', req.params.id)
       .eq('barangay_id', req.barangayUser.barangayId)
       .select('*, author:barangay_users!author_id(full_name), barangay:barangays!barangay_id(name)')
-      .single();
+      .maybeSingle();
 
-    if (error || !data) {
-      res.json({
-        id: req.params.id,
-        category,
-        content,
-        links: parsedLinks,
-        media: finalMedia,
-        updated_at: new Date().toISOString(),
-      });
+    if (error) {
+      res.status(500).json({ error: error.message || 'Failed to update broadcast.' });
+      return;
+    }
+    if (!data) {
+      res.status(404).json({ error: 'Barangay broadcast not found.' });
       return;
     }
 
@@ -2353,6 +2412,10 @@ router.patch('/broadcasts/:id', authenticateBarangay, requireRole(['admin', 'sta
       media: data.media || [],
       created_at: data.created_at,
       updated_at: data.updated_at,
+      is_mdrrmo: false,
+      is_from_mdrrmo: data.is_from_mdrrmo === true,
+      is_pinned: data.is_pinned === true,
+      reposted_by: data.reposted_by || null,
     });
   } catch (err: any) {
     console.error('Update broadcast error:', err);
@@ -2363,13 +2426,24 @@ router.patch('/broadcasts/:id', authenticateBarangay, requireRole(['admin', 'sta
 // DELETE /api/barangay/broadcasts/:id
 router.delete('/broadcasts/:id', authenticateBarangay, requireRole(['admin', 'staff']), async (req: any, res: Response) => {
   try {
-    await supabaseAdmin
+    const { data, error } = await supabaseAdmin
       .from('public_broadcasts')
       .delete()
       .eq('id', req.params.id)
-      .eq('barangay_id', req.barangayUser.barangayId);
+      .eq('barangay_id', req.barangayUser.barangayId)
+      .select('id')
+      .maybeSingle();
 
-    res.status(200).json({ success: true, message: 'Broadcast deleted' });
+    if (error) {
+      res.status(500).json({ error: error.message || 'Failed to delete broadcast.' });
+      return;
+    }
+    if (!data) {
+      res.status(404).json({ error: 'Barangay broadcast not found.' });
+      return;
+    }
+
+    res.status(200).json({ success: true, id: data.id, message: 'Broadcast deleted' });
   } catch (err: any) {
     console.error('Delete broadcast error:', err);
     res.status(500).json({ error: err?.message || 'Failed to delete broadcast' });

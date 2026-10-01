@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import {
   Megaphone,
   Plus,
@@ -17,12 +17,14 @@ import {
   Flame,
   CheckCircle,
   HandHeart,
+  Pin,
   Eye,
   Calendar,
   User,
   Play,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { broadcastAPI } from '../lib/api';
 
 /* ─────────────────── Types ─────────────────── */
 type BroadcastCategory =
@@ -36,6 +38,7 @@ type BroadcastCategory =
 interface MediaItem {
   url: string;
   type: 'image' | 'video';
+  file?: File;
 }
 
 interface BroadcastPost {
@@ -49,6 +52,7 @@ interface BroadcastPost {
   media: MediaItem[];
   createdAt: Date;
   isFromMdrrmo?: boolean;
+  isPinned?: boolean;
 }
 
 /* ─────────────────── Category Config ─────────────────── */
@@ -127,106 +131,6 @@ const CATEGORY_SIDEBAR_ITEMS: CategorySidebarItem[] = [
   { id: 'all_clear', label: 'All-Clear Notice', matches: cat => cat === 'all_clear' },
 ];
 
-/* ─────────────────── MDRRMO Demo Broadcasts ─────────────────── */
-const DEMO_POSTS: BroadcastPost[] = [
-  {
-    id: 'demo_1',
-    barangayId: 'mdrrmo',
-    barangayName: 'MDRRMO Norzagaray',
-    authorName: 'MDRRMO Command',
-    category: 'disaster_red',
-    content:
-      '🚨 RED ALERT: Severe flooding reported along Norzagaray River near Bigte Creek tributary. Water level has surpassed the critical threshold. All residents in low-lying areas of Purok 1, 2, and 3 are ordered to evacuate immediately to designated evacuation centers. MDRRMO rescue team and motorized boats deployed.',
-    links: ['https://bagong.pagasa.dost.gov.ph', 'https://ndrrmc.gov.ph'],
-    media: [
-      { url: 'https://images.unsplash.com/photo-1547683905-f686c993aae5?auto=format&fit=crop&w=800&q=80', type: 'image' },
-      { url: 'https://images.unsplash.com/photo-1514632595-4944383f2737?auto=format&fit=crop&w=800&q=80', type: 'image' },
-    ],
-    createdAt: new Date(Date.now() - 1 * 60 * 60 * 1000),
-    isFromMdrrmo: true,
-  },
-  {
-    id: 'demo_2',
-    barangayId: 'mdrrmo',
-    barangayName: 'MDRRMO Norzagaray',
-    authorName: 'MDRRMO Command',
-    category: 'disaster_orange',
-    content:
-      '⚠️ MDRRMO ADVISORY: Angat and Ipo Dam water level update — Spillway gates may be opened at 2:00 AM due to sustained continuous rainfall from the enhanced Southwest Monsoon (Habagat). Low-lying riparian settlements in all barangays are advised to activate early evacuation protocols and stand-by rescue assets.',
-    links: ['https://pagasa.dost.gov.ph'],
-    media: [
-      { url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4', type: 'video' },
-    ],
-    createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000),
-    isFromMdrrmo: true,
-  },
-  {
-    id: 'demo_3',
-    barangayId: 'mdrrmo',
-    barangayName: 'MDRRMO Norzagaray',
-    authorName: 'MDRRMO Command',
-    category: 'safety_advisory',
-    content:
-      'Norzagaray Emergency Operations Center (EOC) remains under heightened 24/7 Red Alert status. Preemptive sandbagging and drainage clearing ongoing along critical highway corridors. Please report blocked waterways or suspicious drainage issues to the MDRRMO command desk immediately. Hotline: 0917-123-MDRRMO.',
-    links: [],
-    media: [
-      { url: 'https://images.unsplash.com/photo-1582213782179-e0d53f98f2ca?auto=format&fit=crop&w=800&q=80', type: 'image' },
-      { url: 'https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?auto=format&fit=crop&w=800&q=80', type: 'image' },
-    ],
-    createdAt: new Date(Date.now() - 5 * 60 * 60 * 1000),
-    isFromMdrrmo: true,
-  },
-  {
-    id: 'demo_4',
-    barangayId: 'mdrrmo',
-    barangayName: 'MDRRMO Norzagaray',
-    authorName: 'MDRRMO Command',
-    category: 'relief_assistance',
-    content:
-      '📦 RELIEF DISTRIBUTION: Municipal Social Welfare and Development (MSWD) in coordination with MDRRMO has released 2,500 food packs and sanitation kits for distribution to evacuation centers across Norzagaray. Distribution staging areas are active in Poblacion, Bigte, and Minuyan shelters.',
-    links: [],
-    media: [
-      { url: 'https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?auto=format&fit=crop&w=800&q=80', type: 'image' },
-      { url: 'https://images.unsplash.com/photo-1582213782179-e0d53f98f2ca?auto=format&fit=crop&w=800&q=80', type: 'image' },
-      { url: 'https://images.unsplash.com/photo-1534274988757-a28bf1a57c17?auto=format&fit=crop&w=800&q=80', type: 'image' },
-    ],
-    createdAt: new Date(Date.now() - 8 * 60 * 60 * 1000),
-    isFromMdrrmo: true,
-  },
-  {
-    id: 'demo_5',
-    barangayId: 'mdrrmo',
-    barangayName: 'MDRRMO Norzagaray',
-    authorName: 'MDRRMO Command',
-    category: 'all_clear',
-    content:
-      '✅ ALL-CLEAR NOTICE: Water levels across Norzagaray River and low-lying tributaries have subsided safely below alarm thresholds. Displaced residents in evacuation centers are cleared for safe and orderly return to their homes. Barangay health personnel are conducting area wellness checks.',
-    links: [],
-    media: [],
-    createdAt: new Date(Date.now() - 14 * 60 * 60 * 1000),
-    isFromMdrrmo: true,
-  },
-  {
-    id: 'demo_6',
-    barangayId: 'mdrrmo',
-    barangayName: 'MDRRMO Norzagaray',
-    authorName: 'MDRRMO Command',
-    category: 'disaster_yellow',
-    content:
-      '🟡 YELLOW ALERT: Comprehensive river basin telemetry across Norzagaray River, Matictic Bridge, and Bigte Creek shows water level at Alert Level 2. Rescue vehicles and motorized boats have been pre-positioned at strategic response nodes. All BDRRMC chairs are advised to activate their contingency plans.',
-    links: ['https://bagong.pagasa.dost.gov.ph'],
-    media: [
-      { url: 'https://images.unsplash.com/photo-1534274988757-a28bf1a57c17?auto=format&fit=crop&w=800&q=80', type: 'image' },
-      { url: 'https://images.unsplash.com/photo-1547683905-f686c993aae5?auto=format&fit=crop&w=800&q=80', type: 'image' },
-      { url: 'https://images.unsplash.com/photo-1514632595-4944383f2737?auto=format&fit=crop&w=800&q=80', type: 'image' },
-      { url: 'https://images.unsplash.com/photo-1509114397022-ed747cca3f65?auto=format&fit=crop&w=800&q=80', type: 'image' },
-      { url: 'https://images.unsplash.com/photo-1582213782179-e0d53f98f2ca?auto=format&fit=crop&w=800&q=80', type: 'image' },
-      { url: 'https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?auto=format&fit=crop&w=800&q=80', type: 'image' },
-    ],
-    createdAt: new Date(Date.now() - 20 * 60 * 60 * 1000),
-    isFromMdrrmo: true,
-  },
-];
 
 /* ─────────────────── Helpers ─────────────────── */
 function timeAgo(date: Date): string {
@@ -235,6 +139,56 @@ function timeAgo(date: Date): string {
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
   return `${Math.floor(diff / 86400)}d ago`;
+}
+
+function fromApiPost(row: any): BroadcastPost {
+  const rawCategory = String(row.category || 'safety_advisory');
+  const categoryAliases: Record<string, BroadcastCategory> = {
+    disaster_alert_yellow: 'disaster_yellow',
+    disaster_alert_orange: 'disaster_orange',
+    disaster_alert_red: 'disaster_red',
+    all_clear_notice: 'all_clear',
+  };
+  const category = categoryAliases[rawCategory] || rawCategory;
+  return {
+    id: String(row.id),
+    barangayId: row.barangay_id || 'mdrrmo',
+    barangayName: row.barangay_name || 'MDRRMO Norzagaray',
+    authorName: row.author_name || 'MDRRMO Command',
+    category: CATEGORY_CONFIG[category as BroadcastCategory] ? category as BroadcastCategory : 'safety_advisory',
+    content: String(row.content || ''),
+    links: Array.isArray(row.links) ? row.links.map(String) : [],
+    media: Array.isArray(row.media)
+      ? row.media.map((item: any) => ({ url: String(item.url || ''), type: item.type === 'video' ? 'video' : 'image' }))
+      : [],
+    createdAt: row.created_at ? new Date(row.created_at) : new Date(),
+    isFromMdrrmo: row.is_from_mdrrmo === true,
+    isPinned: row.is_pinned === true,
+  };
+}
+
+function toBroadcastFormData(post: BroadcastPost): FormData {
+  const data = new FormData();
+  data.append('category', post.category);
+  data.append('content', post.content);
+  data.append('links', JSON.stringify(post.links));
+  data.append('is_pinned', String(post.isPinned === true));
+  data.append('existing_media', JSON.stringify(
+    post.media.filter((item) => !item.file).map(({ url, type }) => ({ url, type })),
+  ));
+
+  let fileIndex = 0;
+  for (const item of post.media) {
+    if (!item.file) continue;
+    data.append('media', item.file, item.file.name);
+    data.append(`media_type_${fileIndex}`, item.type);
+    fileIndex += 1;
+  }
+  return data;
+}
+
+function errorMessage(error: any): string {
+  return error?.response?.data?.error || error?.message || 'The broadcast could not be saved.';
 }
 
 /* ─────────────────── Category Pill ─────────────────── */
@@ -458,7 +412,7 @@ function Lightbox({ media, startIndex, onClose }: { media: MediaItem[]; startInd
 }
 
 /* ─────────────────── Post Card (MDRRMO Broadcast) ─────────────────── */
-function PostCard({ post, onEdit, onDelete }: { post: BroadcastPost; onEdit: () => void; onDelete: () => void }) {
+function PostCard({ post, onEdit, onDelete, onTogglePin }: { post: BroadcastPost; onEdit: () => void; onDelete: () => void; onTogglePin: () => void }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [lightboxIdx, setLightboxIdx] = useState<number | null>(null);
@@ -505,6 +459,11 @@ function PostCard({ post, onEdit, onDelete }: { post: BroadcastPost; onEdit: () 
                 {post.barangayName}
               </span>
               <CategoryPill category={post.category} />
+              {post.isPinned && (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#38BDF8', fontSize: 10, fontWeight: 700 }}>
+                  <Pin size={11} /> Pinned
+                </span>
+              )}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 3, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 11, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -551,6 +510,21 @@ function PostCard({ post, onEdit, onDelete }: { post: BroadcastPost; onEdit: () 
                   overflow: 'hidden',
                 }}
               >
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onTogglePin();
+                    }}
+                    style={{
+                      width: '100%', padding: '10px 14px', background: 'none', border: 'none',
+                      color: 'var(--text-primary)', cursor: 'pointer', display: 'flex',
+                      alignItems: 'center', gap: 8, fontSize: 13, textAlign: 'left',
+                    }}
+                    onMouseOver={e => (e.currentTarget.style.background = 'var(--bg-card-hover)')}
+                    onMouseOut={e => (e.currentTarget.style.background = 'none')}
+                  >
+                    <Pin size={14} /> {post.isPinned ? 'Unpin from Home' : 'Pin to Home'}
+                  </button>
                 <button
                   onClick={() => {
                     setMenuOpen(false);
@@ -691,7 +665,7 @@ function CreateModal({
 }: {
   existing: BroadcastPost | null;
   onClose: () => void;
-  onSave: (p: BroadcastPost) => void;
+  onSave: (p: BroadcastPost) => Promise<void>;
 }) {
   const [form, setForm] = useState(
     existing
@@ -703,6 +677,7 @@ function CreateModal({
         }
       : { ...EMPTY_FORM }
   );
+  const [isSaving, setIsSaving] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const addLink = () => setForm(f => ({ ...f, links: [...f.links, ''] }));
@@ -716,6 +691,7 @@ function CreateModal({
     const newItems: MediaItem[] = files.map(file => ({
       url: URL.createObjectURL(file),
       type: file.type.startsWith('video/') ? 'video' : 'image',
+      file,
     }));
     setForm(f => ({ ...f, media: [...f.media, ...newItems] }));
     // Reset so same files can be re-selected if removed
@@ -731,11 +707,13 @@ function CreateModal({
     });
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!form.content.trim()) {
       toast.error('Post content cannot be empty');
       return;
     }
+    if (isSaving) return;
+    setIsSaving(true);
     const post: BroadcastPost = {
       id: existing?.id ?? `post_${Date.now()}`,
       barangayId: 'mdrrmo',
@@ -747,8 +725,14 @@ function CreateModal({
       media: form.media,
       createdAt: existing?.createdAt ?? new Date(),
       isFromMdrrmo: true,
+      isPinned: existing?.isPinned ?? false,
     };
-    onSave(post);
+    try {
+      await onSave(post);
+    } catch (error) {
+      toast.error(errorMessage(error));
+      setIsSaving(false);
+    }
   };
 
   const inputStyle: React.CSSProperties = {
@@ -776,7 +760,7 @@ function CreateModal({
         padding: '40px 16px',
         overflowY: 'auto',
       }}
-      onClick={onClose}
+      onClick={isSaving ? undefined : onClose}
     >
       <div
         style={{
@@ -806,7 +790,7 @@ function CreateModal({
               {existing ? 'Edit Alert Broadcast' : 'Create MDRRMO Alert Broadcast'}
             </h2>
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 4 }}>
+          <button onClick={onClose} disabled={isSaving} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 4 }}>
             <X size={20} />
           </button>
         </div>
@@ -1051,16 +1035,17 @@ function CreateModal({
             gap: 10,
           }}
         >
-          <button className="btn btn-outline" onClick={onClose}>
+          <button className="btn btn-outline" onClick={onClose} disabled={isSaving}>
             Cancel
           </button>
           <button
             className="btn btn-primary"
-            onClick={handleSave}
+            onClick={() => void handleSave()}
+            disabled={isSaving}
             style={{ display: 'flex', alignItems: 'center', gap: 6 }}
           >
             <Megaphone size={15} />
-            {existing ? 'Update Broadcast' : 'Publish Broadcast'}
+            {isSaving ? 'Saving…' : existing ? 'Update Broadcast' : 'Publish Broadcast'}
           </button>
         </div>
       </div>
@@ -1073,10 +1058,12 @@ function DeleteModal({
   post,
   onClose,
   onConfirm,
+  isDeleting,
 }: {
   post: BroadcastPost;
   onClose: () => void;
-  onConfirm: () => void;
+  onConfirm: () => Promise<void>;
+  isDeleting: boolean;
 }) {
   return (
     <div
@@ -1089,7 +1076,7 @@ function DeleteModal({
         alignItems: 'center',
         justifyContent: 'center',
       }}
-      onClick={onClose}
+      onClick={isDeleting ? undefined : onClose}
     >
       <div
         style={{
@@ -1111,11 +1098,11 @@ function DeleteModal({
           Are you sure you want to remove this alert broadcast? Residents across Norzagaray will no longer see this notification.
         </p>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-          <button className="btn btn-outline" onClick={onClose}>
+          <button className="btn btn-outline" onClick={onClose} disabled={isDeleting}>
             Cancel
           </button>
-          <button className="btn" style={{ background: '#EF4444', color: '#fff', border: 'none' }} onClick={onConfirm}>
-            Remove
+          <button className="btn" style={{ background: '#EF4444', color: '#fff', border: 'none' }} onClick={() => void onConfirm()} disabled={isDeleting}>
+            {isDeleting ? 'Removing…' : 'Remove'}
           </button>
         </div>
       </div>
@@ -1125,11 +1112,32 @@ function DeleteModal({
 
 /* ─────────────────── Main Page ─────────────────── */
 export default function AlertBroadcastsPage() {
-  const [posts, setPosts] = useState<BroadcastPost[]>(DEMO_POSTS);
+  const [posts, setPosts] = useState<BroadcastPost[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [createOpen, setCreateOpen] = useState(false);
   const [editPost, setEditPost] = useState<BroadcastPost | null>(null);
   const [deletePost, setDeletePost] = useState<BroadcastPost | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [pinningId, setPinningId] = useState<string | null>(null);
+
+  const loadPosts = async () => {
+    setIsLoading(true);
+    setLoadError(null);
+    try {
+      const { data } = await broadcastAPI.listMdrrmo();
+      setPosts(Array.isArray(data) ? data.map(fromApiPost) : []);
+    } catch (error) {
+      setLoadError(errorMessage(error));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadPosts();
+  }, []);
 
   const activeCategoryItem = CATEGORY_SIDEBAR_ITEMS.find(c => c.id === selectedCategory);
 
@@ -1138,27 +1146,48 @@ export default function AlertBroadcastsPage() {
     return activeCategoryItem.matches(p.category);
   });
 
-  const handleSave = (post: BroadcastPost) => {
-    setPosts(prev => {
-      const idx = prev.findIndex(p => p.id === post.id);
-      if (idx !== -1) {
-        const updated = [...prev];
-        updated[idx] = post;
-        toast.success('Broadcast updated successfully!');
-        return updated;
-      }
-      toast.success('Broadcast published successfully!');
-      return [post, ...prev];
-    });
+  const handleSave = async (post: BroadcastPost) => {
+    const { data } = editPost
+      ? await broadcastAPI.updateMdrrmo(editPost.id, toBroadcastFormData(post))
+      : await broadcastAPI.createMdrrmo(toBroadcastFormData(post));
+    const savedPost = fromApiPost(data);
+    setPosts(prev => editPost
+      ? prev.map(item => item.id === savedPost.id ? savedPost : item)
+      : [savedPost, ...prev]);
+    toast.success(editPost ? 'Broadcast updated successfully.' : 'Broadcast published successfully.');
     setCreateOpen(false);
     setEditPost(null);
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!deletePost) return;
-    setPosts(prev => prev.filter(p => p.id !== deletePost.id));
-    toast.success('Broadcast removed.');
-    setDeletePost(null);
+    const deletingPost = deletePost;
+    setDeletingId(deletingPost.id);
+    try {
+      await broadcastAPI.deleteMdrrmo(deletingPost.id);
+      setPosts(prev => prev.filter(p => p.id !== deletingPost.id));
+      toast.success('Broadcast removed.');
+      setDeletePost(null);
+    } catch (error) {
+      toast.error(errorMessage(error));
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const handleTogglePin = async (post: BroadcastPost) => {
+    if (pinningId) return;
+    setPinningId(post.id);
+    try {
+      const { data } = await broadcastAPI.setMdrrmoPinned(post.id, !post.isPinned);
+      const updated = fromApiPost(data);
+      setPosts(prev => prev.map(item => item.id === updated.id ? updated : item));
+      toast.success(updated.isPinned ? 'Post pinned to resident home.' : 'Post unpinned.');
+    } catch (error) {
+      toast.error(errorMessage(error));
+    } finally {
+      setPinningId(null);
+    }
   };
 
   return (
@@ -1221,7 +1250,18 @@ export default function AlertBroadcastsPage() {
             }}
           >
             {/* Posts List */}
-            {filtered.length === 0 ? (
+            {isLoading ? (
+              <div className="card" style={{ display: 'flex', justifyContent: 'center', padding: 60 }}>
+                <div className="spinner" />
+              </div>
+            ) : loadError ? (
+              <div className="card" style={{ textAlign: 'center', padding: '50px 24px' }}>
+                <AlertTriangle size={40} color="#F97316" style={{ marginBottom: 12 }} />
+                <h3 style={{ margin: '0 0 8px', color: 'var(--text-primary)', fontSize: 16 }}>Could not load alert broadcasts</h3>
+                <p style={{ margin: '0 0 16px', color: 'var(--text-muted)', fontSize: 13 }}>{loadError}</p>
+                <button className="btn btn-primary" onClick={() => void loadPosts()}>Try Again</button>
+              </div>
+            ) : filtered.length === 0 ? (
               <div className="card" style={{ textAlign: 'center', padding: '60px 24px' }}>
                 <Megaphone size={44} color="var(--text-muted)" style={{ marginBottom: 14 }} />
                 <h3 style={{ margin: '0 0 6px', color: 'var(--text-primary)', fontSize: 16 }}>
@@ -1240,6 +1280,7 @@ export default function AlertBroadcastsPage() {
                   post={post}
                   onEdit={() => setEditPost(post)}
                   onDelete={() => setDeletePost(post)}
+                  onTogglePin={() => void handleTogglePin(post)}
                 />
               ))
             )}
@@ -1330,6 +1371,7 @@ export default function AlertBroadcastsPage() {
           post={deletePost}
           onClose={() => setDeletePost(null)}
           onConfirm={handleDelete}
+          isDeleting={deletingId === deletePost.id}
         />
       )}
     </>

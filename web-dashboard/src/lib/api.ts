@@ -55,6 +55,20 @@ export const debugAPI = {
   quickLogin: (accountId: string) => api.post('/debug/quick-login', { accountId, audience: 'standard' }),
 };
 
+// Public broadcast feed and the persisted MDRRMO post manager.
+export const broadcastAPI = {
+  publicFeed: () => api.get('/broadcasts'),
+  listMdrrmo: () => api.get('/broadcasts/mdrrmo'),
+  createMdrrmo: (data: FormData) => api.post('/broadcasts/mdrrmo', data, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  updateMdrrmo: (id: string, data: FormData) => api.patch(`/broadcasts/mdrrmo/${id}`, data, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  setMdrrmoPinned: (id: string, is_pinned: boolean) => api.patch(`/broadcasts/mdrrmo/${id}/pin`, { is_pinned }),
+  deleteMdrrmo: (id: string) => api.delete(`/broadcasts/mdrrmo/${id}`),
+};
+
 // Missions
 export const missionAPI = {
   list: (params?: any) => api.get('/incidents', { params }),

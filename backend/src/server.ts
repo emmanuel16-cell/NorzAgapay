@@ -32,6 +32,7 @@ import weatherRoutes, { fetchOpenMeteoWeather } from './routes/weather';
 import barangayRoutes from './routes/barangay';
 import evacuationCenterRoutes from './routes/evacuationCenters';
 import debugRoutes from './routes/debug';
+import broadcastRoutes from './routes/broadcasts';
 
 // Helper to determine river level status
 const getRiverLevelStatus = (level: number, warning: number, critical: number) => {
@@ -130,6 +131,7 @@ app.use('/api/responder-dispatch', responderDispatchRoutes);
 app.use('/api/storages', storageRoutes);
 app.use('/api/weather', weatherRoutes);
 app.use('/api/barangay', barangayRoutes);
+app.use('/api/broadcasts', broadcastRoutes);
 app.use('/api/evacuation-centers', evacuationCenterRoutes);
 app.use('/api/debug', debugRoutes);
 
