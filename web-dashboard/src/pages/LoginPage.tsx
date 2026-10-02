@@ -217,7 +217,7 @@ export default function LoginPage() {
         )}
 
         <p style={{ textAlign: 'center', marginTop: '20px', fontSize: '12px', color: 'var(--text-muted)' }}>
-          MDRRMO Authorized Personnel Only
+          Authorized MDRRMO and Barangay Personnel
         </p>
       </div>
     </div>
