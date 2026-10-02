@@ -16,7 +16,6 @@ import {
   Moon,
   Sun,
   Megaphone,
-  Phone,
 } from 'lucide-react';
 
 interface NavItem {
@@ -54,7 +53,7 @@ const navItems: NavItem[] = [
 ];
 
 export default function DashboardLayout() {
-  const { user, logout, isMasterAdmin, isBarangayAccount } = useAuth();
+  const { user, logout, isMasterAdmin } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
@@ -99,36 +98,7 @@ export default function DashboardLayout() {
     .toUpperCase()
     .slice(0, 2) || 'NA';
 
-  const barangayNavItems: NavItem[] = [
-    { label: 'Barangay Operations', section: true },
-    { path: '/', icon: <MapPin size={19} strokeWidth={1.8} />, label: 'Command Center' },
-    ...(['admin', 'dispatcher', 'responder'].includes(user?.role || '') ? [
-      { path: '/barangay/reports', icon: <AlertTriangle size={19} strokeWidth={1.8} />, label: 'Incident Reports' },
-    ] : []),
-    ...(['admin', 'responder'].includes(user?.role || '') ? [
-      { path: '/barangay/team', icon: <Users size={19} strokeWidth={1.8} />, label: 'Team' },
-    ] : []),
-    ...(['dispatcher', 'responder'].includes(user?.role || '') ? [
-      { path: '/barangay/assistance', icon: <ClipboardList size={19} strokeWidth={1.8} />, label: 'Assistance Requests' },
-    ] : []),
-    ...(['admin', 'staff'].includes(user?.role || '') ? [
-      { path: '/barangay/community', icon: <Megaphone size={19} strokeWidth={1.8} />, label: 'Community Updates' },
-      { path: '/barangay/hotlines', icon: <Phone size={19} strokeWidth={1.8} />, label: 'Hotlines' },
-    ] : []),
-    ...(['admin', 'responder', 'staff'].includes(user?.role || '') ? [
-      { path: '/barangay/evac-stations', icon: <Tent size={19} strokeWidth={1.8} />, label: 'Add Evac Station' },
-    ] : []),
-    ...(user?.role === 'admin' ? [
-      { path: '/barangay/analytics', icon: <BarChart3 size={19} strokeWidth={1.8} />, label: 'Analytics' },
-      { path: '/barangay/coordination', icon: <Award size={19} strokeWidth={1.8} />, label: 'Coordination Request' },
-    ] : []),
-  ];
-
-  const roleNav = isBarangayAccount
-    ? user?.coordination_verified
-      ? barangayNavItems.filter(item => !item.path || item.path !== '/barangay/coordination')
-      : barangayNavItems.filter(item => item.path === '/barangay/coordination')
-    : isMasterAdmin
+  const roleNav = isMasterAdmin
     ? navItems
     : user?.role === 'admin'
       ? navItems.filter(item => ['Administration', '/verification/officers', '/users', '/alert-broadcasts', '/officers', '/analytics'].includes(item.path || item.label))
@@ -154,7 +124,7 @@ export default function DashboardLayout() {
             {!isCollapsed && (
               <div className="sidebar-brand-text">
                 <div className="sidebar-title">NorzAgapay</div>
-                <div className="sidebar-subtitle">{isBarangayAccount ? user?.barangay_name || 'Barangay Operations' : 'MDRRMO Command'}</div>
+                <div className="sidebar-subtitle">MDRRMO Command</div>
               </div>
             )}
           </div>

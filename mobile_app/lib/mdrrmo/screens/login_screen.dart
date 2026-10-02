@@ -158,7 +158,7 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 6),
               const Text(
-                'MDRRMO Officer Portal',
+                'MDRRMO Dispatcher / Responder Portal',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.grey, fontSize: 14),
               ),
@@ -190,7 +190,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       const SizedBox(height: 10),
                       const Text(
-                        'Your MDRRMO Officer account has been submitted and is awaiting review by the MDRRMO Command Center at the Web Dashboard.\n\nYou will be able to log in once your account has been approved.',
+                        'Your MDRRMO Responder account has been submitted and is awaiting review by the MDRRMO Command Center at the Web Dashboard.\n\nYou will be able to log in once your account has been approved.',
                         style: TextStyle(color: Colors.white60, fontSize: 13, height: 1.5),
                       ),
                       const SizedBox(height: 10),

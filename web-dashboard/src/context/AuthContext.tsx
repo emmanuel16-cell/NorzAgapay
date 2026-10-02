@@ -1,6 +1,5 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
-import { authAPI, barangayAuthAPI, socket } from '../lib/api';
-import { debugAPI } from '../lib/api';
+import { authAPI, socket, debugAPI } from '../lib/api';
 
 interface User {
   id: string;
@@ -10,10 +9,6 @@ interface User {
   unit_type?: string;
   status: string;
   verified: boolean;
-  account_scope?: 'mdrrmo' | 'barangay';
-  barangay_id?: string;
-  barangay_name?: string;
-  coordination_verified?: boolean;
   position_designation?: string;
   is_active?: boolean;
 }
@@ -27,8 +22,6 @@ interface AuthContextType {
   logout: () => void;
   isAdmin: boolean;
   isMasterAdmin: boolean;
-  isBarangayAccount: boolean;
-  isMdrrmoAccount: boolean;
   canAccessDashboard: boolean;
 }
 
@@ -36,8 +29,13 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(() => {
-    const savedUser = localStorage.getItem('norzagapay_user');
-    return savedUser ? JSON.parse(savedUser) : null;
+    try {
+      const savedUser = localStorage.getItem('norzagapay_user');
+      return savedUser ? JSON.parse(savedUser) as User : null;
+    } catch {
+      localStorage.removeItem('norzagapay_user');
+      return null;
+    }
   });
   const [token, setToken] = useState<string | null>(localStorage.getItem('norzagapay_token'));
   const [loading, setLoading] = useState(true);
@@ -52,64 +50,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [token]);
 
   useEffect(() => {
-    if (token) {
-      let storedUser: User | null = null;
-      try {
-        const rawUser = localStorage.getItem('norzagapay_user');
-        storedUser = rawUser ? JSON.parse(rawUser) as User : null;
-      } catch {
-        storedUser = null;
-      }
-      const isBarangay = storedUser?.account_scope === 'barangay' || Boolean(storedUser?.barangay_id);
-      (isBarangay ? barangayAuthAPI.me() : authAPI.me())
-        .then((res) => {
-          const returnedUser = isBarangay ? res.data : res.data.user;
-          const freshUser = {
-            ...returnedUser,
-            account_scope: isBarangay ? 'barangay' as const : 'mdrrmo' as const,
-          };
-          localStorage.setItem('norzagapay_user', JSON.stringify(freshUser));
-          setUser(freshUser);
-        })
-        .catch(() => { setToken(null); localStorage.removeItem('norzagapay_token'); })
-        .finally(() => setLoading(false));
-    } else {
+    if (!token) {
       setLoading(false);
+      return;
     }
+
+    authAPI.me()
+      .then((response) => {
+        const freshUser = response.data.user as User;
+        localStorage.setItem('norzagapay_user', JSON.stringify(freshUser));
+        setUser(freshUser);
+      })
+      .catch(() => {
+        setToken(null);
+        setUser(null);
+        localStorage.removeItem('norzagapay_token');
+        localStorage.removeItem('norzagapay_user');
+      })
+      .finally(() => setLoading(false));
   }, [token]);
 
   const login = async (email: string, password: string) => {
-    let res: any;
-    let accountScope: User['account_scope'] = 'mdrrmo';
-    try {
-      res = await authAPI.login(email, password);
-    } catch {
-      res = await barangayAuthAPI.login(email, password);
-      accountScope = 'barangay';
-    }
-    const { token: t } = res.data;
-    const u: User = { ...res.data.user, account_scope: accountScope };
-    localStorage.setItem('norzagapay_token', t);
-    localStorage.setItem('norzagapay_user', JSON.stringify(u));
-    setToken(t);
-    setUser(u);
+    const response = await authAPI.login(email, password);
+    const { token: savedToken, user: loggedInUser } = response.data;
+    localStorage.setItem('norzagapay_token', savedToken);
+    localStorage.setItem('norzagapay_user', JSON.stringify(loggedInUser));
+    setToken(savedToken);
+    setUser(loggedInUser);
   };
 
   const debugLogin = async (accountId: string) => {
-    let res: any;
-    let accountScope: User['account_scope'] = 'mdrrmo';
-    try {
-      res = await debugAPI.quickLogin(accountId);
-    } catch {
-      res = await debugAPI.quickLogin(accountId, 'barangay');
-      accountScope = 'barangay';
-    }
-    const { token: t } = res.data;
-    const u: User = { ...res.data.user, account_scope: accountScope };
-    localStorage.setItem('norzagapay_token', t);
-    localStorage.setItem('norzagapay_user', JSON.stringify(u));
-    setToken(t);
-    setUser(u);
+    const response = await debugAPI.quickLogin(accountId);
+    const { token: savedToken, user: loggedInUser } = response.data;
+    localStorage.setItem('norzagapay_token', savedToken);
+    localStorage.setItem('norzagapay_user', JSON.stringify(loggedInUser));
+    setToken(savedToken);
+    setUser(loggedInUser);
   };
 
   const logout = () => {
@@ -120,15 +96,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const isAdmin = user?.role === 'admin';
-  const isBarangayAccount = user?.account_scope === 'barangay' || Boolean(user?.barangay_id);
-  const isMdrrmoAccount = Boolean(user) && !isBarangayAccount;
-  const isMasterAdmin = isMdrrmoAccount && user?.role === 'master_admin';
-  const canAccessDashboard = isBarangayAccount
-    ? Boolean(user?.barangay_id && user?.is_active !== false)
-    : isMasterAdmin || ['admin', 'logistics', 'dispatcher'].includes(user?.role || '');
+  const isMasterAdmin = user?.role === 'master_admin';
+  const canAccessDashboard = isMasterAdmin || ['admin', 'logistics', 'dispatcher'].includes(user?.role || '');
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, debugLogin, logout, isAdmin: isAdmin && isMdrrmoAccount, isMasterAdmin, isBarangayAccount, isMdrrmoAccount, canAccessDashboard }}>
+    <AuthContext.Provider value={{ user, token, loading, login, debugLogin, logout, isAdmin, isMasterAdmin, canAccessDashboard }}>
       {children}
     </AuthContext.Provider>
   );

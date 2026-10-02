@@ -31,7 +31,7 @@ api.interceptors.response.use(
   (res) => res,
   (err) => {
     const url = String(err.config?.url || '');
-    const isLoginRequest = /\/(auth|barangay)\/login(?:$|\?)/.test(url);
+    const isLoginRequest = /\/auth\/login(?:$|\?)/.test(url);
     if (err.response?.status === 401 && localStorage.getItem('norzagapay_token') && !isLoginRequest) {
       localStorage.removeItem('norzagapay_token');
       localStorage.removeItem('norzagapay_user');
@@ -52,57 +52,9 @@ export const authAPI = {
   me: () => api.get('/auth/me'),
 };
 
-export const barangayAuthAPI = {
-  login: (email: string, password: string) => api.post('/barangay/login', { email, password }),
-  me: () => api.get('/barangay/me'),
-};
-
-export const barangayAPI = {
-  reports: (params?: any) => api.get('/barangay/reports', { params }),
-  respondToReport: (id: string, data: any) => api.patch(`/barangay/reports/${id}/respond`, data),
-  dispatchReport: (id: string, data: any) => api.patch(`/barangay/reports/${id}/dispatch`, data),
-  escalateReport: (id: string, data: any) => api.patch(`/barangay/reports/${id}/escalate`, data),
-  closeReport: (id: string, data: any) => api.post(`/barangay/reports/${id}/close`, data),
-  uploadFieldMedia: (id: string, data: FormData) => api.post(`/barangay/reports/${id}/field-media`, data, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  }),
-  team: () => api.get('/barangay/team'),
-  addTeamMember: (data: any) => api.post('/barangay/team', data),
-  updateTeamMember: (id: string, data: any) => api.patch(`/barangay/team/${id}`, data),
-  deactivateTeamMember: (id: string) => api.delete(`/barangay/team/${id}`),
-  assistanceRequests: () => api.get('/barangay/assistance-requests'),
-  myAssistanceRequests: () => api.get('/barangay/my-assistance-requests'),
-  createAssistanceRequest: (data: any) => api.post('/barangay/assistance-requests', data),
-  decideAssistanceRequest: (id: string, data: any) => api.patch(`/barangay/assistance-requests/${id}/decide`, data),
-  editAssistanceRequest: (id: string, data: any) => api.patch(`/barangay/assistance-requests/${id}/edit`, data),
-  actionAssistanceRequest: (id: string, data: any) => api.patch(`/barangay/assistance-requests/${id}/team-action`, data),
-  broadcasts: () => api.get('/barangay/broadcasts'),
-  createBroadcast: (data: FormData) => api.post('/barangay/broadcasts', data, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  }),
-  updateBroadcast: (id: string, data: FormData) => api.patch(`/barangay/broadcasts/${id}`, data, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  }),
-  deleteBroadcast: (id: string) => api.delete(`/barangay/broadcasts/${id}`),
-  pinBroadcast: (id: string, is_pinned: boolean) => api.patch(`/barangay/broadcasts/${id}/pin`, { is_pinned }),
-  repostBroadcast: (id: string) => api.post(`/barangay/broadcasts/${id}/repost`),
-  hotlines: (barangayId?: string) => barangayId
-    ? api.get(`/barangay/hotlines/${barangayId}`)
-    : api.get('/barangay/hotlines'),
-  saveHotlines: (entries: any[]) => api.put('/barangay/hotlines', { entries }),
-  coordinationRequest: () => api.get('/barangay/account-request'),
-  submitCoordinationRequest: (data: any) => api.put('/barangay/account-request', data),
-  authorizationPdf: () => api.get('/barangay/account-request/certificate', { responseType: 'blob' }),
-  uploadCoordinationDocument: (data: FormData) => api.post('/barangay/account-request/certificate', data, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  }),
-  coordinationStatus: () => api.get('/barangay/account-request/status'),
-  requestCoordinationActivation: (data: any) => api.post('/barangay/account-request/activation', data),
-};
-
 export const debugAPI = {
   accounts: () => api.get('/debug/accounts?audience=standard'),
-  quickLogin: (accountId: string, audience: 'standard' | 'barangay' = 'standard') => api.post('/debug/quick-login', { accountId, audience }),
+  quickLogin: (accountId: string) => api.post('/debug/quick-login', { accountId, audience: 'standard' }),
 };
 
 // Public broadcast feed and the persisted MDRRMO post manager.
@@ -239,11 +191,5 @@ export const weatherAPI = {
 
 // Evacuation Centers
 export const evacuationAPI = {
-  list: (params?: { barangay_id?: string; barangay_added?: boolean }) => api.get('/evacuation-centers', { params }),
-  addBarangay: (data: any) => api.post('/evacuation-centers', data),
-};
-
-// Barangays (for filter dropdowns)
-export const barangayListAPI = {
-  list: () => api.get('/barangay/list'),
+  list: (params?: { barangay_added?: boolean }) => api.get('/evacuation-centers', { params }),
 };

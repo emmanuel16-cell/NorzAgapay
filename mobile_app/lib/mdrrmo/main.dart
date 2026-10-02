@@ -6,6 +6,7 @@ import 'services/gps_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/splash_screen.dart';
+import '../screens/mdrrmo_dispatcher_screen.dart';
 import 'core/constants.dart';
 import 'services/offline_service.dart';
 
@@ -72,7 +73,10 @@ class _AuthWrapperState extends State<AuthWrapper> {
         if (auth.isLoading && !auth.isAuthenticated) {
           return const SplashScreen();
         }
-        return auth.isAuthenticated ? const HomeScreen() : const LoginScreen();
+        if (!auth.isAuthenticated || auth.user == null) return const LoginScreen();
+        if (auth.user!.role == UserRole.dispatcher) return const MdrrmoDispatcherScreen();
+        if (auth.user!.role == UserRole.responder) return const HomeScreen();
+        return const LoginScreen();
       },
     );
   }

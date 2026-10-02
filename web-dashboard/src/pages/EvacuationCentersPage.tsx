@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { MapContainer, Marker, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
+import { MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { Building2, MapPin, Plus, RotateCcw, Search } from 'lucide-react';
+import { Building2, MapPin, RotateCcw, Search } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { evacuationAPI } from '../lib/api';
-import { useAuth } from '../context/AuthContext';
 import { CARTO_DARK_MAP_URL, CARTO_ATTRIBUTION } from '../lib/mapConfig';
 
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -21,7 +20,6 @@ interface EvacuationStation {
   address?: string | null;
   latitude: number | string;
   longitude: number | string;
-  barangay_id?: string;
   barangays?: { id?: string; name?: string; municipality?: string } | null;
 }
 
@@ -30,16 +28,8 @@ const DEFAULT_CENTER: [number, number] = [14.9133, 121.0436];
 function stationPoint(station: EvacuationStation): [number, number] | null {
   const latitude = Number(station.latitude);
   const longitude = Number(station.longitude);
-  return Number.isFinite(latitude) && Number.isFinite(longitude) ? [latitude, longitude] : null;
-}
-
-function LocationPicker({ onPick }: { onPick: (point: [number, number]) => void }) {
-  useMapEvents({
-    click(event) {
-      onPick([event.latlng.lat, event.latlng.lng]);
-    },
-  });
-  return null;
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return null;
+  return [latitude, longitude];
 }
 
 function MapViewport({ stations, selectedId }: { stations: EvacuationStation[]; selectedId: string | null }) {
@@ -62,97 +52,7 @@ function MapViewport({ stations, selectedId }: { stations: EvacuationStation[]; 
   return null;
 }
 
-function BarangayStationForm() {
-  const { user } = useAuth();
-  const barangayId = user?.barangay_id || '';
-  const [name, setName] = useState('');
-  const [address, setAddress] = useState('');
-  const [point, setPoint] = useState<[number, number]>(DEFAULT_CENTER);
-  const [saving, setSaving] = useState(false);
-
-  const resetForm = () => {
-    setName('');
-    setAddress('');
-    setPoint(DEFAULT_CENTER);
-  };
-
-  const handleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!name.trim() || !barangayId) {
-      toast.error('Enter a station name and select its barangay');
-      return;
-    }
-
-    setSaving(true);
-    try {
-      await evacuationAPI.addBarangay({
-        name: name.trim(),
-        address: address.trim(),
-        latitude: point[0],
-        longitude: point[1],
-      });
-      toast.success('Evacuation station added');
-      resetForm();
-    } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Could not add evacuation station');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <>
-      <div className="page-header">
-        <div>
-          <div className="eyebrow">Field infrastructure</div>
-          <h1 className="page-title">Add Evacuation Station</h1>
-          <p className="page-subtitle">Register a station and pin its location for your barangay.</p>
-        </div>
-      </div>
-
-      <div className="page-content" style={{ display: 'grid', gridTemplateColumns: 'minmax(320px, 0.85fr) minmax(360px, 1.15fr)', gap: 20, alignItems: 'start' }}>
-        <form className="card" onSubmit={handleSubmit} style={{ padding: 24 }}>
-          <div className="card-title" style={{ marginBottom: 6 }}>Station details</div>
-          <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: '0 0 20px' }}>Residents and MDRRMO can view this station after it is added.</p>
-
-          <label className="form-label" htmlFor="station-name">Station name</label>
-          <input id="station-name" className="form-input" value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. Norzagaray Central School" required />
-
-          <div className="field-help" style={{ marginTop: 8 }}>This station will be registered under {user?.barangay_name || 'your barangay'}.</div>
-
-          <label className="form-label" htmlFor="station-address" style={{ marginTop: 16 }}>Address or landmark</label>
-          <input id="station-address" className="form-input" value={address} onChange={(event) => setAddress(event.target.value)} placeholder="Street, sitio, or nearby landmark" />
-
-          <div style={{ marginTop: 20, padding: 14, borderRadius: 12, background: 'rgba(14,165,233,.08)', border: '1px solid rgba(14,165,233,.2)' }}>
-            <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 6 }}>
-              <MapPin size={18} color="#38bdf8" />
-              <strong>Map pin</strong>
-            </div>
-            <div className="field-help">Click the map to place the station marker.</div>
-            <div style={{ fontFamily: 'monospace', fontSize: 12, marginTop: 8, color: 'var(--text-secondary)' }}>
-              {point[0].toFixed(6)}, {point[1].toFixed(6)}
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', gap: 10, marginTop: 22 }}>
-            <button type="button" className="btn btn-outline" onClick={resetForm}><RotateCcw size={16} /> Clear</button>
-            <button type="submit" className="btn btn-primary" disabled={saving} style={{ flex: 1 }}><Plus size={17} /> {saving ? 'Adding station…' : 'Add station'}</button>
-          </div>
-        </form>
-
-        <div className="card" style={{ padding: 0, overflow: 'hidden', minHeight: 560 }}>
-          <MapContainer center={point} zoom={13} style={{ width: '100%', height: 560 }}>
-            <TileLayer attribution={CARTO_ATTRIBUTION} url={CARTO_DARK_MAP_URL} />
-            <LocationPicker onPick={setPoint} />
-            <Marker position={point} />
-          </MapContainer>
-        </div>
-      </div>
-    </>
-  );
-}
-
-function MdrrmoStationMap() {
+export default function EvacuationCentersPage() {
   const [stations, setStations] = useState<EvacuationStation[]>([]);
   const [search, setSearch] = useState('');
   const [barangayFilter, setBarangayFilter] = useState('all');
@@ -283,9 +183,4 @@ function MdrrmoStationMap() {
       </div>
     </>
   );
-}
-
-export default function EvacuationCentersPage() {
-  const { isBarangayAccount } = useAuth();
-  return isBarangayAccount ? <BarangayStationForm /> : <MdrrmoStationMap />;
 }

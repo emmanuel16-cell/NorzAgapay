@@ -23,6 +23,9 @@ class AuthProvider with ChangeNotifier {
   List<Map<String, dynamic>> get unitMembers => _unitMembers;
   bool get isTeamLeader => _isTeamLeader;
 
+  bool _isAllowedMobileRole(UserRole role) =>
+      role == UserRole.dispatcher || role == UserRole.responder;
+
   Future<void> fetchMyUnit() async {
     if (_token == null) return;
     try {
@@ -95,8 +98,13 @@ class AuthProvider with ChangeNotifier {
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
+        final user = User.fromJson(data['user']);
+        if (!_isAllowedMobileRole(user.role)) {
+          await logout();
+          return;
+        }
         _token = token;
-        _user = User.fromJson(data['user']);
+        _user = user;
         await fetchMyUnit();
         notifyListeners();
       } else {
@@ -123,8 +131,12 @@ class AuthProvider with ChangeNotifier {
 
       final data = json.decode(response.body);
       if (response.statusCode == 200) {
+        final user = User.fromJson(data['user']);
+        if (!_isAllowedMobileRole(user.role)) {
+          throw 'MDRRMO mobile access is limited to Dispatcher and Responder accounts.';
+        }
         _token = data['token'];
-        _user = User.fromJson(data['user']);
+        _user = user;
         await _storage.write(key: AppConstants.tokenKey, value: _token);
         await fetchMyUnit();
         notifyListeners();
@@ -146,6 +158,7 @@ class AuthProvider with ChangeNotifier {
     if (response.statusCode == 200) {
       return (data['accounts'] as List)
           .map((account) => Map<String, dynamic>.from(account))
+          .where((account) => account['role'] == 'dispatcher' || account['role'] == 'responder')
           .toList();
     }
     throw data['error'] ?? 'Debug quick login is unavailable';
@@ -165,8 +178,12 @@ class AuthProvider with ChangeNotifier {
       );
       final data = json.decode(response.body);
       if (response.statusCode != 200) throw data['error'] ?? 'Quick login failed';
+      final user = User.fromJson(data['user']);
+      if (!_isAllowedMobileRole(user.role)) {
+        throw 'MDRRMO mobile access is limited to Dispatcher and Responder accounts.';
+      }
       _token = data['token'];
-      _user = User.fromJson(data['user']);
+      _user = user;
       await _storage.write(key: AppConstants.tokenKey, value: _token);
       await fetchMyUnit();
     } finally {

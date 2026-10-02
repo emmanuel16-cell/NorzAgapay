@@ -139,7 +139,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(AppColors.bgSecondary),
+      backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -160,7 +160,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                     margin: const EdgeInsets.symmetric(vertical: 12),
                     width: 40,
                     height: 4,
-                    decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)),
+                    decoration: BoxDecoration(color: Color(0xFFE2E8F0), borderRadius: BorderRadius.circular(2)),
                   ),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -201,7 +201,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                       ],
                     ),
                   ),
-                  const Divider(color: Colors.white10, height: 1),
+                  const Divider(color: Color(0xFFE2E8F0), height: 1),
                   const SizedBox(height: 8),
                   Expanded(
                     child: _loadingOfficers
@@ -230,12 +230,12 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                                     decoration: BoxDecoration(
                                       color: isSelected
                                           ? const Color(AppColors.success).withOpacity(0.1)
-                                          : const Color(AppColors.bgPrimary).withOpacity(0.5),
+                                          : const Color(0xFFF5F6FA).withOpacity(0.5),
                                       borderRadius: BorderRadius.circular(12),
                                       border: Border.all(
                                         color: isSelected
                                             ? const Color(AppColors.success).withOpacity(0.5)
-                                            : Colors.white10,
+                                            : Color(0xFFE2E8F0),
                                       ),
                                     ),
                                     child: ListTile(
@@ -265,13 +265,13 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                                                     .map((s) => Container(
                                                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                                           decoration: BoxDecoration(
-                                                            color: const Color(AppColors.accent).withValues(alpha: 0.12),
+                                                            color: const Color(0xFF0D9488).withValues(alpha: 0.12),
                                                             borderRadius: BorderRadius.circular(4),
-                                                            border: Border.all(color: const Color(AppColors.accent).withValues(alpha: 0.25)),
+                                                            border: Border.all(color: const Color(0xFF0D9488).withValues(alpha: 0.25)),
                                                           ),
                                                           child: Text(
                                                             s,
-                                                            style: const TextStyle(fontSize: 10, color: Color(AppColors.accent), fontWeight: FontWeight.w600),
+                                                            style: const TextStyle(fontSize: 10, color: Color(0xFF0D9488), fontWeight: FontWeight.w600),
                                                           ),
                                                         ))
                                                     .toList(),
@@ -280,7 +280,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                                           : null,
                                       trailing: Icon(
                                         isSelected ? Icons.remove_circle_outline : Icons.add_circle_outline,
-                                        color: isSelected ? const Color(AppColors.danger) : const Color(AppColors.accent),
+                                        color: isSelected ? const Color(AppColors.danger) : const Color(0xFF0D9488),
                                       ),
                                       onTap: () {
                                         setModalState(() {
@@ -318,11 +318,12 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
         final isResponder = user?.role == UserRole.responder;
 
         return Scaffold(
-          backgroundColor: const Color(AppColors.bgPrimary),
+          backgroundColor: const Color(0xFFF5F6FA),
           appBar: AppBar(
             title: const Text('Dispatch Details'),
             elevation: 0,
-            backgroundColor: const Color(AppColors.bgSecondary),
+            backgroundColor: Colors.white,
+            foregroundColor: const Color(0xFF0C243B),
             actions: [
               // Team Leader: Add Members on the Move button
               if (isResponder && isTeamLeader &&
@@ -396,11 +397,11 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                       decoration: BoxDecoration(
                         color: Colors.black.withOpacity(0.7),
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.white24),
+                        border: Border.all(color: Color(0xFFE2E8F0)),
                       ),
                       child: Text(
                         '${lat.toStringAsFixed(5)}, ${lng.toStringAsFixed(5)}',
-                        style: const TextStyle(color: Colors.white70, fontSize: 10, fontFamily: 'monospace'),
+                        style: const TextStyle(color: Color(0xFF475569), fontSize: 10, fontFamily: 'monospace'),
                       ),
                     ),
                   ),
@@ -411,7 +412,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
               Expanded(
                 child: Container(
                   decoration: const BoxDecoration(
-                    color: Color(AppColors.bgPrimary),
+                    color: Color(0xFFF5F6FA),
                     borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
                   ),
                   child: SingleChildScrollView(
@@ -451,13 +452,13 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                             width: double.infinity,
                             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
                             decoration: BoxDecoration(
-                              color: const Color(AppColors.accent).withOpacity(0.12),
+                              color: const Color(0xFF0D9488).withOpacity(0.12),
                               borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: const Color(AppColors.accent).withOpacity(0.35)),
+                              border: Border.all(color: const Color(0xFF0D9488).withOpacity(0.35)),
                             ),
                             child: Text(
                               'Dispatcher classification: ${(task.incidentType ?? 'Unclassified').replaceAll('_', ' ')} · ${(task.incidentSeverity ?? 'Unclassified').toUpperCase()}',
-                              style: const TextStyle(color: Color(AppColors.accent), fontWeight: FontWeight.w700, fontSize: 13),
+                              style: const TextStyle(color: Color(0xFF0D9488), fontWeight: FontWeight.w700, fontSize: 13),
                             ),
                           ),
                         ],
@@ -501,13 +502,13 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                         Container(
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
-                            color: const Color(AppColors.bgSecondary),
+                            color: Colors.white,
                             borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.white10),
+                            border: Border.all(color: Color(0xFFE2E8F0)),
                           ),
                           child: Text(
                             task.description ?? 'A resident has reported an incident. Please proceed to the coordinates for verification and response.',
-                            style: const TextStyle(color: Colors.white70, height: 1.6, fontSize: 14),
+                            style: const TextStyle(color: Color(0xFF475569), height: 1.6, fontSize: 14),
                           ),
                         ),
 
@@ -518,15 +519,15 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                           Container(
                             padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
-                              color: const Color(AppColors.bgSecondary),
+                              color: Colors.white,
                               borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Colors.white10),
+                              border: Border.all(color: Color(0xFFE2E8F0)),
                             ),
                             child: Row(
                               children: [
                                 const Icon(Icons.location_on_rounded, color: Color(AppColors.danger), size: 20),
                                 const SizedBox(width: 12),
-                                Expanded(child: Text(task.address!, style: const TextStyle(color: Colors.white70, fontSize: 14))),
+                                Expanded(child: Text(task.address!, style: const TextStyle(color: Color(0xFF475569), fontSize: 14))),
                               ],
                             ),
                           ),
@@ -544,7 +545,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                                 return Container(
                                   padding: const EdgeInsets.all(16),
                                   decoration: BoxDecoration(
-                                    color: const Color(AppColors.bgSecondary),
+                                    color: Colors.white,
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                   child: const Row(
@@ -561,9 +562,9 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                                   margin: const EdgeInsets.only(bottom: 8),
                                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                                   decoration: BoxDecoration(
-                                    color: const Color(AppColors.bgSecondary),
+                                    color: Colors.white,
                                     borderRadius: BorderRadius.circular(10),
-                                    border: Border.all(color: Colors.white10),
+                                    border: Border.all(color: Color(0xFFE2E8F0)),
                                   ),
                                   child: Row(
                                     children: [
@@ -572,7 +573,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                                         backgroundColor: const Color(AppColors.primary).withOpacity(0.2),
                                         child: Text(
                                           (m['name'] as String? ?? 'O')[0].toUpperCase(),
-                                          style: const TextStyle(color: Color(AppColors.accent), fontWeight: FontWeight.bold, fontSize: 13),
+                                          style: const TextStyle(color: Color(0xFF0D9488), fontWeight: FontWeight.bold, fontSize: 13),
                                         ),
                                       ),
                                       const SizedBox(width: 10),
@@ -593,13 +594,13 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                                                      .map((s) => Container(
                                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                                            decoration: BoxDecoration(
-                                                             color: const Color(AppColors.accent).withValues(alpha: 0.12),
+                                                             color: const Color(0xFF0D9488).withValues(alpha: 0.12),
                                                              borderRadius: BorderRadius.circular(4),
-                                                             border: Border.all(color: const Color(AppColors.accent).withValues(alpha: 0.25)),
+                                                             border: Border.all(color: const Color(0xFF0D9488).withValues(alpha: 0.25)),
                                                            ),
                                                            child: Text(
                                                              s,
-                                                             style: const TextStyle(fontSize: 10, color: Color(AppColors.accent), fontWeight: FontWeight.w600),
+                                                             style: const TextStyle(fontSize: 10, color: Color(0xFF0D9488), fontWeight: FontWeight.w600),
                                                            ),
                                                          ))
                                                      .toList(),
@@ -712,7 +713,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
       final proceed = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          backgroundColor: const Color(AppColors.bgSecondary),
+          backgroundColor: Colors.white,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: const Row(
             children: [
@@ -721,14 +722,14 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
               Expanded(
                 child: Text(
                   'Barangay Responding',
-                  style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold),
+                  style: TextStyle(color: Color(0xFF0F172A), fontSize: 17, fontWeight: FontWeight.bold),
                 ),
               ),
             ],
           ),
           content: Text(
             'Barangay ${task.barangayName ?? "Partida"} is currently responding to this incident.\n\nDo you want to also respond to this incident?',
-            style: const TextStyle(color: Colors.white70, fontSize: 14, height: 1.5),
+            style: const TextStyle(color: Color(0xFF475569), fontSize: 14, height: 1.5),
           ),
           actions: [
             TextButton(
@@ -738,7 +739,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
             ElevatedButton(
               onPressed: () => Navigator.pop(ctx, true),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(AppColors.accent),
+                backgroundColor: const Color(0xFF0D9488),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
               ),
               child: const Text('Yes, Also Respond', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),

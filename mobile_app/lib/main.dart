@@ -12,7 +12,7 @@ import 'mdrrmo/providers/task_provider.dart' as global_tasks;
 import 'mdrrmo/services/gps_service.dart' as global_gps;
 import 'mdrrmo/services/offline_service.dart' as global_offline;
 import 'mdrrmo/screens/home_screen.dart' as global_home;
-import 'screens/mdrrmo_operations_screen.dart';
+import 'screens/mdrrmo_dispatcher_screen.dart';
 import 'mdrrmo/models/user.dart' as global_user;
 
 void main() async {
@@ -87,7 +87,10 @@ class _AuthGateState extends State<AuthGate> {
       if (mdrrmoAuth.user!.role == global_user.UserRole.responder) {
         return const global_home.HomeScreen();
       }
-      return const MdrrmoOperationsScreen();
+      if (mdrrmoAuth.user!.role == global_user.UserRole.dispatcher) {
+        return const MdrrmoDispatcherScreen();
+      }
+      return const LoginScreen();
     }
 
     if (!barangayAuth.isAuthenticated || barangayAuth.currentUser == null) {
