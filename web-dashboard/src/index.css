@@ -1402,6 +1402,100 @@ tbody tr:last-child td { border-bottom: none; }
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+.map-responder-focus-card {
+  position: absolute;
+  z-index: 1001;
+  top: 18px;
+  right: 18px;
+  width: min(300px, calc(100% - 36px));
+  padding: 14px;
+  color: #e2e8f0;
+  background: rgba(15, 23, 42, 0.94);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  border-radius: 14px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(16px);
+}
+
+.map-responder-focus-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.map-responder-focus-icon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  place-items: center;
+  color: #fff;
+  background: #f97316;
+  border-radius: 50%;
+}
+
+.map-responder-focus-heading > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.map-responder-focus-heading strong,
+.map-responder-focus-heading span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.map-responder-focus-heading strong {
+  color: #f8fafc;
+  font-size: 13px;
+}
+
+.map-responder-focus-heading span:last-child {
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.map-responder-focus-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  color: #cbd5e1;
+  font-size: 11px;
+}
+
+.map-responder-focus-status > span {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  background: #64748b;
+  border-radius: 50%;
+}
+
+.map-responder-focus-status > span.live {
+  background: #22c55e;
+  box-shadow: 0 0 8px #22c55e;
+  animation: pulse 2s infinite;
+}
+
+.map-responder-clear {
+  margin-top: 12px;
+  padding: 6px 9px;
+  color: #bae6fd;
+  background: rgba(14, 165, 233, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 7px;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.map-responder-clear:hover {
+  background: rgba(14, 165, 233, 0.22);
+}
+
 .command-hud-top-row {
   display: flex;
   align-items: center;
@@ -2443,6 +2537,30 @@ tbody tr:last-child td { border-bottom: none; }
   display: inline-flex;
   align-items: center;
   gap: 5px;
+}
+
+.responder-map-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  margin-left: auto;
+  padding: 0 11px;
+  color: #bae6fd;
+  background: rgba(14, 165, 233, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.responder-map-button:hover {
+  background: rgba(14, 165, 233, 0.22);
+  border-color: rgba(56, 189, 248, 0.55);
 }
 
 .responder-gps-status {

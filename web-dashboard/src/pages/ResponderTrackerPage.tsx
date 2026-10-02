@@ -12,6 +12,8 @@ import {
   Siren,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import { socket, taskAPI } from '../lib/api';
 
 interface Incident {
@@ -194,6 +196,8 @@ function stageDetail(
 }
 
 export default function ResponderTrackerPage() {
+  const navigate = useNavigate();
+  const { user } = useAuth();
   const [tasks, setTasks] = useState<ResponseTask[]>([]);
   const [locations, setLocations] = useState<Record<string, ResponderLocation>>({});
   const [loading, setLoading] = useState(true);
@@ -243,6 +247,27 @@ export default function ResponderTrackerPage() {
   const enRouteCount = tasks.filter((task) => task.status === 'accepted' && !taskIsResolved(task)).length;
   const returningCount = tasks.filter((task) =>
     !taskIsResolved(task) && (task.status === 'completed' || isReturning(task, locationFor(task, locations)))).length;
+
+  const openResponderOnMap = (task: ResponseTask) => {
+    const responder = task.assigned_to
+      ? { id: task.assigned_to, name: task.assigned_user?.full_name }
+      : (() => {
+          const assignedVolunteer = (task.responders || []).find((item) => item.responder_id && item.status !== 'left');
+          return assignedVolunteer
+            ? { id: assignedVolunteer.responder_id!, name: assignedVolunteer.responder?.full_name }
+            : undefined;
+        })();
+    const responderId = responder?.id;
+    if (!responderId) {
+      toast.error('This dispatch has no assigned responder to show on the map');
+      return;
+    }
+
+    const params = new URLSearchParams({ responder: responderId, task: task.id });
+    const responderName = responder?.name;
+    if (responderName) params.set('name', responderName);
+    navigate(`/?${params.toString()}`);
+  };
 
   return (
     <>
@@ -363,6 +388,11 @@ export default function ResponderTrackerPage() {
                     {responderLocation && locationUpdated
                       ? <span className="responder-gps-status"><Radio size={12} /> GPS connected</span>
                       : <span className="responder-gps-status muted"><Circle size={9} /> GPS unavailable</span>}
+                    {user?.role === 'dispatcher' && !cancelled && (
+                      <button className="responder-map-button" onClick={() => openResponderOnMap(task)}>
+                        <MapPin size={14} /> View in map
+                      </button>
+                    )}
                   </div>
                 </article>
               );
