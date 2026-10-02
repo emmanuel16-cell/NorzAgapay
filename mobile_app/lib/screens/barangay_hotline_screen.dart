@@ -385,11 +385,19 @@ class _BarangayHotlineScreenState extends State<BarangayHotlineScreen> {
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           const Text('Municipal Disaster Risk Reduction & Management Office (Rescue Ng Garay)', style: TextStyle(fontSize: 13, color: Color(0xFF475569), height: 1.35)),
           const SizedBox(height: 14),
-          Wrap(spacing: 10, runSpacing: 10, alignment: WrapAlignment.center, children: [
-            _actionChip(Icons.phone_rounded, 'Call MDRRMO Hotline', const Color(0xFFE6F4EA), const Color(0xFF1E8E3E), () => _call('0905-247-0355')),
-            _actionChip(Icons.facebook_rounded, 'Rescue Ng Garay', const Color(0xFFE8F2FE), const Color(0xFF1A73E8), () => _launch(Uri.parse('https://www.facebook.com/RescueNgGaray'))),
-            _actionChip(Icons.mail_rounded, 'Email MDRRMO', const Color(0xFFE8EEF5), const Color(0xFF1B4F72), () => _launch(Uri(scheme: 'mailto', path: 'norzagarayrescue2015@gmail.com'))),
-          ]),
+          SizedBox(
+            width: double.infinity,
+            child: Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              alignment: WrapAlignment.center,
+              children: [
+                _actionChip(Icons.phone_rounded, 'Call MDRRMO Hotline', const Color(0xFFE6F4EA), const Color(0xFF1E8E3E), () => _call('0905-247-0355')),
+                _actionChip(Icons.facebook_rounded, 'Rescue Ng Garay', const Color(0xFFE8F2FE), const Color(0xFF1A73E8), () => _launch(Uri.parse('https://www.facebook.com/RescueNgGaray'))),
+                _actionChip(Icons.mail_rounded, 'Email MDRRMO', const Color(0xFFE8EEF5), const Color(0xFF1B4F72), () => _launch(Uri(scheme: 'mailto', path: 'norzagarayrescue2015@gmail.com'))),
+              ],
+            ),
+          ),
           const SizedBox(height: 10),
           const Divider(height: 16),
           const Row(children: [Icon(Icons.info_outline, size: 14, color: Color(0xFF64748B)), SizedBox(width: 6), Text('Direct Mobile: 0905-247-0355', style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B)))]),
