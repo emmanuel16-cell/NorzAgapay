@@ -30,7 +30,9 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (res) => res,
   (err) => {
-    if (err.response?.status === 401) {
+    const url = String(err.config?.url || '');
+    const isLoginRequest = /\/(auth|barangay)\/login(?:$|\?)/.test(url);
+    if (err.response?.status === 401 && localStorage.getItem('norzagapay_token') && !isLoginRequest) {
       localStorage.removeItem('norzagapay_token');
       localStorage.removeItem('norzagapay_user');
       window.location.href = '/login';
@@ -50,9 +52,57 @@ export const authAPI = {
   me: () => api.get('/auth/me'),
 };
 
+export const barangayAuthAPI = {
+  login: (email: string, password: string) => api.post('/barangay/login', { email, password }),
+  me: () => api.get('/barangay/me'),
+};
+
+export const barangayAPI = {
+  reports: (params?: any) => api.get('/barangay/reports', { params }),
+  respondToReport: (id: string, data: any) => api.patch(`/barangay/reports/${id}/respond`, data),
+  dispatchReport: (id: string, data: any) => api.patch(`/barangay/reports/${id}/dispatch`, data),
+  escalateReport: (id: string, data: any) => api.patch(`/barangay/reports/${id}/escalate`, data),
+  closeReport: (id: string, data: any) => api.post(`/barangay/reports/${id}/close`, data),
+  uploadFieldMedia: (id: string, data: FormData) => api.post(`/barangay/reports/${id}/field-media`, data, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  team: () => api.get('/barangay/team'),
+  addTeamMember: (data: any) => api.post('/barangay/team', data),
+  updateTeamMember: (id: string, data: any) => api.patch(`/barangay/team/${id}`, data),
+  deactivateTeamMember: (id: string) => api.delete(`/barangay/team/${id}`),
+  assistanceRequests: () => api.get('/barangay/assistance-requests'),
+  myAssistanceRequests: () => api.get('/barangay/my-assistance-requests'),
+  createAssistanceRequest: (data: any) => api.post('/barangay/assistance-requests', data),
+  decideAssistanceRequest: (id: string, data: any) => api.patch(`/barangay/assistance-requests/${id}/decide`, data),
+  editAssistanceRequest: (id: string, data: any) => api.patch(`/barangay/assistance-requests/${id}/edit`, data),
+  actionAssistanceRequest: (id: string, data: any) => api.patch(`/barangay/assistance-requests/${id}/team-action`, data),
+  broadcasts: () => api.get('/barangay/broadcasts'),
+  createBroadcast: (data: FormData) => api.post('/barangay/broadcasts', data, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  updateBroadcast: (id: string, data: FormData) => api.patch(`/barangay/broadcasts/${id}`, data, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  deleteBroadcast: (id: string) => api.delete(`/barangay/broadcasts/${id}`),
+  pinBroadcast: (id: string, is_pinned: boolean) => api.patch(`/barangay/broadcasts/${id}/pin`, { is_pinned }),
+  repostBroadcast: (id: string) => api.post(`/barangay/broadcasts/${id}/repost`),
+  hotlines: (barangayId?: string) => barangayId
+    ? api.get(`/barangay/hotlines/${barangayId}`)
+    : api.get('/barangay/hotlines'),
+  saveHotlines: (entries: any[]) => api.put('/barangay/hotlines', { entries }),
+  coordinationRequest: () => api.get('/barangay/account-request'),
+  submitCoordinationRequest: (data: any) => api.put('/barangay/account-request', data),
+  authorizationPdf: () => api.get('/barangay/account-request/certificate', { responseType: 'blob' }),
+  uploadCoordinationDocument: (data: FormData) => api.post('/barangay/account-request/certificate', data, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  coordinationStatus: () => api.get('/barangay/account-request/status'),
+  requestCoordinationActivation: (data: any) => api.post('/barangay/account-request/activation', data),
+};
+
 export const debugAPI = {
   accounts: () => api.get('/debug/accounts?audience=standard'),
-  quickLogin: (accountId: string) => api.post('/debug/quick-login', { accountId, audience: 'standard' }),
+  quickLogin: (accountId: string, audience: 'standard' | 'barangay' = 'standard') => api.post('/debug/quick-login', { accountId, audience }),
 };
 
 // Public broadcast feed and the persisted MDRRMO post manager.
@@ -67,14 +117,6 @@ export const broadcastAPI = {
   }),
   setMdrrmoPinned: (id: string, is_pinned: boolean) => api.patch(`/broadcasts/mdrrmo/${id}/pin`, { is_pinned }),
   deleteMdrrmo: (id: string) => api.delete(`/broadcasts/mdrrmo/${id}`),
-};
-
-// Missions
-export const missionAPI = {
-  list: (params?: any) => api.get('/incidents', { params }),
-  get: (id: string) => api.get(`/incidents/${id}`),
-  create: (data: any) => api.post('/incidents', data),
-  update: (id: string, data: any) => api.patch(`/incidents/${id}`, data),
 };
 
 // Tasks
@@ -92,16 +134,6 @@ export const userAPI = {
   create: (data: { full_name: string; email: string; password: string; role: string }) => api.post('/users', data),
   get: (id: string) => api.get(`/users/${id}`),
   update: (id: string, data: any) => api.patch(`/users/${id}`, data),
-};
-
-// Inventory
-export const inventoryAPI = {
-  list: (params?: any) => api.get('/inventory', { params }),
-  create: (data: any) => api.post('/inventory', data),
-  update: (id: string, data: any) => api.patch(`/inventory/${id}`, data),
-  shipments: (params?: any) => api.get('/inventory/shipments', { params }),
-  createShipment: (data: any) => api.post('/inventory/shipments', data),
-  scanShipment: (id: string, qr_code: string) => api.patch(`/inventory/shipments/${id}/scan`, { qr_code }),
 };
 
 // Verification
@@ -132,16 +164,15 @@ export const requestAPI = {
     api.patch(`/requests/${id}/status`, { status }),
 };
 
-// Matching
+// Routing for responder navigation
 export const matchingAPI = {
-  dispatch: (missionId: string, unitId?: string) => api.post(`/matching/dispatch/${missionId}`, { unitId }),
   getRoute: (data: any) => api.post('/matching/route', data),
 };
 
 // Analytics
 export const analyticsAPI = {
   overview: () => api.get('/reports/overview'),
-  missions: () => api.get('/reports/incidents'),
+  incidents: () => api.get('/reports/incidents'),
   responders: () => api.get('/reports/responders'),
 };
 
@@ -187,7 +218,7 @@ export const blockedRouteAPI = {
 export const reportAPI = {
   list: (params?: any) => api.get('/incident-reports', { params }),
   get: (id: string) => api.get(`/incident-reports/${id}`),
-  verify: (id: string, address?: string) => api.post(`/incident-reports/${id}/verify`, { address }),
+  verify: (id: string, data: { incident_type: string; severity: string; address?: string }) => api.post(`/incident-reports/${id}/verify`, data),
 };
 
 // Weather
@@ -209,8 +240,8 @@ export const weatherAPI = {
 // Evacuation Centers
 export const evacuationAPI = {
   list: (params?: { barangay_id?: string }) => api.get('/evacuation-centers', { params }),
-  get: (id: string) => api.get(`/evacuation-centers/${id}`),
-  getRegistrations: (id: string) => api.get(`/evacuation-centers/${id}/registrations`),
+  addBarangay: (data: any) => api.post('/evacuation-centers', data),
+  addMunicipal: (data: any) => api.post('/evacuation-centers/mdrrmo', data),
 };
 
 // Barangays (for filter dropdowns)

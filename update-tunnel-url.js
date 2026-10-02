@@ -13,41 +13,41 @@ const baseUrl = newUrl.replace(/\/$/, '');
 const apiUrl = `${baseUrl}/api`;
 
 const paths = {
-    mobile: path.join(__dirname, 'mobile_app', 'lib', 'core', 'constants.dart'),
-    barangayApi: path.join(__dirname, 'barangay_app', 'lib', 'services', 'api_service.dart'),
-    barangayAuth: path.join(__dirname, 'barangay_app', 'lib', 'services', 'auth_service.dart'),
-    barangaySocket: path.join(__dirname, 'barangay_app', 'lib', 'services', 'socket_service.dart'),
+    mobileMdrrmo: path.join(__dirname, 'mobile_app', 'lib', 'mdrrmo', 'core', 'constants.dart'),
+    mobileBarangayApi: path.join(__dirname, 'mobile_app', 'lib', 'services', 'api_service.dart'),
+    mobileBarangayAuth: path.join(__dirname, 'mobile_app', 'lib', 'services', 'auth_service.dart'),
+    mobileBarangaySocket: path.join(__dirname, 'mobile_app', 'lib', 'services', 'socket_service.dart'),
     resident: path.join(__dirname, 'resident_app', 'lib', 'core', 'constants.dart'),
     webEnv: path.join(__dirname, 'web-dashboard', '.env'),
     backendEnv: path.join(__dirname, 'backend', '.env')
 };
 
 // 1. Update Mobile App Constants
-if (fs.existsSync(paths.mobile)) {
-    let content = fs.readFileSync(paths.mobile, 'utf8');
+if (fs.existsSync(paths.mobileMdrrmo)) {
+    let content = fs.readFileSync(paths.mobileMdrrmo, 'utf8');
     content = content.replace(/static const String apiBaseUrl = '.*';/, `static const String apiBaseUrl = '${apiUrl}';`);
-    fs.writeFileSync(paths.mobile, content);
-    console.log('✅ Updated mobile_app/lib/core/constants.dart');
+    fs.writeFileSync(paths.mobileMdrrmo, content);
+    console.log('✅ Updated mobile_app/lib/mdrrmo/core/constants.dart');
 }
 
-// 2. Update Barangay App
-if (fs.existsSync(paths.barangayApi)) {
-    let content = fs.readFileSync(paths.barangayApi, 'utf8');
+// 2. Update the unified mobile app's Barangay API and socket endpoints.
+if (fs.existsSync(paths.mobileBarangayApi)) {
+    let content = fs.readFileSync(paths.mobileBarangayApi, 'utf8');
     content = content.replace(/static const String baseUrl = '.*';/, `static const String baseUrl = '${apiUrl}';`);
-    fs.writeFileSync(paths.barangayApi, content);
-    console.log('✅ Updated barangay_app/lib/services/api_service.dart');
+    fs.writeFileSync(paths.mobileBarangayApi, content);
+    console.log('✅ Updated mobile_app/lib/services/api_service.dart');
 }
-if (fs.existsSync(paths.barangayAuth)) {
-    let content = fs.readFileSync(paths.barangayAuth, 'utf8');
+if (fs.existsSync(paths.mobileBarangayAuth)) {
+    let content = fs.readFileSync(paths.mobileBarangayAuth, 'utf8');
     content = content.replace(/static const String _apiBaseUrl = '.*';/, `static const String _apiBaseUrl = '${apiUrl}';`);
-    fs.writeFileSync(paths.barangayAuth, content);
-    console.log('✅ Updated barangay_app/lib/services/auth_service.dart');
+    fs.writeFileSync(paths.mobileBarangayAuth, content);
+    console.log('✅ Updated mobile_app/lib/services/auth_service.dart');
 }
-if (fs.existsSync(paths.barangaySocket)) {
-    let content = fs.readFileSync(paths.barangaySocket, 'utf8');
+if (fs.existsSync(paths.mobileBarangaySocket)) {
+    let content = fs.readFileSync(paths.mobileBarangaySocket, 'utf8');
     content = content.replace(/static const String _socketUrl = '.*';/, `static const String _socketUrl = '${baseUrl}';`);
-    fs.writeFileSync(paths.barangaySocket, content);
-    console.log('✅ Updated barangay_app/lib/services/socket_service.dart');
+    fs.writeFileSync(paths.mobileBarangaySocket, content);
+    console.log('✅ Updated mobile_app/lib/services/socket_service.dart');
 }
 
 // 3. Update Resident App Constants

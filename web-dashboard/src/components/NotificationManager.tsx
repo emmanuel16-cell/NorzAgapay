@@ -12,7 +12,11 @@ export default function NotificationManager() {
     if (!user) return;
 
     // Join room for real-time updates
-    socket.emit('join:role', user.role);
+    if (user.account_scope === 'barangay' && user.barangay_id) {
+      socket.emit('join:barangay', user.barangay_id);
+    } else {
+      socket.emit('join:role', user.role);
+    }
 
     // Helper to show custom notification
     const showIncidentNotification = (reportId: string, title: string) => {

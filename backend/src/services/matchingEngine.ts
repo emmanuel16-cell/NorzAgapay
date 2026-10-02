@@ -12,7 +12,6 @@
  * 3. Scan certified specialists → match by skill within 5km radius
  * 4. Scan general responders → assign non-specialized tasks within 5km
  * 5. Dynamic routing → Mapbox Directions with blocked route avoidance
- * 6. Logistics trigger → auto-flag relief goods for mobilization
  */
 
 import { supabaseAdmin } from '../config/supabase';
@@ -59,12 +58,10 @@ interface SkillRequirement {
   primarySkills: string[];
   requiresProfessionalUnit: boolean;
   unitTypes: string[];
-  requiresRelief: boolean;
 }
 
 /**
- * Classify incident type and determine required skills,
- * professional unit types, and logistics needs.
+ * Classify incident type and determine required skills and professional unit types.
  */
 export function classifyIncident(incidentType: string): SkillRequirement {
   switch (incidentType) {
@@ -80,7 +77,6 @@ export function classifyIncident(incidentType: string): SkillRequirement {
           'fire', 
           'medical'
         ],
-        requiresRelief: true,
       };
     case 'fire':
       return {
@@ -95,7 +91,6 @@ export function classifyIncident(incidentType: string): SkillRequirement {
           'medical', 
           'police'
         ],
-        requiresRelief: false,
       };
     case 'earthquake':
       return {
@@ -111,7 +106,6 @@ export function classifyIncident(incidentType: string): SkillRequirement {
           'medical', 
           'police'
         ],
-        requiresRelief: true,
       };
     case 'medical_emergency':
       return {
@@ -122,7 +116,6 @@ export function classifyIncident(incidentType: string): SkillRequirement {
           'Ambulance Officer / EMS Personnel', 
           'medical'
         ],
-        requiresRelief: false,
       };
     case 'typhoon':
       return {
@@ -139,7 +132,6 @@ export function classifyIncident(incidentType: string): SkillRequirement {
           'fire', 
           'medical'
         ],
-        requiresRelief: true,
       };
     case 'other':
     default:
@@ -147,7 +139,6 @@ export function classifyIncident(incidentType: string): SkillRequirement {
         primarySkills: [],
         requiresProfessionalUnit: false,
         unitTypes: [],
-        requiresRelief: false,
       };
   }
 }
@@ -161,8 +152,6 @@ export interface MatchResult {
   matchedSpecialists: MatchedResponder[];
   assignedGeneralLabor: MatchedResponder[];
   createdTasks: string[];
-  logisticsTriggered: boolean;
-  logisticsDetails?: string;
 }
 
 interface DispatchedUnit {
@@ -192,7 +181,6 @@ export async function matchRespondersToIncident(incidentId: string, unitId?: str
     matchedSpecialists: [],
     assignedGeneralLabor: [],
     createdTasks: [],
-    logisticsTriggered: false,
   };
 
   // 1. Fetch incident details
@@ -237,7 +225,7 @@ export async function matchRespondersToIncident(incidentId: string, unitId?: str
       
       if (allOfficers && allOfficers.length > 0) {
         preSelectedPersonnelIds = allOfficers.map(u => u.id);
-        console.log(`Manual dispatch: Tasking all ${preSelectedPersonnelIds.length} active MDRRMO officers for mission ${incidentId}`);
+        console.log(`Manual dispatch: Tasking all ${preSelectedPersonnelIds.length} active MDRRMO responders for incident ${incidentId}`);
       }
     }
   }
@@ -480,38 +468,6 @@ export async function matchRespondersToIncident(incidentId: string, unitId?: str
       });
 
       if (task) result.createdTasks.push(task.id);
-    }
-  }
-
-  // ============================================
-  // STEP 6: Logistics Trigger
-  // ============================================
-
-  if (classification.requiresRelief) {
-    result.logisticsTriggered = true;
-
-    // Flag available equipment for mobilization
-    const equipmentItems = ['Aluminum Rescue Boat', '4x4 Rescue Truck', 'Mobile Command Unit', 'Portable Generator', 'Hydraulic Spreader'];
-
-    const { data: availableInventory } = await supabaseAdmin
-      .from('inventory')
-      .select('*')
-      .is('incident_id', null)
-      .gt('quantity', 0)
-      .limit(10);
-
-    if (availableInventory && availableInventory.length > 0) {
-      // Auto-assign equipment to this incident
-      const itemIds = availableInventory.map((item) => item.id);
-
-      await supabaseAdmin
-        .from('inventory')
-        .update({ incident_id: incidentId })
-        .in('id', itemIds);
-
-      result.logisticsDetails = `${availableInventory.length} MDRRMO equipment assets flagged for mobilization to incident zone.`;
-    } else {
-      result.logisticsDetails = 'No available equipment for automatic mobilization. Manual allocation required.';
     }
   }
 

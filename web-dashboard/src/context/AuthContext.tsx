@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
-import { authAPI, socket } from '../lib/api';
+import { authAPI, barangayAuthAPI, socket } from '../lib/api';
 import { debugAPI } from '../lib/api';
 
 interface User {
@@ -10,6 +10,11 @@ interface User {
   unit_type?: string;
   status: string;
   verified: boolean;
+  account_scope?: 'mdrrmo' | 'barangay';
+  barangay_id?: string;
+  barangay_name?: string;
+  coordination_verified?: boolean;
+  is_active?: boolean;
 }
 
 interface AuthContextType {
@@ -21,6 +26,8 @@ interface AuthContextType {
   logout: () => void;
   isAdmin: boolean;
   isMasterAdmin: boolean;
+  isBarangayAccount: boolean;
+  isMdrrmoAccount: boolean;
   canAccessDashboard: boolean;
 }
 
@@ -45,8 +52,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (token) {
-      authAPI.me()
-        .then((res) => setUser(res.data.user))
+      let storedUser: User | null = null;
+      try {
+        const rawUser = localStorage.getItem('norzagapay_user');
+        storedUser = rawUser ? JSON.parse(rawUser) as User : null;
+      } catch {
+        storedUser = null;
+      }
+      const isBarangay = storedUser?.account_scope === 'barangay' || Boolean(storedUser?.barangay_id);
+      (isBarangay ? barangayAuthAPI.me() : authAPI.me())
+        .then((res) => {
+          const returnedUser = isBarangay ? res.data : res.data.user;
+          const freshUser = {
+            ...returnedUser,
+            account_scope: isBarangay ? 'barangay' as const : 'mdrrmo' as const,
+          };
+          localStorage.setItem('norzagapay_user', JSON.stringify(freshUser));
+          setUser(freshUser);
+        })
         .catch(() => { setToken(null); localStorage.removeItem('norzagapay_token'); })
         .finally(() => setLoading(false));
     } else {
@@ -55,8 +78,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [token]);
 
   const login = async (email: string, password: string) => {
-    const res = await authAPI.login(email, password);
-    const { user: u, token: t } = res.data;
+    let res: any;
+    let accountScope: User['account_scope'] = 'mdrrmo';
+    try {
+      res = await authAPI.login(email, password);
+    } catch {
+      res = await barangayAuthAPI.login(email, password);
+      accountScope = 'barangay';
+    }
+    const { token: t } = res.data;
+    const u: User = { ...res.data.user, account_scope: accountScope };
     localStorage.setItem('norzagapay_token', t);
     localStorage.setItem('norzagapay_user', JSON.stringify(u));
     setToken(t);
@@ -64,8 +95,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const debugLogin = async (accountId: string) => {
-    const res = await debugAPI.quickLogin(accountId);
-    const { user: u, token: t } = res.data;
+    let res: any;
+    let accountScope: User['account_scope'] = 'mdrrmo';
+    try {
+      res = await debugAPI.quickLogin(accountId);
+    } catch {
+      res = await debugAPI.quickLogin(accountId, 'barangay');
+      accountScope = 'barangay';
+    }
+    const { token: t } = res.data;
+    const u: User = { ...res.data.user, account_scope: accountScope };
     localStorage.setItem('norzagapay_token', t);
     localStorage.setItem('norzagapay_user', JSON.stringify(u));
     setToken(t);
@@ -80,11 +119,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const isAdmin = user?.role === 'admin';
-  const isMasterAdmin = user?.role === 'master_admin';
-  const canAccessDashboard = isMasterAdmin || ['admin', 'logistics', 'dispatcher'].includes(user?.role || '');
+  const isBarangayAccount = user?.account_scope === 'barangay' || Boolean(user?.barangay_id);
+  const isMdrrmoAccount = Boolean(user) && !isBarangayAccount;
+  const isMasterAdmin = isMdrrmoAccount && user?.role === 'master_admin';
+  const canAccessDashboard = isBarangayAccount
+    ? Boolean(user?.barangay_id && user?.is_active !== false)
+    : isMasterAdmin || ['admin', 'logistics', 'dispatcher'].includes(user?.role || '');
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, debugLogin, logout, isAdmin, isMasterAdmin, canAccessDashboard }}>
+    <AuthContext.Provider value={{ user, token, loading, login, debugLogin, logout, isAdmin: isAdmin && isMdrrmoAccount, isMasterAdmin, isBarangayAccount, isMdrrmoAccount, canAccessDashboard }}>
       {children}
     </AuthContext.Provider>
   );

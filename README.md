@@ -12,7 +12,7 @@
 
 **NorzAgapay** is a full-stack, real-time crisis management, emergency response, and multi-agency coordination system developed for the **Municipal Disaster Risk Reduction and Management Office (MDRRMO)** of Norzagaray, Bulacan, in active coordination with **Barangay Local Government Units (BDRRMC)**, **Barangay Tanods (First Responders)**, and **local residents**.
 
-The platform replaces fragmented phone calls, physical logbooks, and ad-hoc communication with a synchronized digital pipeline featuring real-time incident reporting, GPS mapping, responder duty tracking, automated routing, inter-agency escalation, evacuation center occupancy monitoring, and public safety advisories.
+The platform connects residents, barangay teams, MDRRMO command staff, and responders through shared incident reporting, dispatch, GPS tracking, coordination approval, station locations, and public safety advisories.
 
 ---
 
@@ -29,7 +29,7 @@ NorzAgapay is composed of five tightly integrated subsystems designed for specif
                                                   │ REST / WebSockets
                                                   ▼
 ┌───────────────────────┐         ┌───────────────────────────────┐         ┌────────────────────────┐
-│     Resident App      │ ◄─────► │     NorzAgapay Backend API    │ ◄─────► │      Barangay App      │
+│     Resident App      │ ◄─────► │     NorzAgapay Backend API    │ ◄─────► │  Unified Operations App│
 │  (Flutter Mobile App) │  HTTPS  │   (Node.js + Express + TS)    │  HTTPS  │  (Flutter Mobile App)  │
 └───────────────────────┘  WSS    └───────┬───────────────┬───────┘  WSS    └────────────────────────┘
                                           │               │
@@ -43,58 +43,47 @@ NorzAgapay is composed of five tightly integrated subsystems designed for specif
                                           │ HTTPS / WSS
                                           ▼
                                   ┌───────────────────────────────┐
-                                  │   Responder App (Tanod Unit)  │
+                                  │  Mobile Responder Workspace  │
                                   │     (Flutter Mobile App)      │
                                   └───────────────────────────────┘
 ```
 
 ### 1. 🌐 MDRRMO Web Command Center (`web-dashboard/`)
 * **Technology**: React 18, Vite, TypeScript, TailwindCSS / Custom CSS, Leaflet, OpenStreetMap.
-* **Target Users**: Municipal DRRMO Administrators and Central Dispatchers.
+* **Target Users**: MDRRMO Master Admins, Admins, Dispatchers, and Logistics staff; barangay Admins, Dispatchers, Responders, and Staff.
 * **Key Capabilities**:
   - **Live Command Map & Heatmap**: Real-time geospatial tracking of active incidents, unit positions, and historical severity clusters across all Norzagaray barangays.
   - **Incident & Verification Queue**: Triage emergency reports, inspect uploaded photo/video proof, track operational timelines, and monitor resolution progress.
   - **Inter-Agency Escalation Pipeline**: Review and act upon escalation requests submitted by barangays when incident severity exceeds local capabilities.
-  - **Responder Live Monitoring**: Track on-duty Tanods and professional emergency units with real-time GPS locations and active mission statuses.
-  - **Evacuation Center Management**: Monitor municipal-wide shelter occupancy, maximum capacities, and vacancy statuses.
+  - **Responder Live Monitoring**: Track responder progress from dispatch through return, with map selection from the Command Center.
+  - **Evacuation Stations**: Add stations by barangay; residents see the nearest active locations and estimated distance/time.
   - **Weather & Hydromet Monitoring**: Real-time weather integration (PAGASA / Open-Meteo) and Angat / river level gauges for early flood warning.
   - **Dispatcher Accreditation**: Review and verify Barangay Dispatcher credential submissions with prefilled PDF endorsements.
 
-### 2. 🏛️ Barangay Administrator & BDRRMC App (`barangay_app/`)
-* **Technology**: Flutter, Dart, Provider, Flutter Map / Leaflet.
-* **Target Users**: Barangay Officials, BDRRMC Officers, and Barangay Dispatchers.
+### 2. 📱 Unified MDRRMO and Barangay App (`mobile_app/`)
+* **Technology**: Flutter, Dart, Provider, Hive, Flutter Map, Location Service, Socket.IO.
+* **Target Users**: MDRRMO Master Admins, Admins, Dispatchers, Logistics staff, and responders; barangay Admins, Dispatchers, Responders, and Staff.
 * **Key Capabilities**:
-  - **Barangay Incident Queue**: Immediate intake and assessment of geotagged emergency reports submitted within the barangay's territorial jurisdiction.
-  - **Responder Dispatch**: Assign available On-Duty Barangay Tanods to incidents with notes and instructions.
-  - **MDRRMO Escalation**: Request backup assistance or municipal escalation with a single tap when local capacity is overwhelmed.
-  - **Evacuation Center Updates**: Register new shelters and update real-time evacuee counts, family numbers, and vacancy states (`open`, `limited`, `full`, `closed`).
-  - **Accreditation Workflow**: Submit dispatcher verification documents to the MDRRMO with auto-generated official PDF certifications.
+  - **Role-specific mobile workspace**: A compact set of mobile screens exposes each account’s permitted operations; backend role and barangay scope checks remain authoritative.
+  - **Barangay operations**: Own-barangay incident queue, local dispatch and escalation, assistance requests, team, broadcasts, hotlines, analytics, coordination request, and add-station workflow.
+  - **MDRRMO operations**: Incident verification/dispatch, barangay coordination review, responder verification, account creation, resource requests, response units, station entry, advisories, weather, and situation summaries according to role.
+  - **Responder field workflow**: Dispatch alerts, accept/status updates, GPS tracking, route navigation, unit membership, resource requests, and field documentation.
 
-### 3. 🚨 Barangay Tanod / First Responder App (`mobile_app/`)
-* **Technology**: Flutter, Dart, Hive, Flutter Secure Storage, Location Service, Flutter Map / OSRM.
-* **Target Users**: Frontline Barangay Tanods and Field Emergency Responders.
-* **Key Capabilities**:
-  - **Duty Status Management**: Switch between `On Duty`, `Off Duty`, and operational states with instant socket notification to commanders.
-  - **Real-Time Dispatch Alerts**: Receive audible and visual alerts for assigned incidents with option to accept or acknowledge.
-  - **GPS Route Navigation**: Turn-by-turn routing via OpenStreetMap and Project OSRM directly to the reported incident coordinates.
-  - **Field Status Updates**: One-touch operational milestones (`En Route`, `On Scene`, `Resolved`).
-  - **Incident Documentation**: Capture photos, add situation remarks, and submit proof of resolution directly to the command chain.
-
-### 4. 📱 Resident Mobile Emergency App (`resident_app/`)
+### 3. 📱 Resident Mobile Emergency App (`resident_app/`)
 * **Technology**: Flutter, Dart, Hive, Image Picker, Location Service, Flutter Map.
 * **Target Users**: Residents of Norzagaray, Bulacan.
 * **Key Capabilities**:
   - **One-Tap Emergency Reporting**: Quick report submission with auto-detected GPS coordinates, incident type (`flash_flood`, `fire`, `landslide`, `medical_emergency`, `typhoon`, etc.), and media capture.
   - **Flexible Target Routing**: Send reports directly to Barangay, MDRRMO, or All responding authorities.
   - **Report Tracking Timeline**: Monitor the live resolution journey of submitted reports (`pending` ➔ `verified` ➔ `dispatched` ➔ `on_scene` ➔ `resolved`).
-  - **Evacuation Centers Directory**: Browse open evacuation centers in Norzagaray with live capacity indicators and navigation assistance.
+  - **Nearest Evacuation Stations**: See the nearest active stations, their distance, and estimated travel time.
   - **Safety Advisories & Weather Alerts**: Receive official municipal disaster bulletins, flood alerts, and emergency notifications.
 
 ### 5. ⚡ Central Backend API & Socket Engine (`backend/`)
 * **Technology**: Node.js, Express.js, TypeScript, Socket.IO, Supabase Client, Upstash Redis, PDFKit, Zod.
 * **Target Role**: Core transaction, event coordination, and data abstraction layer.
 * **Key Capabilities**:
-  - **Multi-Role JWT Authentication**: Strict Role-Based Access Control (RBAC) across `mdrrmo_admin`, `mdrrmo_dispatcher`, `barangay_admin`, `barangay_tanod`, and `resident`.
+  - **Multi-Role JWT Authentication**: Separate MDRRMO, barangay, and resident identity scopes with role-based access checks and shared barangay activation.
   - **Socket.io Real-Time Rooms**: Event routing by role (`commanders`), jurisdiction (`barangay:<id>`), and user (`user:<id>`).
   - **High-Frequency GPS Caching**: Upstash Redis stores live responder coordinates with automatic TTL expiration for power and bandwidth efficiency.
   - **Automated Weather & River Sync**: Background jobs sync meteorological forecasts and water level data every 5 minutes.
@@ -123,17 +112,10 @@ NorzAgapay/
 │   │   └── App.tsx
 │   └── package.json
 │
-├── barangay_app/             # BDRRMC / Barangay Dispatcher Flutter Mobile App
+├── mobile_app/               # Unified MDRRMO / Barangay Flutter Mobile App
 │   ├── lib/
-│   │   ├── screens/          # Reports, DispatcherVerification, EvacCenters, Team
-│   │   ├── services/         # API Service, Auth Service, Socket Service
-│   │   └── main.dart
-│   └── pubspec.yaml
-│
-├── mobile_app/               # Barangay Tanod / Responder Flutter Mobile App
-│   ├── lib/
-│   │   ├── screens/          # Home (Duty Status), Task Detail, GPS Nav, Documentation
-│   │   ├── providers/        # Location, Incident, and Auth State Providers
+│   │   ├── screens/          # Barangay operations and MDRRMO mobile workspace
+│   │   ├── mdrrmo/           # Responder dispatch, GPS, routing, and task workflows
 │   │   └── main.dart
 │   └── pubspec.yaml
 │
@@ -157,8 +139,8 @@ NorzAgapay/
 
 ### 1. Incident Reporting to Resolution
 1. **Resident Submission**: A resident submits an incident report via `resident_app` with high-accuracy GPS coordinates, category, description, and attached camera photos.
-2. **Barangay Triage & Verification**: The report instantly appears on `barangay_app` for the specific jurisdiction. The BDRRMC dispatcher reviews the incident and verifies its legitimacy.
-3. **Tanod Dispatch**: The barangay dispatcher assigns an active On-Duty Tanod. An audio/visual dispatch alert triggers on the responder's `mobile_app`.
+2. **Barangay Triage & Verification**: The report appears in the barangay’s scoped workspace in `mobile_app`. The BDRRMC dispatcher reviews and verifies its legitimacy.
+3. **Tanod Dispatch**: The barangay dispatcher assigns an active responder. A dispatch alert appears in the responder area of `mobile_app`.
 4. **Field Response**: The Tanod accepts the dispatch and follows the OSRM GPS navigation route to the scene. The Tanod updates status to `En Route`, then `On Scene`.
 5. **Resolution & Documentation**: Upon resolving the incident, the Tanod uploads proof media and remarks. The status transitions to `Resolved`, immediately updating the resident's tracking timeline and the MDRRMO Command Center.
 
@@ -167,11 +149,9 @@ NorzAgapay/
 2. The incident escalates to the **MDRRMO Web Command Center** (`web-dashboard`) with high-priority visual markers.
 3. MDRRMO command reviews the situation, approves the escalation, and mobilizes municipal emergency units (e.g., BFP, PNP, Municipal Rescue).
 
-### 3. Evacuation Center Monitoring
-1. Barangay administrators create and update designated shelters in `barangay_app`.
-2. As evacuees arrive, current headcounts and family counts are updated in real time.
-3. The status automatically toggles to `Limited` or `Full` when capacity thresholds are reached.
-4. Residents view real-time shelter statuses and vacancies in `resident_app` before evacuating.
+### 3. Evacuation Stations
+1. Authorized barangay and MDRRMO accounts add a station with its name, address, barangay, and map coordinates in `mobile_app` or `web-dashboard`.
+2. Residents use `resident_app` to see the nearest active stations, distance, and estimated travel time.
 
 ---
 
@@ -254,7 +234,7 @@ Open [http://localhost:5173](http://localhost:5173) in your browser.
 
 ### 4. Mobile Applications Setup (Flutter)
 
-Each mobile app is configured independently and connects to the backend API:
+The unified operations app and resident app connect to the backend API:
 
 #### A. Resident Emergency App
 ```bash
@@ -264,19 +244,10 @@ flutter pub get
 flutter run
 ```
 
-#### B. Barangay Administrator App
-```bash
-cd barangay_app
-flutter pub get
-# Update lib/services/api_service.dart with your API URL
-flutter run
-```
-
-#### C. Barangay Tanod / Responder App
+#### B. Unified MDRRMO and Barangay Operations App
 ```bash
 cd mobile_app
 flutter pub get
-# Update lib/core/constants.dart with your API URL
 flutter run
 ```
 
@@ -285,7 +256,7 @@ flutter run
 > ```bash
 > node update-tunnel-url.js https://your-tunnel-url.ngrok-free.app
 > ```
-> This script automatically updates the API and WebSocket endpoints across all three Flutter apps and the web dashboard simultaneously!
+> This script updates the API and WebSocket endpoints for both Flutter apps and the web dashboard.
 
 ---
 
@@ -293,11 +264,17 @@ flutter run
 
 | Role | Client Interface | Scope of Authority |
 |---|---|---|
-| `mdrrmo_admin` | Web Dashboard | Municipality-wide command, incident oversight, escalation review, advisory broadcasting, and system user management. |
-| `mdrrmo_dispatcher` | Web Dashboard | Live emergency dispatch monitoring, incident status updates, and weather/river level tracking. |
-| `barangay_admin` | Barangay Mobile App | Jurisdiction-specific report triage, Tanod deployment, evacuation center management, and MDRRMO escalation requests. |
-| `barangay_tanod` | Responder Mobile App | Shift duty management (`On Duty`/`Off Duty`), dispatch acceptance, turn-by-turn navigation, and on-scene incident documentation. |
+| MDRRMO `master_admin` | Web + Mobile | Full municipal administration, incident oversight, verification, user and unit management, dispatch monitoring, advisories, analytics, weather, resource requests, and station entry. |
+| MDRRMO `admin` | Web + Mobile | Municipal incidents, account and barangay coordination verification, users, advisories, analytics, weather, and station entry. |
+| MDRRMO `dispatcher` | Web + Mobile | Incident review and dispatch, command map, responder tracker, and weather monitoring. |
+| MDRRMO `logistics` | Web + Mobile | Resource requests, response units, responder tracker, and station entry. |
+| Barangay `admin` | Web + Mobile | Own-barangay command center, reports, team, assistance, community updates, hotlines, analytics, coordination request, and station entry. |
+| Barangay `dispatcher` | Web + Mobile | Own-barangay reports, local dispatch/escalation, assistance decisions, and response status. |
+| Barangay `responder` | Web + Mobile | Own-barangay incident response, field updates/media, assistance requests, team functions allowed by the API, GPS, and navigation. |
+| Barangay `staff` | Web + Mobile | Barangay community updates, hotlines, and station entry. |
 | `resident` | Resident Mobile App | Submitting geotagged incident reports with photos, tracking own report timeline, viewing evacuation shelters, and receiving advisories. |
+
+Barangay access remains scoped to the user's own barangay and is gated by the shared MDRRMO coordination activation. Resident evacuation support is limited to nearest stations, distance, and estimated travel time.
 
 ---
 

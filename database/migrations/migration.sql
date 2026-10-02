@@ -30,9 +30,6 @@ DO $$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'task_status') THEN
         CREATE TYPE task_status AS ENUM ('pending', 'accepted', 'in_progress', 'completed', 'cancelled');
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'shipment_status') THEN
-        CREATE TYPE shipment_status AS ENUM ('loading', 'in_transit', 'delivered');
-    END IF;
 END $$;
 
 -- ============================================
@@ -109,33 +106,6 @@ CREATE TABLE IF NOT EXISTS task_volunteers (
   UNIQUE(task_id, volunteer_id)
 );
 
--- Inventory table
-CREATE TABLE IF NOT EXISTS inventory (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  item_name TEXT NOT NULL,
-  quantity INTEGER NOT NULL DEFAULT 0,
-  unit TEXT NOT NULL DEFAULT 'packs',
-  location TEXT,
-  incident_id UUID REFERENCES incidents(id),
-  donated_by TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
--- Relief Shipments table
-CREATE TABLE IF NOT EXISTS relief_shipments (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  inventory_id UUID NOT NULL REFERENCES inventory(id),
-  quantity_sent INTEGER NOT NULL,
-  driver_user_id UUID REFERENCES users(id),
-  origin TEXT NOT NULL,
-  destination TEXT NOT NULL,
-  qr_code TEXT UNIQUE NOT NULL,
-  status shipment_status NOT NULL DEFAULT 'loading',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  delivered_at TIMESTAMPTZ
-);
-
 -- Blocked Routes table
 CREATE TABLE IF NOT EXISTS blocked_routes (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -180,8 +150,6 @@ CREATE INDEX IF NOT EXISTS idx_tasks_incident_id ON tasks(incident_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_assigned_to ON tasks(assigned_to);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 
-CREATE INDEX IF NOT EXISTS idx_inventory_incident_id ON inventory(incident_id);
-CREATE INDEX IF NOT EXISTS idx_relief_shipments_status ON relief_shipments(status);
 CREATE INDEX IF NOT EXISTS idx_blocked_routes_active ON blocked_routes(active);
 
 CREATE INDEX IF NOT EXISTS idx_resource_requests_status ON resource_requests(status);
@@ -250,28 +218,6 @@ DO $$ BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_tables 
         WHERE schemaname = 'public' 
-        AND tablename = 'inventory' 
-        AND rowsecurity = true
-    ) THEN
-        ALTER TABLE inventory ENABLE ROW LEVEL SECURITY;
-    END IF;
-END $$;
-
-DO $$ BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_tables 
-        WHERE schemaname = 'public' 
-        AND tablename = 'relief_shipments' 
-        AND rowsecurity = true
-    ) THEN
-        ALTER TABLE relief_shipments ENABLE ROW LEVEL SECURITY;
-    END IF;
-END $$;
-
-DO $$ BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_tables 
-        WHERE schemaname = 'public' 
         AND tablename = 'blocked_routes' 
         AND rowsecurity = true
     ) THEN
@@ -324,8 +270,6 @@ DO $$ BEGIN
     IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
         ALTER PUBLICATION supabase_realtime ADD TABLE incidents;
         ALTER PUBLICATION supabase_realtime ADD TABLE tasks;
-        ALTER PUBLICATION supabase_realtime ADD TABLE inventory;
-        ALTER PUBLICATION supabase_realtime ADD TABLE relief_shipments;
     END IF;
 EXCEPTION WHEN OTHERS THEN
     NULL; -- Skip if already added or publication doesn't exist
@@ -334,25 +278,6 @@ END $$;
 -- ============================================
 -- FUNCTIONS (001_create_tables.sql)
 -- ============================================
-
--- Function to update inventory timestamp on change
-CREATE OR REPLACE FUNCTION update_inventory_timestamp()
-RETURNS TRIGGER AS $$
-BEGIN
-  NEW.updated_at = now();
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
--- Trigger for inventory
-DO $$ BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'inventory_updated_at') THEN
-        CREATE TRIGGER inventory_updated_at
-          BEFORE UPDATE ON inventory
-          FOR EACH ROW
-          EXECUTE FUNCTION update_inventory_timestamp();
-    END IF;
-END $$;
 
 -- ============================================
 -- STORAGE BUCKETS (001_create_tables.sql)
@@ -399,19 +324,6 @@ CREATE TABLE IF NOT EXISTS respond_units (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Volunteer Dispatches table
-CREATE TABLE IF NOT EXISTS volunteer_dispatches (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  team_name TEXT NOT NULL,
-  dispatch_date DATE NOT NULL,
-  dispatch_time TIME NOT NULL,
-  meetup_location TEXT NOT NULL,
-  destination TEXT NOT NULL,
-  mission_id UUID REFERENCES incidents(id) ON DELETE SET NULL,
-  volunteer_ids UUID[] NOT NULL DEFAULT '{}',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
 -- Enable RLS
 DO $$ BEGIN
     IF NOT EXISTS (
@@ -435,17 +347,6 @@ DO $$ BEGIN
     END IF;
 END $$;
 
-DO $$ BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_tables 
-        WHERE schemaname = 'public' 
-        AND tablename = 'volunteer_dispatches' 
-        AND rowsecurity = true
-    ) THEN
-        ALTER TABLE volunteer_dispatches ENABLE ROW LEVEL SECURITY;
-    END IF;
-END $$;
-
 -- RLS Policies
 DO $$ BEGIN
     -- Officers Policies
@@ -464,13 +365,6 @@ DO $$ BEGIN
         CREATE POLICY "Admins can manage respond units" ON respond_units FOR ALL USING (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'master_admin')));
     END IF;
 
-    -- Volunteer Dispatches Policies
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Authenticated users can view dispatches') THEN
-        CREATE POLICY "Authenticated users can view dispatches" ON volunteer_dispatches FOR SELECT USING (auth.uid() IS NOT NULL);
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Admins can manage dispatches') THEN
-        CREATE POLICY "Admins can manage dispatches" ON volunteer_dispatches FOR ALL USING (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'master_admin')));
-    END IF;
 END $$;
 
 -- ============================================
@@ -552,6 +446,9 @@ CREATE TABLE IF NOT EXISTS incident_reports (
   reporter_phone TEXT,
   reporter_photo_url TEXT,
   address TEXT,
+  incident_type TEXT,
+  severity TEXT,
+  dispatch_incident_id UUID REFERENCES incidents(id) ON DELETE SET NULL,
   status report_status NOT NULL DEFAULT 'pending',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -1062,8 +959,6 @@ CREATE TABLE IF NOT EXISTS evacuation_centers (
     address TEXT,
     latitude DOUBLE PRECISION NOT NULL,
     longitude DOUBLE PRECISION NOT NULL,
-    capacity INTEGER,
-    current_occupancy INTEGER DEFAULT 0,
     barangay_id UUID REFERENCES barangays(id),
     active BOOLEAN NOT NULL DEFAULT true,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()

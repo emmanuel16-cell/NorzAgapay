@@ -12,9 +12,7 @@ import { DispatcherVerificationService } from './services/dispatcherVerification
 
 // Import routes
 import authRoutes from './routes/auth';
-import incidentRoutes from './routes/incidents';
 import taskRoutes from './routes/tasks';
-import inventoryRoutes from './routes/inventory';
 import verificationRoutes from './routes/verification';
 import userRoutes from './routes/users';
 import matchingRoutes from './routes/matching';
@@ -26,7 +24,6 @@ import requestRoutes from './routes/requests';
 import dispatchUnitRoutes from './routes/dispatchUnits';
 import officerRoutes from './routes/officers';
 import respondUnitRoutes from './routes/respondUnits';
-import responderDispatchRoutes from './routes/responderDispatch';
 import storageRoutes from './routes/storages';
 import weatherRoutes, { fetchOpenMeteoWeather } from './routes/weather';
 import barangayRoutes from './routes/barangay';
@@ -113,9 +110,7 @@ app.use('/api/auth/login', loginLimiter);
 // ============================================
 
 app.use('/api/auth', authRoutes);
-app.use('/api/incidents', incidentRoutes);
 app.use('/api/tasks', taskRoutes);
-app.use('/api/inventory', inventoryRoutes);
 app.use('/api/verification', verificationRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/matching', matchingRoutes);
@@ -127,7 +122,6 @@ app.use('/api/requests', requestRoutes);
 app.use('/api/dispatch-units', dispatchUnitRoutes);
 app.use('/api/officers', officerRoutes);
 app.use('/api/respond-units', respondUnitRoutes);
-app.use('/api/responder-dispatch', responderDispatchRoutes);
 app.use('/api/storages', storageRoutes);
 app.use('/api/weather', weatherRoutes);
 app.use('/api/barangay', barangayRoutes);
@@ -241,13 +235,6 @@ io.on('connection', (socket) => {
       if (!allowed) return;
       io.to('responders').emit('incident:alert', incident);
       io.to('dashboard_staff').emit('incident:new', incident);
-    });
-  });
-
-  // Inventory updates
-  socket.on('inventory:update', (data: any) => {
-    void canUseBarangaySocket(socket).then((allowed) => {
-      if (allowed) io.to('dashboard_staff').emit('inventory:changed', data);
     });
   });
 

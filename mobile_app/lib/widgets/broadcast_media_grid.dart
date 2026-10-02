@@ -1,0 +1,287 @@
+import 'package:flutter/material.dart';
+import 'package:mobile_app/models/broadcast_post.dart';
+
+/// Displays media (images & videos) in a responsive grid layout matching the 1-6+ layouts:
+/// - 1 item  → 1 full square
+/// - 2 items → 2 squares side-by-side
+/// - 3 items → 1 top wide rectangle + 2 bottom squares
+/// - 4 items → 2×2 grid
+/// - 5 items → 2 top squares + 3 bottom squares
+/// - 6+ items → 2 top squares + 3 bottom squares (last cell has "+N" overlay)
+class BroadcastMediaGrid extends StatelessWidget {
+  final List<BroadcastMediaItem> mediaItems;
+  final void Function(int index) onItemTap;
+  final VoidCallback? onPlusTap;
+
+  const BroadcastMediaGrid({
+    super.key,
+    required this.mediaItems,
+    required this.onItemTap,
+    this.onPlusTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (mediaItems.isEmpty) return const SizedBox.shrink();
+
+    final count = mediaItems.length;
+
+    if (count == 1) return _buildOne();
+    if (count == 2) return _buildTwo();
+    if (count == 3) return _buildThree();
+    if (count == 4) return _buildFour();
+    if (count == 5) return _buildFive();
+    return _buildSixPlus();
+  }
+
+  // ── 1 Square ─────────────────────────────────────────────────────────────
+  Widget _buildOne() {
+    return _cell(0, aspectRatio: 1.0, rounded: false);
+  }
+
+  // ── 2 Squares ────────────────────────────────────────────────────────────
+  Widget _buildTwo() {
+    return AspectRatio(
+      aspectRatio: 2.0,
+      child: Row(
+        children: [
+          Expanded(child: _cell(0, rounded: false)),
+          const SizedBox(width: 2),
+          Expanded(child: _cell(1, rounded: false)),
+        ],
+      ),
+    );
+  }
+
+  // ── 3 Squares ────────────────────────────────────────────────────────────
+  Widget _buildThree() {
+    return Column(
+      children: [
+        _cell(0, aspectRatio: 16 / 9, rounded: false),
+        const SizedBox(height: 2),
+        AspectRatio(
+          aspectRatio: 2.0,
+          child: Row(
+            children: [
+              Expanded(child: _cell(1, rounded: false)),
+              const SizedBox(width: 2),
+              Expanded(child: _cell(2, rounded: false)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ── 4 Squares ────────────────────────────────────────────────────────────
+  Widget _buildFour() {
+    return Column(
+      children: [
+        AspectRatio(
+          aspectRatio: 2.0,
+          child: Row(
+            children: [
+              Expanded(child: _cell(0, rounded: false)),
+              const SizedBox(width: 2),
+              Expanded(child: _cell(1, rounded: false)),
+            ],
+          ),
+        ),
+        const SizedBox(height: 2),
+        AspectRatio(
+          aspectRatio: 2.0,
+          child: Row(
+            children: [
+              Expanded(child: _cell(2, rounded: false)),
+              const SizedBox(width: 2),
+              Expanded(child: _cell(3, rounded: false)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ── 5 Squares ────────────────────────────────────────────────────────────
+  Widget _buildFive() {
+    return Column(
+      children: [
+        AspectRatio(
+          aspectRatio: 2.0,
+          child: Row(
+            children: [
+              Expanded(child: _cell(0, rounded: false)),
+              const SizedBox(width: 2),
+              Expanded(child: _cell(1, rounded: false)),
+            ],
+          ),
+        ),
+        const SizedBox(height: 2),
+        AspectRatio(
+          aspectRatio: 3.0,
+          child: Row(
+            children: [
+              Expanded(child: _cell(2, rounded: false)),
+              const SizedBox(width: 2),
+              Expanded(child: _cell(3, rounded: false)),
+              const SizedBox(width: 2),
+              Expanded(child: _cell(4, rounded: false)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ── 6+ Squares ───────────────────────────────────────────────────────────
+  Widget _buildSixPlus() {
+    final extraCount = mediaItems.length - 5;
+    return Column(
+      children: [
+        AspectRatio(
+          aspectRatio: 2.0,
+          child: Row(
+            children: [
+              Expanded(child: _cell(0, rounded: false)),
+              const SizedBox(width: 2),
+              Expanded(child: _cell(1, rounded: false)),
+            ],
+          ),
+        ),
+        const SizedBox(height: 2),
+        AspectRatio(
+          aspectRatio: 3.0,
+          child: Row(
+            children: [
+              Expanded(child: _cell(2, rounded: false)),
+              const SizedBox(width: 2),
+              Expanded(child: _cell(3, rounded: false)),
+              const SizedBox(width: 2),
+              Expanded(
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    _cell(4, rounded: false),
+                    GestureDetector(
+                      onTap: () {
+                        if (onPlusTap != null) {
+                          onPlusTap!();
+                        } else {
+                          onItemTap(4);
+                        }
+                      },
+                      child: Container(
+                        color: const Color(0xFF64748B).withValues(alpha: 0.65),
+                        child: Center(
+                          child: Text(
+                            '+$extraCount',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 1,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ── Helper: single media cell (image or video thumbnail) ─────────────────
+  Widget _cell(int index, {double? aspectRatio, bool rounded = false}) {
+    final item = mediaItems[index];
+    final child = GestureDetector(
+      onTap: () => onItemTap(index),
+      child: Container(
+        clipBehavior: Clip.hardEdge,
+        decoration: BoxDecoration(
+          borderRadius: rounded ? BorderRadius.circular(8) : BorderRadius.zero,
+          color: const Color(0xFF1E293B),
+        ),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Thumbnail: for videos we show the first frame or a dark bg
+            Image.network(
+              item.isVideo ? _videoThumbnailFallback(item.url) : item.url,
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) => Container(
+                color: const Color(0xFF334155),
+                child: Icon(
+                  item.isVideo ? Icons.videocam_outlined : Icons.broken_image,
+                  color: const Color(0xFF64748B),
+                  size: 32,
+                ),
+              ),
+              loadingBuilder: (context, child, progress) {
+                if (progress == null) return child;
+                return Container(
+                  color: const Color(0xFF1E293B),
+                  child: const Center(
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Color(0xFF38BDF8),
+                    ),
+                  ),
+                );
+              },
+            ),
+
+            // Video play overlay
+            if (item.isVideo)
+              Container(
+                color: Colors.black.withValues(alpha: 0.35),
+                child: Center(
+                  child: Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white.withValues(alpha: 0.2),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.6),
+                        width: 2,
+                      ),
+                    ),
+                    child: const Icon(
+                      Icons.play_arrow_rounded,
+                      color: Colors.white,
+                      size: 26,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+
+    if (aspectRatio != null) {
+      return AspectRatio(aspectRatio: aspectRatio, child: child);
+    }
+    return child;
+  }
+
+  /// For video URLs we cannot extract a thumbnail natively without video_player,
+  /// so we try a YouTube thumbnail pattern or fall back to showing an icon.
+  /// The image widget's errorBuilder will show a video icon on failure.
+  String _videoThumbnailFallback(String url) {
+    // YouTube short thumbnail extraction
+    final ytMatch = RegExp(r'(?:youtu\.be/|youtube\.com/(?:embed/|v/|watch\?v=))([\w-]+)')
+        .firstMatch(url);
+    if (ytMatch != null) {
+      return 'https://img.youtube.com/vi/${ytMatch.group(1)}/mqdefault.jpg';
+    }
+    // For direct .mp4 etc., return the url itself — Image.network will fail
+    // gracefully and show the video icon via errorBuilder
+    return url;
+  }
+}

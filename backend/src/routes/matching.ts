@@ -1,27 +1,8 @@
 import { Router, Response } from 'express';
-import { authenticate, authorize, AuthRequest } from '../middleware/auth';
-import { matchRespondersToIncident, getRouteWithBlockedAvoidance } from '../services/matchingEngine';
+import { authenticate, AuthRequest } from '../middleware/auth';
+import { getRouteWithBlockedAvoidance } from '../services/matchingEngine';
 
 const router = Router();
-
-// POST /api/matching/dispatch/:incidentId — trigger matching engine
-router.post(
-  '/dispatch/:incidentId',
-  authenticate,
-  authorize('dispatcher'),
-  async (req: AuthRequest, res: Response): Promise<void> => {
-    try {
-      const { incidentId } = req.params;
-      const { unitId } = req.body;
-      console.log(`Manual dispatch for mission ${incidentId} with unit ${unitId}`);
-      const result = await matchRespondersToIncident(incidentId, unitId);
-      res.json({ message: 'Matching engine executed.', result, unitId });
-    } catch (err: any) {
-      console.error('Matching engine error:', err);
-      res.status(500).json({ error: err.message || 'Matching engine failed.' });
-    }
-  }
-);
 
 // POST /api/matching/route — get route between two points
 router.post('/route', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {

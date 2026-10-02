@@ -21,9 +21,6 @@ router.get('/overview', authenticate, authorize('admin', 'master_admin'), async 
       supabaseAdmin.from('tasks').select('*', { count: 'exact', head: true }).eq('status', 'completed'),
     ]);
 
-    const { count: shipmentsInTransit } = await supabaseAdmin
-      .from('relief_shipments').select('*', { count: 'exact', head: true }).eq('status', 'in_transit');
-
     res.json({
       stats: {
         totalUsers: totalUsers || 0,
@@ -31,7 +28,6 @@ router.get('/overview', authenticate, authorize('admin', 'master_admin'), async 
         openIncidents: openIncidents || 0,
         totalTasks: totalTasks || 0,
         completedTasks: completedTasks || 0,
-        shipmentsInTransit: shipmentsInTransit || 0,
       }
     });
   } catch (err) {
@@ -43,11 +39,15 @@ router.get('/overview', authenticate, authorize('admin', 'master_admin'), async 
 // GET /api/reports/incidents — incident analytics
 router.get('/incidents', authenticate, authorize('admin', 'master_admin'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+    const since = new Date();
+    since.setMonth(since.getMonth() - 5, 1);
+
     const { data: incidents } = await supabaseAdmin
-      .from('incidents')
-      .select('id, title, type, severity, status, created_at, resolved_at')
+      .from('incident_reports')
+      .select('id, title, type, incident_type, severity, status, mdrrmo_response_status, barangay_response_status, barangay_id, barangays(name), created_at')
+      .gte('created_at', since.toISOString())
       .order('created_at', { ascending: false })
-      .limit(100);
+      .limit(2000);
 
     res.json({ incidents: incidents || [] });
   } catch (err) {

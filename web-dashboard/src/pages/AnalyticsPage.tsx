@@ -1,34 +1,23 @@
 import React, { useEffect, useState } from 'react';
 import { analyticsAPI } from '../lib/api';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 import toast from 'react-hot-toast';
-
-const COLORS = ['#1B4F72','#E74C3C','#27AE60','#F39C12','#3498DB','#9B59B6'];
+import IncidentAnalyticsCharts from '../components/IncidentAnalyticsCharts';
 
 export default function AnalyticsPage() {
   const [stats, setStats] = useState<any>(null);
-  const [missions, setMissions] = useState<any[]>([]);
+  const [incidents, setIncidents] = useState<any[]>([]);
   const [responders, setResponders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     Promise.all([
       analyticsAPI.overview().then(r => setStats(r.data.stats)),
-      analyticsAPI.missions().then(r => setMissions(r.data.incidents || [])),
+      analyticsAPI.incidents().then(r => setIncidents(r.data.incidents || [])),
       analyticsAPI.responders().then(r => setResponders(r.data.responders || [])),
     ]).catch(() => toast.error('Failed to load analytics')).finally(() => setLoading(false));
   }, []);
 
   if (loading) return <div className="loading-overlay"><div className="spinner"/></div>;
-
-  // Chart data
-  const typeCounts: Record<string,number> = {};
-  missions.forEach(inc => { typeCounts[inc.type] = (typeCounts[inc.type]||0)+1; });
-  const typeData = Object.entries(typeCounts).map(([name,value])=>({ name: name.replace(/_/g,' '), value }));
-
-  const severityCounts: Record<string,number> = {};
-  missions.forEach(inc => { severityCounts[inc.severity] = (severityCounts[inc.severity]||0)+1; });
-  const severityData = Object.entries(severityCounts).map(([name,value])=>({ name, value }));
 
   const topResponders = [...responders].sort((a,b) => b.completedTasks - a.completedTasks).slice(0,10);
 
@@ -48,7 +37,7 @@ export default function AnalyticsPage() {
             {[
               { label:'Total Users', value: stats.totalUsers, icon:'👥', color:'var(--primary)' },
               { label:'Active Responders', value: stats.activeResponders ?? 0, icon:'🎖️', color:'var(--success)' },
-              { label:'Total Missions', value: missions.length, icon:'🚨', color:'var(--accent)' },
+              { label:'Incident Reports · 6 Months', value: incidents.length, icon:'🚨', color:'var(--accent)' },
               { label:'Tasks Completed', value: stats.completedTasks, icon:'✅', color:'var(--warning)' },
             ].map(s => (
               <div key={s.label} className="stat-card" style={{'--stat-color':s.color} as React.CSSProperties}>
@@ -60,34 +49,7 @@ export default function AnalyticsPage() {
           </div>
         )}
 
-        {/* Charts */}
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'20px',marginBottom:'24px'}}>
-          <div className="card">
-            <div className="card-title" style={{marginBottom:'16px'}}>Missions by Type</div>
-            <ResponsiveContainer width="100%" height={250}>
-              <PieChart>
-                <Pie data={typeData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>
-                  {typeData.map((_,i) => <Cell key={i} fill={COLORS[i%COLORS.length]}/>)}
-                </Pie>
-                <Tooltip contentStyle={{background:'#1A2332',border:'1px solid rgba(255,255,255,0.1)',borderRadius:'8px',color:'#F4F6F7'}}/>
-                <Legend/>
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-
-          <div className="card">
-            <div className="card-title" style={{marginBottom:'16px'}}>Missions by Severity</div>
-            <ResponsiveContainer width="100%" height={250}>
-              <BarChart data={severityData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)"/>
-                <XAxis dataKey="name" tick={{fill:'#94A3B8',fontSize:12}}/>
-                <YAxis tick={{fill:'#94A3B8',fontSize:12}}/>
-                <Tooltip contentStyle={{background:'#1A2332',border:'1px solid rgba(255,255,255,0.1)',borderRadius:'8px',color:'#F4F6F7'}}/>
-                <Bar dataKey="value" fill="#1B4F72" radius={[4,4,0,0]}/>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+        <IncidentAnalyticsCharts incidents={incidents} />
 
 
         {/* Top Responders */}

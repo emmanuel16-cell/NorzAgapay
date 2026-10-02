@@ -132,7 +132,7 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
     const isAutoActive = false;
     const initialStatus = 'pending_verification';
 
-    // Preserve responder specializations for mission matching.
+    // Preserve responder specializations for incident response matching.
     const rawUnitType = unit_type || '';
     const specs = rawUnitType
       .split(',')

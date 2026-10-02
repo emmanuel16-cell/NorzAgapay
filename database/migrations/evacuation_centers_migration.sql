@@ -123,38 +123,7 @@ CREATE INDEX IF NOT EXISTS idx_evacuation_centers_active ON evacuation_centers(i
 CREATE INDEX IF NOT EXISTS idx_evacuation_centers_location ON evacuation_centers(latitude, longitude);
 
 -- ============================================
--- 4. EVACUEE REGISTRATIONS TABLE
--- ============================================
-
-CREATE TABLE IF NOT EXISTS evacuee_registrations (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  evac_center_id UUID REFERENCES evacuation_centers(id) ON DELETE CASCADE,
-  contact_number VARCHAR(15) NOT NULL DEFAULT '',
-  person_count INTEGER NOT NULL DEFAULT 1,
-  has_infants BOOLEAN NOT NULL DEFAULT false,
-  has_elderly BOOLEAN NOT NULL DEFAULT false,
-  has_pwd BOOLEAN NOT NULL DEFAULT false,
-  has_pregnant BOOLEAN NOT NULL DEFAULT false,
-  notes TEXT,
-  registered_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
--- Ensure all columns exist
-ALTER TABLE evacuee_registrations ADD COLUMN IF NOT EXISTS evac_center_id UUID REFERENCES evacuation_centers(id) ON DELETE CASCADE;
-ALTER TABLE evacuee_registrations ADD COLUMN IF NOT EXISTS contact_number VARCHAR(15) NOT NULL DEFAULT '';
-ALTER TABLE evacuee_registrations ADD COLUMN IF NOT EXISTS person_count INTEGER NOT NULL DEFAULT 1;
-ALTER TABLE evacuee_registrations ADD COLUMN IF NOT EXISTS has_infants BOOLEAN NOT NULL DEFAULT false;
-ALTER TABLE evacuee_registrations ADD COLUMN IF NOT EXISTS has_elderly BOOLEAN NOT NULL DEFAULT false;
-ALTER TABLE evacuee_registrations ADD COLUMN IF NOT EXISTS has_pwd BOOLEAN NOT NULL DEFAULT false;
-ALTER TABLE evacuee_registrations ADD COLUMN IF NOT EXISTS has_pregnant BOOLEAN NOT NULL DEFAULT false;
-ALTER TABLE evacuee_registrations ADD COLUMN IF NOT EXISTS notes TEXT;
-ALTER TABLE evacuee_registrations ADD COLUMN IF NOT EXISTS registered_at TIMESTAMPTZ NOT NULL DEFAULT now();
-
-CREATE INDEX IF NOT EXISTS idx_evacuee_registrations_evac_center_id ON evacuee_registrations(evac_center_id);
-CREATE INDEX IF NOT EXISTS idx_evacuee_registrations_contact ON evacuee_registrations(contact_number);
-
--- ============================================
--- 5. UPDATE INCIDENT_REPORTS TABLE
+-- 4. UPDATE INCIDENT_REPORTS TABLE
 -- Add barangay_id and workflow response columns
 -- ============================================
 
@@ -171,7 +140,7 @@ ALTER TABLE incident_reports
 CREATE INDEX IF NOT EXISTS idx_incident_reports_barangay_id ON incident_reports(barangay_id);
 
 -- ============================================
--- 6. UPDATED_AT TRIGGER for evacuation_centers
+-- 5. UPDATED_AT TRIGGER for evacuation_centers
 -- ============================================
 
 CREATE OR REPLACE FUNCTION update_evac_center_timestamp()
@@ -191,13 +160,12 @@ DO $$ BEGIN
 END $$;
 
 -- ============================================
--- 7. RLS POLICIES
+-- 6. RLS POLICIES
 -- ============================================
 
 ALTER TABLE barangays ENABLE ROW LEVEL SECURITY;
 ALTER TABLE barangay_users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE evacuation_centers ENABLE ROW LEVEL SECURITY;
-ALTER TABLE evacuee_registrations ENABLE ROW LEVEL SECURITY;
 
 -- Public read / write policies
 DO $$ BEGIN
@@ -206,11 +174,5 @@ DO $$ BEGIN
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Anyone can view active evac centers') THEN
         CREATE POLICY "Anyone can view active evac centers" ON evacuation_centers FOR SELECT USING (is_active = true);
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Anyone can register as evacuee') THEN
-        CREATE POLICY "Anyone can register as evacuee" ON evacuee_registrations FOR INSERT WITH CHECK (true);
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Anyone can view registrations') THEN
-        CREATE POLICY "Anyone can view registrations" ON evacuee_registrations FOR SELECT USING (true);
     END IF;
 END $$;

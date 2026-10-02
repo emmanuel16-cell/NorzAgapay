@@ -786,15 +786,25 @@ router.patch('/:id/mdrrmo-respond', optionalAuthenticate, async (req: AuthReques
 
 /**
  * POST /api/incident-reports/:id/verify
- * Verifies a report: Creates a Mission and verification tasks for active responders.
+ * Verifies a report and creates an incident response task for active responders.
  */
+const dispatchClassificationSchema = z.object({
+    incident_type: z.enum(['flash_flood', 'fire', 'earthquake', 'medical_emergency', 'typhoon', 'other']),
+    severity: z.enum(['low', 'moderate', 'high', 'critical']),
+    address: z.string().trim().optional(),
+});
+
 router.post('/:id/verify', authenticate, authorize('admin', 'dispatcher'), async (req: AuthRequest, res: Response): Promise<void> => {
     try {
-        const { id } = req.params;
-        const { address } = req.body;
-        const user = req.user!;
+        const parsed = dispatchClassificationSchema.safeParse(req.body);
+        if (!parsed.success) {
+            res.status(400).json({ error: 'Choose an incident type and severity before dispatching.', details: parsed.error.flatten() });
+            return;
+        }
 
-        // 1. Fetch the report
+        const { id } = req.params;
+        const { incident_type: incidentType, severity, address: suppliedAddress } = parsed.data;
+        const user = req.user!;
         const { data: report, error: fetchError } = await supabaseAdmin
             .from('incident_reports')
             .select('*')
@@ -806,70 +816,115 @@ router.post('/:id/verify', authenticate, authorize('admin', 'dispatcher'), async
             return;
         }
 
-        // 2. Update report status and save address if provided
-        await supabaseAdmin
-            .from('incident_reports')
-            .update({ 
-                status: 'verified',
-                address: address || report.address // Use provided address or existing one
-            })
-            .eq('id', id);
-
-        // 3. Create a Mission (Incident)
-        const { data: incident, error: incidentError } = await supabaseAdmin
-            .from('incidents')
-            .insert({
-                title: `${report.title} - ${report.specifics || ''}`,
-                type: report.type || 'other',
-                severity: 'critical',
-                latitude: report.latitude,
-                longitude: report.longitude,
-                address: address || report.address || 'Norzagaray, Bulacan',
-                status: 'open',
-                reported_by: user.userId
-            })
-            .select()
-            .single();
-
-        if (incidentError) throw incidentError;
-
-        // Trigger matching engine asynchronously
-        matchRespondersToIncident(incident.id).catch((err) => {
-            console.error(`Matching Engine Error for Verified Incident ${incident.id}:`, err);
-        });
-
-        // 4. Create an Emergency Task for responders to join
-        console.log(`Creating emergency verification task for report: ${report.title}`);
-        
-        const task = {
-             incident_id: incident.id,
-             assigned_to: null, 
-             title: `Emergency Response: ${report.title}`,
-             description: `An incident has been verified: ${report.type}. Please proceed to the location and assist MDRRMO personnel with response and relief efforts.`,
-             task_type: 'general_labor',
-             status: 'pending',
-             latitude: incident.latitude,
-             longitude: incident.longitude,
-             address: incident.address
-         };
-
-        const { error: taskError } = await supabaseAdmin
-            .from('tasks')
-            .insert([task]);
-
-        if (taskError) {
-            console.error('Error creating verification task:', taskError);
-        } else {
-            console.log('Verification task created successfully');
-            // Notify all responders via Socket
-            io.emit('task:new');
+        const routedTo = report.send_to || report.specifics?.match(/\[SEND_TO:([^\]]+)\]/)?.[1];
+        const wasEscalatedByBarangay = report.status === 'escalated' ||
+            report.mdrrmo_response_status === 'responding' ||
+            Boolean(report.barangay_response_notes?.toLowerCase().includes('escalated'));
+        if (routedTo === 'barangay' && !wasEscalatedByBarangay) {
+            res.status(403).json({ error: 'This report must be escalated by its barangay before MDRRMO dispatch.' });
+            return;
         }
 
-        // 6. Notify via Socket
+        const address = suppliedAddress || report.address || 'Norzagaray, Bulacan';
+        const incidentTitle = `${report.title}${report.specifics ? ` - ${report.specifics}` : ''}`;
+        let incident: any;
+        let createdIncident = false;
+
+        if (report.dispatch_incident_id) {
+            const { data, error } = await supabaseAdmin
+                .from('incidents')
+                .update({ title: incidentTitle, type: incidentType, severity, address })
+                .eq('id', report.dispatch_incident_id)
+                .select()
+                .single();
+            if (error) throw error;
+            incident = data;
+        } else {
+            const { data, error } = await supabaseAdmin
+                .from('incidents')
+                .insert({
+                    title: incidentTitle,
+                    type: incidentType,
+                    severity,
+                    latitude: report.latitude,
+                    longitude: report.longitude,
+                    address,
+                    status: 'open',
+                    reported_by: user.userId,
+                })
+                .select()
+                .single();
+            if (error) throw error;
+            incident = data;
+            createdIncident = true;
+        }
+
+        const { data: updatedReport, error: updateError } = await supabaseAdmin
+            .from('incident_reports')
+            .update({
+                incident_type: incidentType,
+                severity,
+                dispatch_incident_id: incident.id,
+                status: 'verified',
+                mdrrmo_response_status: 'responding',
+                address,
+            })
+            .eq('id', id)
+            .select('*')
+            .single();
+        if (updateError) {
+            if (createdIncident) await supabaseAdmin.from('incidents').delete().eq('id', incident.id);
+            throw updateError;
+        }
+
+        const taskTitle = `${severity.toUpperCase()} ${incidentType.replaceAll('_', ' ').toUpperCase()} Response`;
+        const taskDescription = `Dispatcher classification: ${incidentType.replaceAll('_', ' ')} · ${severity.toUpperCase()}. ${report.description || report.specifics || 'Review the incident report and proceed to the reported location.'}`;
+
+        if (createdIncident) {
+            let matchingCreatedTasks = 0;
+            try {
+                const matchResult = await matchRespondersToIncident(incident.id);
+                matchingCreatedTasks = matchResult.createdTasks.length;
+            } catch (err) {
+                console.error(`Matching Engine Error for Verified Incident ${incident.id}:`, err);
+            }
+
+            if (matchingCreatedTasks === 0) {
+                const { error: taskError } = await supabaseAdmin.from('tasks').insert({
+                    incident_id: incident.id,
+                    assigned_to: null,
+                    title: taskTitle,
+                    description: taskDescription,
+                    task_type: 'general_labor',
+                    status: 'pending',
+                    latitude: incident.latitude,
+                    longitude: incident.longitude,
+                    address: incident.address,
+                });
+                if (taskError) console.error('Error creating fallback response task:', taskError);
+            }
+        } else {
+            const { error: taskUpdateError } = await supabaseAdmin
+                .from('tasks')
+                .update({ title: taskTitle, description: taskDescription })
+                .eq('incident_id', incident.id)
+                .eq('status', 'pending');
+            if (taskUpdateError) console.error('Could not refresh pending task classification:', taskUpdateError);
+        }
+
+        io.emit('task:new');
         io.to('dashboard_staff').emit('incident:new', incident);
         io.to('dashboard_staff').emit('incident_report:verified', { reportId: id, incidentId: incident.id });
+        io.to('dashboard_staff').emit('incident_report:updated', updatedReport);
+        if (updatedReport.barangay_id) {
+            io.to(`barangay:${updatedReport.barangay_id}`).emit('barangay:report_updated', updatedReport);
+        }
 
-        res.json({ message: 'Report verified, mission created, and tasks assigned.', incidentId: incident.id });
+        res.json({
+            message: 'Incident classified and dispatched to MDRRMO responders.',
+            incidentId: incident.id,
+            report: updatedReport,
+        });
     } catch (err) {
         console.error('Verification error:', err);
         res.status(500).json({ error: 'Internal server error' });

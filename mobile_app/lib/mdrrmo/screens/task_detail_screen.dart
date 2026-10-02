@@ -1,0 +1,862 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import '../models/task.dart';
+import '../models/user.dart';
+import '../providers/auth_provider.dart';
+import '../providers/task_provider.dart';
+import '../core/constants.dart';
+
+class TaskDetailScreen extends StatefulWidget {
+  final Task task;
+  const TaskDetailScreen({super.key, required this.task});
+
+  @override
+  State<TaskDetailScreen> createState() => _TaskDetailScreenState();
+}
+
+class _TaskDetailScreenState extends State<TaskDetailScreen> {
+  bool _isUpdating = false;
+  List<Map<String, dynamic>> _availableOfficers = [];
+  bool _loadingOfficers = false;
+
+  Future<void> _updateStatus(TaskStatus status) async {
+    setState(() => _isUpdating = true);
+    try {
+      final auth = Provider.of<AuthProvider>(context, listen: false);
+      await Provider.of<TaskProvider>(context, listen: false).updateTaskStatus(
+        widget.task.id,
+        status.name,
+        auth.token!,
+      );
+      if (mounted && (status == TaskStatus.completed || status == TaskStatus.cancelled)) {
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: const Color(AppColors.danger)));
+    } finally {
+      if (mounted) setState(() => _isUpdating = false);
+    }
+  }
+
+  Future<void> _fetchOfficers() async {
+    final auth = Provider.of<AuthProvider>(context, listen: false);
+    setState(() => _loadingOfficers = true);
+    try {
+      final response = await http.get(
+        Uri.parse('${AppConstants.apiBaseUrl}/officers'),
+        headers: {
+          'Authorization': 'Bearer ${auth.token}',
+          'ngrok-skip-browser-warning': 'true',
+        },
+      );
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        setState(() {
+          _availableOfficers = (data['officers'] as List? ?? [])
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList();
+        });
+      }
+    } catch (e) {
+      debugPrint('Fetch officers error: $e');
+    } finally {
+      setState(() => _loadingOfficers = false);
+    }
+  }
+
+  Future<void> _addMembersToDispatch(List<String> officerIds) async {
+    final auth = Provider.of<AuthProvider>(context, listen: false);
+    final taskId = widget.task.id;
+    final unitId = auth.myUnit?['id'];
+
+    try {
+      // Try task-specific endpoint first
+      http.Response? response;
+      try {
+        response = await http.post(
+          Uri.parse('${AppConstants.apiBaseUrl}/tasks/$taskId/members'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ${auth.token}',
+            'ngrok-skip-browser-warning': 'true',
+          },
+          body: json.encode({'officer_ids': officerIds}),
+        );
+      } catch (_) {}
+
+      // Fallback: add to respond unit
+      if (response == null || (response.statusCode != 200 && response.statusCode != 201)) {
+        if (unitId != null) {
+          await http.post(
+            Uri.parse('${AppConstants.apiBaseUrl}/respond-units/$unitId/members'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer ${auth.token}',
+              'ngrok-skip-browser-warning': 'true',
+            },
+            body: json.encode({'officer_ids': officerIds}),
+          );
+        }
+      }
+
+      await auth.fetchMyUnit();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.check_circle_rounded, color: Colors.white),
+                SizedBox(width: 8),
+                Text('Members added to dispatch!'),
+              ],
+            ),
+            backgroundColor: Color(AppColors.success),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: const Color(AppColors.danger)),
+        );
+      }
+    }
+  }
+
+  void _showAddMembersModal() {
+    final auth = Provider.of<AuthProvider>(context, listen: false);
+    final currentMemberIds = auth.unitMembers.map((m) => m['id'].toString()).toList();
+    final selected = <String>{};
+
+    _fetchOfficers();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(AppColors.bgSecondary),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setModalState) {
+            final available = _availableOfficers
+                .where((o) => !currentMemberIds.contains(o['id'].toString()))
+                .toList();
+            return DraggableScrollableSheet(
+              expand: false,
+              initialChildSize: 0.65,
+              maxChildSize: 0.92,
+              minChildSize: 0.4,
+              builder: (_, controller) => Column(
+                children: [
+                  Container(
+                    margin: const EdgeInsets.symmetric(vertical: 12),
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: const Color(AppColors.success).withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(Icons.group_add_rounded, color: Color(AppColors.success), size: 22),
+                        ),
+                        const SizedBox(width: 12),
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Add Members on the Move', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+                              Text('Select officers to add to this dispatch', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                            ],
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: selected.isEmpty ? null : () async {
+                            Navigator.pop(ctx);
+                            await _addMembersToDispatch(selected.toList());
+                          },
+                          child: Text(
+                            'Add (${selected.length})',
+                            style: TextStyle(
+                              color: selected.isEmpty ? Colors.grey : const Color(AppColors.success),
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(color: Colors.white10, height: 1),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: _loadingOfficers
+                        ? const Center(child: CircularProgressIndicator())
+                        : available.isEmpty
+                            ? const Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.people_outline, size: 48, color: Colors.grey),
+                                    SizedBox(height: 12),
+                                    Text('No other officers available', style: TextStyle(color: Colors.grey)),
+                                  ],
+                                ),
+                              )
+                            : ListView.builder(
+                                controller: controller,
+                                padding: const EdgeInsets.symmetric(horizontal: 12),
+                                itemCount: available.length,
+                                itemBuilder: (_, i) {
+                                  final officer = available[i];
+                                  final id = officer['id'].toString();
+                                  final isSelected = selected.contains(id);
+                                  return Container(
+                                    margin: const EdgeInsets.only(bottom: 8),
+                                    decoration: BoxDecoration(
+                                      color: isSelected
+                                          ? const Color(AppColors.success).withOpacity(0.1)
+                                          : const Color(AppColors.bgPrimary).withOpacity(0.5),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: isSelected
+                                            ? const Color(AppColors.success).withOpacity(0.5)
+                                            : Colors.white10,
+                                      ),
+                                    ),
+                                    child: ListTile(
+                                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                                      leading: CircleAvatar(
+                                        backgroundColor: isSelected
+                                            ? const Color(AppColors.success)
+                                            : const Color(AppColors.primary).withOpacity(0.3),
+                                        child: isSelected
+                                            ? const Icon(Icons.check, color: Colors.white, size: 18)
+                                            : Text(
+                                                (officer['name'] as String? ?? 'O')[0].toUpperCase(),
+                                                style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+                                              ),
+                                      ),
+                                      title: Text(officer['name'] ?? 'Officer', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                                      subtitle: (officer['specialization'] as String? ?? '').trim().isNotEmpty
+                                          ? Padding(
+                                              padding: const EdgeInsets.only(top: 4),
+                                              child: Wrap(
+                                                spacing: 4,
+                                                runSpacing: 4,
+                                                children: (officer['specialization'] as String)
+                                                    .split(',')
+                                                    .map((s) => s.trim())
+                                                    .where((s) => s.isNotEmpty)
+                                                    .map((s) => Container(
+                                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                          decoration: BoxDecoration(
+                                                            color: const Color(AppColors.accent).withValues(alpha: 0.12),
+                                                            borderRadius: BorderRadius.circular(4),
+                                                            border: Border.all(color: const Color(AppColors.accent).withValues(alpha: 0.25)),
+                                                          ),
+                                                          child: Text(
+                                                            s,
+                                                            style: const TextStyle(fontSize: 10, color: Color(AppColors.accent), fontWeight: FontWeight.w600),
+                                                          ),
+                                                        ))
+                                                    .toList(),
+                                              ),
+                                            )
+                                          : null,
+                                      trailing: Icon(
+                                        isSelected ? Icons.remove_circle_outline : Icons.add_circle_outline,
+                                        color: isSelected ? const Color(AppColors.danger) : const Color(AppColors.accent),
+                                      ),
+                                      onTap: () {
+                                        setModalState(() {
+                                          if (isSelected) selected.remove(id);
+                                          else selected.add(id);
+                                        });
+                                      },
+                                    ),
+                                  );
+                                },
+                              ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<TaskProvider>(
+      builder: (context, taskProvider, child) {
+        final task = taskProvider.tasks.firstWhere(
+          (t) => t.id == widget.task.id,
+          orElse: () => widget.task,
+        );
+        final lat = task.latitude ?? AppConstants.defaultLat;
+        final lng = task.longitude ?? AppConstants.defaultLng;
+        final auth = Provider.of<AuthProvider>(context, listen: false);
+        final isTeamLeader = auth.isTeamLeader;
+        final user = auth.user;
+        final isResponder = user?.role == UserRole.responder;
+
+        return Scaffold(
+          backgroundColor: const Color(AppColors.bgPrimary),
+          appBar: AppBar(
+            title: const Text('Dispatch Details'),
+            elevation: 0,
+            backgroundColor: const Color(AppColors.bgSecondary),
+            actions: [
+              // Team Leader: Add Members on the Move button
+              if (isResponder && isTeamLeader &&
+                  (task.status == TaskStatus.pending ||
+                   task.status == TaskStatus.accepted ||
+                   task.status == TaskStatus.in_progress))
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: ElevatedButton.icon(
+                    onPressed: _showAddMembersModal,
+                    icon: const Icon(Icons.group_add_rounded, size: 16),
+                    label: const Text('Add Members', style: TextStyle(fontSize: 12)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(AppColors.success),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          body: Column(
+            children: [
+              // Map
+              Stack(
+                children: [
+                  SizedBox(
+                    height: 240,
+                    child: FlutterMap(
+                      options: MapOptions(
+                        initialCenter: LatLng(lat, lng),
+                        initialZoom: 15.5,
+                      ),
+                      children: [
+                        TileLayer(
+                          urlTemplate: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+                          userAgentPackageName: 'com.norzagapay.app',
+                        ),
+                        MarkerLayer(
+                          markers: [
+                            Marker(
+                              point: LatLng(lat, lng),
+                              width: 60,
+                              height: 60,
+                              child: Column(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: const Color(AppColors.danger),
+                                      shape: BoxShape.circle,
+                                      boxShadow: [BoxShadow(color: const Color(AppColors.danger).withOpacity(0.5), blurRadius: 12)],
+                                    ),
+                                    child: const Icon(Icons.warning_rounded, color: Colors.white, size: 20),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  // Coordinates overlay
+                  Positioned(
+                    bottom: 10,
+                    right: 10,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.7),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.white24),
+                      ),
+                      child: Text(
+                        '${lat.toStringAsFixed(5)}, ${lng.toStringAsFixed(5)}',
+                        style: const TextStyle(color: Colors.white70, fontSize: 10, fontFamily: 'monospace'),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+
+              // Details
+              Expanded(
+                child: Container(
+                  decoration: const BoxDecoration(
+                    color: Color(AppColors.bgPrimary),
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                  ),
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Status badge + title
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildStatusBadge(task.status),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(task.title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, letterSpacing: -0.3)),
+                                  if (task.incidentTitle != null)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 4),
+                                      child: Text(
+                                        task.incidentTitle!,
+                                        style: const TextStyle(color: Colors.grey, fontSize: 13),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+
+                        // Dispatcher classification from the incident record.
+                        if (task.incidentType != null || task.incidentSeverity != null) ...[
+                          const SizedBox(height: 14),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                            decoration: BoxDecoration(
+                              color: const Color(AppColors.accent).withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: const Color(AppColors.accent).withOpacity(0.35)),
+                            ),
+                            child: Text(
+                              'Dispatcher classification: ${(task.incidentType ?? 'Unclassified').replaceAll('_', ' ')} · ${(task.incidentSeverity ?? 'Unclassified').toUpperCase()}',
+                              style: const TextStyle(color: Color(AppColors.accent), fontWeight: FontWeight.w700, fontSize: 13),
+                            ),
+                          ),
+                        ],
+
+                        // Team Leader banner
+                        if (isResponder && isTeamLeader) ...[
+                          const SizedBox(height: 16),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: const Color(AppColors.success).withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: const Color(AppColors.success).withOpacity(0.3)),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.star_rounded, color: Color(AppColors.success), size: 18),
+                                const SizedBox(width: 8),
+                                const Expanded(
+                                  child: Text(
+                                    'You are the Team Leader — you can add members on the move.',
+                                    style: TextStyle(color: Color(AppColors.success), fontSize: 12),
+                                  ),
+                                ),
+                                TextButton(
+                                  onPressed: _showAddMembersModal,
+                                  style: TextButton.styleFrom(
+                                    foregroundColor: const Color(AppColors.success),
+                                    padding: EdgeInsets.zero,
+                                  ),
+                                  child: const Text('Add Members', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+
+                        const SizedBox(height: 24),
+                        _buildSectionTitle('INCIDENT RESPONSE DETAILS'),
+                        const SizedBox(height: 10),
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: const Color(AppColors.bgSecondary),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.white10),
+                          ),
+                          child: Text(
+                            task.description ?? 'A resident has reported an incident. Please proceed to the coordinates for verification and response.',
+                            style: const TextStyle(color: Colors.white70, height: 1.6, fontSize: 14),
+                          ),
+                        ),
+
+                        if (task.address != null) ...[
+                          const SizedBox(height: 20),
+                          _buildSectionTitle('LOCATION'),
+                          const SizedBox(height: 10),
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: const Color(AppColors.bgSecondary),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.white10),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.location_on_rounded, color: Color(AppColors.danger), size: 20),
+                                const SizedBox(width: 12),
+                                Expanded(child: Text(task.address!, style: const TextStyle(color: Colors.white70, fontSize: 14))),
+                              ],
+                            ),
+                          ),
+                        ],
+
+                        // Current team (if team leader)
+                        if (isResponder && isTeamLeader) ...[
+                          const SizedBox(height: 20),
+                          _buildSectionTitle('DISPATCH TEAM'),
+                          const SizedBox(height: 10),
+                          Consumer<AuthProvider>(
+                            builder: (_, auth, __) {
+                              final members = auth.unitMembers;
+                              if (members.isEmpty) {
+                                return Container(
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: const Color(AppColors.bgSecondary),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: const Row(
+                                    children: [
+                                      Icon(Icons.people_outline, color: Colors.grey),
+                                      SizedBox(width: 10),
+                                      Text('No team members added yet', style: TextStyle(color: Colors.grey)),
+                                    ],
+                                  ),
+                                );
+                              }
+                              return Column(
+                                children: members.map((m) => Container(
+                                  margin: const EdgeInsets.only(bottom: 8),
+                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                  decoration: BoxDecoration(
+                                    color: const Color(AppColors.bgSecondary),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(color: Colors.white10),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      CircleAvatar(
+                                        radius: 16,
+                                        backgroundColor: const Color(AppColors.primary).withOpacity(0.2),
+                                        child: Text(
+                                          (m['name'] as String? ?? 'O')[0].toUpperCase(),
+                                          style: const TextStyle(color: Color(AppColors.accent), fontWeight: FontWeight.bold, fontSize: 13),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                             Text(m['name'] ?? 'Officer', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                                             if ((m['specialization'] as String? ?? '').trim().isNotEmpty) ...[
+                                               const SizedBox(height: 3),
+                                               Wrap(
+                                                 spacing: 4,
+                                                 runSpacing: 4,
+                                                 children: (m['specialization'] as String)
+                                                     .split(',')
+                                                     .map((s) => s.trim())
+                                                     .where((s) => s.isNotEmpty)
+                                                     .map((s) => Container(
+                                                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                           decoration: BoxDecoration(
+                                                             color: const Color(AppColors.accent).withValues(alpha: 0.12),
+                                                             borderRadius: BorderRadius.circular(4),
+                                                             border: Border.all(color: const Color(AppColors.accent).withValues(alpha: 0.25)),
+                                                           ),
+                                                           child: Text(
+                                                             s,
+                                                             style: const TextStyle(fontSize: 10, color: Color(AppColors.accent), fontWeight: FontWeight.w600),
+                                                           ),
+                                                         ))
+                                                     .toList(),
+                                               ),
+                                             ],
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                )).toList(),
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 8),
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              onPressed: _showAddMembersModal,
+                              icon: const Icon(Icons.group_add_rounded, size: 18),
+                              label: const Text('Add Members on the Move'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: const Color(AppColors.success),
+                                side: BorderSide(color: const Color(AppColors.success).withOpacity(0.5)),
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                            ),
+                          ),
+                        ],
+
+                        const SizedBox(height: 32),
+
+                        if (_isUpdating)
+                          const Center(child: CircularProgressIndicator())
+                        else
+                          _buildActionButtons(task),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildStatusBadge(TaskStatus status) {
+    Color color;
+    String label;
+    IconData icon;
+
+    switch (status) {
+      case TaskStatus.pending:
+        color = const Color(AppColors.danger);
+        label = 'PENDING';
+        icon = Icons.warning_amber_rounded;
+        break;
+      case TaskStatus.accepted:
+        color = const Color(AppColors.warning);
+        label = 'EN ROUTE';
+        icon = Icons.directions_run_rounded;
+        break;
+      case TaskStatus.in_progress:
+        color = const Color(AppColors.success);
+        label = 'ON SCENE';
+        icon = Icons.local_fire_department_rounded;
+        break;
+      case TaskStatus.completed:
+        color = Colors.blue;
+        label = 'COMPLETED';
+        icon = Icons.check_circle_rounded;
+        break;
+      default:
+        color = Colors.grey;
+        label = status.name.toUpperCase();
+        icon = Icons.info_rounded;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.15),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(0.4)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: color, size: 14),
+          const SizedBox(width: 4),
+          Text(label, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionTitle(String title) {
+    return Text(
+      title,
+      style: const TextStyle(color: Colors.grey, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.5),
+    );
+  }
+
+  Future<void> _handleAcceptTask(Task task) async {
+    final isBarangayResponding = task.barangayResponseStatus == 'responding';
+    if (isBarangayResponding) {
+      final proceed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: const Color(AppColors.bgSecondary),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, color: Color(AppColors.warning), size: 24),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Barangay Responding',
+                  style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          content: Text(
+            'Barangay ${task.barangayName ?? "Partida"} is currently responding to this incident.\n\nDo you want to also respond to this incident?',
+            style: const TextStyle(color: Colors.white70, fontSize: 14, height: 1.5),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(AppColors.accent),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              child: const Text('Yes, Also Respond', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+      );
+
+      if (proceed != true) return;
+    }
+
+    _updateStatus(TaskStatus.accepted);
+  }
+
+  Widget _buildActionButtons(Task task) {
+    final auth = Provider.of<AuthProvider>(context, listen: false);
+    final user = auth.user;
+    if (user == null) return const SizedBox.shrink();
+
+    final isResponder = user.role == UserRole.responder;
+    final status = task.status;
+
+    if (status == TaskStatus.completed || status == TaskStatus.cancelled) {
+      return Center(
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: status == TaskStatus.completed
+                    ? const Color(AppColors.success).withOpacity(0.1)
+                    : Colors.grey.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                status == TaskStatus.completed ? Icons.check_circle_rounded : Icons.cancel_rounded,
+                color: status == TaskStatus.completed ? const Color(AppColors.success) : Colors.grey,
+                size: 52,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              status == TaskStatus.completed ? 'RESPONSE COMPLETED' : 'RESPONSE CANCELLED',
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18, letterSpacing: 1),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (isResponder) {
+      if (status == TaskStatus.pending) {
+        return _buildBtn(
+          label: '🚗 Accept & En Route',
+          color: const Color(AppColors.warning),
+          onTap: () => _handleAcceptTask(task),
+        );
+      } else if (status == TaskStatus.accepted) {
+        return Column(
+          children: [
+            _buildBtn(
+              label: '⚡ I Have Arrived — On Scene',
+              color: const Color(AppColors.success),
+              onTap: () => _updateStatus(TaskStatus.in_progress),
+            ),
+          ],
+        );
+      } else if (status == TaskStatus.in_progress) {
+        return _buildBtn(
+          label: '✅ Complete Response',
+          color: const Color(AppColors.primary),
+          onTap: () => _updateStatus(TaskStatus.completed),
+        );
+      }
+    }
+
+    // Responder fallback
+    final isJoined = task.joinedResponderIds.contains(user.id);
+    if (!isJoined) {
+      return _buildBtn(
+        label: 'Accept Task',
+        color: const Color(AppColors.primary),
+        onTap: () => _handleAcceptTask(task),
+      );
+    }
+    if (status == TaskStatus.accepted) {
+      return _buildBtn(
+        label: 'I Have Arrived',
+        color: const Color(AppColors.success),
+        onTap: () => _updateStatus(TaskStatus.in_progress),
+      );
+    }
+    if (status == TaskStatus.in_progress) {
+      return _buildBtn(
+        label: 'Mark as Complete',
+        color: const Color(AppColors.primary),
+        onTap: () => _updateStatus(TaskStatus.completed),
+      );
+    }
+
+    return const SizedBox.shrink();
+  }
+
+  Widget _buildBtn({required String label, required Color color, required VoidCallback onTap}) {
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton(
+        onPressed: onTap,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: color,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          elevation: 4,
+          shadowColor: color.withOpacity(0.4),
+        ),
+        child: Text(label, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+      ),
+    );
+  }
+}

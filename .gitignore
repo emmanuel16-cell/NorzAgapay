@@ -1,6 +1,4 @@
 # Exclude apps not meant for this repo
-barangay_app/
-mobile_app/
 resident_app/
 icon/
 
@@ -39,4 +37,3 @@ Thumbs.db
 *.njsproj
 *.sln
 *.sw?
-

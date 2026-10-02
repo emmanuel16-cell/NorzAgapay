@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { reportAPI } from '../lib/api';
+import { INCIDENT_SEVERITY_OPTIONS, INCIDENT_TYPE_OPTIONS } from '../lib/incidentClassification';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 
@@ -14,6 +15,7 @@ interface IncidentReport {
   send_to?: string;
   mdrrmo_response_status?: string;
   severity?: string;
+  incident_type?: string;
   latitude: number;
   longitude: number;
   proof_url?: string;
@@ -62,13 +64,15 @@ const isVideoProof = (url?: string | null, proof_type?: string | null): boolean 
 
 export default function ReportsPage() {
   const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
   const [reports, setReports] = useState<IncidentReport[]>([]);
   const [selectedReport, setSelectedReport] = useState<IncidentReport | null>(null);
   const [selectedProofIdx, setSelectedProofIdx] = useState<number>(0);
   const [activeTab, setActiveTab] = useState<TabType>('incidents');
   const [loading, setLoading] = useState(true);
   const [verifying, setVerifying] = useState(false);
+  const [classifyingReport, setClassifyingReport] = useState<IncidentReport | null>(null);
+  const [classificationType, setClassificationType] = useState('');
+  const [classificationSeverity, setClassificationSeverity] = useState('');
   const [previewMedia, setPreviewMedia] = useState<{ url: string; isVideo: boolean } | null>(null);
 
   useEffect(() => {
@@ -119,10 +123,10 @@ export default function ReportsPage() {
       return status === 'pending' || status === 'open' || status === 'unverified';
     }
     if (activeTab === 'escalated') {
-      return status === 'escalated' || r.severity === 'critical';
+      return status === 'escalated';
     }
     if (activeTab === 'responding') {
-      return status === 'responding' || status === 'in_progress';
+      return status === 'responding' || status === 'in_progress' || status === 'verified';
     }
     if (activeTab === 'resolved') {
       return status === 'resolved' || status === 'closed';
@@ -130,18 +134,28 @@ export default function ReportsPage() {
     return true;
   });
 
-  const handleVerify = async (id: string) => {
+  const openDispatchDialog = (report: IncidentReport) => {
+    setClassificationType(report.incident_type || '');
+    setClassificationSeverity(report.severity || '');
+    setClassifyingReport(report);
+  };
+
+  const handleVerify = async () => {
+    if (!classifyingReport || !classificationType || !classificationSeverity) {
+      toast.error('Choose the incident type and severity before dispatching');
+      return;
+    }
     try {
       setVerifying(true);
-      const res = await reportAPI.verify(id);
-      const incidentId = res.data?.incidentId;
-      toast.success('Report verified! Mission initiated.');
+      await reportAPI.verify(classifyingReport.id, {
+        incident_type: classificationType,
+        severity: classificationSeverity,
+      });
+      toast.success('Incident classified and responders dispatched.');
+      setClassifyingReport(null);
       setSelectedReport(null);
-      if (incidentId) {
-        navigate(`/missions?dispatch=${incidentId}`);
-      } else {
-        fetchReports();
-      }
+      setActiveTab('responding');
+      fetchReports();
     } catch (err) {
       console.error('Verification failed', err);
       toast.error('Failed to verify report');
@@ -213,7 +227,7 @@ export default function ReportsPage() {
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: '16px' }}>
           {filteredReports.map((report) => {
-            const isEscalated = report.status === 'escalated' || report.severity === 'critical';
+            const isEscalated = report.status === 'escalated';
             const isResponding = report.status === 'responding';
             const isResolved = report.status === 'resolved';
 
@@ -276,6 +290,9 @@ export default function ReportsPage() {
                         {report.severity}
                       </span>
                     )}
+                    {report.incident_type && <span className="incident-severity" style={{ color: '#38bdf8', borderColor: 'rgba(56,189,248,.35)' }}>
+                      {INCIDENT_TYPE_OPTIONS.find((option) => option.value === report.incident_type)?.label || report.incident_type.replaceAll('_', ' ')}
+                    </span>}
                   </div>
                   <span style={{ fontSize: '11px', color: '#64748b' }}>
                     {report.created_at ? format(new Date(report.created_at), 'MMM d, h:mm a') : 'Recent'}
@@ -495,7 +512,7 @@ export default function ReportsPage() {
                     <button
                       className="btn btn-primary btn-sm"
                       style={{ flex: 1.2, background: '#0284c7', borderColor: '#0284c7' }}
-                      onClick={() => handleVerify(report.id)}
+                      onClick={() => openDispatchDialog(report)}
                       disabled={verifying}
                     >
                       {isResponding ? 'Update Dispatch' : 'Dispatch Responders'}
@@ -822,12 +839,60 @@ export default function ReportsPage() {
                 <button
                   className="btn btn-primary"
                   style={{ flex: 1.2, background: '#0284c7', borderColor: '#0284c7' }}
-                  onClick={() => handleVerify(selectedReport.id)}
+                  onClick={() => openDispatchDialog(selectedReport)}
                   disabled={verifying}
                 >
                   Dispatch Units
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {classifyingReport && (
+        <div className="pin-modal-backdrop" style={{ zIndex: 3600 }} onClick={() => setClassifyingReport(null)}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="dispatch-classification-title"
+            onClick={(event) => event.stopPropagation()}
+            style={{ width: 560, maxWidth: '92vw', maxHeight: '90vh', overflowY: 'auto', background: '#0d172e', color: '#fff', border: '1px solid #1e3a8a', borderRadius: 18, padding: 22, boxShadow: '0 20px 50px rgba(0,0,0,.65)' }}
+          >
+            <div style={{ marginBottom: 16 }}>
+              <div className="eyebrow" style={{ color: '#38bdf8' }}>Dispatcher review</div>
+              <h2 id="dispatch-classification-title" style={{ margin: '5px 0 6px' }}>Classify and dispatch</h2>
+              <div style={{ color: '#94a3b8', fontSize: 13 }}>{classifyingReport.title} · {classifyingReport.specifics || 'Emergency report'}</div>
+            </div>
+            <div style={{ borderRadius: 12, padding: 12, background: '#081023', color: '#cbd5e1', fontSize: 13, lineHeight: 1.5, marginBottom: 14 }}>
+              {classifyingReport.description || 'No additional description was provided.'}
+            </div>
+            {(classifyingReport.proof_urls?.length ? classifyingReport.proof_urls : classifyingReport.proof_url ? [classifyingReport.proof_url] : []).length > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                <div className="form-label">Submitted evidence</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {(classifyingReport.proof_urls?.length ? classifyingReport.proof_urls : [classifyingReport.proof_url!]).map((url, index) => (
+                    <a key={`${url}-${index}`} href={url} target="_blank" rel="noreferrer" className="btn btn-outline btn-sm">Open evidence {index + 1}</a>
+                  ))}
+                </div>
+              </div>
+            )}
+            <label className="form-label" htmlFor="mdrrmo-incident-type">Incident type</label>
+            <select id="mdrrmo-incident-type" className="form-select" value={classificationType} onChange={(event) => setClassificationType(event.target.value)}>
+              <option value="">Select the assessed incident type</option>
+              {INCIDENT_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+            <label className="form-label" htmlFor="mdrrmo-incident-severity" style={{ marginTop: 12 }}>Severity</label>
+            <select id="mdrrmo-incident-severity" className="form-select" value={classificationSeverity} onChange={(event) => setClassificationSeverity(event.target.value)}>
+              <option value="">Select assessed severity</option>
+              {INCIDENT_SEVERITY_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+            <p className="field-help" style={{ marginTop: 10 }}>This classification is sent with the dispatch and will be visible to responders. Barangay escalations arrive with the barangay dispatcher’s values preselected so you can confirm or adjust them.</p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
+              <button className="btn btn-outline" onClick={() => setClassifyingReport(null)}>Cancel</button>
+              <button className="btn btn-primary" disabled={verifying || !classificationType || !classificationSeverity} onClick={() => void handleVerify()}>
+                {verifying ? 'Dispatching…' : 'Send responders'}
+              </button>
             </div>
           </div>
         </div>

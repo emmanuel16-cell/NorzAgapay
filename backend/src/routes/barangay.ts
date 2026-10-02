@@ -1241,7 +1241,7 @@ router.delete('/team/:id', authenticateBarangay, requireRole(['admin']), async (
 // ─── GET /api/barangay/reports ───────────────────────────────────────────────
 // Get incident reports assigned to this barangay
 
-router.get('/reports', authenticateBarangay, requireRole(['dispatcher', 'responder']), async (req: any, res: Response) => {
+router.get('/reports', authenticateBarangay, requireRole(['admin', 'dispatcher', 'responder']), async (req: any, res: Response) => {
   try {
     const { status } = req.query;
     let query = supabaseAdmin
@@ -1489,7 +1489,13 @@ router.post('/reports/:id/field-media', authenticateBarangay, requireRole(['disp
 
 router.patch('/reports/:id/dispatch', authenticateBarangay, requireRole(['dispatcher']), async (req: any, res: Response) => {
   try {
-    const { team_leader_id, team_leader_ids, notes } = req.body;
+    const { team_leader_id, team_leader_ids, notes, incident_type, severity } = req.body;
+    const validTypes = ['flash_flood', 'fire', 'earthquake', 'medical_emergency', 'typhoon', 'other'];
+    const validSeverities = ['low', 'moderate', 'high', 'critical'];
+    if (!validTypes.includes(incident_type) || !validSeverities.includes(severity)) {
+      res.status(400).json({ error: 'Choose an incident type and severity before dispatching.' });
+      return;
+    }
     const ids: string[] = Array.isArray(team_leader_ids) && team_leader_ids.length > 0
       ? team_leader_ids
       : (team_leader_id ? [team_leader_id] : []);
@@ -1520,6 +1526,8 @@ router.patch('/reports/:id/dispatch', authenticateBarangay, requireRole(['dispat
     const { data, error } = await supabaseAdmin
       .from('incident_reports')
       .update({
+        incident_type,
+        severity,
         barangay_response_status: 'pending',
         barangay_response_notes: encodedNotes,
         barangay_responded_by: primaryLeaderId,
@@ -1544,12 +1552,15 @@ router.patch('/reports/:id/dispatch', authenticateBarangay, requireRole(['dispat
       ...data,
       barangay_name: barangayName,
       barangay_response_status: 'pending',
+      incident_type,
+      severity,
       barangay_responded_by: primaryLeaderId,
       assigned_team_leader_ids: ids,
       barangay_responder_name: responderNames,
     };
 
-    io.emit('incident_report:updated', payload);
+    io.to('dashboard_staff').emit('incident_report:updated', payload);
+    io.to(`barangay:${req.barangayUser.barangayId}`).emit('barangay:report_updated', payload);
 
     res.json(payload);
   } catch (err) {
@@ -1571,13 +1582,17 @@ router.patch('/reports/:id/escalate', authenticateBarangay, requireRole(['dispat
 
     const { data: assignedReport, error: assignmentError } = await supabaseAdmin
       .from('incident_reports')
-      .select('id, barangay_responded_by, barangay_response_notes')
+      .select('id, incident_type, severity, barangay_responded_by, barangay_response_notes')
       .eq('id', req.params.id)
       .eq('barangay_id', req.barangayUser.barangayId)
       .maybeSingle();
     if (assignmentError) throw assignmentError;
     if (!assignedReport) {
       res.status(404).json({ error: 'Incident report not found in this barangay.' });
+      return;
+    }
+    if (!assignedReport.incident_type || !assignedReport.severity) {
+      res.status(409).json({ error: 'Classify the incident type and severity before escalating it to MDRRMO.' });
       return;
     }
     const hasAssignedResponder = Boolean(assignedReport.barangay_responded_by) ||
@@ -1594,8 +1609,7 @@ router.patch('/reports/:id/escalate', authenticateBarangay, requireRole(['dispat
         mdrrmo_coordination_notes: escalationNotes,
         mdrrmo_response_notes: escalationNotes,
         status: 'escalated',
-        mdrrmo_response_status: 'responding',
-        barangay_response_notes: `Escalated to MDRRMO: ${escalationNotes}`,
+        mdrrmo_response_status: 'pending',
       })
       .eq('id', req.params.id)
       .eq('barangay_id', req.barangayUser.barangayId)
@@ -1617,20 +1631,28 @@ router.patch('/reports/:id/escalate', authenticateBarangay, requireRole(['dispat
       barangayId: req.barangayUser.barangayId,
       barangayName: barangayName,
       notes: escalationNotes,
+      incidentType: assignedReport.incident_type,
+      severity: assignedReport.severity,
     });
 
-    io.emit('incident_report:updated', {
+    const updatePayload = {
       ...data,
       barangay_name: barangayName,
       mdrrmo_coordination_notes: escalationNotes,
-      mdrrmo_response_status: 'responding',
-    });
+      mdrrmo_response_status: 'pending',
+      incident_type: assignedReport.incident_type,
+      severity: assignedReport.severity,
+    };
+    io.to('dashboard_staff').emit('incident_report:updated', updatePayload);
+    io.to(`barangay:${req.barangayUser.barangayId}`).emit('barangay:report_updated', updatePayload);
 
     res.json({
       ...data,
       barangay_name: barangayName,
       mdrrmo_coordination_notes: escalationNotes,
-      mdrrmo_response_status: 'responding',
+      mdrrmo_response_status: 'pending',
+      incident_type: assignedReport.incident_type,
+      severity: assignedReport.severity,
     });
   } catch (err) {
     console.error('Escalate report error:', err);
@@ -1788,13 +1810,40 @@ router.post('/assistance-requests', authenticateBarangay, requireRole(['responde
       return;
     }
 
+    const linkedReportId = parsed.data.incident_report_id;
+    if (parsed.data.beyond_barangay_capability && !linkedReportId) {
+      res.status(400).json({ error: 'Link the incident report that needs MDRRMO review.' });
+      return;
+    }
+    let linkedReportTitle = parsed.data.incident_title || null;
+    if (linkedReportId) {
+      const { data: linkedReport, error: linkedReportError } = await supabaseAdmin
+        .from('incident_reports')
+        .select('id, title, barangay_responded_by, barangay_response_notes')
+        .eq('id', linkedReportId)
+        .eq('barangay_id', req.barangayUser.barangayId)
+        .maybeSingle();
+      if (linkedReportError) throw linkedReportError;
+      if (!linkedReport) {
+        res.status(404).json({ error: 'Linked incident report was not found in this barangay.' });
+        return;
+      }
+      const assignedMatch = linkedReport.barangay_response_notes?.match(/^\[ASSIGNED:([^\]]+)\]/);
+      const assignedIds = assignedMatch ? assignedMatch[1].split(',').map((id: string) => id.trim()) : [];
+      if (linkedReport.barangay_responded_by !== req.barangayUser.userId && !assignedIds.includes(req.barangayUser.userId)) {
+        res.status(403).json({ error: 'You can only request escalation for an incident assigned to your responder account.' });
+        return;
+      }
+      linkedReportTitle = linkedReport.title || linkedReportTitle;
+    }
+
     const { data, error } = await supabaseAdmin
       .from('barangay_assistance_requests')
       .insert({
         barangay_id: req.barangayUser.barangayId,
         requested_by: req.barangayUser.userId,
-        incident_report_id: parsed.data.incident_report_id || null,
-        incident_title: parsed.data.incident_title || null,
+        incident_report_id: linkedReportId || null,
+        incident_title: linkedReportTitle,
         needs_more_manpower: parsed.data.needs_more_manpower || false,
         needs_resources: parsed.data.needs_resources || false,
         needs_equipment: parsed.data.needs_equipment || false,
@@ -1923,6 +1972,40 @@ router.patch('/assistance-requests/:id/decide', authenticateBarangay, requireRol
       return;
     }
 
+    const { data: assistanceRequest, error: requestError } = await supabaseAdmin
+      .from('barangay_assistance_requests')
+      .select('*')
+      .eq('id', req.params.id)
+      .eq('barangay_id', req.barangayUser.barangayId)
+      .maybeSingle();
+    if (requestError) throw requestError;
+    if (!assistanceRequest) {
+      res.status(404).json({ error: 'Assistance request not found in this barangay.' });
+      return;
+    }
+
+    let linkedReport: any = null;
+    if (decision === 'coordinate_mdrrmo' && assistanceRequest.incident_report_id) {
+      const { data, error } = await supabaseAdmin
+        .from('incident_reports')
+        .select('id, title, incident_type, severity, barangay_responded_by, barangay_response_notes')
+        .eq('id', assistanceRequest.incident_report_id)
+        .eq('barangay_id', req.barangayUser.barangayId)
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) {
+        res.status(404).json({ error: 'The incident linked to this assistance request was not found.' });
+        return;
+      }
+      const hasAssignedResponder = Boolean(data.barangay_responded_by) ||
+        Boolean(data.barangay_response_notes?.match(/^\[ASSIGNED:[^\]]+\]/));
+      if (!data.incident_type || !data.severity || !hasAssignedResponder) {
+        res.status(409).json({ error: 'Classify and dispatch a responder to the linked incident before escalating it.' });
+        return;
+      }
+      linkedReport = data;
+    }
+
     const { data, error } = await supabaseAdmin
       .from('barangay_assistance_requests')
       .update({
@@ -1946,7 +2029,45 @@ router.patch('/assistance-requests/:id/decide', authenticateBarangay, requireRol
     // Notify responder via socket
     io.to(`barangay:${req.barangayUser.barangayId}`).emit('assistance:decision', { request: data, decision });
 
-    res.json({ message: `Request actioned: ${decision}.`, request: data });
+    let escalatedReport: any = null;
+    if (linkedReport) {
+      const escalationNotes = (dispatcher_notes || assistanceRequest.explanation || 'MDRRMO support requested by the barangay response team').trim();
+      const { data: reportData, error: reportError } = await supabaseAdmin
+        .from('incident_reports')
+        .update({
+          mdrrmo_coordination_notes: escalationNotes,
+          mdrrmo_response_notes: escalationNotes,
+          status: 'escalated',
+          mdrrmo_response_status: 'pending',
+        })
+        .eq('id', linkedReport.id)
+        .eq('barangay_id', req.barangayUser.barangayId)
+        .select('*, barangays(name)')
+        .single();
+      if (reportError) throw reportError;
+
+      const barangayName = reportData.barangays?.name || null;
+      escalatedReport = {
+        ...reportData,
+        barangay_name: barangayName,
+        incident_type: linkedReport.incident_type,
+        severity: linkedReport.severity,
+        mdrrmo_coordination_notes: escalationNotes,
+        mdrrmo_response_status: 'pending',
+      };
+      io.to('dashboard_staff').emit('barangay:escalated', {
+        reportId: linkedReport.id,
+        barangayId: req.barangayUser.barangayId,
+        barangayName,
+        notes: escalationNotes,
+        incidentType: linkedReport.incident_type,
+        severity: linkedReport.severity,
+      });
+      io.to('dashboard_staff').emit('incident_report:updated', escalatedReport);
+      io.to(`barangay:${req.barangayUser.barangayId}`).emit('barangay:report_updated', escalatedReport);
+    }
+
+    res.json({ message: `Request actioned: ${decision}.`, request: data, escalated_report: escalatedReport });
   } catch (err) {
     console.error('Decide assistance request error:', err);
     res.status(500).json({ error: 'Internal server error.' });
@@ -2452,4 +2573,3 @@ router.delete('/broadcasts/:id', authenticateBarangay, requireRole(['admin', 'st
 
 export default router;
 export { authenticateBarangay };
-
