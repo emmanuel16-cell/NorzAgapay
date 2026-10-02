@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 
 interface User {
   id: string; full_name: string; email: string; phone?: string;
-  role: string; unit_type?: string; status: string; verified: boolean;
+  role: string; status: string;
   last_seen?: string; created_at: string;
 }
 
@@ -92,17 +92,14 @@ export default function UsersPage() {
           <div className="table-container">
             <table>
               <thead><tr>
-                <th>Name</th><th>Email</th><th>Role</th><th>Unit</th><th>Status</th><th>Verified</th><th>Last Seen</th><th>Actions</th>
+                <th>Name</th><th>Role</th><th>Status</th><th>Last Seen</th><th>Actions</th>
               </tr></thead>
               <tbody>
                 {users.map(u => (
                   <tr key={u.id}>
                     <td style={{fontWeight:600,color:'var(--text-primary)'}}>{u.full_name}</td>
-                    <td>{u.email}</td>
                     <td><span className={`badge ${roleColors[u.role]||'badge-low'}`}>{u.role.replace(/_/g,' ')}</span></td>
-                    <td>{u.unit_type || '—'}</td>
                     <td><span className={`badge ${u.status==='active'?'badge-low':'badge-pending'}`}>{u.status}</span></td>
-                    <td>{u.verified ? '✅' : '❌'}</td>
                     <td style={{fontSize:'12px'}}>{u.last_seen ? new Date(u.last_seen).toLocaleString() : '—'}</td>
                     <td><button className="btn btn-outline btn-sm" onClick={()=>openEdit(u)}>Edit</button></td>
                   </tr>
