@@ -81,7 +81,7 @@ export default function IncidentAnalyticsCharts({ incidents }: { incidents: Inci
     return row.barangay_response_status ?? row.status ?? row.mdrrmo_response_status;
   });
   const weekdayLabels = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const weekdayCounts = new Map(weekdayLabels.map((day) => [day, 0] as const));
+  const weekdayCounts = new Map<string, number>(weekdayLabels.map((day) => [day, 0]));
   incidents.forEach((row) => {
     if (typeof row.created_at !== 'string') return;
     const date = new Date(row.created_at);

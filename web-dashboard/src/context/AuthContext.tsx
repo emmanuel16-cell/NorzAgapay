@@ -14,6 +14,7 @@ interface User {
   barangay_id?: string;
   barangay_name?: string;
   coordination_verified?: boolean;
+  position_designation?: string;
   is_active?: boolean;
 }
 
