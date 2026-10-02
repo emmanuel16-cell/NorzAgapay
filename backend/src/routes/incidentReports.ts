@@ -788,7 +788,7 @@ router.patch('/:id/mdrrmo-respond', optionalAuthenticate, async (req: AuthReques
  * POST /api/incident-reports/:id/verify
  * Verifies a report: Creates a Mission and verification tasks for active responders.
  */
-router.post('/:id/verify', authenticate, authorize('admin', 'master_admin'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/:id/verify', authenticate, authorize('admin', 'dispatcher'), async (req: AuthRequest, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
         const { address } = req.body;
