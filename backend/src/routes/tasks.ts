@@ -17,15 +17,16 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response): Promise<v
 
     let query = supabaseAdmin
       .from('tasks')
-      .select('*, incident:incidents(*), assigned_user:users!assigned_to(full_name, role, phone), responders:task_volunteers(responder_id:volunteer_id)')
+      .select('*, incident:incidents(*), assigned_user:users!assigned_to(full_name, role, phone), responders:task_volunteers(responder_id:volunteer_id, status, responder:users!volunteer_id(full_name))')
       .order('created_at', { ascending: false });
 
     const canManageTasks = ['master_admin', 'dispatcher'].includes(user.role);
-    if (!canManageTasks && user.role !== 'responder') {
+    const canViewTasks = canManageTasks || ['logistics', 'responder'].includes(user.role);
+    if (!canViewTasks) {
       res.status(403).json({ error: 'Access denied.' });
       return;
     }
-    if (!canManageTasks) {
+    if (user.role === 'responder') {
       query = query.in('task_type', ['general_labor', 'specialist']);
     }
 
@@ -129,11 +130,11 @@ router.post(
 );
 
 // ============================================
-// PATCH /api/tasks/:id/status — update task status (accept, arrive, complete)
+// PATCH /api/tasks/:id/status — update task status through arrival, return, and completion
 // ============================================
 
 const updateTaskStatusSchema = z.object({
-  status: z.enum(['accepted', 'in_progress', 'completed', 'cancelled']),
+  status: z.enum(['accepted', 'in_progress', 'returning', 'completed', 'cancelled']),
   proof_photo_url: z.string().url().nullable().optional(),
 });
 
@@ -201,6 +202,10 @@ router.patch('/:id/status', authenticate, async (req: AuthRequest, res: Response
           mainTaskUpdate.status = 'in_progress';
         }
 
+        const stageTime = new Date().toISOString();
+        if (status === 'accepted' && !existingTask.accepted_at) mainTaskUpdate.accepted_at = stageTime;
+        if (status === 'in_progress' && !existingTask.arrived_at) mainTaskUpdate.arrived_at = stageTime;
+
         if (Object.keys(mainTaskUpdate).length > 0) {
           await supabaseAdmin.from('tasks').update(mainTaskUpdate).eq('id', req.params.id);
         }
@@ -254,8 +259,12 @@ router.patch('/:id/status', authenticate, async (req: AuthRequest, res: Response
 
     // Dispatcher or master admin direct status update for the whole task
     const updateData: Record<string, unknown> = { status };
+    const stageTime = new Date().toISOString();
+    if (status === 'accepted') updateData.accepted_at = stageTime;
+    if (status === 'in_progress') updateData.arrived_at = stageTime;
+    if (status === 'returning') updateData.returning_at = stageTime;
     if (proof_photo_url) updateData.proof_photo_url = proof_photo_url;
-    if (status === 'completed') updateData.completed_at = new Date().toISOString();
+    if (status === 'completed') updateData.completed_at = stageTime;
 
     const { data: task, error } = await supabaseAdmin
       .from('tasks')

@@ -9,7 +9,7 @@ import MissionsPage from './pages/MissionsPage';
 import VerificationPage from './pages/VerificationPage';
 import ResourceRequestsPage from './pages/ResourceRequestsPage';
 import RespondUnitsPage from './pages/RespondUnitsPage';
-import ShipmentsPage from './pages/ShipmentsPage';
+import ResponderTrackerPage from './pages/ResponderTrackerPage';
 import UsersPage from './pages/UsersPage';
 import AlertBroadcastsPage from './pages/AlertBroadcastsPage';
 import OfficersPage from './pages/OfficersPage';
@@ -63,7 +63,8 @@ function AppRoutes() {
         <Route path="verification/officers" element={<RoleAccess roles={['admin']}><VerificationPage category="officers" /></RoleAccess>} />
         <Route path="verification/barangay" element={<RoleAccess roles={['admin']}><VerificationPage category="barangay" /></RoleAccess>} />
         <Route path="respond-units" element={<RoleAccess roles={['logistics']}><RespondUnitsPage /></RoleAccess>} />
-        <Route path="shipments" element={<RoleAccess roles={['logistics']}><ShipmentsPage /></RoleAccess>} />
+        <Route path="responder-tracker" element={<RoleAccess roles={['logistics']}><ResponderTrackerPage /></RoleAccess>} />
+        <Route path="shipments" element={<Navigate to="/responder-tracker" replace />} />
         <Route path="users" element={<RoleAccess roles={['admin']}><UsersPage /></RoleAccess>} />
         <Route path="alert-broadcasts" element={<RoleAccess roles={['admin']}><AlertBroadcastsPage /></RoleAccess>} />
         <Route path="officers" element={<RoleAccess roles={['admin']}><OfficersPage /></RoleAccess>} />

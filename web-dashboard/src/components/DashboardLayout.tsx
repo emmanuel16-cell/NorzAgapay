@@ -9,7 +9,6 @@ import {
   Tent,
   ClipboardList,
   Ambulance,
-  Route,
   CheckCircle2,
   Users,
   Award,
@@ -38,7 +37,7 @@ const navItems: NavItem[] = [
   { path: '/evacuation-centers', icon: <Tent size={19} strokeWidth={1.8} />, label: 'Evacuation Centers' },
   { path: '/requests', icon: <ClipboardList size={19} strokeWidth={1.8} />, label: 'Resource Requests' },
   { path: '/respond-units', icon: <Ambulance size={19} strokeWidth={1.8} />, label: 'Respond Units' },
-  { path: '/shipments', icon: <Route size={19} strokeWidth={1.8} />, label: 'Shipment Tracker' },
+  { path: '/responder-tracker', icon: <Ambulance size={19} strokeWidth={1.8} />, label: 'Responder Tracker' },
   { label: 'Administration', section: true },
   {
     path: '/verification/officers',
@@ -106,7 +105,7 @@ export default function DashboardLayout() {
     : user?.role === 'admin'
       ? navItems.filter(item => ['Administration', '/verification/officers', '/users', '/alert-broadcasts', '/officers', '/analytics'].includes(item.path || item.label))
       : user?.role === 'logistics'
-        ? navItems.filter(item => ['Logistics', '/evacuation-centers', '/requests', '/respond-units', '/shipments'].includes(item.path || item.label))
+        ? navItems.filter(item => ['Logistics', '/evacuation-centers', '/requests', '/respond-units', '/responder-tracker'].includes(item.path || item.label))
         : user?.role === 'dispatcher'
           ? navItems.filter(item => ['Operations', '/', '/reports', '/missions'].includes(item.path || item.label))
           : [];
