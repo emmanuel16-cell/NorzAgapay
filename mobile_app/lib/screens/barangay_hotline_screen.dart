@@ -346,17 +346,35 @@ class _BarangayHotlineScreenState extends State<BarangayHotlineScreen> {
           borderRadius: BorderRadius.circular(18),
           boxShadow: [BoxShadow(color: const Color(0xFFDC2626).withValues(alpha: .25), blurRadius: 14, offset: const Offset(0, 6))],
         ),
-        child: Row(children: [
-          Container(width: 56, height: 56, decoration: BoxDecoration(color: Colors.white.withValues(alpha: .2), shape: BoxShape.circle), child: const Icon(Icons.emergency_share_rounded, color: Colors.white, size: 32)),
-          const SizedBox(width: 16),
-          const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('NATIONAL EMERGENCY', style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.1)),
-            SizedBox(height: 2),
-            Text('Dial 911', style: TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w900)),
-            SizedBox(height: 2),
-            Text('Toll-Free Nationwide 24/7 Dispatch', style: TextStyle(color: Colors.white, fontSize: 11.5)),
-          ])),
-          ElevatedButton(onPressed: () => _call('911'), style: ElevatedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: const Color(0xFFDC2626), padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), elevation: 0), child: const Text('Call 911', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
+        child: Column(children: [
+          Row(children: [
+            Container(width: 56, height: 56, decoration: BoxDecoration(color: Colors.white.withValues(alpha: .2), shape: BoxShape.circle), child: const Icon(Icons.emergency_share_rounded, color: Colors.white, size: 32)),
+            const SizedBox(width: 16),
+            const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('NATIONAL EMERGENCY', style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.1)),
+              SizedBox(height: 2),
+              Text('Dial 911', style: TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w900)),
+              SizedBox(height: 2),
+              Text('Toll-Free Nationwide 24/7 Dispatch', style: TextStyle(color: Colors.white, fontSize: 11.5)),
+            ])),
+          ]),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            height: 50,
+            child: ElevatedButton.icon(
+              onPressed: () => _call('911'),
+              icon: const Icon(Icons.call_rounded, size: 20),
+              label: const Text('Call 911'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: const Color(0xFFDC2626),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                elevation: 0,
+                textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+              ),
+            ),
+          ),
         ]),
       );
 
@@ -367,7 +385,7 @@ class _BarangayHotlineScreenState extends State<BarangayHotlineScreen> {
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           const Text('Municipal Disaster Risk Reduction & Management Office (Rescue Ng Garay)', style: TextStyle(fontSize: 13, color: Color(0xFF475569), height: 1.35)),
           const SizedBox(height: 14),
-          Wrap(spacing: 10, runSpacing: 10, children: [
+          Wrap(spacing: 10, runSpacing: 10, alignment: WrapAlignment.center, children: [
             _actionChip(Icons.phone_rounded, 'Call MDRRMO Hotline', const Color(0xFFE6F4EA), const Color(0xFF1E8E3E), () => _call('0905-247-0355')),
             _actionChip(Icons.facebook_rounded, 'Rescue Ng Garay', const Color(0xFFE8F2FE), const Color(0xFF1A73E8), () => _launch(Uri.parse('https://www.facebook.com/RescueNgGaray'))),
             _actionChip(Icons.mail_rounded, 'Email MDRRMO', const Color(0xFFE8EEF5), const Color(0xFF1B4F72), () => _launch(Uri(scheme: 'mailto', path: 'norzagarayrescue2015@gmail.com'))),
@@ -389,7 +407,7 @@ class _BarangayHotlineScreenState extends State<BarangayHotlineScreen> {
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))), const SizedBox(height: 2), Text(description, style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)))])),
           ]),
           const SizedBox(height: 14),
-          _actionChip(Icons.phone_rounded, 'Mobile: ${PhoneNumberUtils.formatForDisplay(number)}', color.withValues(alpha: .1), color, () => _call(number)),
+          Center(child: _actionChip(Icons.phone_rounded, 'Mobile: ${PhoneNumberUtils.formatForDisplay(number)}', color.withValues(alpha: .1), color, () => _call(number))),
         ]),
       );
 
@@ -441,7 +459,7 @@ class _BarangayHotlineScreenState extends State<BarangayHotlineScreen> {
                       ),
                       ...List<String>.from(entry.value['numbers'] as List).map((number) => Padding(
                             padding: const EdgeInsets.only(top: 5),
-                            child: _actionChip(Icons.phone_rounded, 'Mobile: ${PhoneNumberUtils.formatForDisplay(number)}', const Color(0xFFE6F4EA), const Color(0xFF0D9488), () => _call(number)),
+                            child: Center(child: _actionChip(Icons.phone_rounded, 'Mobile: ${PhoneNumberUtils.formatForDisplay(number)}', const Color(0xFFE6F4EA), const Color(0xFF0D9488), () => _call(number))),
                           )),
                     ],
                   ),
@@ -459,9 +477,9 @@ class _BarangayHotlineScreenState extends State<BarangayHotlineScreen> {
 
   Widget _actionChip(IconData icon, String label, Color background, Color foreground, VoidCallback onPressed) => ElevatedButton.icon(
         onPressed: onPressed,
-        icon: Icon(icon, size: 16),
+        icon: Icon(icon, size: 18),
         label: Text(label),
-        style: ElevatedButton.styleFrom(backgroundColor: background, foregroundColor: foreground, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)), padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9), textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+        style: ElevatedButton.styleFrom(backgroundColor: background, foregroundColor: foreground, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)), padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11), textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5)),
       );
 
   BoxDecoration _cardDecoration() => BoxDecoration(
