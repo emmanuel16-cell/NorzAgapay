@@ -429,7 +429,7 @@ class _MdrrmoOperationsScreenState extends State<MdrrmoOperationsScreen> {
       width: 145,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(color: const Color(AppColors.bgSecondary), borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(AppColors.border))),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(entry.key.replaceAll(RegExp(r'([A-Z])'), ' $1').toUpperCase(), style: const TextStyle(color: Colors.white60, fontSize: 10)), const SizedBox(height: 4), Text('${entry.value}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold))]),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(entry.key.replaceAllMapped(RegExp(r'([A-Z])'), (match) => ' ${match[1]}').toUpperCase(), style: const TextStyle(color: Colors.white60, fontSize: 10)), const SizedBox(height: 4), Text('${entry.value}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold))]),
     )).toList());
   }
 
@@ -467,7 +467,7 @@ class _MdrrmoOperationsScreenState extends State<MdrrmoOperationsScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(module.label, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)), Text('${user.fullName} · ${user.role.name.replaceAll('_', ' ')}', style: const TextStyle(fontSize: 11, color: Colors.white70))]),
-        actions: [PopupMenuButton<String>(icon: const Icon(Icons.grid_view_rounded), onSelected: (key) { setState(() { _module = _modules.firstWhere((item) => item.key == key); _rows = []; _summary = {}; }); _load(); }, itemBuilder: (_) => _modules.map((item) => PopupMenuItem(value: item.key, child: Row(children: [Icon(item.icon, size: 18), const SizedBox(width: 10), Text(item.label)])).toList()), tooltip: 'Operations'), IconButton(onPressed: _load, icon: const Icon(Icons.refresh_rounded), tooltip: 'Refresh')],
+        actions: [PopupMenuButton<String>(icon: const Icon(Icons.grid_view_rounded), onSelected: (key) { setState(() { _module = _modules.firstWhere((item) => item.key == key); _rows = []; _summary = {}; }); _load(); }, itemBuilder: (_) => _modules.map((item) => PopupMenuItem<String>(value: item.key, child: Row(children: [Icon(item.icon, size: 18), const SizedBox(width: 10), Text(item.label)]))).toList(), tooltip: 'Operations'), IconButton(onPressed: _load, icon: const Icon(Icons.refresh_rounded), tooltip: 'Refresh')],
       ),
       floatingActionButton: ['users', 'units', 'stations', 'broadcasts'].contains(module.key) ? FloatingActionButton.extended(onPressed: _createForCurrentModule, icon: const Icon(Icons.add), label: Text('Add ${module.key == 'users' ? 'account' : module.key == 'units' ? 'unit' : module.key == 'stations' ? 'station' : 'advisory'}')) : null,
       body: RefreshIndicator(
