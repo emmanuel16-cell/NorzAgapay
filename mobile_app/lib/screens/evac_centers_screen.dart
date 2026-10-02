@@ -23,6 +23,7 @@ class _EvacCentersScreenState extends State<EvacCentersScreen> {
   final _mapController = MapController();
   List<EvacuationCenter> _centers = [];
   LatLng? _userLocation;
+  String? _selectedCenterId;
   bool _loading = true;
   String? _error;
 
@@ -45,14 +46,15 @@ class _EvacCentersScreenState extends State<EvacCentersScreen> {
       if (auth.token == null || user == null) {
         throw Exception('Please sign in again.');
       }
-      final centers = await ApiService.getEvacuationCenters(
-        auth.token!,
-        barangayId: user.barangayId,
-      );
+      final centers = await ApiService.getEvacuationCenters(auth.token!);
       final location = await _getCurrentLocation();
       if (!mounted) return;
       setState(() {
         _centers = centers.where(_hasCoordinates).toList();
+        if (_selectedCenterId != null &&
+            !_centers.any((center) => center.id == _selectedCenterId)) {
+          _selectedCenterId = null;
+        }
         _userLocation = location;
         _loading = false;
       });
@@ -113,22 +115,100 @@ class _EvacCentersScreenState extends State<EvacCentersScreen> {
     if (saved == true) _loadStations();
   }
 
+  Future<void> _openEditScreen(EvacuationCenter center) async {
+    final saved = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => AddEvacCenterScreen(center: center)),
+    );
+    if (saved == true) {
+      await _loadStations();
+      if (!mounted) return;
+      for (final updatedCenter in _centers) {
+        if (updatedCenter.id == center.id) {
+          _showDetails(updatedCenter);
+          break;
+        }
+      }
+    }
+  }
+
+  Future<void> _confirmRemove(
+    EvacuationCenter center,
+    BuildContext sheetContext,
+  ) async {
+    final token = context.read<AuthService>().token;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Remove evacuation station?'),
+        content: Text(
+          '“${center.name}” will be removed from the evacuation station list.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    try {
+      if (token == null) throw Exception('Please sign in again.');
+      await ApiService.removeEvacuationCenter(token, center.id);
+      if (!mounted) return;
+      if (sheetContext.mounted) Navigator.of(sheetContext).pop();
+      setState(() {
+        _centers.removeWhere((item) => item.id == center.id);
+        if (_selectedCenterId == center.id) _selectedCenterId = null;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Evacuation station removed.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Exception: ', '')),
+        ),
+      );
+    }
+  }
+
   void _showDetails(EvacuationCenter center) {
+    setState(() => _selectedCenterId = center.id);
+    _mapController.move(LatLng(center.latitude, center.longitude), 15.5);
     final distance = _distanceKm(center);
     final minutes = distance == null
         ? null
         : (distance * 1.3 / 25 * 60).round().clamp(1, 9999).toInt();
+    final user = context.read<AuthService>().currentUser;
+    final canManage =
+        user?.canAddEvacuationCenter == true &&
+        user?.barangayId == center.barangayId;
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => _StationDetailsSheet(
+      builder: (sheetContext) => _StationDetailsSheet(
         name: center.name,
         address: center.address,
         barangay: center.barangayName,
         distanceKm: distance,
         travelMinutes: minutes,
         distanceOrigin: 'your current location',
+        canManage: canManage,
+        onEdit: () {
+          Navigator.of(sheetContext).pop();
+          _openEditScreen(center);
+        },
+        onRemove: () => _confirmRemove(center, sheetContext),
       ),
     );
   }
@@ -187,18 +267,23 @@ class _EvacCentersScreenState extends State<EvacCentersScreen> {
                 ..._centers.map(
                   (center) => Marker(
                     point: LatLng(center.latitude, center.longitude),
-                    width: 50,
-                    height: 54,
+                    width: 54,
+                    height: 58,
                     alignment: Alignment.bottomCenter,
                     child: GestureDetector(
                       behavior: HitTestBehavior.opaque,
                       onTap: () => _showDetails(center),
-                      child: Icon(
-                        Icons.location_pin,
-                        size: 48,
-                        color: center.isActive
-                            ? const Color(0xFF0D9488)
-                            : const Color(0xFF64748B),
+                      child: Transform.scale(
+                        scale: center.id == _selectedCenterId ? 1.12 : 1,
+                        child: Icon(
+                          Icons.location_pin,
+                          size: 48,
+                          color: center.id == _selectedCenterId
+                              ? const Color(0xFFF97316)
+                              : center.isActive
+                              ? const Color(0xFF0D9488)
+                              : const Color(0xFF64748B),
+                        ),
                       ),
                     ),
                   ),
@@ -224,7 +309,21 @@ class _EvacCentersScreenState extends State<EvacCentersScreen> {
           ],
         ),
         Positioned(
-          top: 16,
+          top: 12,
+          left: 16,
+          right: 16,
+          child: _StationSelector(
+            centers: _centers,
+            selectedId: _selectedCenterId,
+            onChanged: (id) {
+              if (id == null) return;
+              final center = _centers.firstWhere((item) => item.id == id);
+              _showDetails(center);
+            },
+          ),
+        ),
+        Positioned(
+          top: 82,
           left: 16,
           child: _MapBadge(
             icon: Icons.location_on_rounded,
@@ -234,7 +333,7 @@ class _EvacCentersScreenState extends State<EvacCentersScreen> {
         ),
         if (_userLocation == null)
           const Positioned(
-            top: 62,
+            top: 128,
             left: 16,
             child: _MapBadge(
               icon: Icons.my_location_rounded,
@@ -402,6 +501,49 @@ class _MapBadge extends StatelessWidget {
   );
 }
 
+class _StationSelector extends StatelessWidget {
+  final List<EvacuationCenter> centers;
+  final String? selectedId;
+  final ValueChanged<String?> onChanged;
+
+  const _StationSelector({
+    required this.centers,
+    required this.selectedId,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: Colors.white,
+    elevation: 5,
+    borderRadius: BorderRadius.circular(14),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: selectedId,
+          isExpanded: true,
+          hint: const Text('Select an evacuation station'),
+          icon: const Icon(Icons.expand_more_rounded),
+          items: centers
+              .map(
+                (center) => DropdownMenuItem<String>(
+                  value: center.id,
+                  child: Text(
+                    center.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              )
+              .toList(),
+          onChanged: onChanged,
+        ),
+      ),
+    ),
+  );
+}
+
 class _StationDetailsSheet extends StatelessWidget {
   final String name;
   final String? address;
@@ -409,6 +551,9 @@ class _StationDetailsSheet extends StatelessWidget {
   final double? distanceKm;
   final int? travelMinutes;
   final String distanceOrigin;
+  final bool canManage;
+  final VoidCallback onEdit;
+  final VoidCallback onRemove;
 
   const _StationDetailsSheet({
     required this.name,
@@ -417,6 +562,9 @@ class _StationDetailsSheet extends StatelessWidget {
     required this.distanceKm,
     required this.travelMinutes,
     required this.distanceOrigin,
+    required this.canManage,
+    required this.onEdit,
+    required this.onRemove,
   });
 
   @override
@@ -482,6 +630,32 @@ class _StationDetailsSheet extends StatelessWidget {
             'Distance is straight-line; travel time is an estimate using average road speed.',
             style: TextStyle(color: Color(0xFF64748B), fontSize: 12),
           ),
+          if (canManage) ...[
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: onEdit,
+                    icon: const Icon(Icons.edit_location_alt_outlined),
+                    label: const Text('Edit station'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: onRemove,
+                    icon: const Icon(Icons.delete_outline_rounded),
+                    label: const Text('Remove'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.red.shade700,
+                      side: BorderSide(color: Colors.red.shade300),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     ),

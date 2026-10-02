@@ -355,6 +355,42 @@ class ApiService {
     throw Exception(data['error'] ?? 'Failed to add evacuation center');
   }
 
+  static Future<EvacuationCenter> updateEvacuationCenter(
+    String token,
+    String centerId, {
+    required String name,
+    String? address,
+    required double latitude,
+    required double longitude,
+  }) async {
+    final res = await http.patch(
+      Uri.parse('$baseUrl/evacuation-centers/$centerId'),
+      headers: _headers(token),
+      body: jsonEncode({
+        'name': name,
+        'address': address,
+        'latitude': latitude,
+        'longitude': longitude,
+      }),
+    );
+    if (res.statusCode == 200) {
+      return EvacuationCenter.fromJson(jsonDecode(res.body));
+    }
+    final data = jsonDecode(res.body);
+    throw Exception(data['error'] ?? 'Failed to update evacuation center');
+  }
+
+  static Future<void> removeEvacuationCenter(String token, String centerId) async {
+    final res = await http.delete(
+      Uri.parse('$baseUrl/evacuation-centers/$centerId'),
+      headers: _headers(token),
+    );
+    if (res.statusCode != 204) {
+      final data = jsonDecode(res.body);
+      throw Exception(data['error'] ?? 'Failed to remove evacuation center');
+    }
+  }
+
   // ── Assistance Requests ────────────────────────────────────────────────────
   static Future<void> submitAssistanceRequest(
     String token, {

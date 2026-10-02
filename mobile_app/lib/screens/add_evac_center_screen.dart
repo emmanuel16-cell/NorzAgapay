@@ -3,11 +3,14 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:location/location.dart';
 import 'package:provider/provider.dart';
+import '../models/evacuation_center.dart';
 import '../services/auth_service.dart';
 import '../services/api_service.dart';
 
 class AddEvacCenterScreen extends StatefulWidget {
-  const AddEvacCenterScreen({super.key});
+  final EvacuationCenter? center;
+
+  const AddEvacCenterScreen({super.key, this.center});
 
   @override
   State<AddEvacCenterScreen> createState() => _AddEvacCenterScreenState();
@@ -26,7 +29,14 @@ class _AddEvacCenterScreenState extends State<AddEvacCenterScreen> {
   @override
   void initState() {
     super.initState();
-    _fetchUserLocation();
+    final center = widget.center;
+    if (center == null) {
+      _fetchUserLocation();
+    } else {
+      _nameController.text = center.name;
+      _addressController.text = center.address ?? '';
+      _pinnedLocation = LatLng(center.latitude, center.longitude);
+    }
   }
 
   Future<void> _fetchUserLocation() async {
@@ -48,19 +58,35 @@ class _AddEvacCenterScreenState extends State<AddEvacCenterScreen> {
     final auth = Provider.of<AuthService>(context, listen: false);
 
     try {
-      await ApiService.createEvacuationCenter(
-        auth.token!,
-        name: _nameController.text.trim(),
-        address: _addressController.text.trim(),
-        latitude: _pinnedLocation.latitude,
-        longitude: _pinnedLocation.longitude,
-      );
+      final center = widget.center;
+      if (center == null) {
+        await ApiService.createEvacuationCenter(
+          auth.token!,
+          name: _nameController.text.trim(),
+          address: _addressController.text.trim(),
+          latitude: _pinnedLocation.latitude,
+          longitude: _pinnedLocation.longitude,
+        );
+      } else {
+        await ApiService.updateEvacuationCenter(
+          auth.token!,
+          center.id,
+          name: _nameController.text.trim(),
+          address: _addressController.text.trim(),
+          latitude: _pinnedLocation.latitude,
+          longitude: _pinnedLocation.longitude,
+        );
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Evacuation Center added successfully!'),
-            backgroundColor: Color(0xFF10B981),
+          SnackBar(
+            content: Text(
+              center == null
+                  ? 'Evacuation station added successfully.'
+                  : 'Evacuation station updated successfully.',
+            ),
+            backgroundColor: const Color(0xFF10B981),
           ),
         );
         Navigator.pop(context, true);
@@ -83,7 +109,9 @@ class _AddEvacCenterScreenState extends State<AddEvacCenterScreen> {
       appBar: AppBar(
         backgroundColor: const Color(0xFF1E293B),
         foregroundColor: Colors.white,
-        title: const Text('Add Evacuation Center'),
+        title: Text(
+          widget.center == null ? 'Add Evacuation Center' : 'Edit Evacuation Center',
+        ),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
@@ -184,8 +212,8 @@ class _AddEvacCenterScreenState extends State<AddEvacCenterScreen> {
                   icon: const Icon(Icons.save),
                   label: _isSaving
                       ? const CircularProgressIndicator(color: Colors.white)
-                      : const Text(
-                          'Save Evacuation Center',
+                      : Text(
+                          widget.center == null ? 'Save Evacuation Center' : 'Save Changes',
                           style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                         ),
                   style: ElevatedButton.styleFrom(

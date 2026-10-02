@@ -155,4 +155,78 @@ router.post('/', authenticateBarangay, async (req: any, res: Response): Promise<
   }
 });
 
+const updateCenterSchema = z.object({
+  name: z.string().min(2),
+  address: z.string().nullable().optional(),
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+});
+
+const canManageCenters = (role: string | undefined) =>
+  ['admin', 'responder', 'staff'].includes(role || '');
+
+// Barangay users who can add stations may edit stations in their own barangay.
+router.patch('/:id', authenticateBarangay, async (req: any, res: Response): Promise<void> => {
+  try {
+    if (!canManageCenters(req.barangayUser?.role)) {
+      res.status(403).json({ error: 'Your account cannot edit evacuation centers.' });
+      return;
+    }
+
+    const body = updateCenterSchema.parse(req.body);
+    const { data, error } = await supabaseAdmin
+      .from('evacuation_centers')
+      .update({ ...body, address: body.address?.trim() || null })
+      .eq('id', req.params.id)
+      .eq('barangay_id', req.barangayUser.barangayId)
+      .select(`
+        id, name, address, latitude, longitude, is_active, created_at, barangay_id,
+        barangays ( id, name, municipality )
+      `)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) {
+      res.status(404).json({ error: 'Evacuation center not found in your barangay.' });
+      return;
+    }
+    res.json(data);
+  } catch (err: any) {
+    if (err?.name === 'ZodError') {
+      res.status(400).json({ error: err.errors });
+      return;
+    }
+    console.error('Update evac center error:', err);
+    res.status(500).json({ error: 'Failed to update evacuation center' });
+  }
+});
+
+// Remove a station from resident-visible lists while retaining its record.
+router.delete('/:id', authenticateBarangay, async (req: any, res: Response): Promise<void> => {
+  try {
+    if (!canManageCenters(req.barangayUser?.role)) {
+      res.status(403).json({ error: 'Your account cannot remove evacuation centers.' });
+      return;
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('evacuation_centers')
+      .update({ is_active: false })
+      .eq('id', req.params.id)
+      .eq('barangay_id', req.barangayUser.barangayId)
+      .select('id')
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) {
+      res.status(404).json({ error: 'Evacuation center not found in your barangay.' });
+      return;
+    }
+    res.status(204).send();
+  } catch (err) {
+    console.error('Remove evac center error:', err);
+    res.status(500).json({ error: 'Failed to remove evacuation center' });
+  }
+});
+
 export default router;
