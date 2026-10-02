@@ -4,9 +4,9 @@ Unified Flutter app for MDRRMO and barangay operations.
 
 ## Account workspaces
 
-- MDRRMO Master Admin and Admin: verification, municipal incident oversight, accounts, advisories, analytics, and evacuation-station entry.
+- MDRRMO Master Admin and Admin: verification, municipal incident oversight, accounts, advisories, analytics, and a searchable evacuation-station map maintained by barangays.
 - MDRRMO Dispatcher: incident review/dispatch, responder location, and weather.
-- MDRRMO Logistics: requests, response units, responder location, weather, and station entry.
+- MDRRMO Logistics: requests, response units, responder location, weather, and a searchable evacuation-station map maintained by barangays.
 - MDRRMO Responders: assigned response tasks, status updates, GPS, navigation, and field documentation.
 - Barangay Admin, Dispatcher, Responder, and Staff: barangay-scoped operations, gated by the barangay coordination activation.
 

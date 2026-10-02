@@ -1,7 +1,9 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:http/http.dart' as http;
+import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -30,6 +32,17 @@ class _MdrrmoOperationsScreenState extends State<MdrrmoOperationsScreen> {
   List<Map<String, dynamic>> _rows = [];
   Map<String, dynamic> _summary = {};
   bool _loading = true;
+  final TextEditingController _stationSearchController = TextEditingController();
+  final MapController _stationMapController = MapController();
+  String _stationBarangayFilter = 'All barangays';
+  String? _selectedStationId;
+
+  @override
+  void dispose() {
+    _stationSearchController.dispose();
+    _stationMapController.dispose();
+    super.dispose();
+  }
 
   AuthProvider get _auth => Provider.of<AuthProvider>(context, listen: false);
   String get _token => _auth.token ?? '';
@@ -53,7 +66,7 @@ class _MdrrmoOperationsScreenState extends State<MdrrmoOperationsScreen> {
     const barangayRequests = _MobileModule('barangay-requests', 'Barangay Coordination', Icons.account_balance_rounded, '/verification/barangay-accounts/pending');
     const requests = _MobileModule('requests', 'Resource Requests', Icons.inventory_2_rounded, '/requests');
     const units = _MobileModule('units', 'Response Units', Icons.groups_rounded, '/respond-units');
-    const stations = _MobileModule('stations', 'Add Evac Station', Icons.location_city_rounded, '/evacuation-centers');
+    const stations = _MobileModule('stations', 'Evacuation Centers', Icons.location_city_rounded, '/evacuation-centers');
     const broadcasts = _MobileModule('broadcasts', 'Public Advisories', Icons.campaign_rounded, '/broadcasts/mdrrmo');
     const analytics = _MobileModule('analytics', 'Situation Summary', Icons.query_stats_rounded, '/reports/overview');
 
@@ -100,8 +113,9 @@ class _MdrrmoOperationsScreenState extends State<MdrrmoOperationsScreen> {
     if (module == null) return;
     setState(() => _loading = true);
     try {
+      final endpoint = module.key == 'stations' ? '/evacuation-centers?barangay_added=true' : module.endpoint;
       final response = await http.get(
-        Uri.parse('${AppConstants.apiBaseUrl}${module.endpoint}'),
+        Uri.parse('${AppConstants.apiBaseUrl}$endpoint'),
         headers: _headers,
       );
       final body = response.body.isNotEmpty ? jsonDecode(response.body) : <String, dynamic>{};
@@ -109,14 +123,16 @@ class _MdrrmoOperationsScreenState extends State<MdrrmoOperationsScreen> {
         throw (body is Map ? body['error'] : null) ?? 'Could not load ${module.label.toLowerCase()}';
       }
       if (!mounted) return;
+      final rows = _extractRows(body);
       setState(() {
-        _rows = _extractRows(body);
+        _rows = rows;
         _summary = body is Map && body['stats'] is Map
             ? Map<String, dynamic>.from(body['stats'] as Map)
             : body is Map && module.key == 'weather'
                 ? Map<String, dynamic>.from(body)
                 : {};
       });
+      if (module.key == 'stations') _focusStations(_filteredStations());
     } catch (error) {
       if (mounted) _message('Could not load ${module.label}: $error', isError: true);
     } finally {
@@ -360,46 +376,6 @@ class _MdrrmoOperationsScreenState extends State<MdrrmoOperationsScreen> {
     if (values != null) await _mutate('POST', '/respond-units', body: values, success: 'Response unit added');
   }
 
-  Future<void> _createStation() async {
-    final name = TextEditingController();
-    final address = TextEditingController();
-    final latitude = TextEditingController(text: '14.9133');
-    final longitude = TextEditingController(text: '121.0436');
-    String? barangayId;
-    final values = await showDialog<Map<String, dynamic>>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(builder: (context, setDialogState) => AlertDialog(
-        title: const Text('Add evacuation station'),
-        content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
-          TextField(controller: name, decoration: const InputDecoration(labelText: 'Station name')),
-          TextField(controller: address, decoration: const InputDecoration(labelText: 'Address')),
-          const SizedBox(height: 10),
-          FutureBuilder<http.Response>(
-            future: http.get(Uri.parse('${AppConstants.apiBaseUrl}/barangay/list'), headers: {'ngrok-skip-browser-warning': 'true'}),
-            builder: (context, snapshot) {
-              if (!snapshot.hasData) return const LinearProgressIndicator();
-              final decoded = jsonDecode(snapshot.data!.body);
-              final barangays = decoded is List ? decoded.whereType<Map>().map((b) => Map<String, dynamic>.from(b)).toList() : <Map<String, dynamic>>[];
-              if (barangays.isEmpty) return const Text('Barangay list unavailable');
-              barangayId ??= barangays.first['id']?.toString();
-              return DropdownButtonFormField<String>(value: barangayId, decoration: const InputDecoration(labelText: 'Barangay'), items: barangays.map((b) => DropdownMenuItem(value: b['id'].toString(), child: Text('${b['name']}'))).toList(), onChanged: (value) => setDialogState(() => barangayId = value));
-            },
-          ),
-          Row(children: [Expanded(child: TextField(controller: latitude, keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true), decoration: const InputDecoration(labelText: 'Latitude'))), const SizedBox(width: 12), Expanded(child: TextField(controller: longitude, keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true), decoration: const InputDecoration(labelText: 'Longitude')))]),
-          const Padding(padding: EdgeInsets.only(top: 8), child: Text('Stations are added once. Resident accounts use this location to find the nearest station and estimate travel time.', style: TextStyle(fontSize: 12))),
-        ])),
-        actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')), FilledButton(onPressed: () {
-          final lat = double.tryParse(latitude.text.trim());
-          final lng = double.tryParse(longitude.text.trim());
-          if (name.text.trim().isEmpty || address.text.trim().isEmpty || barangayId == null || lat == null || lng == null) return;
-          Navigator.pop(dialogContext, {'name': name.text.trim(), 'address': address.text.trim(), 'latitude': lat, 'longitude': lng, 'barangay_id': barangayId});
-        }, child: const Text('Add station'))],
-      )),
-    );
-    name.dispose(); address.dispose(); latitude.dispose(); longitude.dispose();
-    if (values != null) await _mutate('POST', '/evacuation-centers/mdrrmo', body: values, success: 'Evacuation station added');
-  }
-
   Future<void> _createBroadcast() async {
     final content = await _askText('Publish public advisory', required: true);
     if (content == null) return;
@@ -418,7 +394,6 @@ class _MdrrmoOperationsScreenState extends State<MdrrmoOperationsScreen> {
     switch (_module?.key) {
       case 'users': await _createAccount(); break;
       case 'units': await _createUnit(); break;
-      case 'stations': await _createStation(); break;
       case 'broadcasts': await _createBroadcast(); break;
     }
   }
@@ -450,13 +425,159 @@ class _MdrrmoOperationsScreenState extends State<MdrrmoOperationsScreen> {
         return [];
       case 'responders':
         return [TextButton.icon(onPressed: () => _openMap(row), icon: const Icon(Icons.map_outlined), label: const Text('View location'))];
-      case 'stations':
-        return [TextButton.icon(onPressed: () => _openMap(row), icon: const Icon(Icons.map_outlined), label: const Text('Map'))];
       case 'broadcasts':
         return [TextButton(onPressed: () => _handleRowAction(row, 'pin'), child: Text(row['is_pinned'] == true ? 'Unpin' : 'Pin')), IconButton(onPressed: () => _handleRowAction(row, 'delete'), icon: const Icon(Icons.delete_outline, color: Colors.redAccent))];
       default:
         return [];
     }
+  }
+
+  String _stationBarangayName(Map<String, dynamic> row) {
+    final nested = row['barangays'];
+    if (row['barangay_name'] != null) return row['barangay_name'].toString();
+    if (nested is Map && nested['name'] != null) return nested['name'].toString();
+    return 'Barangay not listed';
+  }
+
+  LatLng? _stationPosition(Map<String, dynamic> row) {
+    final latitude = double.tryParse('${row['latitude'] ?? ''}');
+    final longitude = double.tryParse('${row['longitude'] ?? ''}');
+    if (latitude == null || longitude == null || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return null;
+    return LatLng(latitude, longitude);
+  }
+
+  List<Map<String, dynamic>> _filteredStations() {
+    final query = _stationSearchController.text.trim().toLowerCase();
+    return _rows.where((row) {
+      final barangay = _stationBarangayName(row);
+      final matchesBarangay = _stationBarangayFilter == 'All barangays' || barangay == _stationBarangayFilter;
+      final searchText = '${row['name'] ?? ''} ${row['address'] ?? ''} $barangay'.toLowerCase();
+      return matchesBarangay && (query.isEmpty || searchText.contains(query));
+    }).toList();
+  }
+
+  List<String> _stationBarangays() => _rows
+      .map(_stationBarangayName)
+      .where((name) => name != 'Barangay not listed')
+      .toSet()
+      .toList()
+    ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+
+  void _focusStations(List<Map<String, dynamic>> rows) {
+    final points = rows.map(_stationPosition).whereType<LatLng>().toList();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (points.isEmpty) {
+        _stationMapController.move(const LatLng(14.9133, 121.0436), 12);
+      } else if (points.length == 1) {
+        _stationMapController.move(points.first, 13);
+      } else {
+        _stationMapController.fitCamera(CameraFit.bounds(
+          bounds: LatLngBounds.fromPoints(points),
+          padding: const EdgeInsets.all(28),
+        ));
+      }
+    });
+  }
+
+  List<Widget> _stationContent() {
+    final stations = _filteredStations();
+    final barangays = _stationBarangays();
+    return [
+      const SizedBox(height: 14),
+      TextField(
+        controller: _stationSearchController,
+        onChanged: (_) {
+          setState(() => _selectedStationId = null);
+          _focusStations(_filteredStations());
+        },
+        decoration: InputDecoration(
+          labelText: 'Search stations',
+          hintText: 'Name, address, or barangay',
+          prefixIcon: const Icon(Icons.search_rounded),
+          suffixIcon: _stationSearchController.text.isEmpty
+              ? null
+              : IconButton(onPressed: () {
+                  setState(() { _stationSearchController.clear(); _selectedStationId = null; });
+                  _focusStations(_filteredStations());
+                }, icon: const Icon(Icons.close_rounded)),
+          filled: true,
+          fillColor: const Color(AppColors.bgSecondary),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      ),
+      const SizedBox(height: 10),
+      DropdownButtonFormField<String>(
+        value: _stationBarangayFilter,
+        decoration: InputDecoration(
+          labelText: 'Filter by barangay',
+          filled: true,
+          fillColor: const Color(AppColors.bgSecondary),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+        items: ['All barangays', ...barangays].map((name) => DropdownMenuItem(value: name, child: Text(name))).toList(),
+        onChanged: (value) {
+          setState(() { _stationBarangayFilter = value ?? 'All barangays'; _selectedStationId = null; });
+          _focusStations(_filteredStations());
+        },
+      ),
+      const SizedBox(height: 12),
+      SizedBox(
+        height: 310,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: FlutterMap(
+            mapController: _stationMapController,
+            options: const MapOptions(initialCenter: LatLng(14.9133, 121.0436), initialZoom: 12),
+            children: [
+              TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', userAgentPackageName: 'ph.gov.mdrrmo.norzagapay_mobile'),
+              RichAttributionWidget(attributions: [TextSourceAttribution('© OpenStreetMap contributors')]),
+              MarkerLayer(markers: stations.map((row) {
+                final point = _stationPosition(row);
+                if (point == null) return null;
+                final id = (row['id'] ?? '').toString();
+                final selected = id == _selectedStationId;
+                return Marker(
+                  point: point,
+                  width: 48,
+                  height: 48,
+                  child: GestureDetector(
+                    onTap: () => setState(() => _selectedStationId = id),
+                    child: Icon(Icons.location_pin, size: selected ? 46 : 40, color: selected ? const Color(AppColors.warning) : const Color(AppColors.danger)),
+                  ),
+                );
+              }).whereType<Marker>().toList()),
+            ],
+          ),
+        ),
+      ),
+      Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Text('${stations.length} of ${_rows.length} stations', style: const TextStyle(color: Colors.white60, fontSize: 12)),
+      ),
+      if (!_loading && stations.isEmpty)
+        const Padding(padding: EdgeInsets.symmetric(vertical: 24), child: Center(child: Text('No stations match these filters.', style: TextStyle(color: Colors.white60))))
+      else
+        ...stations.map((row) {
+          final id = (row['id'] ?? '').toString();
+          final point = _stationPosition(row);
+          final selected = id == _selectedStationId;
+          return Card(
+            color: selected ? const Color(AppColors.primary).withOpacity(.2) : const Color(AppColors.bgSecondary),
+            margin: const EdgeInsets.only(bottom: 9),
+            child: ListTile(
+              leading: Icon(Icons.location_city_rounded, color: selected ? const Color(AppColors.accent) : Colors.white70),
+              title: Text((row['name'] ?? 'Evacuation station').toString(), style: const TextStyle(fontWeight: FontWeight.w600)),
+              subtitle: Text([_stationBarangayName(row), if ((row['address'] ?? '').toString().trim().isNotEmpty) row['address'].toString()].join(' · ')),
+              selected: selected,
+              onTap: () {
+                setState(() => _selectedStationId = id);
+                if (point != null) _stationMapController.move(point, 15);
+              },
+            ),
+          );
+        }),
+    ];
   }
 
   @override
@@ -467,17 +588,18 @@ class _MdrrmoOperationsScreenState extends State<MdrrmoOperationsScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(module.label, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)), Text('${user.fullName} · ${user.role.name.replaceAll('_', ' ')}', style: const TextStyle(fontSize: 11, color: Colors.white70))]),
-        actions: [PopupMenuButton<String>(icon: const Icon(Icons.grid_view_rounded), onSelected: (key) { setState(() { _module = _modules.firstWhere((item) => item.key == key); _rows = []; _summary = {}; }); _load(); }, itemBuilder: (_) => _modules.map((item) => PopupMenuItem<String>(value: item.key, child: Row(children: [Icon(item.icon, size: 18), const SizedBox(width: 10), Text(item.label)]))).toList(), tooltip: 'Operations'), IconButton(onPressed: _load, icon: const Icon(Icons.refresh_rounded), tooltip: 'Refresh')],
+        actions: [PopupMenuButton<String>(icon: const Icon(Icons.grid_view_rounded), onSelected: (key) { setState(() { _module = _modules.firstWhere((item) => item.key == key); _rows = []; _summary = {}; _stationBarangayFilter = 'All barangays'; _selectedStationId = null; _stationSearchController.clear(); }); _load(); }, itemBuilder: (_) => _modules.map((item) => PopupMenuItem<String>(value: item.key, child: Row(children: [Icon(item.icon, size: 18), const SizedBox(width: 10), Text(item.label)]))).toList(), tooltip: 'Operations'), IconButton(onPressed: _load, icon: const Icon(Icons.refresh_rounded), tooltip: 'Refresh')],
       ),
-      floatingActionButton: ['users', 'units', 'stations', 'broadcasts'].contains(module.key) ? FloatingActionButton.extended(onPressed: _createForCurrentModule, icon: const Icon(Icons.add), label: Text('Add ${module.key == 'users' ? 'account' : module.key == 'units' ? 'unit' : module.key == 'stations' ? 'station' : 'advisory'}')) : null,
+      floatingActionButton: ['users', 'units', 'broadcasts'].contains(module.key) ? FloatingActionButton.extended(onPressed: _createForCurrentModule, icon: const Icon(Icons.add), label: Text('Add ${module.key == 'users' ? 'account' : module.key == 'units' ? 'unit' : 'advisory'}')) : null,
       body: RefreshIndicator(
         onRefresh: _load,
         child: ListView(padding: const EdgeInsets.all(16), children: [
           Card(color: const Color(AppColors.bgSecondary), child: Padding(padding: const EdgeInsets.all(16), child: Row(children: [Icon(module.icon, color: const Color(AppColors.accent), size: 28), const SizedBox(width: 12), Expanded(child: Text(_description(module.key), style: const TextStyle(color: Colors.white70, height: 1.35)))]))),
           if (_summary.isNotEmpty) ...[const SizedBox(height: 8), _summaryCards()],
           if (_loading) const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator())),
-          if (!_loading && _rows.isEmpty && _summary.isEmpty) Padding(padding: const EdgeInsets.symmetric(vertical: 48), child: Column(children: [const Icon(Icons.inbox_outlined, size: 44, color: Colors.white38), const SizedBox(height: 12), Text('No ${module.label.toLowerCase()} to show', style: const TextStyle(color: Colors.white70))])),
-          ..._rows.map((row) => Card(
+          if (!_loading && module.key == 'stations') ..._stationContent(),
+          if (!_loading && module.key != 'stations' && _rows.isEmpty && _summary.isEmpty) Padding(padding: const EdgeInsets.symmetric(vertical: 48), child: Column(children: [const Icon(Icons.inbox_outlined, size: 44, color: Colors.white38), const SizedBox(height: 12), Text('No ${module.label.toLowerCase()} to show', style: const TextStyle(color: Colors.white70))])),
+          if (module.key != 'stations') ..._rows.map((row) => Card(
             color: const Color(AppColors.bgSecondary),
             margin: const EdgeInsets.only(bottom: 10),
             child: Padding(padding: const EdgeInsets.fromLTRB(14, 12, 12, 8), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -500,7 +622,7 @@ class _MdrrmoOperationsScreenState extends State<MdrrmoOperationsScreen> {
         'users' => 'Create dashboard accounts. Admins can create dispatcher and logistics accounts; Master Admin can also create admins.',
         'requests' => 'Review, approve, reject, and fulfill responder resource requests.',
         'units' => 'Review response units and add new units for operational deployment.',
-        'stations' => 'Add an evacuation station and map location. Stations are listed for residents with nearest distance and estimated travel time.',
+        'stations' => 'View evacuation stations that barangays have added. Search by name or address, filter by barangay, and select a map marker to locate a station.',
         'broadcasts' => 'Publish public safety advisories and pin or remove existing advisories.',
         'analytics' => 'Current high-level incident, responder, and task counts for municipal operations.',
         'weather' => 'Current weather and municipal advisories for situational awareness.',

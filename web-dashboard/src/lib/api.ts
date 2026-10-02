@@ -239,9 +239,8 @@ export const weatherAPI = {
 
 // Evacuation Centers
 export const evacuationAPI = {
-  list: (params?: { barangay_id?: string }) => api.get('/evacuation-centers', { params }),
+  list: (params?: { barangay_id?: string; barangay_added?: boolean }) => api.get('/evacuation-centers', { params }),
   addBarangay: (data: any) => api.post('/evacuation-centers', data),
-  addMunicipal: (data: any) => api.post('/evacuation-centers/mdrrmo', data),
 };
 
 // Barangays (for filter dropdowns)

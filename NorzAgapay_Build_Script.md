@@ -38,10 +38,10 @@ The system replaces fragmented phone calls, radio-based coordination, and physic
 
 | Role | Platform | Scope of Access |
 |---|---|---|
-| MDRRMO `master_admin` | Web + Mobile | All municipal operations, verification, accounts, dispatch, units, stations, advisories, analytics, weather, and requests |
-| MDRRMO `admin` | Web + Mobile | Incident oversight, officer and barangay coordination verification, user management, advisories, analytics, weather, and station entry |
+| MDRRMO `master_admin` | Web + Mobile | All municipal operations, verification, accounts, dispatch, units, a searchable map of barangay-added evacuation stations, advisories, analytics, weather, and requests |
+| MDRRMO `admin` | Web + Mobile | Incident oversight, officer and barangay coordination verification, user management, advisories, analytics, weather, and a searchable map of barangay-added evacuation stations |
 | MDRRMO `dispatcher` | Web + Mobile | Incident review/dispatch, command map, responder tracking, and weather |
-| MDRRMO `logistics` | Web + Mobile | Resource requests, response units, responder tracking, and station entry |
+| MDRRMO `logistics` | Web + Mobile | Resource requests, response units, responder tracking, and a searchable map of barangay-added evacuation stations |
 | Barangay `admin` | Web + Mobile | Own-barangay command center and operations, team, coordination request, analytics, and station entry |
 | Barangay `dispatcher` | Web + Mobile | Own-barangay incident dispatch/escalation, assistance decisions, and response status |
 | Barangay `responder` | Web + Mobile | Own-barangay field response, status/media, assistance, GPS, and navigation |
@@ -71,7 +71,7 @@ React + Vite + TypeScript SPA. Communicates with backend via REST API and Socket
 | Reports / Verification | `ReportsPage.tsx`, `VerificationPage.tsx` | Incident list with filters; full incident detail + media gallery + status history + dispatcher verification queue with PDF review, approval/rejection workflow |
 | Respond Units | `RespondUnitsPage.tsx` | Registered professional emergency units, duty and operational status, assignment logs |
 | Officers | `OfficersPage.tsx` | MDRRMO officer accounts and barangay assignments |
-| Add Evacuation Station | `EvacuationCentersPage.tsx` | Add a station and map pin for a selected barangay |
+| Evacuation Centers | `EvacuationCentersPage.tsx` | MDRRMO views, searches, and filters barangay-added stations on a map; barangay accounts add their own station and map pin |
 | Resource Requests | `ResourceRequestsPage.tsx` | Field resource request review from units |
 | Responder Tracker | `ResponderTrackerPage.tsx` | Responder progress from dispatch through return, with map selection from the Command Center and barangay workspace |
 | Analytics | `AnalyticsPage.tsx` | Incident trends, response-time statistics, severity breakdown charts |
@@ -91,10 +91,10 @@ Flutter client with separate MDRRMO and barangay login scopes. The mobile layout
 
 | Role | Mobile functions |
 |---|---|
-| Master Admin | Incident dispatch, user/verification review, barangay coordination review, resource requests, response units, responder locations, station entry, advisories, weather, and summary analytics |
-| Admin | Incident queue, user and verification workflows, barangay coordination approval, advisories, weather, analytics, and station entry |
+| Master Admin | Incident dispatch, user/verification review, barangay coordination review, resource requests, response units, responder locations, searchable map of barangay-added evacuation stations, advisories, weather, and summary analytics |
+| Admin | Incident queue, user and verification workflows, barangay coordination approval, advisories, weather, analytics, and searchable map of barangay-added evacuation stations |
 | Dispatcher | Incident review/dispatch, responder location links, weather |
-| Logistics | Resource request decisions, response units, responder location links, station entry |
+| Logistics | Resource request decisions, response units, responder location links, searchable map of barangay-added evacuation stations |
 | Responder | Existing duty status, dispatch alerts, task updates, GPS, routing, unit membership, resource requests, and field documentation |
 
 The responder screens from the prior client are retained under `mobile_app/lib/mdrrmo/`.
@@ -285,9 +285,9 @@ Real-time alert feed and system activity log, subscribed to Supabase Realtime.
 5. The barangay and resident report views receive the updated escalation and response status.
 
 ### Evacuation Stations
-1. Authorized barangay users add stations for their own barangay; MDRRMO Admin and Logistics users can add stations for any barangay.
+1. Authorized barangay users add stations for their own barangay; MDRRMO Admin and Logistics users view, search, and filter those stations on a map.
 2. The resident app requests active stations ordered by distance and receives estimated travel time using the configured average-speed assumption.
-3. Station entry is the only active create/update workflow. Resident occupancy registration and station capacity management have been removed from the application.
+3. Barangay station entry is the only active create workflow. MDRRMO has a read-only station map. Resident occupancy registration and station capacity management have been removed from the application.
 
 ### Dispatcher Accreditation Pipeline
 1. Barangay admin initiates the accreditation process in `dispatcher_verification_screen.dart`.

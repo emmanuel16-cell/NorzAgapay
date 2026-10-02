@@ -2633,3 +2633,37 @@ tbody tr:last-child td { border-bottom: none; }
     padding: 10px 14px;
   }
 }
+
+.evacuation-center-browser {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.8fr) minmax(0, 1.2fr);
+  gap: 16px;
+  padding: 16px;
+  align-items: start;
+}
+
+.evacuation-center-map {
+  min-height: 560px;
+  height: 560px;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+}
+
+@media (max-width: 900px) {
+  .evacuation-center-browser {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .evacuation-center-map {
+    min-height: 480px;
+    height: 480px;
+  }
+}
+
+@media (max-width: 600px) {
+  .evacuation-center-map {
+    min-height: 400px;
+    height: 400px;
+  }
+}

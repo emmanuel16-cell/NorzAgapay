@@ -2,7 +2,6 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { supabaseAdmin } from '../config/supabase';
 import { authenticateBarangay } from './barangay';
-import { authenticate, authorize } from '../middleware/auth';
 import { getVerifiedBarangayIds } from '../services/verifiedBarangayService';
 
 const router = Router();
@@ -27,6 +26,7 @@ const haversineDistance = (lat1: number, lon1: number, lat2: number, lon2: numbe
 router.get('/', async (req: Request, res: Response) => {
   try {
     const { barangay_id } = req.query;
+    const barangayAddedOnly = req.query.barangay_added === 'true' || req.query.barangay_added === '1';
     const verifiedOnly = req.query.verified_only === 'true' || req.query.verified_only === '1';
 
     let query = supabaseAdmin
@@ -47,6 +47,9 @@ router.get('/', async (req: Request, res: Response) => {
 
     if (barangay_id) {
       query = query.eq('barangay_id', barangay_id as string);
+    }
+    if (barangayAddedOnly) {
+      query = query.not('created_by', 'is', null);
     }
 
     const { data: centers, error } = await query;
@@ -116,28 +119,6 @@ const createCenterSchema = z.object({
   address: z.string().optional(),
   latitude: z.number(),
   longitude: z.number(),
-});
-
-// MDRRMO may add a station for any listed barangay; existing stations are not
-// edited or deactivated through the station-entry workflow.
-router.post('/mdrrmo', authenticate, authorize('admin', 'logistics'), async (req: any, res: Response): Promise<void> => {
-  try {
-    const body = createCenterSchema.extend({ barangay_id: z.string().uuid() }).parse(req.body);
-    const { data, error } = await supabaseAdmin
-      .from('evacuation_centers')
-      .insert({ ...body, is_active: true })
-      .select('id, name, address, latitude, longitude, barangay_id, created_at, barangays(id, name, municipality)')
-      .single();
-    if (error) throw error;
-    res.status(201).json(data);
-  } catch (err: any) {
-    if (err?.name === 'ZodError') {
-      res.status(400).json({ error: err.errors });
-      return;
-    }
-    console.error('MDRRMO add evac station error:', err);
-    res.status(500).json({ error: 'Failed to add evacuation station' });
-  }
 });
 
 router.post('/', authenticateBarangay, async (req: any, res: Response): Promise<void> => {

@@ -9,7 +9,7 @@
 - The web dashboard has MDRRMO roles (Master Admin, Admin, Dispatcher, Logistics), incident reporting, a command map, a responder tracker, logistics pages, verification, broadcasts, officers, analytics, and weather. It has no barangay account login or barangay operations workspace.
 - Barangay endpoints are already scoped to the authenticated barangay and gated by the shared coordination activation. MDRRMO endpoints use a separate middleware and cannot accept barangay tokens.
 - The `Missions` screen is a second presentation of incidents/tasks rather than a separate mission data model. The incident/task pipeline is still required for dispatch and responder tracking; removal should target the mission page and its standalone matching/mission actions, not incident reports or response tasks.
-- Evacuation-center management currently includes listing, editing/deactivation, occupancy registration, capacity reporting, and resident family registration. The requested scope is add-only for operations and nearest-station distance/time for residents.
+- Evacuation-center management is split by role: barangay users add their own stations, while MDRRMO views, searches, and filters barangay-added stations on a map. Residents see nearest-station distance and travel-time estimates.
 
 ## Role and capability matrix
 
@@ -18,7 +18,7 @@
 | MDRRMO Master Admin | Cross-barangay incident overview, dispatch monitoring, account oversight, verification, broadcasts, analytics, weather, and responder/unit operations | Full municipal command center and all MDRRMO administration, operations, logistics, monitoring, and reporting |
 | MDRRMO Admin | Account/officer verification and management, broadcasts, analytics, weather, and cross-barangay overview | Full admin workspace: verification, users, officers, broadcasts, analytics, weather, and municipal overview |
 | MDRRMO Dispatcher | Incident review/verification, response dispatch, live responder tracking, and incident status monitoring | Command center, reports, dispatch, tracker, weather, and incident coordination |
-| MDRRMO Logistics | Add evacuation stations, manage resource requests and response units, view responder tracker and municipal situation | Full logistics workspace and all-barangay station/request/unit monitoring |
+| MDRRMO Logistics | View/search/filter barangay-added evacuation stations on a map, manage resource requests and response units, view responder tracker and municipal situation | Full logistics workspace and all-barangay station/request/unit monitoring |
 | Barangay Admin | Own-barangay command summary, reports, team, broadcasts, hotlines, analytics, coordination request, and add station | Own-barangay command center and full barangay operations/admin functions |
 | Barangay Dispatcher | Own-barangay command queue, assess/dispatch/escalate/close reports, decide assistance requests, monitor response | Own-barangay command center, incident queue, dispatch/escalation, assistance decisions, and response tracking |
 | Barangay Responder | Own-barangay assignments, status updates, GPS/navigation, field media/closure, assistance requests, and adding response team members where allowed | Own-barangay response queue, task/status/media, assistance requests, and team actions permitted by the backend |
