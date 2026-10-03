@@ -1289,9 +1289,8 @@ router.delete('/team/:id', authenticateBarangay, requireRole(['admin']), async (
 // ─── GET /api/barangay/reports ───────────────────────────────────────────────
 // Get incident reports assigned to this barangay
 
-// Barangay analytics are scoped to the report's origin, not its current route.
-// This intentionally includes Emergency reports routed to MDRRMO and reports
-// escalated there, even though those reports are not part of the barangay work queue.
+// Barangay analytics include only reports handled by the barangay. Direct
+// MDRRMO routing and reports escalated to MDRRMO are excluded from its metrics.
 router.get('/reports/statistics', authenticateBarangay, requireRole(['admin']), async (req: any, res: Response): Promise<void> => {
   try {
     const requestedType = typeof req.query.type === 'string' ? req.query.type : undefined;
@@ -1308,7 +1307,18 @@ router.get('/reports/statistics', authenticateBarangay, requireRole(['admin']), 
       .limit(5000);
     if (error) throw error;
 
-    const resolvedReports = (data || []).filter(isReportResolved);
+    const mdrrmoHandled = (report: any) => {
+      const routeText = `${report.specifics || ''}\n${report.description || ''}`;
+      const mdrrmoStatus = String(report.mdrrmo_response_status || '').toLowerCase();
+      return report.send_to === 'mdrrmo' ||
+        /\[SEND_TO:mdrrmo\]/i.test(routeText) ||
+        String(report.status || '').toLowerCase() === 'escalated' ||
+        ['pending', 'responding', 'resolved'].includes(mdrrmoStatus) ||
+        String(report.barangay_response_notes || '').toLowerCase().includes('escalated');
+    };
+    const resolvedReports = (data || []).filter(
+      (report: any) => isReportResolved(report) && !mdrrmoHandled(report),
+    );
     const selectedReports = requestedType
       ? resolvedReports.filter((report: any) => report.type === requestedType)
       : resolvedReports;
