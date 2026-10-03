@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
@@ -97,7 +98,10 @@ class _VideoProofPlayerState extends State<VideoProofPlayer> {
             children: [
               Icon(Icons.videocam_off, color: Colors.grey, size: 48),
               SizedBox(height: 8),
-              Text('Unable to load video', style: TextStyle(color: Colors.grey)),
+              Text(
+                'Unable to load video',
+                style: TextStyle(color: Colors.grey),
+              ),
             ],
           ),
         ),
@@ -166,100 +170,140 @@ class _VideoControlsState extends State<_VideoControls> {
     final duration = value.duration;
     final isPlaying = value.isPlaying;
 
-    return GestureDetector(
-      onTap: () => setState(() => _showControls = !_showControls),
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          SizedBox(
-            height: widget.height,
-            width: double.infinity,
-            child: AspectRatio(
-              aspectRatio: value.aspectRatio,
-              child: VideoPlayer(_ctrl),
-            ),
-          ),
-          if (_showControls) ...[
-            Container(
-              height: widget.height,
-              color: Colors.black.withOpacity(0.35),
-            ),
-            GestureDetector(
-              onTap: () {
-                if (isPlaying) {
-                  _ctrl.pause();
-                } else {
-                  if (position >= duration) _ctrl.seekTo(Duration.zero);
-                  _ctrl.play();
-                }
-                setState(() {});
-              },
-              child: Container(
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.65),
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white30, width: 1.5),
-                ),
-                child: Icon(
-                  isPlaying ? Icons.pause : Icons.play_arrow,
-                  color: Colors.white,
-                  size: 32,
-                ),
-              ),
-            ),
-            Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [Colors.transparent, Colors.black.withOpacity(0.75)],
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Text(
-                      _formatDuration(position),
-                      style: const TextStyle(color: Colors.white, fontSize: 11),
-                    ),
-                    Expanded(
-                      child: SliderTheme(
-                        data: SliderThemeData(
-                          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
-                          overlayShape: const RoundSliderOverlayShape(overlayRadius: 10),
-                          trackHeight: 2,
-                          activeTrackColor: const Color(0xFF38BDF8),
-                          inactiveTrackColor: Colors.white30,
-                          thumbColor: const Color(0xFF38BDF8),
-                          overlayColor: const Color(0xFF38BDF8).withOpacity(0.2),
-                        ),
-                        child: Slider(
-                          value: duration.inMilliseconds > 0
-                              ? position.inMilliseconds.toDouble().clamp(0, duration.inMilliseconds.toDouble())
-                              : 0,
-                          min: 0,
-                          max: duration.inMilliseconds > 0 ? duration.inMilliseconds.toDouble() : 1,
-                          onChanged: (v) => _ctrl.seekTo(Duration(milliseconds: v.toInt())),
-                        ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final aspectRatio = value.aspectRatio;
+        final safeAspectRatio = aspectRatio.isFinite && aspectRatio > 0
+            ? aspectRatio
+            : 16 / 9;
+        final availableWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : MediaQuery.sizeOf(context).width;
+        final availableHeight = constraints.maxHeight.isFinite
+            ? math.min(widget.height, constraints.maxHeight)
+            : widget.height;
+        final videoWidth = math.min(
+          availableWidth,
+          availableHeight * safeAspectRatio,
+        );
+        final videoHeight = videoWidth / safeAspectRatio;
+
+        return SizedBox(
+          width: videoWidth,
+          height: videoHeight,
+          child: GestureDetector(
+            onTap: () => setState(() => _showControls = !_showControls),
+            child: Stack(
+              fit: StackFit.expand,
+              alignment: Alignment.center,
+              children: [
+                VideoPlayer(_ctrl),
+                if (_showControls) ...[
+                  Container(color: Colors.black.withOpacity(0.35)),
+                  GestureDetector(
+                    onTap: () {
+                      if (isPlaying) {
+                        _ctrl.pause();
+                      } else {
+                        if (position >= duration) _ctrl.seekTo(Duration.zero);
+                        _ctrl.play();
+                      }
+                      setState(() {});
+                    },
+                    child: Container(
+                      width: 56,
+                      height: 56,
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.65),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white30, width: 1.5),
+                      ),
+                      child: Icon(
+                        isPlaying ? Icons.pause : Icons.play_arrow,
+                        color: Colors.white,
+                        size: 32,
                       ),
                     ),
-                    Text(
-                      _formatDuration(duration),
-                      style: const TextStyle(color: Colors.white, fontSize: 11),
+                  ),
+                  Positioned(
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.transparent,
+                            Colors.black.withOpacity(0.75),
+                          ],
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Text(
+                            _formatDuration(position),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                            ),
+                          ),
+                          Expanded(
+                            child: SliderTheme(
+                              data: SliderThemeData(
+                                thumbShape: const RoundSliderThumbShape(
+                                  enabledThumbRadius: 5,
+                                ),
+                                overlayShape: const RoundSliderOverlayShape(
+                                  overlayRadius: 10,
+                                ),
+                                trackHeight: 2,
+                                activeTrackColor: const Color(0xFF38BDF8),
+                                inactiveTrackColor: Colors.white30,
+                                thumbColor: const Color(0xFF38BDF8),
+                                overlayColor: const Color(
+                                  0xFF38BDF8,
+                                ).withOpacity(0.2),
+                              ),
+                              child: Slider(
+                                value: duration.inMilliseconds > 0
+                                    ? position.inMilliseconds.toDouble().clamp(
+                                        0,
+                                        duration.inMilliseconds.toDouble(),
+                                      )
+                                    : 0,
+                                min: 0,
+                                max: duration.inMilliseconds > 0
+                                    ? duration.inMilliseconds.toDouble()
+                                    : 1,
+                                onChanged: (v) => _ctrl.seekTo(
+                                  Duration(milliseconds: v.toInt()),
+                                ),
+                              ),
+                            ),
+                          ),
+                          Text(
+                            _formatDuration(duration),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ],
-                ),
-              ),
+                  ),
+                ],
+              ],
             ),
-          ],
-        ],
-      ),
+          ),
+        );
+      },
     );
   }
 }

@@ -47,7 +47,6 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
   final Set<String> _expandedAssistanceRequests = {};
   // Track responder field media (local session, shown in Responder Images)
   final List<XFile> _teamLeaderMedia = [];
-  int _proofThumbIndex = 0;
   bool _isUploadingMedia = false;
 
   @override
@@ -1535,6 +1534,16 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     final incidentLocation = LatLng(_report.latitude, _report.longitude);
     final isResponder = user?.isResponder ?? false;
     final isDispatcher = user?.isDispatcher ?? false;
+    final showPendingRoleAction =
+        _selectedTabIndex == 0 &&
+        canManage &&
+        _report.isPending &&
+        (isDispatcher || isResponder);
+    final showRespondingAction =
+        ((_selectedTabIndex == 2 && canManage) ||
+            (_selectedTabIndex == 1 && canManage && isResponder)) &&
+        _report.isResponding &&
+        !_report.isResolved;
     final savedAssessment = _report.cleanBarangayNotes;
     final assessmentStart = savedAssessment?.indexOf('FIELD ASSESSMENT') ?? -1;
     final fieldAssessment = assessmentStart >= 0
@@ -1576,11 +1585,51 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
             ),
           ),
         ),
-        bottomNavigationBar:
-            ((_selectedTabIndex == 2 && canManage) ||
-                    (_selectedTabIndex == 1 && canManage && isResponder)) &&
-                _report.isResponding &&
-                !_report.isResolved
+        bottomNavigationBar: showPendingRoleAction
+            ? SafeArea(
+                top: false,
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFF5F6FA),
+                    border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
+                  ),
+                  child: SizedBox(
+                    width: double.infinity,
+                    height: 42,
+                    child: ElevatedButton.icon(
+                      onPressed: _isProcessing
+                          ? null
+                          : isDispatcher
+                          ? _showDispatcherActionDialog
+                          : _handleTeamLeaderAccept,
+                      icon: Icon(
+                        isDispatcher ? Icons.send : Icons.check_circle_outline,
+                        size: 16,
+                      ),
+                      label: Text(
+                        isDispatcher
+                            ? 'Dispatch / Provide Initial Assistance'
+                            : 'Accept & Respond',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 11,
+                        ),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: isDispatcher
+                            ? const Color(0xFF0284C7)
+                            : const Color(0xFF10B981),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              )
+            : showRespondingAction
             ? SafeArea(
                 top: false,
                 child: Container(
@@ -2059,7 +2108,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                   ),
                 const SizedBox(height: 16),
 
-                // Proof of Incident – horizontal thumbnail strip supporting multiple proofs
+                // Proof attachments open directly in the full-screen viewer.
                 if (_report.proofUrls.isNotEmpty ||
                     _report.proofUrl != null) ...[
                   Builder(
@@ -2067,16 +2116,6 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                       final proofs = _report.proofUrls.isNotEmpty
                           ? _report.proofUrls
                           : [_report.proofUrl!];
-                      final safeIdx = (_proofThumbIndex < proofs.length)
-                          ? _proofThumbIndex
-                          : 0;
-                      final currentUrl = proofs[safeIdx];
-                      final currentType = (safeIdx < _report.proofTypes.length)
-                          ? _report.proofTypes[safeIdx]
-                          : (currentUrl.toLowerCase().contains('.mp4') ||
-                                    currentUrl.toLowerCase().contains('.mov')
-                                ? 'video'
-                                : 'image');
 
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2092,129 +2131,114 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                                   fontSize: 15,
                                 ),
                               ),
-                              if (proofs.length > 1)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: const Color(
-                                      0xFF0284C7,
-                                    ).withOpacity(0.25),
-                                    borderRadius: BorderRadius.circular(10),
-                                    border: Border.all(
-                                      color: const Color(0xFF0284C7),
-                                    ),
-                                  ),
-                                  child: Text(
-                                    '${safeIdx + 1} of ${proofs.length}',
-                                    style: const TextStyle(
-                                      color: Color(0xFF0284C7),
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.bold,
-                                    ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(
+                                    0xFF0284C7,
+                                  ).withOpacity(0.25),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: const Color(0xFF0284C7),
                                   ),
                                 ),
+                                child: Text(
+                                  '${proofs.length} ${proofs.length == 1 ? 'attachment' : 'attachments'}',
+                                  style: const TextStyle(
+                                    color: Color(0xFF0284C7),
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
                             ],
                           ),
                           const SizedBox(height: 8),
-                          // Large selected preview
-                          VideoProofPlayer(
-                            key: ValueKey(currentUrl),
-                            url: currentUrl,
-                            proofType: currentType,
-                            height: 200,
-                          ),
-                          if (proofs.length > 1) ...[
-                            const SizedBox(height: 8),
-                            // Thumbnail strip
-                            Container(
-                              height: 72,
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(
-                                  color: const Color(0xFFE2E8F0),
-                                ),
-                              ),
-                              child: ListView.builder(
-                                scrollDirection: Axis.horizontal,
-                                padding: const EdgeInsets.all(6),
-                                itemCount: proofs.length,
-                                itemBuilder: (ctx, i) {
-                                  final isActive = i == safeIdx;
-                                  final thumbUrl = proofs[i];
-                                  final isThumbVideo =
-                                      (i < _report.proofTypes.length &&
-                                          _report.proofTypes[i] == 'video') ||
-                                      thumbUrl.toLowerCase().contains('.mp4') ||
-                                      thumbUrl.toLowerCase().contains('.mov');
-                                  return GestureDetector(
-                                    onTap: () =>
-                                        setState(() => _proofThumbIndex = i),
-                                    child: Container(
-                                      width: 60,
-                                      height: 60,
-                                      margin: const EdgeInsets.only(right: 6),
-                                      decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(8),
-                                        border: Border.all(
-                                          color: isActive
-                                              ? const Color(0xFF0284C7)
-                                              : Colors.transparent,
-                                          width: 2,
-                                        ),
-                                        color: const Color(0xFFF8FAFC),
-                                      ),
-                                      child: Stack(
-                                        fit: StackFit.expand,
-                                        children: [
-                                          ClipRRect(
-                                            borderRadius: BorderRadius.circular(
-                                              7,
-                                            ),
-                                            child: isThumbVideo
-                                                ? const Center(
-                                                    child: Icon(
-                                                      Icons.videocam,
-                                                      color: Color(0xFF38BDF8),
-                                                      size: 28,
-                                                    ),
-                                                  )
-                                                : Image.network(
-                                                    thumbUrl,
-                                                    fit: BoxFit.cover,
-                                                    errorBuilder:
-                                                        (
-                                                          _,
-                                                          __,
-                                                          ___,
-                                                        ) => const Icon(
-                                                          Icons.broken_image,
-                                                          color: Colors.grey,
-                                                          size: 24,
-                                                        ),
-                                                  ),
-                                          ),
-                                          if (isThumbVideo)
-                                            const Positioned(
-                                              bottom: 2,
-                                              right: 2,
-                                              child: Icon(
-                                                Icons.play_circle_fill,
-                                                color: Colors.white70,
-                                                size: 16,
-                                              ),
-                                            ),
-                                        ],
-                                      ),
-                                    ),
-                                  );
-                                },
+                          Container(
+                            height: 72,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: const Color(0xFFE2E8F0),
                               ),
                             ),
-                          ],
+                            child: ListView.builder(
+                              scrollDirection: Axis.horizontal,
+                              padding: const EdgeInsets.all(6),
+                              itemCount: proofs.length,
+                              itemBuilder: (ctx, i) {
+                                final thumbUrl = proofs[i];
+                                final type = i < _report.proofTypes.length
+                                    ? _report.proofTypes[i]
+                                    : null;
+                                final isThumbVideo = _isVideoProof(
+                                  thumbUrl,
+                                  type,
+                                );
+                                return GestureDetector(
+                                  onTap: () => _showMediaViewer(
+                                    thumbUrl,
+                                    isVideo: isThumbVideo,
+                                    title: 'Proof ${i + 1} of ${proofs.length}',
+                                  ),
+                                  child: Container(
+                                    width: 60,
+                                    height: 60,
+                                    margin: const EdgeInsets.only(right: 6),
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: const Color(0xFFE2E8F0),
+                                      ),
+                                      color: const Color(0xFFF8FAFC),
+                                    ),
+                                    child: Stack(
+                                      fit: StackFit.expand,
+                                      children: [
+                                        ClipRRect(
+                                          borderRadius: BorderRadius.circular(
+                                            7,
+                                          ),
+                                          child: isThumbVideo
+                                              ? const Center(
+                                                  child: Icon(
+                                                    Icons.videocam,
+                                                    color: Color(0xFF38BDF8),
+                                                    size: 28,
+                                                  ),
+                                                )
+                                              : Image.network(
+                                                  thumbUrl,
+                                                  fit: BoxFit.cover,
+                                                  errorBuilder: (_, _, _) =>
+                                                      const Icon(
+                                                        Icons.broken_image,
+                                                        color: Colors.grey,
+                                                        size: 24,
+                                                      ),
+                                                ),
+                                        ),
+                                        if (isThumbVideo)
+                                          const Positioned(
+                                            bottom: 2,
+                                            right: 2,
+                                            child: Icon(
+                                              Icons.play_circle_fill,
+                                              color: Colors.white70,
+                                              size: 16,
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
                           const SizedBox(height: 16),
                         ],
                       );
@@ -2311,67 +2335,6 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                     ),
                   ),
                   const SizedBox(height: 24),
-                ],
-
-                // ── ACTION BUTTONS (Responder & Dispatcher) ───────────────────
-                if (canManage && !_report.isResolved) ...[
-                  // PENDING:
-                  // Responder sees: Accept & Respond button
-                  // Dispatcher sees: Dispatch / Provide Initial Assistance button
-                  if (_report.isPending) ...[
-                    if (isResponder)
-                      SizedBox(
-                        width: double.infinity,
-                        height: 50,
-                        child: ElevatedButton.icon(
-                          onPressed: _isProcessing
-                              ? null
-                              : _handleTeamLeaderAccept,
-                          icon: const Icon(Icons.check_circle_outline),
-                          label: const Text(
-                            'Accept & Respond',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 14,
-                            ),
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF10B981),
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                        ),
-                      ),
-                    if (isDispatcher)
-                      SizedBox(
-                        width: double.infinity,
-                        height: 50,
-                        child: ElevatedButton.icon(
-                          onPressed: _isProcessing
-                              ? null
-                              : _showDispatcherActionDialog,
-                          icon: const Icon(Icons.send),
-                          label: const Text(
-                            'Dispatch / Provide Initial Assistance',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 14,
-                            ),
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF0284C7),
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                  // RESPONDING: Responders can request additional assistance.
-                  if (_report.isResponding) ...[],
                 ],
               ],
 
@@ -3299,53 +3262,54 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     }
   }
 
+  bool _isVideoProof(String url, [String? type]) {
+    if (type?.toLowerCase() == 'video') return true;
+    final path = url.toLowerCase().split('?').first;
+    return const [
+      '.mp4',
+      '.mov',
+      '.webm',
+      '.3gp',
+      '.mkv',
+      '.avi',
+    ].any(path.endsWith);
+  }
+
   void _showMediaViewer(String url, {bool isVideo = false, String? title}) {
-    showDialog(
-      context: context,
-      builder: (ctx) => Dialog(
-        backgroundColor: const Color(0xFF0F172A),
-        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: Text(
-                      title ?? (isVideo ? 'Field Video' : 'Field Photo'),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (viewerContext) => Scaffold(
+          backgroundColor: Colors.black,
+          appBar: AppBar(
+            backgroundColor: const Color(0xFF0F172A),
+            foregroundColor: Colors.white,
+            surfaceTintColor: Colors.transparent,
+            title: Text(
+              title ?? (isVideo ? 'Field Video' : 'Field Photo'),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          body: Center(
+            child: isVideo
+                ? VideoProofPlayer(
+                    url: url,
+                    proofType: 'video',
+                    height: MediaQuery.sizeOf(viewerContext).height,
+                  )
+                : InteractiveViewer(
+                    child: Image.network(
+                      url,
+                      width: double.infinity,
+                      height: double.infinity,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, _, _) => const Icon(
+                        Icons.broken_image,
+                        color: Colors.white70,
+                        size: 64,
                       ),
-                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white70),
-                    onPressed: () => Navigator.pop(ctx),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                  ),
-                ],
-              ),
-            ),
-            ClipRRect(
-              borderRadius: const BorderRadius.vertical(
-                bottom: Radius.circular(16),
-              ),
-              child: VideoProofPlayer(
-                url: url,
-                proofType: isVideo ? 'video' : 'image',
-                height: 340,
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
