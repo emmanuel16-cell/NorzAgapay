@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { reportAPI } from '../lib/api';
+import { reportAPI, socket } from '../lib/api';
 import { INCIDENT_SEVERITY_OPTIONS, INCIDENT_TYPE_OPTIONS } from '../lib/incidentClassification';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
@@ -38,6 +38,17 @@ interface IncidentReport {
   barangay_response_notes?: string;
   mdrrmo_coordination_notes?: string;
   created_at: string;
+  dispatcher_reviewed_at?: string;
+  dispatched_at?: string;
+  accepted_at?: string;
+  travel_distance_m?: number;
+  travel_distance_accuracy_m?: number;
+  travel_distance_fix_at?: string;
+  arrived_at?: string;
+  arrival_recorded_at?: string;
+  arrival_method?: string;
+  arrival_distance_m?: number;
+  resolved_at?: string;
   reporter?: {
     id: string;
     full_name: string;
@@ -75,8 +86,43 @@ export default function ReportsPage() {
   const [classificationSeverity, setClassificationSeverity] = useState('');
   const [previewMedia, setPreviewMedia] = useState<{ url: string; isVideo: boolean } | null>(null);
 
+  const formatTimestamp = (value?: string) => {
+    if (!value) return 'Not recorded';
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? 'Not recorded' : format(date, 'MMM d, yyyy · h:mm a');
+  };
+  const formatElapsed = (start?: string, end?: string) => {
+    if (!start || !end) return '—';
+    const seconds = Math.floor((new Date(end).getTime() - new Date(start).getTime()) / 1000);
+    if (!Number.isFinite(seconds) || seconds < 0) return '—';
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const remainder = seconds % 60;
+    if (hours > 0) return `${hours}h ${minutes}m`;
+    if (minutes > 0) return `${minutes}m ${remainder}s`;
+    return `${remainder}s`;
+  };
+  const formatDistance = (distanceM?: number) => {
+    if (distanceM == null || !Number.isFinite(distanceM)) return null;
+    return distanceM >= 1000
+      ? `${Number((distanceM / 1000).toFixed(distanceM >= 10000 ? 1 : 2))} km`
+      : `${Math.round(distanceM)} m`;
+  };
+
   useEffect(() => {
     fetchReports();
+  }, []);
+
+  useEffect(() => {
+    const handleReportUpdate = (updated: IncidentReport) => {
+      if (!updated?.id) return;
+      setReports((current) => current.map((report) => report.id === updated.id ? { ...report, ...updated } : report));
+      setSelectedReport((current) => current?.id === updated.id ? { ...current, ...updated } : current);
+    };
+    socket.on('incident_report:updated', handleReportUpdate);
+    return () => {
+      socket.off('incident_report:updated', handleReportUpdate);
+    };
   }, []);
 
   useEffect(() => {
@@ -826,6 +872,37 @@ export default function ReportsPage() {
                 </div>
               </div>
             )}
+
+            <div style={{ background: '#081023', borderRadius: 10, padding: 14, border: '1px solid rgba(255,255,255,0.08)' }}>
+              <div style={{ fontSize: 12, color: '#38bdf8', fontWeight: 700, marginBottom: 10 }}>RESPONSE TIMELINE</div>
+              {([
+                ['Report received', selectedReport.created_at, ''],
+                ['Dispatcher reviewed', selectedReport.dispatcher_reviewed_at, ''],
+                ['Responder dispatched', selectedReport.dispatched_at, ''],
+                ['Responder accepted', selectedReport.accepted_at, `Response to acceptance: ${formatElapsed(selectedReport.created_at, selectedReport.accepted_at)}`],
+                ['Arrived at incident area', selectedReport.arrived_at, `Travel to arrival: ${formatElapsed(selectedReport.accepted_at, selectedReport.arrived_at)}`],
+                ['Incident resolved', selectedReport.resolved_at, `Time to resolve: ${formatElapsed(selectedReport.arrived_at, selectedReport.resolved_at)}`],
+              ] as Array<[string, string | undefined, string]>).map(([label, timestamp, duration]) => (
+                <div key={label} style={{ display: 'grid', gridTemplateColumns: 'minmax(145px, 1fr) 1.5fr', gap: 10, padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', fontSize: 12 }}>
+                  <span style={{ color: '#cbd5e1', fontWeight: 600 }}>{label}</span>
+                  <span style={{ color: '#94a3b8' }}>
+                    {formatTimestamp(timestamp)}{duration ? <span style={{ display: 'block', color: '#38bdf8' }}>{duration}</span> : null}
+                  </span>
+                </div>
+              ))}
+              {selectedReport.travel_distance_m != null && (
+                <div style={{ color: '#38bdf8', fontSize: 11, marginTop: 8 }}>
+                  Responder distance at acceptance: {formatDistance(selectedReport.travel_distance_m)} from incident
+                  {selectedReport.travel_distance_accuracy_m != null ? ` · GPS accuracy ±${Math.round(selectedReport.travel_distance_accuracy_m)} m` : ''}
+                </div>
+              )}
+              {selectedReport.arrived_at && (
+                <div style={{ color: '#94a3b8', fontSize: 11, marginTop: 8 }}>
+                  Arrival recorded {selectedReport.arrival_method === 'gps' ? 'by GPS' : 'manually'}
+                  {selectedReport.arrival_distance_m != null ? ` · ${Math.round(selectedReport.arrival_distance_m)} m from incident` : ''}
+                </div>
+              )}
+            </div>
 
             <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
               <button

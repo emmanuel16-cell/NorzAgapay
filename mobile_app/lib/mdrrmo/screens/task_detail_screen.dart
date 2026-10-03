@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'package:provider/provider.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:location/location.dart';
 import '../../widgets/municipality_boundary_map_layer.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
@@ -23,20 +25,50 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   bool _isUpdating = false;
   List<Map<String, dynamic>> _availableOfficers = [];
   bool _loadingOfficers = false;
+  final Location _locationService = Location();
+  StreamSubscription<LocationData>? _arrivalLocationSubscription;
+  LocationData? _lastArrivalLocation;
+  DateTime? _arrivalCandidateSince;
+  bool _startingArrivalTracking = false;
 
-  Future<void> _updateStatus(TaskStatus status) async {
+  @override
+  void dispose() {
+    _arrivalLocationSubscription?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _updateStatus(
+    TaskStatus status, {
+    String? arrivalMethod,
+    LocationData? arrivalLocation,
+  }) async {
     setState(() => _isUpdating = true);
     try {
       final auth = Provider.of<AuthProvider>(context, listen: false);
       await Provider.of<TaskProvider>(
         context,
         listen: false,
-      ).updateTaskStatus(widget.task.id, status.name, auth.token!);
+      ).updateTaskStatus(
+        widget.task.id,
+        status.name,
+        auth.token!,
+        arrivalMethod: status == TaskStatus.in_progress ? (arrivalMethod ?? 'manual') : null,
+        latitude: arrivalLocation?.latitude,
+        longitude: arrivalLocation?.longitude,
+        accuracyM: arrivalLocation?.accuracy,
+        fixAt: (status == TaskStatus.in_progress || status == TaskStatus.accepted) && arrivalMethod == 'gps'
+            ? _locationFixTime(arrivalLocation!)
+            : null,
+      );
+      if (status == TaskStatus.in_progress) _stopArrivalTracking();
       if (mounted &&
           (status == TaskStatus.completed || status == TaskStatus.cancelled)) {
         Navigator.pop(context);
       }
     } catch (e) {
+      if (status == TaskStatus.in_progress && arrivalMethod == 'gps') {
+        _arrivalCandidateSince = null;
+      }
       if (mounted)
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -47,6 +79,119 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     } finally {
       if (mounted) setState(() => _isUpdating = false);
     }
+  }
+
+  void _syncArrivalTracking(Task task, bool isResponder) {
+    if (isResponder && task.status == TaskStatus.accepted &&
+        task.latitude != null && task.longitude != null) {
+      unawaited(_startArrivalTracking());
+    } else if (_arrivalLocationSubscription != null) {
+      _stopArrivalTracking();
+    }
+  }
+
+  Future<void> _startArrivalTracking() async {
+    if (_arrivalLocationSubscription != null || _startingArrivalTracking) return;
+    _startingArrivalTracking = true;
+    try {
+      var serviceEnabled = await _locationService.serviceEnabled();
+      if (!serviceEnabled) serviceEnabled = await _locationService.requestService();
+      if (!serviceEnabled) return;
+
+      var permission = await _locationService.hasPermission();
+      if (permission == PermissionStatus.denied) {
+        permission = await _locationService.requestPermission();
+      }
+      if (permission != PermissionStatus.granted &&
+          permission != PermissionStatus.grantedLimited) return;
+      if (!mounted) return;
+      final currentTask = Provider.of<TaskProvider>(context, listen: false).tasks.firstWhere(
+        (item) => item.id == widget.task.id,
+        orElse: () => widget.task,
+      );
+      if (currentTask.status != TaskStatus.accepted) return;
+
+      await _locationService.changeSettings(
+        accuracy: LocationAccuracy.high,
+        interval: 5000,
+        distanceFilter: 5,
+      );
+      _arrivalLocationSubscription = _locationService.onLocationChanged.listen(
+        (location) => unawaited(_handleTaskArrivalLocation(location)),
+      );
+    } catch (error) {
+      debugPrint('Task arrival tracking error: $error');
+    } finally {
+      _startingArrivalTracking = false;
+    }
+  }
+
+  Future<void> _handleTaskArrivalLocation(LocationData location) async {
+    if (!mounted || _isUpdating || location.latitude == null || location.longitude == null) return;
+    _lastArrivalLocation = location;
+    final task = Provider.of<TaskProvider>(context, listen: false).tasks.firstWhere(
+      (item) => item.id == widget.task.id,
+      orElse: () => widget.task,
+    );
+    final incidentLatitude = task.latitude;
+    final incidentLongitude = task.longitude;
+    final accuracy = location.accuracy;
+    if (incidentLatitude == null || incidentLongitude == null ||
+        accuracy == null || accuracy < 0 || accuracy > 50) {
+      _arrivalCandidateSince = null;
+      return;
+    }
+
+    final distanceM = const Distance().as(
+      LengthUnit.Meter,
+      LatLng(location.latitude!, location.longitude!),
+      LatLng(incidentLatitude, incidentLongitude),
+    );
+    if (distanceM + accuracy > 100) {
+      _arrivalCandidateSince = null;
+      return;
+    }
+
+    final now = DateTime.now().toUtc();
+    _arrivalCandidateSince ??= now;
+    if (now.difference(_arrivalCandidateSince!).inSeconds < 15) return;
+    await _updateStatus(
+      TaskStatus.in_progress,
+      arrivalMethod: 'gps',
+      arrivalLocation: location,
+    );
+  }
+
+  DateTime _locationFixTime(LocationData location) {
+    final timestamp = location.time;
+    if (timestamp == null || timestamp <= 0) return DateTime.now().toUtc();
+    return DateTime.fromMillisecondsSinceEpoch(timestamp.round(), isUtc: true);
+  }
+
+  Future<LocationData?> _getAcceptanceLocation() async {
+    try {
+      if (!await _locationService.serviceEnabled()) return null;
+      var permission = await _locationService.hasPermission();
+      if (permission == PermissionStatus.denied) {
+        permission = await _locationService.requestPermission();
+      }
+      if (permission != PermissionStatus.granted &&
+          permission != PermissionStatus.grantedLimited) return null;
+      return await _locationService.getLocation();
+    } catch (error) {
+      debugPrint('Task acceptance location capture error: $error');
+      return null;
+    }
+  }
+
+  String _formatDistance(double distanceM) => distanceM >= 1000
+      ? '${(distanceM / 1000).toStringAsFixed(distanceM >= 10000 ? 1 : 2)} km'
+      : '${distanceM.round()} m';
+
+  void _stopArrivalTracking() {
+    _arrivalLocationSubscription?.cancel();
+    _arrivalLocationSubscription = null;
+    _arrivalCandidateSince = null;
   }
 
   Future<void> _fetchOfficers() async {
@@ -435,6 +580,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
         final isTeamLeader = auth.isTeamLeader;
         final user = auth.user;
         final isResponder = user?.role == UserRole.responder;
+        _syncArrivalTracking(task, isResponder);
 
         return Scaffold(
           backgroundColor: const Color(0xFFF5F6FA),
@@ -633,6 +779,23 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                                 fontWeight: FontWeight.w700,
                                 fontSize: 13,
                               ),
+                            ),
+                          ),
+                        ],
+
+                        if (task.travelDistanceM != null) ...[
+                          const SizedBox(height: 14),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF0284C7).withOpacity(0.08),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: const Color(0xFF0284C7).withOpacity(0.2)),
+                            ),
+                            child: Text(
+                              'Distance from responder GPS at acceptance: ${_formatDistance(task.travelDistanceM!)}${task.travelDistanceAccuracyM == null ? '' : ' · accuracy ±${task.travelDistanceAccuracyM!.round()} m'}',
+                              style: const TextStyle(color: Color(0xFF0369A1), fontSize: 12, fontWeight: FontWeight.w600),
                             ),
                           ),
                         ],
@@ -1092,7 +1255,16 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
       if (proceed != true) return;
     }
 
-    _updateStatus(TaskStatus.accepted);
+    final currentUser = Provider.of<AuthProvider>(context, listen: false).user;
+    final acceptanceLocation = currentUser?.role == UserRole.responder
+        ? await _getAcceptanceLocation()
+        : null;
+    if (!mounted) return;
+    _updateStatus(
+      TaskStatus.accepted,
+      arrivalMethod: acceptanceLocation == null ? null : 'gps',
+      arrivalLocation: acceptanceLocation,
+    );
   }
 
   Widget _buildActionButtons(Task task) {
@@ -1152,14 +1324,37 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
       } else if (status == TaskStatus.accepted) {
         return Column(
           children: [
+            const Padding(
+              padding: EdgeInsets.only(bottom: 10),
+              child: Text(
+                'GPS will record arrival after two accurate fixes inside 100 m. You can also mark arrival manually.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white70, fontSize: 12),
+              ),
+            ),
             _buildBtn(
               label: '⚡ I Have Arrived — On Scene',
               color: const Color(AppColors.success),
-              onTap: () => _updateStatus(TaskStatus.in_progress),
+              onTap: () => _updateStatus(
+                TaskStatus.in_progress,
+                arrivalMethod: 'manual',
+                arrivalLocation: _lastArrivalLocation,
+              ),
             ),
           ],
         );
       } else if (status == TaskStatus.in_progress) {
+        if (task.arrivedAt == null) {
+          return _buildBtn(
+            label: '📍 Record Arrival',
+            color: const Color(AppColors.success),
+            onTap: () => _updateStatus(
+              TaskStatus.in_progress,
+              arrivalMethod: 'manual',
+              arrivalLocation: _lastArrivalLocation,
+            ),
+          );
+        }
         return _buildBtn(
           label: '✅ Complete Response',
           color: const Color(AppColors.primary),
@@ -1181,10 +1376,25 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
       return _buildBtn(
         label: 'I Have Arrived',
         color: const Color(AppColors.success),
-        onTap: () => _updateStatus(TaskStatus.in_progress),
+        onTap: () => _updateStatus(
+          TaskStatus.in_progress,
+          arrivalMethod: 'manual',
+          arrivalLocation: _lastArrivalLocation,
+        ),
       );
     }
     if (status == TaskStatus.in_progress) {
+      if (task.arrivedAt == null) {
+        return _buildBtn(
+          label: 'Record Arrival',
+          color: const Color(AppColors.success),
+          onTap: () => _updateStatus(
+            TaskStatus.in_progress,
+            arrivalMethod: 'manual',
+            arrivalLocation: _lastArrivalLocation,
+          ),
+        );
+      }
       return _buildBtn(
         label: 'Mark as Complete',
         color: const Color(AppColors.primary),

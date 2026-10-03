@@ -730,6 +730,7 @@ router.patch('/:id/mdrrmo-respond', optionalAuthenticate, async (req: AuthReques
         const { id } = req.params;
         const { responder_name, notes, assigned_unit_id } = req.body;
         const responderName = responder_name || (req.user as any)?.name || req.user?.email || 'MDRRMO Command Unit';
+        const reviewedAndDispatchedAt = new Date().toISOString();
 
         let updatedReport: any = null;
 
@@ -740,10 +741,12 @@ router.patch('/:id/mdrrmo-respond', optionalAuthenticate, async (req: AuthReques
                 .update({
                     status: 'responding',
                     mdrrmo_response_status: 'responding',
-                    mdrrmo_responded_at: new Date().toISOString(),
+                    mdrrmo_responded_at: reviewedAndDispatchedAt,
                     mdrrmo_responded_by: req.user?.userId || null,
                     mdrrmo_responder_name: responderName,
                     mdrrmo_response_notes: notes || null,
+                    dispatcher_reviewed_at: reviewedAndDispatchedAt,
+                    dispatched_at: reviewedAndDispatchedAt,
                 })
                 .eq('id', id)
                 .select('*, barangays(name)')
@@ -768,7 +771,7 @@ router.patch('/:id/mdrrmo-respond', optionalAuthenticate, async (req: AuthReques
                 ...data,
                 mdrrmo_response_status: 'responding',
                 mdrrmo_responder_name: responderName,
-                mdrrmo_responded_at: new Date().toISOString()
+                mdrrmo_responded_at: reviewedAndDispatchedAt
             };
         }
 
@@ -871,6 +874,7 @@ router.post('/:id/verify', authenticate, authorize('admin', 'dispatcher'), async
             createdIncident = true;
         }
 
+        const reviewedAndDispatchedAt = new Date().toISOString();
         const { data: updatedReport, error: updateError } = await supabaseAdmin
             .from('incident_reports')
             .update({
@@ -880,6 +884,8 @@ router.post('/:id/verify', authenticate, authorize('admin', 'dispatcher'), async
                 status: 'verified',
                 mdrrmo_response_status: 'responding',
                 address,
+                dispatcher_reviewed_at: reviewedAndDispatchedAt,
+                dispatched_at: reviewedAndDispatchedAt,
             })
             .eq('id', id)
             .select('*')

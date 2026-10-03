@@ -23,6 +23,11 @@ class Task {
   final String? proofPhotoUrl;
   final DateTime createdAt;
   final DateTime? completedAt;
+  final DateTime? acceptedAt;
+  final double? travelDistanceM;
+  final double? travelDistanceAccuracyM;
+  final DateTime? travelDistanceFixAt;
+  final DateTime? arrivedAt;
   
   // Incident details (embedded or fetched)
   final String? incidentTitle;
@@ -47,6 +52,11 @@ class Task {
     this.proofPhotoUrl,
     required this.createdAt,
     this.completedAt,
+    this.acceptedAt,
+    this.travelDistanceM,
+    this.travelDistanceAccuracyM,
+    this.travelDistanceFixAt,
+    this.arrivedAt,
     this.incidentTitle,
     this.incidentType,
     this.incidentSeverity,
@@ -83,6 +93,11 @@ class Task {
       proofPhotoUrl: json['proof_photo_url'],
       createdAt: json['created_at'] != null ? DateTime.parse(json['created_at']) : DateTime.now(),
       completedAt: json['completed_at'] != null ? DateTime.parse(json['completed_at']) : null,
+      acceptedAt: json['accepted_at'] != null ? DateTime.parse(json['accepted_at']) : null,
+      travelDistanceM: (json['travel_distance_m'] as num?)?.toDouble(),
+      travelDistanceAccuracyM: (json['travel_distance_accuracy_m'] as num?)?.toDouble(),
+      travelDistanceFixAt: json['travel_distance_fix_at'] != null ? DateTime.parse(json['travel_distance_fix_at']) : null,
+      arrivedAt: json['arrived_at'] != null ? DateTime.parse(json['arrived_at']) : null,
       incidentTitle: incident?['title'],
       incidentType: incident?['type'],
       incidentSeverity: incident?['severity'],

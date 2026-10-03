@@ -3,8 +3,33 @@ import { z } from 'zod';
 import { supabaseAdmin } from '../config/supabase';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth';
 import { io } from '../server';
+import {
+  ARRIVAL_RADIUS_METERS,
+  distanceMeters,
+  validateArrivalFix,
+  validateRecentGpsFix,
+} from '../services/arrivalValidation';
 
 const router = Router();
+
+async function updateLinkedIncidentReport(
+  incidentId: string,
+  patch: Record<string, unknown>,
+  onlyIfMissing?: 'accepted_at' | 'arrived_at' | 'resolved_at',
+): Promise<void> {
+  const result = onlyIfMissing
+    ? await supabaseAdmin.from('incident_reports').update(patch)
+      .eq('dispatch_incident_id', incidentId).is(onlyIfMissing, null).select('*')
+    : await supabaseAdmin.from('incident_reports').update(patch)
+      .eq('dispatch_incident_id', incidentId).select('*');
+  if (result.error) throw result.error;
+  for (const report of result.data || []) {
+    io.to('dashboard_staff').emit('incident_report:updated', report);
+    if (report.barangay_id) {
+      io.to(`barangay:${report.barangay_id}`).emit('barangay:report_updated', report);
+    }
+  }
+}
 
 // ============================================
 // GET /api/tasks — list tasks (filtered by role)
@@ -136,6 +161,11 @@ router.post(
 const updateTaskStatusSchema = z.object({
   status: z.enum(['accepted', 'in_progress', 'returning', 'completed', 'cancelled']),
   proof_photo_url: z.string().url().nullable().optional(),
+  arrival_method: z.enum(['gps', 'manual']).optional(),
+  latitude: z.number().min(-90).max(90).optional(),
+  longitude: z.number().min(-180).max(180).optional(),
+  accuracy_m: z.number().min(0).optional(),
+  fix_at: z.string().optional(),
 });
 
 router.patch('/:id/status', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
@@ -147,12 +177,16 @@ router.patch('/:id/status', authenticate, async (req: AuthRequest, res: Response
       return;
     }
 
-    const { status, proof_photo_url } = parsed.data;
+    const { status, proof_photo_url, arrival_method, latitude, longitude, accuracy_m, fix_at } = parsed.data;
+    if ((latitude === undefined) !== (longitude === undefined)) {
+      res.status(400).json({ error: 'Send both GPS coordinates or neither.' });
+      return;
+    }
 
     // Fetch task details with existing responders
     const { data: existingTask, error: fetchError } = await supabaseAdmin
       .from('tasks')
-      .select('*, responders:task_volunteers(responder_id:volunteer_id, status)')
+      .select('*, incident:incidents(latitude, longitude), responders:task_volunteers(responder_id:volunteer_id, status)')
       .eq('id', req.params.id)
       .single();
 
@@ -166,6 +200,74 @@ router.patch('/:id/status', authenticate, async (req: AuthRequest, res: Response
     if (!['master_admin', 'dispatcher', 'responder'].includes(user.role)) {
       res.status(403).json({ error: 'Access denied.' });
       return;
+    }
+
+    const stageTime = new Date();
+    let arrivalAt = stageTime;
+    let arrivalDistanceM: number | null = null;
+    const effectiveArrivalMethod = arrival_method || 'manual';
+    const incidentLatitude = existingTask.latitude ?? existingTask.incident?.latitude;
+    const incidentLongitude = existingTask.longitude ?? existingTask.incident?.longitude;
+    if (status === 'in_progress' && user.role === 'responder' && existingTask.status !== 'accepted' && existingTask.status !== 'in_progress') {
+      res.status(409).json({ error: 'Accept the dispatch before marking arrival.' });
+      return;
+    }
+    if (status === 'in_progress' && !existingTask.arrived_at && effectiveArrivalMethod === 'gps') {
+      if (latitude === undefined || longitude === undefined || accuracy_m === undefined || !fix_at || incidentLatitude == null || incidentLongitude == null) {
+        res.status(400).json({ error: 'GPS arrival requires incident and responder coordinates, accuracy, and fix time.' });
+        return;
+      }
+      const parsedFixAt = new Date(fix_at);
+      if (Number.isNaN(parsedFixAt.getTime())) {
+        res.status(400).json({ error: 'GPS fix time is invalid.' });
+        return;
+      }
+      arrivalAt = new Date(Math.min(parsedFixAt.getTime(), stageTime.getTime()));
+      const validation = validateArrivalFix(
+        Number(incidentLatitude),
+        Number(incidentLongitude),
+        { latitude, longitude, accuracyM: accuracy_m, fixAt: parsedFixAt },
+        stageTime,
+      );
+      if (!validation.valid) {
+        res.status(422).json({ error: validation.error, distance_m: Math.round(validation.distanceM), arrival_radius_m: ARRIVAL_RADIUS_METERS });
+        return;
+      }
+      arrivalDistanceM = validation.distanceM;
+    } else if (status === 'in_progress' && !existingTask.arrived_at && latitude !== undefined && longitude !== undefined && incidentLatitude != null && incidentLongitude != null) {
+      const validation = validateArrivalFix(
+        Number(incidentLatitude),
+        Number(incidentLongitude),
+        { latitude, longitude, accuracyM: accuracy_m ?? 0, fixAt: stageTime },
+        stageTime,
+      );
+      arrivalDistanceM = validation.distanceM;
+    }
+
+    const arrivalUpdate = status === 'in_progress' && !existingTask.arrived_at ? {
+      arrived_at: arrivalAt.toISOString(),
+      arrival_recorded_at: stageTime.toISOString(),
+      arrival_method: effectiveArrivalMethod,
+      arrival_latitude: latitude ?? null,
+      arrival_longitude: longitude ?? null,
+      arrival_accuracy_m: accuracy_m ?? null,
+      arrival_distance_m: arrivalDistanceM === null ? null : Math.round(arrivalDistanceM * 10) / 10,
+    } : {};
+    const acceptedAt = status === 'accepted' && !existingTask.accepted_at ? stageTime.toISOString() : existingTask.accepted_at;
+    const acceptanceTravelUpdate: Record<string, unknown> = {};
+    if (status === 'accepted' && user.role === 'responder' && !existingTask.accepted_at &&
+        latitude !== undefined && longitude !== undefined && accuracy_m !== undefined && fix_at &&
+        incidentLatitude != null && incidentLongitude != null) {
+      const fixAt = new Date(fix_at);
+      const fix = { latitude, longitude, accuracyM: accuracy_m, fixAt };
+      const validFix = validateRecentGpsFix(fix, stageTime);
+      if (validFix.valid) {
+        acceptanceTravelUpdate.travel_distance_m = Math.round(
+          distanceMeters(Number(incidentLatitude), Number(incidentLongitude), latitude, longitude) * 10,
+        ) / 10;
+        acceptanceTravelUpdate.travel_distance_accuracy_m = Math.round(accuracy_m * 10) / 10;
+        acceptanceTravelUpdate.travel_distance_fix_at = new Date(Math.min(fixAt.getTime(), stageTime.getTime())).toISOString();
+      }
     }
 
     // If completing, require proof photo (only for production)
@@ -202,12 +304,45 @@ router.patch('/:id/status', authenticate, async (req: AuthRequest, res: Response
           mainTaskUpdate.status = 'in_progress';
         }
 
-        const stageTime = new Date().toISOString();
-        if (status === 'accepted' && !existingTask.accepted_at) mainTaskUpdate.accepted_at = stageTime;
-        if (status === 'in_progress' && !existingTask.arrived_at) mainTaskUpdate.arrived_at = stageTime;
+        if (status === 'accepted' && !existingTask.accepted_at) {
+          mainTaskUpdate.accepted_at = acceptedAt;
+          Object.assign(mainTaskUpdate, acceptanceTravelUpdate);
+        }
+        if (status === 'in_progress' && !existingTask.arrived_at) Object.assign(mainTaskUpdate, arrivalUpdate);
 
         if (Object.keys(mainTaskUpdate).length > 0) {
-          await supabaseAdmin.from('tasks').update(mainTaskUpdate).eq('id', req.params.id);
+          const { error: taskUpdateError } = await supabaseAdmin
+            .from('tasks').update(mainTaskUpdate).eq('id', req.params.id);
+          if (taskUpdateError) throw taskUpdateError;
+        }
+
+        if (status === 'accepted') {
+          const linkedTravelUpdate = existingTask.travel_distance_m != null ? {
+            travel_distance_m: existingTask.travel_distance_m,
+            travel_distance_accuracy_m: existingTask.travel_distance_accuracy_m ?? null,
+            travel_distance_fix_at: existingTask.travel_distance_fix_at ?? null,
+          } : acceptanceTravelUpdate;
+          await updateLinkedIncidentReport(existingTask.incident_id, {
+            status: 'responding',
+            accepted_at: acceptedAt,
+            ...linkedTravelUpdate,
+          }, 'accepted_at');
+        } else if (status === 'in_progress') {
+          if (existingTask.accepted_at) {
+            await updateLinkedIncidentReport(existingTask.incident_id, {
+              accepted_at: existingTask.accepted_at,
+            }, 'accepted_at');
+          }
+          const linkedArrivalUpdate = existingTask.arrived_at ? {
+            arrived_at: existingTask.arrived_at,
+            arrival_recorded_at: existingTask.arrival_recorded_at || existingTask.arrived_at,
+            arrival_method: existingTask.arrival_method || 'manual',
+            arrival_latitude: existingTask.arrival_latitude ?? null,
+            arrival_longitude: existingTask.arrival_longitude ?? null,
+            arrival_accuracy_m: existingTask.arrival_accuracy_m ?? null,
+            arrival_distance_m: existingTask.arrival_distance_m ?? null,
+          } : arrivalUpdate;
+          await updateLinkedIncidentReport(existingTask.incident_id, linkedArrivalUpdate, 'arrived_at');
         }
         
         // Broadcast update
@@ -226,6 +361,10 @@ router.patch('/:id/status', authenticate, async (req: AuthRequest, res: Response
         });
         return;
       } else if (status === 'completed') {
+        if (!existingTask.arrived_at) {
+          res.status(409).json({ error: 'Record arrival before completing the response.' });
+          return;
+        }
         const { error: completeError } = await supabaseAdmin
           .from('task_volunteers')
           .update({ status: 'completed' })
@@ -245,9 +384,14 @@ router.patch('/:id/status', authenticate, async (req: AuthRequest, res: Response
         // For simplicity, we mark the main task as completed too
         await supabaseAdmin.from('tasks').update({ 
           status: 'completed',
-          completed_at: new Date().toISOString(),
+          completed_at: stageTime.toISOString(),
           proof_photo_url: proof_photo_url || null
         }).eq('id', req.params.id);
+        await updateLinkedIncidentReport(existingTask.incident_id, {
+          status: 'resolved',
+          mdrrmo_response_status: 'resolved',
+          resolved_at: stageTime.toISOString(),
+        }, 'resolved_at');
 
         // Broadcast update
           io.to('dashboard_staff').emit('task:statusChanged', { taskId: req.params.id, status: 'completed', userId: user.userId });
@@ -259,12 +403,20 @@ router.patch('/:id/status', authenticate, async (req: AuthRequest, res: Response
 
     // Dispatcher or master admin direct status update for the whole task
     const updateData: Record<string, unknown> = { status };
-    const stageTime = new Date().toISOString();
-    if (status === 'accepted') updateData.accepted_at = stageTime;
-    if (status === 'in_progress') updateData.arrived_at = stageTime;
-    if (status === 'returning') updateData.returning_at = stageTime;
+    if (status === 'accepted' && acceptedAt) {
+      updateData.accepted_at = acceptedAt;
+      Object.assign(updateData, acceptanceTravelUpdate);
+    }
+    if (status === 'in_progress' && !existingTask.arrived_at) Object.assign(updateData, arrivalUpdate);
+    if (status === 'returning') updateData.returning_at = stageTime.toISOString();
     if (proof_photo_url) updateData.proof_photo_url = proof_photo_url;
-    if (status === 'completed') updateData.completed_at = stageTime;
+    if (status === 'completed') {
+      if (!existingTask.arrived_at) {
+        res.status(409).json({ error: 'Record arrival before completing the response.' });
+        return;
+      }
+      updateData.completed_at = stageTime.toISOString();
+    }
 
     const { data: task, error } = await supabaseAdmin
       .from('tasks')
@@ -276,6 +428,41 @@ router.patch('/:id/status', authenticate, async (req: AuthRequest, res: Response
     if (error) {
       res.status(500).json({ error: 'Failed to update task status.' });
       return;
+    }
+
+    if (status === 'accepted') {
+      const linkedTravelUpdate = existingTask.travel_distance_m != null ? {
+        travel_distance_m: existingTask.travel_distance_m,
+        travel_distance_accuracy_m: existingTask.travel_distance_accuracy_m ?? null,
+        travel_distance_fix_at: existingTask.travel_distance_fix_at ?? null,
+      } : acceptanceTravelUpdate;
+      await updateLinkedIncidentReport(existingTask.incident_id, {
+        status: 'responding',
+        accepted_at: acceptedAt,
+        ...linkedTravelUpdate,
+      }, 'accepted_at');
+    } else if (status === 'in_progress') {
+      if (existingTask.accepted_at) {
+        await updateLinkedIncidentReport(existingTask.incident_id, {
+          accepted_at: existingTask.accepted_at,
+        }, 'accepted_at');
+      }
+      const linkedArrivalUpdate = existingTask.arrived_at ? {
+        arrived_at: existingTask.arrived_at,
+        arrival_recorded_at: existingTask.arrival_recorded_at || existingTask.arrived_at,
+        arrival_method: existingTask.arrival_method || 'manual',
+        arrival_latitude: existingTask.arrival_latitude ?? null,
+        arrival_longitude: existingTask.arrival_longitude ?? null,
+        arrival_accuracy_m: existingTask.arrival_accuracy_m ?? null,
+        arrival_distance_m: existingTask.arrival_distance_m ?? null,
+      } : arrivalUpdate;
+      await updateLinkedIncidentReport(existingTask.incident_id, linkedArrivalUpdate, 'arrived_at');
+    } else if (status === 'completed') {
+      await updateLinkedIncidentReport(existingTask.incident_id, {
+        status: 'resolved',
+        mdrrmo_response_status: 'resolved',
+        resolved_at: stageTime.toISOString(),
+      }, 'resolved_at');
     }
 
     // Broadcast update

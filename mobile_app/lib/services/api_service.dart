@@ -83,6 +83,10 @@ class ApiService {
     String reportId, {
     String? notes,
     String? mdrrmoNotes,
+    double? latitude,
+    double? longitude,
+    double? accuracyM,
+    DateTime? fixAt,
   }) async {
     final res = await http.patch(
       Uri.parse('$baseUrl/barangay/reports/$reportId/respond'),
@@ -90,6 +94,10 @@ class ApiService {
       body: jsonEncode({
         'notes': notes,
         'mdrrmo_notes': mdrrmoNotes,
+        if (latitude != null) 'latitude': latitude,
+        if (longitude != null) 'longitude': longitude,
+        if (accuracyM != null) 'accuracy_m': accuracyM,
+        if (fixAt != null) 'fix_at': fixAt.toUtc().toIso8601String(),
       }),
     );
     if (res.statusCode == 200) {
@@ -97,6 +105,33 @@ class ApiService {
     }
     final data = jsonDecode(res.body);
     throw Exception(data['error'] ?? 'Failed to respond to report');
+  }
+
+  static Future<IncidentReport> markReportArrived(
+    String token,
+    String reportId, {
+    String method = 'manual',
+    double? latitude,
+    double? longitude,
+    double? accuracyM,
+    DateTime? fixAt,
+  }) async {
+    final res = await http.patch(
+      Uri.parse('$baseUrl/barangay/reports/$reportId/arrive'),
+      headers: _headers(token),
+      body: jsonEncode({
+        'method': method,
+        if (latitude != null) 'latitude': latitude,
+        if (longitude != null) 'longitude': longitude,
+        if (accuracyM != null) 'accuracy_m': accuracyM,
+        if (fixAt != null) 'fix_at': fixAt.toUtc().toIso8601String(),
+      }),
+    );
+    if (res.statusCode == 200) {
+      return IncidentReport.fromJson(jsonDecode(res.body));
+    }
+    final data = jsonDecode(res.body);
+    throw Exception(data['error'] ?? 'Failed to record arrival');
   }
 
   static Future<IncidentReport> uploadFieldMedia(

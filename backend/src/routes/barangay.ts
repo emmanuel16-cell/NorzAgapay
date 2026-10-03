@@ -13,6 +13,12 @@ import { authenticate, AuthRequest } from '../middleware/auth';
 import { io } from '../server';
 import { DispatcherVerificationService, normalizePositionDesignation } from '../services/dispatcherVerificationService';
 import { emailService } from '../services/emailService';
+import {
+  ARRIVAL_RADIUS_METERS,
+  distanceMeters,
+  validateArrivalFix,
+  validateRecentGpsFix,
+} from '../services/arrivalValidation';
 import { getVerifiedBarangayIds, isBarangayVerified } from '../services/verifiedBarangayService';
 import { formatIncidentReport } from './incidentReports';
 
@@ -1558,6 +1564,7 @@ router.patch('/reports/:id/dispatch', authenticateBarangay, requireRole(['dispat
     }
 
     const primaryLeaderId = ids[0];
+    const reviewedAndDispatchedAt = new Date().toISOString();
     const responderNames = teamLeaders.map((tl: any) => tl.full_name).join(', ');
     const cleanUserNotes = (notes || '').replace(/^\[ASSIGNED:[^\]]+\]\s*/, '').trim();
     const encodedNotes = ids.length > 1
@@ -1572,7 +1579,9 @@ router.patch('/reports/:id/dispatch', authenticateBarangay, requireRole(['dispat
         barangay_response_status: 'pending',
         barangay_response_notes: encodedNotes,
         barangay_responded_by: primaryLeaderId,
-        barangay_responded_at: new Date().toISOString(),
+        barangay_responded_at: reviewedAndDispatchedAt,
+        dispatcher_reviewed_at: reviewedAndDispatchedAt,
+        dispatched_at: reviewedAndDispatchedAt,
       })
       .eq('id', req.params.id)
       .eq('barangay_id', req.barangayUser.barangayId)
@@ -1706,9 +1715,27 @@ router.patch('/reports/:id/escalate', authenticateBarangay, requireRole(['dispat
 
 router.patch('/reports/:id/respond', authenticateBarangay, requireRole(['dispatcher', 'responder']), async (req: any, res: Response) => {
   try {
-    const { notes, mdrrmo_notes } = req.body;
+    const schema = z.object({
+      notes: z.string().nullable().optional(),
+      mdrrmo_notes: z.string().nullable().optional(),
+      latitude: z.number().min(-90).max(90).optional(),
+      longitude: z.number().min(-180).max(180).optional(),
+      accuracy_m: z.number().min(0).optional(),
+      fix_at: z.string().optional(),
+    }).strict();
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Invalid response details.', details: parsed.error.flatten() });
+      return;
+    }
+    const { notes, mdrrmo_notes, latitude, longitude, accuracy_m, fix_at } = parsed.data;
+    if ((latitude === undefined) !== (longitude === undefined)) {
+      res.status(400).json({ error: 'Send both GPS coordinates or neither.' });
+      return;
+    }
     const { data: currentReport, error: currentError } = await supabaseAdmin
-      .from('incident_reports').select('barangay_response_notes, barangay_responded_by')
+      .from('incident_reports')
+      .select('latitude, longitude, barangay_response_notes, barangay_responded_by, accepted_at')
       .eq('id', req.params.id).eq('barangay_id', req.barangayUser.barangayId).maybeSingle();
     if (currentError) throw currentError;
     if (!currentReport) { res.status(404).json({ error: 'Incident report not found' }); return; }
@@ -1719,11 +1746,28 @@ router.patch('/reports/:id/respond', authenticateBarangay, requireRole(['dispatc
         res.status(403).json({ error: 'This incident has not been assigned to your responder account' }); return;
       }
     }
+    const actionAt = new Date().toISOString();
     const updatePayload: any = {
       barangay_response_status: 'responding',
       barangay_responded_by: req.barangayUser.userId,
-      barangay_responded_at: new Date().toISOString(),
+      barangay_responded_at: actionAt,
     };
+    if (req.barangayUser.role === 'responder') {
+      updatePayload.accepted_at = currentReport.accepted_at || actionAt;
+    }
+    if (req.barangayUser.role === 'responder' && !currentReport.accepted_at &&
+        latitude !== undefined && longitude !== undefined && accuracy_m !== undefined && fix_at) {
+      const fixAt = new Date(fix_at);
+      const fix = { latitude, longitude, accuracyM: accuracy_m, fixAt };
+      const validFix = validateRecentGpsFix(fix);
+      if (validFix.valid && currentReport.latitude != null && currentReport.longitude != null) {
+        updatePayload.travel_distance_m = Math.round(
+          distanceMeters(currentReport.latitude, currentReport.longitude, latitude, longitude) * 10,
+        ) / 10;
+        updatePayload.travel_distance_accuracy_m = Math.round(accuracy_m * 10) / 10;
+        updatePayload.travel_distance_fix_at = new Date(Math.min(fixAt.getTime(), Date.now())).toISOString();
+      }
+    }
     if (notes !== undefined && notes !== null) {
       const assignmentMarker = (currentReport.barangay_response_notes || '').match(/^\[ASSIGNED:[^\]]+\]/)?.[0];
       updatePayload.barangay_response_notes = [assignmentMarker, notes].filter(Boolean).join(' ');
@@ -1784,6 +1828,135 @@ router.patch('/reports/:id/respond', authenticateBarangay, requireRole(['dispatc
   }
 });
 
+// ─── PATCH /api/barangay/reports/:id/arrive ─────────────────────────────────
+// Record a manual arrival or a server-validated GPS arrival.
+router.patch('/reports/:id/arrive', authenticateBarangay, requireRole(['responder']), async (req: any, res: Response) => {
+  try {
+    const schema = z.object({
+      method: z.enum(['gps', 'manual']),
+      latitude: z.number().min(-90).max(90).optional(),
+      longitude: z.number().min(-180).max(180).optional(),
+      accuracy_m: z.number().min(0).optional(),
+      fix_at: z.string().optional(),
+    }).strict();
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Invalid arrival details.', details: parsed.error.flatten() });
+      return;
+    }
+    if ((parsed.data.latitude === undefined) !== (parsed.data.longitude === undefined)) {
+      res.status(400).json({ error: 'Send both GPS coordinates or neither.' });
+      return;
+    }
+
+    const { data: currentReport, error: fetchError } = await supabaseAdmin
+      .from('incident_reports')
+      .select('id, latitude, longitude, barangay_response_status, barangay_responded_by, barangay_response_notes, accepted_at, arrived_at, resolved_at')
+      .eq('id', req.params.id)
+      .eq('barangay_id', req.barangayUser.barangayId)
+      .maybeSingle();
+    if (fetchError) throw fetchError;
+    if (!currentReport) {
+      res.status(404).json({ error: 'Incident report not found.' });
+      return;
+    }
+
+    const assignedMatch = (currentReport.barangay_response_notes || '').match(/^\[ASSIGNED:([^\]]+)\]/);
+    const assignedIds = assignedMatch ? assignedMatch[1].split(',').map((id: string) => id.trim()) : [];
+    if (currentReport.barangay_responded_by !== req.barangayUser.userId && !assignedIds.includes(req.barangayUser.userId)) {
+      res.status(403).json({ error: 'This incident has not been assigned to your responder account.' });
+      return;
+    }
+    if (currentReport.resolved_at || currentReport.barangay_response_status !== 'responding') {
+      res.status(409).json({ error: 'Accept the dispatch before marking arrival.' });
+      return;
+    }
+    if (currentReport.arrived_at) {
+      res.json(currentReport);
+      return;
+    }
+
+    const now = new Date();
+    let fixAt = now;
+    let distanceM: number | null = null;
+    let latitude: number | null = parsed.data.latitude ?? null;
+    let longitude: number | null = parsed.data.longitude ?? null;
+    let accuracyM: number | null = parsed.data.accuracy_m ?? null;
+
+    if (parsed.data.method === 'gps') {
+      if (latitude === null || longitude === null || accuracyM === null || !parsed.data.fix_at) {
+        res.status(400).json({ error: 'GPS arrival requires coordinates, accuracy, and fix time.' });
+        return;
+      }
+      const parsedFixAt = new Date(parsed.data.fix_at);
+      if (Number.isNaN(parsedFixAt.getTime())) {
+        res.status(400).json({ error: 'GPS fix time is invalid.' });
+        return;
+      }
+      const validation = validateArrivalFix(
+        currentReport.latitude,
+        currentReport.longitude,
+        { latitude, longitude, accuracyM, fixAt: parsedFixAt },
+        now,
+      );
+      if (!validation.valid) {
+        res.status(422).json({
+          error: validation.error,
+          distance_m: Math.round(validation.distanceM),
+          arrival_radius_m: ARRIVAL_RADIUS_METERS,
+        });
+        return;
+      }
+      fixAt = new Date(Math.min(parsedFixAt.getTime(), now.getTime()));
+      distanceM = validation.distanceM;
+    } else if (latitude !== null && longitude !== null) {
+      distanceM = validateArrivalFix(
+        currentReport.latitude,
+        currentReport.longitude,
+        { latitude, longitude, accuracyM: accuracyM ?? 0, fixAt: now },
+        now,
+      ).distanceM;
+    }
+
+    const updatePayload = {
+      accepted_at: currentReport.accepted_at || now.toISOString(),
+      arrived_at: fixAt.toISOString(),
+      arrival_recorded_at: now.toISOString(),
+      arrival_method: parsed.data.method,
+      arrival_latitude: latitude,
+      arrival_longitude: longitude,
+      arrival_accuracy_m: accuracyM,
+      arrival_distance_m: distanceM === null ? null : Math.round(distanceM * 10) / 10,
+    };
+    const { data, error } = await supabaseAdmin
+      .from('incident_reports')
+      .update(updatePayload)
+      .eq('id', req.params.id)
+      .eq('barangay_id', req.barangayUser.barangayId)
+      .is('arrived_at', null)
+      .select()
+      .maybeSingle();
+    if (error) throw error;
+
+    let updated = data;
+    if (!updated) {
+      const { data: latestReport, error: latestError } = await supabaseAdmin
+        .from('incident_reports').select('*')
+        .eq('id', req.params.id)
+        .eq('barangay_id', req.barangayUser.barangayId)
+        .single();
+      if (latestError) throw latestError;
+      updated = latestReport;
+    }
+    io.to('dashboard_staff').emit('incident_report:updated', updated);
+    io.to(`barangay:${req.barangayUser.barangayId}`).emit('barangay:report_updated', updated);
+    res.json(updated);
+  } catch (err) {
+    console.error('Mark report arrival error:', err);
+    res.status(500).json({ error: 'Failed to record arrival.' });
+  }
+});
+
 // ─── POST /api/barangay/reports/:id/close ───────────────────────────────────
 // Close and record the incident
 
@@ -1797,13 +1970,18 @@ router.post('/reports/:id/close', authenticateBarangay, requireRole(['dispatcher
 
     const { data: currentReport, error: accessError } = await supabaseAdmin
       .from('incident_reports')
-      .select('barangay_response_notes, barangay_responded_by')
+      .select('barangay_response_notes, barangay_responded_by, arrived_at, resolved_at')
       .eq('id', req.params.id)
       .eq('barangay_id', req.barangayUser.barangayId)
       .maybeSingle();
     if (accessError) throw accessError;
     if (!currentReport) {
       res.status(404).json({ error: 'Incident report not found' });
+      return;
+    }
+
+    if (!currentReport.arrived_at) {
+      res.status(409).json({ error: 'Mark the responder as arrived before resolving the incident.' });
       return;
     }
 
@@ -1819,7 +1997,7 @@ router.post('/reports/:id/close', authenticateBarangay, requireRole(['dispatcher
       .update({
         barangay_response_status: 'resolved',
         resolved_notes: resolved_notes.trim(),
-        resolved_at: new Date().toISOString(),
+        resolved_at: currentReport.resolved_at || new Date().toISOString(),
         status: 'resolved',
       })
       .eq('id', req.params.id)

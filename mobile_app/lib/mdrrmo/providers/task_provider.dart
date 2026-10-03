@@ -34,13 +34,28 @@ class TaskProvider with ChangeNotifier {
     }
   }
 
-  Future<void> updateTaskStatus(String taskId, String status, String token, {String? proofUrl}) async {
+  Future<void> updateTaskStatus(
+    String taskId,
+    String status,
+    String token, {
+    String? proofUrl,
+    String? arrivalMethod,
+    double? latitude,
+    double? longitude,
+    double? accuracyM,
+    DateTime? fixAt,
+  }) async {
     try {
       final response = await http.patch(
         Uri.parse('${AppConstants.apiBaseUrl}/tasks/$taskId/status'),
         body: json.encode({
           'status': status,
           'proof_photo_url': proofUrl,
+          if (arrivalMethod != null) 'arrival_method': arrivalMethod,
+          if (latitude != null) 'latitude': latitude,
+          if (longitude != null) 'longitude': longitude,
+          if (accuracyM != null) 'accuracy_m': accuracyM,
+          if (fixAt != null) 'fix_at': fixAt.toUtc().toIso8601String(),
         }),
         headers: {
           'Content-Type': 'application/json',
@@ -70,6 +85,11 @@ class TaskProvider with ChangeNotifier {
               proofPhotoUrl: oldTask.proofPhotoUrl,
               createdAt: oldTask.createdAt,
               completedAt: oldTask.completedAt,
+              acceptedAt: oldTask.acceptedAt,
+              travelDistanceM: oldTask.travelDistanceM,
+              travelDistanceAccuracyM: oldTask.travelDistanceAccuracyM,
+              travelDistanceFixAt: oldTask.travelDistanceFixAt,
+              arrivedAt: oldTask.arrivedAt,
               incidentTitle: oldTask.incidentTitle,
               incidentType: oldTask.incidentType,
               incidentSeverity: oldTask.incidentSeverity,
@@ -80,6 +100,9 @@ class TaskProvider with ChangeNotifier {
           }
           notifyListeners();
         }
+      } else {
+        final body = json.decode(response.body);
+        throw Exception(body['error'] ?? 'Failed to update task status');
       }
     } catch (e) {
       rethrow;

@@ -1,8 +1,10 @@
 import 'dart:io';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:location/location.dart';
+import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -40,6 +42,11 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
   bool _isProcessing = false;
   int _selectedTabIndex = 0;
   final Location _locationService = Location();
+  StreamSubscription<LocationData>? _arrivalLocationSubscription;
+  LocationData? _latestLocationData;
+  DateTime? _arrivalCandidateSince;
+  bool _arrivalSubmitting = false;
+  bool _startingArrivalMonitoring = false;
   final MapController _mapController = MapController();
   LatLng? _currentLocation;
   String? _locationMessage;
@@ -65,6 +72,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           setState(() {
             _report = IncidentReport.fromJson(Map<String, dynamic>.from(data));
           });
+          _syncArrivalMonitoring();
         }
       });
       socket.onReportUpdated((data) {
@@ -74,6 +82,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           setState(() {
             _report = IncidentReport.fromJson(Map<String, dynamic>.from(data));
           });
+          _syncArrivalMonitoring();
         }
       });
     });
@@ -140,6 +149,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
 
       final location = await _locationService.getLocation();
       if (location.latitude != null && location.longitude != null && mounted) {
+        _latestLocationData = location;
         setState(() {
           _currentLocation = LatLng(location.latitude!, location.longitude!);
           _locationMessage = null;
@@ -150,6 +160,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
             _mapController.move(_mapCenter(incident), _mapZoom(incident));
           }
         });
+        _syncArrivalMonitoring();
       }
     } catch (_) {
       if (mounted)
@@ -157,6 +168,247 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           () => _locationMessage = 'Unable to get your current location',
         );
     }
+  }
+
+  Future<LocationData?> _getAcceptanceLocation() async {
+    try {
+      if (!await _locationService.serviceEnabled()) return null;
+      var permission = await _locationService.hasPermission();
+      if (permission == PermissionStatus.denied) {
+        permission = await _locationService.requestPermission();
+      }
+      if (permission != PermissionStatus.granted &&
+          permission != PermissionStatus.grantedLimited) return null;
+      return await _locationService.getLocation();
+    } catch (error) {
+      debugPrint('Acceptance location capture error: $error');
+      return null;
+    }
+  }
+
+  bool _canMonitorArrival() {
+    final user = Provider.of<AuthService>(context, listen: false).currentUser;
+    return user?.isResponder == true &&
+        _report.isResponding &&
+        !_report.isResolved &&
+        !_report.isArrived &&
+        user != null &&
+        _report.isAssignedToUser(user.id, userFullName: user.fullName);
+  }
+
+  void _syncArrivalMonitoring() {
+    if (_canMonitorArrival()) {
+      unawaited(_startArrivalMonitoring());
+    } else {
+      _arrivalLocationSubscription?.cancel();
+      _arrivalLocationSubscription = null;
+      _arrivalCandidateSince = null;
+    }
+  }
+
+  Future<void> _startArrivalMonitoring() async {
+    if (_arrivalLocationSubscription != null ||
+        _startingArrivalMonitoring ||
+        !_canMonitorArrival()) return;
+    _startingArrivalMonitoring = true;
+    try {
+      if (!await _locationService.serviceEnabled()) return;
+      var permission = await _locationService.hasPermission();
+      if (permission == PermissionStatus.denied) {
+        permission = await _locationService.requestPermission();
+      }
+      if (permission != PermissionStatus.granted &&
+          permission != PermissionStatus.grantedLimited) return;
+      if (!mounted || !_canMonitorArrival()) return;
+
+      await _locationService.changeSettings(
+        accuracy: LocationAccuracy.high,
+        interval: 5000,
+        distanceFilter: 5,
+      );
+      _arrivalLocationSubscription = _locationService.onLocationChanged.listen(
+        (location) => unawaited(_handleArrivalLocation(location)),
+      );
+    } catch (error) {
+      debugPrint('Arrival location monitoring error: $error');
+    } finally {
+      _startingArrivalMonitoring = false;
+    }
+  }
+
+  Future<void> _handleArrivalLocation(LocationData location) async {
+    if (!mounted || !_canMonitorArrival() || _arrivalSubmitting) return;
+    if (location.latitude == null || location.longitude == null) return;
+    _latestLocationData = location;
+    final accuracy = location.accuracy;
+    final current = LatLng(location.latitude!, location.longitude!);
+    if (mounted) setState(() => _currentLocation = current);
+
+    final distanceM = const Distance().as(
+      LengthUnit.Meter,
+      current,
+      LatLng(_report.latitude, _report.longitude),
+    );
+    if (accuracy == null || accuracy < 0 || accuracy > 50 || distanceM + accuracy > 100) {
+      _arrivalCandidateSince = null;
+      return;
+    }
+
+    final now = DateTime.now().toUtc();
+    _arrivalCandidateSince ??= now;
+    if (now.difference(_arrivalCandidateSince!).inSeconds < 15) return;
+    await _recordArrival(
+      method: 'gps',
+      latitude: location.latitude!,
+      longitude: location.longitude!,
+      accuracyM: accuracy,
+      fixAt: _locationFixTime(location),
+    );
+  }
+
+  DateTime _locationFixTime(LocationData location) {
+    final timestamp = location.time;
+    if (timestamp == null || timestamp <= 0) return DateTime.now().toUtc();
+    return DateTime.fromMillisecondsSinceEpoch(timestamp.round(), isUtc: true);
+  }
+
+  Future<void> _recordArrival({
+    required String method,
+    double? latitude,
+    double? longitude,
+    double? accuracyM,
+    DateTime? fixAt,
+  }) async {
+    if (_arrivalSubmitting || _report.isArrived) return;
+    final auth = Provider.of<AuthService>(context, listen: false);
+    if (auth.token == null) return;
+    setState(() => _arrivalSubmitting = true);
+    try {
+      final updated = await ApiService.markReportArrived(
+        auth.token!,
+        _report.id,
+        method: method,
+        latitude: latitude,
+        longitude: longitude,
+        accuracyM: accuracyM,
+        fixAt: fixAt,
+      );
+      if (mounted) {
+        setState(() => _report = updated);
+        _syncArrivalMonitoring();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(method == 'gps' ? 'Arrival confirmed by GPS.' : 'Arrival recorded manually.'),
+            backgroundColor: const Color(0xFF10B981),
+          ),
+        );
+      }
+    } catch (error) {
+      if (method == 'gps') _arrivalCandidateSince = null;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not record arrival: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _arrivalSubmitting = false);
+    }
+  }
+
+  Future<void> _markArrivalManually() async {
+    final location = _latestLocationData;
+    await _recordArrival(
+      method: 'manual',
+      latitude: location?.latitude,
+      longitude: location?.longitude,
+      accuracyM: location?.accuracy,
+    );
+  }
+
+  String _formatTimestamp(DateTime? timestamp) => timestamp == null
+      ? 'Not recorded'
+      : DateFormat('MMM d, y · h:mm a').format(timestamp.toLocal());
+
+  String _formatElapsed(DateTime? start, DateTime? end) {
+    if (start == null || end == null) return '—';
+    final seconds = end.difference(start).inSeconds;
+    if (seconds < 0) return '—';
+    final duration = Duration(seconds: seconds);
+    final hours = duration.inHours;
+    final minutes = duration.inMinutes.remainder(60);
+    final remainingSeconds = duration.inSeconds.remainder(60);
+    if (hours > 0) return '${hours}h ${minutes}m';
+    if (minutes > 0) return '${minutes}m ${remainingSeconds}s';
+    return '${remainingSeconds}s';
+  }
+
+  String _formatDistance(double distanceM) => distanceM >= 1000
+      ? '${(distanceM / 1000).toStringAsFixed(distanceM >= 10000 ? 1 : 2)} km'
+      : '${distanceM.round()} m';
+
+  Widget _buildResponseTimeline() {
+    final rows = <(String, DateTime?, String)>[
+      ('Report received', _report.createdAt, ''),
+      ('Dispatcher reviewed', _report.dispatcherReviewedAt, ''),
+      ('Responder dispatched', _report.dispatchedAt, ''),
+      ('Responder accepted', _report.acceptedAt,
+        'Response to acceptance: ${_formatElapsed(_report.createdAt, _report.acceptedAt)}'),
+      ('Arrived at incident area', _report.arrivedAt,
+        'Travel to arrival: ${_formatElapsed(_report.acceptedAt, _report.arrivedAt)}'),
+      ('Incident resolved', _report.resolvedAt,
+        'Time to resolve: ${_formatElapsed(_report.arrivedAt, _report.resolvedAt)}'),
+    ];
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Response Timeline', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+          const SizedBox(height: 8),
+          ...rows.map((row) => Padding(
+            padding: const EdgeInsets.symmetric(vertical: 5),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.circle, size: 7, color: Color(0xFF0284C7)),
+                const SizedBox(width: 9),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(row.$1, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF334155))),
+                  Text(_formatTimestamp(row.$2), style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                  if (row.$3.isNotEmpty) Text(row.$3, style: const TextStyle(fontSize: 11, color: Color(0xFF0369A1))),
+                ])),
+              ],
+            ),
+          )),
+          if (_report.travelDistanceM != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 4, left: 16),
+              child: Text(
+                'Responder distance at acceptance: ${_formatDistance(_report.travelDistanceM!)} from incident${_report.travelDistanceAccuracyM == null ? '' : ' · GPS accuracy ±${_report.travelDistanceAccuracyM!.round()} m'}',
+                style: const TextStyle(fontSize: 11, color: Color(0xFF0369A1)),
+              ),
+            ),
+          if (_report.arrivedAt != null)
+            Text(
+              'Arrival recorded ${_report.arrivalMethod == 'gps' ? 'by GPS' : 'manually'}${_report.arrivalDistanceM == null ? '' : ' · ${_report.arrivalDistanceM!.round()} m from incident'}',
+              style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+            ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _arrivalLocationSubscription?.cancel();
+    super.dispose();
   }
 
   LatLng _mapCenter(LatLng incidentLocation) {
@@ -1018,16 +1270,24 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     setState(() => _isProcessing = true);
     final auth = Provider.of<AuthService>(context, listen: false);
     try {
+      final acceptanceLocation = await _getAcceptanceLocation();
       final updated = await ApiService.respondToReport(
         auth.token!,
         _report.id,
         notes: 'Accepted by Responder ${auth.currentUser?.fullName ?? ""}',
+        latitude: acceptanceLocation?.latitude,
+        longitude: acceptanceLocation?.longitude,
+        accuracyM: acceptanceLocation?.accuracy,
+        fixAt: acceptanceLocation == null ? null : _locationFixTime(acceptanceLocation),
       );
       setState(() => _report = updated);
+      _syncArrivalMonitoring();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Incident accepted! Moved to Responding.'),
+          SnackBar(
+            content: Text(updated.travelDistanceM == null
+                ? 'Incident accepted. Travel distance could not be captured from GPS.'
+                : 'Incident accepted. Starting distance: ${_formatDistance(updated.travelDistanceM!)}.'),
             backgroundColor: Color(0xFF10B981),
           ),
         );
@@ -1681,6 +1941,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (_selectedTabIndex == 0) ...[
+                _buildResponseTimeline(),
                 if (_report.isMdrrmoResponding) ...[
                   Container(
                     margin: const EdgeInsets.only(bottom: 14),
@@ -2460,6 +2721,46 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                 if (isResponder &&
                     _report.isResponding &&
                     !_report.isResolved) ...[
+                  if (!_report.isArrived &&
+                      _report.isAssignedToUser(
+                        user?.id ?? '',
+                        userFullName: user?.fullName,
+                      )) ...[
+                    Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE0F2FE),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFFBAE6FD)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Arrival detection is active while this report is open. GPS confirms arrival inside the 100 m incident area.',
+                            style: TextStyle(color: Color(0xFF075985), fontSize: 12),
+                          ),
+                          const SizedBox(height: 8),
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              onPressed: (_isProcessing || _arrivalSubmitting)
+                                  ? null
+                                  : _markArrivalManually,
+                              icon: const Icon(Icons.location_on_outlined),
+                              label: const Text('Mark Arrival Manually'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: const Color(0xFF0369A1),
+                                side: const BorderSide(color: Color(0xFF0284C7)),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   SizedBox(
                     width: double.infinity,
                     height: 50,

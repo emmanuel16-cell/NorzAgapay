@@ -32,6 +32,19 @@ class IncidentReport {
   final DateTime? mdrrmoRespondedAt;
   final String? resolvedNotes;
   final DateTime? createdAt;
+  final DateTime? dispatcherReviewedAt;
+  final DateTime? dispatchedAt;
+  final DateTime? acceptedAt;
+  final double? travelDistanceM;
+  final double? travelDistanceAccuracyM;
+  final DateTime? travelDistanceFixAt;
+  final DateTime? arrivedAt;
+  final DateTime? arrivalRecordedAt;
+  final String? arrivalMethod;
+  final double? arrivalLatitude;
+  final double? arrivalLongitude;
+  final double? arrivalAccuracyM;
+  final double? arrivalDistanceM;
   final DateTime? resolvedAt;
 
   IncidentReport({
@@ -66,6 +79,19 @@ class IncidentReport {
     this.mdrrmoRespondedAt,
     this.resolvedNotes,
     this.createdAt,
+    this.dispatcherReviewedAt,
+    this.dispatchedAt,
+    this.acceptedAt,
+    this.travelDistanceM,
+    this.travelDistanceAccuracyM,
+    this.travelDistanceFixAt,
+    this.arrivedAt,
+    this.arrivalRecordedAt,
+    this.arrivalMethod,
+    this.arrivalLatitude,
+    this.arrivalLongitude,
+    this.arrivalAccuracyM,
+    this.arrivalDistanceM,
     this.resolvedAt,
   })  : proofUrls = proofUrls ?? (proofUrl != null ? [proofUrl] : []),
         proofTypes = proofTypes ?? [proofType],
@@ -76,6 +102,7 @@ class IncidentReport {
   bool get isResolved => barangayResponseStatus == 'resolved' || status == 'resolved';
   bool get isPending => !isResponding && !isResolved;
   bool get isMdrrmoResponding => mdrrmoResponseStatus == 'responding';
+  bool get isArrived => arrivedAt != null;
 
   String? get cleanBarangayNotes {
     if (barangayResponseNotes == null) return null;
@@ -194,6 +221,19 @@ class IncidentReport {
       mdrrmoRespondedAt: json['mdrrmo_responded_at'] != null ? DateTime.tryParse(json['mdrrmo_responded_at']) : null,
       resolvedNotes: json['resolved_notes'],
       createdAt: json['created_at'] != null ? DateTime.tryParse(json['created_at']) : null,
+      dispatcherReviewedAt: json['dispatcher_reviewed_at'] != null ? DateTime.tryParse(json['dispatcher_reviewed_at']) : null,
+      dispatchedAt: json['dispatched_at'] != null ? DateTime.tryParse(json['dispatched_at']) : null,
+      acceptedAt: json['accepted_at'] != null ? DateTime.tryParse(json['accepted_at']) : null,
+      travelDistanceM: (json['travel_distance_m'] as num?)?.toDouble(),
+      travelDistanceAccuracyM: (json['travel_distance_accuracy_m'] as num?)?.toDouble(),
+      travelDistanceFixAt: json['travel_distance_fix_at'] != null ? DateTime.tryParse(json['travel_distance_fix_at']) : null,
+      arrivedAt: json['arrived_at'] != null ? DateTime.tryParse(json['arrived_at']) : null,
+      arrivalRecordedAt: json['arrival_recorded_at'] != null ? DateTime.tryParse(json['arrival_recorded_at']) : null,
+      arrivalMethod: json['arrival_method'],
+      arrivalLatitude: (json['arrival_latitude'] as num?)?.toDouble(),
+      arrivalLongitude: (json['arrival_longitude'] as num?)?.toDouble(),
+      arrivalAccuracyM: (json['arrival_accuracy_m'] as num?)?.toDouble(),
+      arrivalDistanceM: (json['arrival_distance_m'] as num?)?.toDouble(),
       resolvedAt: json['resolved_at'] != null ? DateTime.tryParse(json['resolved_at']) : null,
     );
   }
@@ -228,6 +268,19 @@ class IncidentReport {
       'mdrrmo_responded_at': mdrrmoRespondedAt?.toIso8601String(),
       'resolved_notes': resolvedNotes,
       'created_at': createdAt?.toIso8601String(),
+      'dispatcher_reviewed_at': dispatcherReviewedAt?.toIso8601String(),
+      'dispatched_at': dispatchedAt?.toIso8601String(),
+      'accepted_at': acceptedAt?.toIso8601String(),
+      'travel_distance_m': travelDistanceM,
+      'travel_distance_accuracy_m': travelDistanceAccuracyM,
+      'travel_distance_fix_at': travelDistanceFixAt?.toIso8601String(),
+      'arrived_at': arrivedAt?.toIso8601String(),
+      'arrival_recorded_at': arrivalRecordedAt?.toIso8601String(),
+      'arrival_method': arrivalMethod,
+      'arrival_latitude': arrivalLatitude,
+      'arrival_longitude': arrivalLongitude,
+      'arrival_accuracy_m': arrivalAccuracyM,
+      'arrival_distance_m': arrivalDistanceM,
       'resolved_at': resolvedAt?.toIso8601String(),
     };
   }
