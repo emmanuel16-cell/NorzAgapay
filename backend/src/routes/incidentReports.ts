@@ -8,6 +8,7 @@ import { AuthPayload, AuthRequest, authenticate, authorize } from '../middleware
 import { io } from '../server';
 import { matchRespondersToIncident } from '../services/matchingEngine';
 import { isBarangayVerified } from '../services/verifiedBarangayService';
+import { estimateReportTimings } from '../services/reportTiming';
 import {
   getMunicipalityBoundaryConfiguration,
   isPointInBoundary,
@@ -365,6 +366,22 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
       proof_urls: proofUrls.length > 0 ? proofUrls : ((report as any)?.proof_urls || []),
       proof_types: proofTypes.length > 0 ? proofTypes : ((report as any)?.proof_types || []),
     });
+    if (report.barangay_id) {
+      const { data: timingHistory, error: timingError } = await supabaseAdmin
+        .from('incident_reports')
+        .select('barangay_id, type, severity, created_at, accepted_at, arrived_at, resolved_at, travel_distance_m')
+        .eq('barangay_id', report.barangay_id)
+        .not('accepted_at', 'is', null)
+        .not('arrived_at', 'is', null)
+        .not('resolved_at', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(5000);
+      if (timingError) {
+        console.warn('Could not calculate initial resident timing estimates:', timingError);
+      } else {
+        formattedReport.expected_timings = estimateReportTimings(report, timingHistory || []);
+      }
+    }
 
     // If sent to MDRRMO (or all):
     if (targetSendTo !== 'barangay') {
@@ -453,7 +470,59 @@ router.get('/resident', async (req: Request, res: Response) => {
       return res.status(500).json({ error: 'Failed to fetch reports' });
     }
 
-    res.json((reports || []).map(formatIncidentReport));
+    const reportRows = reports || [];
+    const barangayIds = [...new Set(reportRows.map((report: any) => report.barangay_id).filter(Boolean))];
+    let timingHistory: any[] = [];
+    if (barangayIds.length > 0) {
+      const { data: history, error: historyError } = await supabaseAdmin
+        .from('incident_reports')
+        .select('barangay_id, type, severity, created_at, accepted_at, arrived_at, resolved_at, travel_distance_m')
+        .in('barangay_id', barangayIds)
+        .not('accepted_at', 'is', null)
+        .not('arrived_at', 'is', null)
+        .not('resolved_at', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(5000);
+      if (historyError) throw historyError;
+      timingHistory = history || [];
+    }
+
+    const assignedResponderIds = new Set<string>();
+    for (const report of reportRows) {
+      if (report.barangay_responded_by) assignedResponderIds.add(report.barangay_responded_by);
+      const match = report.barangay_response_notes?.match(/\[ASSIGNED:([^\]]+)\]/);
+      if (match?.[1]) {
+        for (const id of match[1].split(',').map((value: string) => value.trim()).filter(Boolean)) {
+          assignedResponderIds.add(id);
+        }
+      }
+    }
+
+    const responderNames = new Map<string, string>();
+    if (assignedResponderIds.size > 0) {
+      const { data: responders, error: respondersError } = await supabaseAdmin
+        .from('barangay_users')
+        .select('id, full_name')
+        .in('id', [...assignedResponderIds]);
+      if (respondersError) throw respondersError;
+      for (const responder of responders || []) responderNames.set(responder.id, responder.full_name);
+    }
+
+    res.json(reportRows.map((report: any) => {
+      const assigned = new Set<string>();
+      const match = report.barangay_response_notes?.match(/\[ASSIGNED:([^\]]+)\]/);
+      if (match?.[1]) {
+        for (const id of match[1].split(',').map((value: string) => value.trim()).filter(Boolean)) assigned.add(id);
+      }
+      if (report.barangay_responded_by) assigned.add(report.barangay_responded_by);
+      const names = [...assigned].map((id) => responderNames.get(id)).filter(Boolean);
+      const relevantHistory = timingHistory.filter((sample: any) => sample.barangay_id === report.barangay_id);
+      return formatIncidentReport({
+        ...report,
+        barangay_responder_name: names.join(', ') || null,
+        expected_timings: estimateReportTimings(report, relevantHistory),
+      });
+    }));
   } catch (err) {
     console.error('Fetch resident reports error:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -485,17 +554,16 @@ router.get('/', async (req: Request, res: Response) => {
         }
 
         const formatted = (reports || []).map(formatIncidentReport);
-        // MDRRMO sees reports explicitly routed to them, plus barangay reports
-        // that have been escalated. Legacy/unspecified `all` values must not
-        // cause a barangay-bound resident report to appear in the MDRRMO queue.
+        // MDRRMO sees Emergency reports and barangay reports escalated for
+        // MDRRMO handling. Community reports stay with the barangay unless
+        // explicitly escalated. A report remains one row and one statistics sample.
         const mdrrmoReports = formatted.filter(r => {
-          if (r.send_to === 'barangay') {
-            const isEscalated = r.status === 'escalated' || 
-                                r.mdrrmo_response_status === 'responding' ||
-                                (r.barangay_response_notes && r.barangay_response_notes.toLowerCase().includes('escalated'));
-            return isEscalated;
-          }
-          return r.send_to === 'mdrrmo';
+          const isEscalated = r.status === 'escalated' ||
+                              r.mdrrmo_response_status === 'responding' ||
+                              r.mdrrmo_response_status === 'resolved' ||
+                              (r.barangay_response_notes && r.barangay_response_notes.toLowerCase().includes('escalated'));
+          if (r.type === 'community') return isEscalated;
+          return r.type === 'emergency' || r.send_to === 'mdrrmo' || isEscalated;
         });
 
         res.json(mdrrmoReports);
@@ -831,11 +899,10 @@ router.post('/:id/verify', authenticate, authorize('admin', 'dispatcher'), async
             return;
         }
 
-        const routedTo = report.send_to || report.specifics?.match(/\[SEND_TO:([^\]]+)\]/)?.[1];
         const wasEscalatedByBarangay = report.status === 'escalated' ||
             report.mdrrmo_response_status === 'responding' ||
             Boolean(report.barangay_response_notes?.toLowerCase().includes('escalated'));
-        if (routedTo === 'barangay' && !wasEscalatedByBarangay) {
+        if (report.type === 'community' && !wasEscalatedByBarangay) {
             res.status(403).json({ error: 'This report must be escalated by its barangay before MDRRMO dispatch.' });
             return;
         }

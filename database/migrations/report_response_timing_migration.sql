@@ -77,3 +77,15 @@ CREATE INDEX IF NOT EXISTS idx_incident_reports_dispatched_at
   ON public.incident_reports(dispatched_at);
 CREATE INDEX IF NOT EXISTS idx_incident_reports_arrived_at
   ON public.incident_reports(arrived_at);
+
+-- Support barangay-origin report history, resolved lists, and resident timing estimates.
+CREATE INDEX IF NOT EXISTS idx_incident_reports_barangay_created_at
+  ON public.incident_reports(barangay_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_incident_reports_barangay_resolved_at
+  ON public.incident_reports(barangay_id, resolved_at DESC)
+  WHERE resolved_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_incident_reports_barangay_timing_samples
+  ON public.incident_reports(barangay_id, type, severity, created_at DESC)
+  WHERE accepted_at IS NOT NULL
+    AND arrived_at IS NOT NULL
+    AND resolved_at IS NOT NULL;

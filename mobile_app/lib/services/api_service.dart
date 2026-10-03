@@ -78,6 +78,31 @@ class ApiService {
     throw Exception('Failed to fetch reports');
   }
 
+  static Future<Map<String, dynamic>> getReportStatistics(String token) async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/barangay/reports/statistics'),
+      headers: _headers(token),
+    );
+    if (res.statusCode == 200) {
+      return Map<String, dynamic>.from(jsonDecode(res.body) as Map);
+    }
+    final data = jsonDecode(res.body);
+    throw Exception(data['error'] ?? 'Failed to fetch report statistics');
+  }
+
+  static Future<List<IncidentReport>> getResolvedReports(String token) async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/barangay/reports/resolved'),
+      headers: _headers(token),
+    );
+    if (res.statusCode == 200) {
+      final List<dynamic> data = jsonDecode(res.body);
+      return data.map((entry) => IncidentReport.fromJson(entry)).toList();
+    }
+    final data = jsonDecode(res.body);
+    throw Exception(data['error'] ?? 'Failed to fetch resolved reports');
+  }
+
   static Future<IncidentReport> respondToReport(
     String token,
     String reportId, {

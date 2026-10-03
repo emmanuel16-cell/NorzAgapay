@@ -11,6 +11,7 @@ import 'team_screen.dart';
 import 'barangay_account_request_screen.dart';
 import 'barangay_hotline_screen.dart';
 import 'analytics_screen.dart';
+import 'resolved_reports_screen.dart';
 import '../widgets/legal_dialogs.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -221,6 +222,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               child: Text('Settings & Policies', style: TextStyle(color: Color(0xFF0F172A), fontSize: 16, fontWeight: FontWeight.bold)),
             ),
             const SizedBox(height: 10),
+
+            if (user?.isBarangayAdmin == true || user?.isStaff == true) ...[
+              _actionTile(
+                icon: Icons.task_alt_rounded,
+                iconColor: const Color(0xFF0F9D83),
+                label: 'Resolved Reports',
+                subtitle: 'Review resolved reports originating in this barangay',
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const ResolvedReportsScreen()),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
 
             _actionTile(
               icon: Icons.groups_rounded,

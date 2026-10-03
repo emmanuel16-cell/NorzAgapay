@@ -197,6 +197,17 @@ router.patch('/:id/status', authenticate, async (req: AuthRequest, res: Response
 
     const user = req.user!;
 
+    let acceptedResponderName: string | null = null;
+    if (status === 'accepted' && user.role === 'responder' && !existingTask.accepted_at) {
+      const { data: responder, error: responderError } = await supabaseAdmin
+        .from('users')
+        .select('full_name')
+        .eq('id', user.userId)
+        .maybeSingle();
+      if (responderError) throw responderError;
+      acceptedResponderName = responder?.full_name || null;
+    }
+
     if (!['master_admin', 'dispatcher', 'responder'].includes(user.role)) {
       res.status(403).json({ error: 'Access denied.' });
       return;
@@ -327,6 +338,11 @@ router.patch('/:id/status', authenticate, async (req: AuthRequest, res: Response
             accepted_at: acceptedAt,
             ...linkedTravelUpdate,
           }, 'accepted_at');
+          if (acceptedResponderName) {
+            await updateLinkedIncidentReport(existingTask.incident_id, {
+              mdrrmo_responder_name: acceptedResponderName,
+            });
+          }
         } else if (status === 'in_progress') {
           if (existingTask.accepted_at) {
             await updateLinkedIncidentReport(existingTask.incident_id, {
@@ -441,6 +457,11 @@ router.patch('/:id/status', authenticate, async (req: AuthRequest, res: Response
         accepted_at: acceptedAt,
         ...linkedTravelUpdate,
       }, 'accepted_at');
+      if (acceptedResponderName) {
+        await updateLinkedIncidentReport(existingTask.incident_id, {
+          mdrrmo_responder_name: acceptedResponderName,
+        });
+      }
     } else if (status === 'in_progress') {
       if (existingTask.accepted_at) {
         await updateLinkedIncidentReport(existingTask.incident_id, {

@@ -21,6 +21,7 @@ import {
 } from '../services/arrivalValidation';
 import { getVerifiedBarangayIds, isBarangayVerified } from '../services/verifiedBarangayService';
 import { formatIncidentReport } from './incidentReports';
+import { isReportResolved, reportStageDurations, summarizeReportTimings } from '../services/reportTiming';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -1288,6 +1289,66 @@ router.delete('/team/:id', authenticateBarangay, requireRole(['admin']), async (
 // ─── GET /api/barangay/reports ───────────────────────────────────────────────
 // Get incident reports assigned to this barangay
 
+// Barangay analytics are scoped to the report's origin, not its current route.
+// This intentionally includes Emergency reports routed to MDRRMO and reports
+// escalated there, even though those reports are not part of the barangay work queue.
+router.get('/reports/statistics', authenticateBarangay, requireRole(['admin']), async (req: any, res: Response): Promise<void> => {
+  try {
+    const requestedType = typeof req.query.type === 'string' ? req.query.type : undefined;
+    if (requestedType && !['community', 'emergency'].includes(requestedType)) {
+      res.status(400).json({ error: 'Report type must be community or emergency.' });
+      return;
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('incident_reports')
+      .select('*, barangays(name)')
+      .eq('barangay_id', req.barangayUser.barangayId)
+      .order('created_at', { ascending: false })
+      .limit(5000);
+    if (error) throw error;
+
+    const resolvedReports = (data || []).filter(isReportResolved);
+    const selectedReports = requestedType
+      ? resolvedReports.filter((report: any) => report.type === requestedType)
+      : resolvedReports;
+    const reports = selectedReports.map((report: any) => ({
+      ...formatIncidentReport(report),
+      timing_durations: reportStageDurations(report),
+    }));
+
+    res.json({
+      barangay_id: req.barangayUser.barangayId,
+      type: requestedType || 'all',
+      report_count: reports.length,
+      averages: summarizeReportTimings(selectedReports),
+      reports,
+    });
+  } catch (err) {
+    console.error('Barangay report statistics error:', err);
+    res.status(500).json({ error: 'Failed to fetch report statistics.' });
+  }
+});
+
+// Admin and staff can open the originating barangay's resolved-report history.
+// Operational response permissions still follow the current report route.
+router.get('/reports/resolved', authenticateBarangay, requireRole(['admin', 'staff', 'dispatcher', 'responder']), async (req: any, res: Response): Promise<void> => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('incident_reports')
+      .select('*, barangays(name)')
+      .eq('barangay_id', req.barangayUser.barangayId)
+      .order('resolved_at', { ascending: false, nullsFirst: false })
+      .limit(5000);
+    if (error) throw error;
+
+    res.json((data || []).filter(isReportResolved).map(formatIncidentReport));
+  } catch (err) {
+    console.error('Barangay resolved reports error:', err);
+    res.status(500).json({ error: 'Failed to fetch resolved reports.' });
+  }
+});
+
 router.get('/reports', authenticateBarangay, requireRole(['admin', 'dispatcher', 'responder']), async (req: any, res: Response) => {
   try {
     const { status } = req.query;
@@ -1970,13 +2031,23 @@ router.post('/reports/:id/close', authenticateBarangay, requireRole(['dispatcher
 
     const { data: currentReport, error: accessError } = await supabaseAdmin
       .from('incident_reports')
-      .select('barangay_response_notes, barangay_responded_by, arrived_at, resolved_at')
+      .select('barangay_response_notes, barangay_responded_by, arrived_at, resolved_at, send_to, specifics, description, status, mdrrmo_response_status')
       .eq('id', req.params.id)
       .eq('barangay_id', req.barangayUser.barangayId)
       .maybeSingle();
     if (accessError) throw accessError;
     if (!currentReport) {
       res.status(404).json({ error: 'Incident report not found' });
+      return;
+    }
+
+    const hasMdrrmoRoutingMarker = [currentReport.specifics, currentReport.description]
+      .some((value) => typeof value === 'string' && value.includes('[SEND_TO:mdrrmo]'));
+    const isMdrrmoOwned = currentReport.send_to === 'mdrrmo' || hasMdrrmoRoutingMarker ||
+      currentReport.status === 'escalated' ||
+      ['responding', 'resolved'].includes((currentReport.mdrrmo_response_status || '').toLowerCase());
+    if (isMdrrmoOwned) {
+      res.status(403).json({ error: 'This report is being handled by MDRRMO and must be resolved by its dispatcher or responder.' });
       return;
     }
 
