@@ -1753,12 +1753,20 @@ router.post('/reports/:id/close', authenticateBarangay, requireRole(['dispatcher
       res.status(400).json({ error: 'A resolution summary is required to close the incident' });
       return;
     }
+
+    const { data: currentReport, error: accessError } = await supabaseAdmin
+      .from('incident_reports')
+      .select('barangay_response_notes, barangay_responded_by')
+      .eq('id', req.params.id)
+      .eq('barangay_id', req.barangayUser.barangayId)
+      .maybeSingle();
+    if (accessError) throw accessError;
+    if (!currentReport) {
+      res.status(404).json({ error: 'Incident report not found' });
+      return;
+    }
+
     if (req.barangayUser.role === 'responder') {
-      const { data: currentReport, error: accessError } = await supabaseAdmin
-        .from('incident_reports').select('barangay_response_notes, barangay_responded_by')
-        .eq('id', req.params.id).eq('barangay_id', req.barangayUser.barangayId).maybeSingle();
-      if (accessError) throw accessError;
-      if (!currentReport) { res.status(404).json({ error: 'Incident report not found' }); return; }
       const assignedMatch = (currentReport.barangay_response_notes || '').match(/^\[ASSIGNED:([^\]]+)\]/);
       const assignedIds = assignedMatch ? assignedMatch[1].split(',').map((id: string) => id.trim()) : [];
       if (currentReport.barangay_responded_by !== req.barangayUser.userId && !assignedIds.includes(req.barangayUser.userId)) {
@@ -1776,11 +1784,21 @@ router.post('/reports/:id/close', authenticateBarangay, requireRole(['dispatcher
       .eq('id', req.params.id)
       .eq('barangay_id', req.barangayUser.barangayId)
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) throw error;
+    if (!data) {
+      res.status(404).json({ error: 'Incident report not found' });
+      return;
+    }
 
-    io.to('dashboard_staff').emit('barangay:incident_closed', { reportId: req.params.id });
+    io.to('dashboard_staff').emit('barangay:incident_closed', {
+      reportId: req.params.id,
+      barangayId: req.barangayUser.barangayId,
+      resolvedAt: data.resolved_at,
+    });
+    io.to('dashboard_staff').emit('incident_report:updated', data);
+    io.to(`barangay:${req.barangayUser.barangayId}`).emit('barangay:report_updated', data);
 
     res.json(data);
   } catch (err) {
