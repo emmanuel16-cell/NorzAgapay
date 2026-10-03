@@ -125,16 +125,23 @@ function hasSelfIntersection(ring: Ring): boolean {
 }
 
 function segmentsIntersect(a: Coordinate, b: Coordinate, c: Coordinate, d: Coordinate): boolean {
+  // Compare orientation signs, not their raw magnitudes. Raw `!==` checks
+  // treat a zero orientation and any non-zero orientation as a crossing even
+  // when the point lies only on the infinite extension of the segment. That
+  // rejected valid rings in the bundled Norzagaray geometry.
+  const epsilon = 1e-12;
   const orientation = (p: Coordinate, q: Coordinate, r: Coordinate) =>
-    (q[1] - p[1]) * (r[0] - q[0]) - (q[0] - p[0]) * (r[1] - q[1]);
+    (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
+  const sign = (value: number) =>
+    Math.abs(value) <= epsilon ? 0 : value > 0 ? 1 : -1;
   const onSegment = (p: Coordinate, q: Coordinate, r: Coordinate) =>
-    q[0] <= Math.max(p[0], r[0]) && q[0] >= Math.min(p[0], r[0]) &&
-    q[1] <= Math.max(p[1], r[1]) && q[1] >= Math.min(p[1], r[1]);
-  const o1 = orientation(a, b, c);
-  const o2 = orientation(a, b, d);
-  const o3 = orientation(c, d, a);
-  const o4 = orientation(c, d, b);
-  if (o1 !== o2 && o3 !== o4) return true;
+    q[0] <= Math.max(p[0], r[0]) + epsilon && q[0] >= Math.min(p[0], r[0]) - epsilon &&
+    q[1] <= Math.max(p[1], r[1]) + epsilon && q[1] >= Math.min(p[1], r[1]) - epsilon;
+  const o1 = sign(orientation(a, b, c));
+  const o2 = sign(orientation(a, b, d));
+  const o3 = sign(orientation(c, d, a));
+  const o4 = sign(orientation(c, d, b));
+  if (o1 * o2 < 0 && o3 * o4 < 0) return true;
   return (o1 === 0 && onSegment(a, c, b)) || (o2 === 0 && onSegment(a, d, b)) ||
     (o3 === 0 && onSegment(c, a, d)) || (o4 === 0 && onSegment(c, b, d));
 }
