@@ -58,3 +58,11 @@ Mobile layouts may simplify navigation and dense tables, but must retain each ro
 - Barangay API JWT isolation and the shared coordination activation remain the authorization source of truth; client-side role checks are only presentation controls.
 - The responder task system stays because responders need assigned tasks, GPS, and status history after the Mission screen is removed.
 - Existing local Flutter and web styles are used for the responsive UI; a new Flowbite dependency is unnecessary for the requested behavior.
+
+## Optional municipality map boundary
+
+- Logistics and Master Admin can edit the shared Norzagaray boundary in the web dashboard by adding, moving, and removing map points. Saving requires at least three distinct points; the polygon closes from the last point to the first. Saved revisions can be restored.
+- The existing Norzagaray GeoJSON is returned as the initial editable shape. The boundary starts disabled, so maps remain full and no boundary-based location or report restrictions apply until an authorized user enables it.
+- When enabled, the same saved GeoJSON and setting are used by all in-app maps in `web-dashboard`, `mobile_app`, and `resident_app`. Map imagery and map markers outside the boundary are hidden; relevant location, evacuation-station, and report checks use the same boundary.
+- When disabled or when no boundary is configured, maps show the full area and boundary-based restrictions are bypassed. Mobile clients cache the latest configuration and refresh it on app resume; the web dashboard refreshes periodically and when it becomes visible.
+- Implementation files include the `municipality_boundary_config` and `municipality_boundary_history` migration, `/api/municipality-boundary`, the dashboard Municipality Boundary editor, and the boundary-aware map/location services in both Flutter apps. Apply `database/migrations/municipality_boundary_migration.sql` to Supabase before deploying the backend.
