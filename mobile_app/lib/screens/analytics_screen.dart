@@ -128,7 +128,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       ];
 
       return SizedBox(
-        height: 132,
+        height: 116,
         child: SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: Row(
