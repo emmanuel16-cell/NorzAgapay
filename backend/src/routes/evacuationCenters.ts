@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { supabaseAdmin } from '../config/supabase';
 import { authenticateBarangay } from './barangay';
 import { getVerifiedBarangayIds } from '../services/verifiedBarangayService';
+import { getMunicipalityBoundaryConfiguration, isPointInBoundary } from '../utils/norzagarayBoundary';
 
 const router = Router();
 
@@ -117,8 +118,8 @@ router.get('/nearest', async (req: Request, res: Response) => {
 const createCenterSchema = z.object({
   name: z.string().min(2),
   address: z.string().optional(),
-  latitude: z.number(),
-  longitude: z.number(),
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
 });
 
 router.post('/', authenticateBarangay, async (req: any, res: Response): Promise<void> => {
@@ -129,6 +130,11 @@ router.post('/', authenticateBarangay, async (req: any, res: Response): Promise<
     }
 
     const body = createCenterSchema.parse(req.body);
+    const boundary = await getMunicipalityBoundaryConfiguration();
+    if (boundary.enabled && !isPointInBoundary(body.latitude, body.longitude, boundary.geometry)) {
+      res.status(400).json({ error: 'Evacuation stations must be inside the active municipality boundary.' });
+      return;
+    }
 
     const { data, error } = await supabaseAdmin
       .from('evacuation_centers')
@@ -174,6 +180,11 @@ router.patch('/:id', authenticateBarangay, async (req: any, res: Response): Prom
     }
 
     const body = updateCenterSchema.parse(req.body);
+    const boundary = await getMunicipalityBoundaryConfiguration();
+    if (boundary.enabled && !isPointInBoundary(body.latitude, body.longitude, boundary.geometry)) {
+      res.status(400).json({ error: 'Evacuation stations must be inside the active municipality boundary.' });
+      return;
+    }
     const { data, error } = await supabaseAdmin
       .from('evacuation_centers')
       .update({ ...body, address: body.address?.trim() || null })

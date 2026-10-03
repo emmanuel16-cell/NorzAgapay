@@ -193,3 +193,10 @@ export const weatherAPI = {
 export const evacuationAPI = {
   list: (params?: { barangay_added?: boolean }) => api.get('/evacuation-centers', { params }),
 };
+
+export const municipalityBoundaryAPI = {
+  get: () => api.get('/municipality-boundary'),
+  history: () => api.get('/municipality-boundary/history'),
+  save: (data: { geometry: unknown; enabled: boolean; expectedRevision: number }) =>
+    api.put('/municipality-boundary', data),
+};

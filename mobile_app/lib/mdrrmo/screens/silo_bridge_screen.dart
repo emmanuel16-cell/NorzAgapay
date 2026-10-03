@@ -7,6 +7,7 @@ import '../core/constants.dart';
 import 'dart:async';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import '../../widgets/municipality_boundary_map_layer.dart';
 
 class SiloBridgeScreen extends StatefulWidget {
   const SiloBridgeScreen({super.key});
@@ -24,7 +25,10 @@ class _SiloBridgeScreenState extends State<SiloBridgeScreen> {
   void initState() {
     super.initState();
     _fetchUnits();
-    _refreshTimer = Timer.periodic(const Duration(seconds: 10), (timer) => _fetchUnits());
+    _refreshTimer = Timer.periodic(
+      const Duration(seconds: 10),
+      (timer) => _fetchUnits(),
+    );
   }
 
   @override
@@ -69,7 +73,7 @@ class _SiloBridgeScreenState extends State<SiloBridgeScreen> {
           urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
           userAgentPackageName: 'com.norzagapay.app.silo_bridge',
         ),
-        MarkerLayer(
+        MunicipalityBoundaryMarkerLayer(
           markers: [
             for (final u in _units)
               if (u['latitude'] != null && u['longitude'] != null)
@@ -83,27 +87,34 @@ class _SiloBridgeScreenState extends State<SiloBridgeScreen> {
                   child: Column(
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 4,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.black87,
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
                           (u['full_name'] as String? ?? '').split(' ').first,
-                          style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                          ),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
                       Icon(
-                        u['unit_type'] == 'police' 
-                          ? Icons.local_police 
-                          : u['unit_type'] == 'fire' 
-                            ? Icons.local_fire_department 
+                        u['unit_type'] == 'police'
+                            ? Icons.local_police
+                            : u['unit_type'] == 'fire'
+                            ? Icons.local_fire_department
                             : Icons.medical_services,
-                        color: u['unit_type'] == 'police' 
-                          ? Colors.blue 
-                          : u['unit_type'] == 'fire' 
-                            ? Colors.red 
+                        color: u['unit_type'] == 'police'
+                            ? Colors.blue
+                            : u['unit_type'] == 'fire'
+                            ? Colors.red
                             : Colors.green,
                         size: 30,
                       ),
@@ -112,6 +123,7 @@ class _SiloBridgeScreenState extends State<SiloBridgeScreen> {
                 ),
           ],
         ),
+        const MunicipalityBoundaryMapLayer(outsideColor: Color(0xFFF5F6FA)),
       ],
     );
   }

@@ -6,6 +6,9 @@ import { Building2, MapPin, RotateCcw, Search } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { evacuationAPI } from '../lib/api';
 import { CARTO_DARK_MAP_URL, CARTO_ATTRIBUTION } from '../lib/mapConfig';
+import { useMunicipalityBoundary } from '../context/MunicipalityBoundaryContext';
+import { isCoordinateInsideBoundary } from '../lib/municipalityBoundary';
+import MunicipalityBoundaryMapLayer, { MunicipalityBoundaryViewport } from '../components/MunicipalityBoundaryMapLayer';
 
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -53,6 +56,7 @@ function MapViewport({ stations, selectedId }: { stations: EvacuationStation[]; 
 }
 
 export default function EvacuationCentersPage() {
+  const { boundary } = useMunicipalityBoundary();
   const [stations, setStations] = useState<EvacuationStation[]>([]);
   const [search, setSearch] = useState('');
   const [barangayFilter, setBarangayFilter] = useState('all');
@@ -90,6 +94,14 @@ export default function EvacuationCentersPage() {
       return matchesBarangay && matchesSearch;
     });
   }, [barangayFilter, search, stations]);
+
+  const mapStations = useMemo(() => boundary.enabled
+    ? filteredStations.filter((station) => {
+        const point = stationPoint(station);
+        return point !== null && isCoordinateInsideBoundary(point[0], point[1], boundary.geometry);
+      })
+    : filteredStations,
+  [boundary, filteredStations]);
 
   const clearFilters = () => {
     setSearch('');
@@ -163,8 +175,9 @@ export default function EvacuationCentersPage() {
           <div className="evacuation-center-map">
             <MapContainer center={DEFAULT_CENTER} zoom={12} style={{ width: '100%', height: '100%' }}>
               <TileLayer attribution={CARTO_ATTRIBUTION} url={CARTO_DARK_MAP_URL} />
-              <MapViewport stations={filteredStations} selectedId={selectedId} />
-              {filteredStations.map((station) => {
+              <MunicipalityBoundaryViewport boundary={boundary} />
+              <MapViewport stations={mapStations} selectedId={selectedId} />
+              {mapStations.map((station) => {
                 const point = stationPoint(station);
                 if (!point) return null;
                 return (
@@ -177,6 +190,7 @@ export default function EvacuationCentersPage() {
                   </Marker>
                 );
               })}
+              <MunicipalityBoundaryMapLayer boundary={boundary} maskColor="#e9eef4" />
             </MapContainer>
           </div>
         </div>

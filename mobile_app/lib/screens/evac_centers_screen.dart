@@ -10,6 +10,7 @@ import '../models/evacuation_center.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import 'add_evac_center_screen.dart';
+import '../widgets/municipality_boundary_map_layer.dart';
 
 class EvacCentersScreen extends StatefulWidget {
   const EvacCentersScreen({super.key});
@@ -262,7 +263,7 @@ class _EvacCentersScreenState extends State<EvacCentersScreen> {
               urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
               userAgentPackageName: 'ph.gov.mdrrmo.norzagapay_mobile',
             ),
-            MarkerLayer(
+            MunicipalityBoundaryMarkerLayer(
               markers: [
                 ..._centers.map(
                   (center) => Marker(
@@ -306,6 +307,7 @@ class _EvacCentersScreenState extends State<EvacCentersScreen> {
                   ),
               ],
             ),
+            const MunicipalityBoundaryMapLayer(outsideColor: Color(0xFFF5F6FA)),
           ],
         ),
         Positioned(

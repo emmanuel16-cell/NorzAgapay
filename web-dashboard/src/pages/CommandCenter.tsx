@@ -6,6 +6,9 @@ import { CARTO_DARK_MAP_URL, CARTO_ATTRIBUTION } from '../lib/mapConfig';
 import 'leaflet/dist/leaflet.css';
 import { reportAPI, respondUnitAPI, socket, taskAPI } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
+import { useMunicipalityBoundary } from '../context/MunicipalityBoundaryContext';
+import MunicipalityBoundaryMapLayer, { MunicipalityBoundaryViewport } from '../components/MunicipalityBoundaryMapLayer';
+import { isCoordinateInsideBoundary } from '../lib/municipalityBoundary';
 import toast from 'react-hot-toast';
 import { AlertTriangle, Siren, Users, CheckCircle2 } from 'lucide-react';
 
@@ -272,6 +275,7 @@ function FitBoundsController({ points }: { points: [number, number][] }) {
 
 export default function CommandCenter() {
   const { user } = useAuth();
+  const { boundary } = useMunicipalityBoundary();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const focusedResponderId = searchParams.get('responder');
@@ -490,6 +494,7 @@ export default function CommandCenter() {
         ? [gpsLocation.latitude, gpsLocation.longitude]
         : incidentPosition;
       if (!position) return null;
+      if (boundary.enabled && !isCoordinateInsideBoundary(position[0], position[1], boundary.geometry)) return null;
 
       const status = task.incident?.status === 'resolved'
         ? 'resolved'
@@ -511,7 +516,7 @@ export default function CommandCenter() {
     }
 
     return null;
-  }, [focusedResponderId, focusedTaskId, focusedResponderName, responseTasks, responderLocations]);
+  }, [focusedResponderId, focusedTaskId, focusedResponderName, responseTasks, responderLocations, boundary]);
 
   // Compute all visible pin points for auto-fit bounds
   const visiblePinPoints = useMemo((): [number, number][] => {
@@ -520,13 +525,18 @@ export default function CommandCenter() {
       if (inc.status === 'pending' && !filters.incidents) return;
       if (inc.status === 'escalated' && !filters.escalated) return;
       if (inc.status === 'resolved' && !filters.resolved) return;
+      if (boundary.enabled && !isCoordinateInsideBoundary(inc.latitude, inc.longitude, boundary.geometry)) return;
       pts.push([inc.latitude, inc.longitude]);
     });
     if (filters.dispatchUnits) {
-      dispatchUnits.forEach((u) => pts.push([u.latitude, u.longitude]));
+      dispatchUnits.forEach((u) => {
+        if (!boundary.enabled || isCoordinateInsideBoundary(u.latitude, u.longitude, boundary.geometry)) {
+          pts.push([u.latitude, u.longitude]);
+        }
+      });
     }
     return pts;
-  }, [incidents, dispatchUnits, filters]);
+  }, [incidents, dispatchUnits, filters, boundary]);
 
   // Click Handlers
   const handleOpenIncidentPin = (item: IncidentItem) => {
@@ -802,6 +812,7 @@ export default function CommandCenter() {
           style={{ width: '100%', height: '100%', background: '#0b1120' }}
         >
           <TileLayer url={CARTO_DARK_MAP_URL} attribution={CARTO_ATTRIBUTION} />
+          <MunicipalityBoundaryViewport boundary={boundary} />
           <MapResizer />
           <FitBoundsController points={focusedResponder ? [] : visiblePinPoints} />
           <FocusMapController position={focusedResponder?.position || null} />
@@ -833,6 +844,7 @@ export default function CommandCenter() {
 
           {/* Incident Markers */}
           {incidents.map((inc) => {
+            if (boundary.enabled && !isCoordinateInsideBoundary(inc.latitude, inc.longitude, boundary.geometry)) return null;
             const isUnread = !viewedIds.has(inc.id);
             if (inc.status === 'pending') {
               if (!filters.incidents) return null;
@@ -876,6 +888,7 @@ export default function CommandCenter() {
           {/* Dispatch Units Markers */}
           {filters.dispatchUnits &&
             dispatchUnits.map((u) => (
+              (!boundary.enabled || isCoordinateInsideBoundary(u.latitude, u.longitude, boundary.geometry)) &&
               <Marker
                 key={u.id}
                 position={[u.latitude, u.longitude]}
@@ -888,8 +901,10 @@ export default function CommandCenter() {
           {filters.unitsLine &&
             dispatchUnits.map((u) => {
               if (!u.target_incident_id) return null;
+              if (boundary.enabled && !isCoordinateInsideBoundary(u.latitude, u.longitude, boundary.geometry)) return null;
               const target = incidents.find((i) => i.id === u.target_incident_id);
               if (!target) return null;
+              if (boundary.enabled && !isCoordinateInsideBoundary(target.latitude, target.longitude, boundary.geometry)) return null;
 
               return (
                 <Polyline
@@ -907,6 +922,7 @@ export default function CommandCenter() {
                 />
               );
             })}
+          <MunicipalityBoundaryMapLayer boundary={boundary} maskColor="#0b1120" />
         </MapContainer>
 
         {/* ── MODALS (Image 5, 1, 2) ── */}

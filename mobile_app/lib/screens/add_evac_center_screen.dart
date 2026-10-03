@@ -6,6 +6,8 @@ import 'package:provider/provider.dart';
 import '../models/evacuation_center.dart';
 import '../services/auth_service.dart';
 import '../services/api_service.dart';
+import '../services/municipality_boundary_service.dart';
+import '../widgets/municipality_boundary_map_layer.dart';
 
 class AddEvacCenterScreen extends StatefulWidget {
   final EvacuationCenter? center;
@@ -22,7 +24,10 @@ class _AddEvacCenterScreenState extends State<AddEvacCenterScreen> {
   final _addressController = TextEditingController();
 
   final MapController _mapController = MapController();
-  LatLng _pinnedLocation = const LatLng(14.9133, 121.0436); // Default Norzagaray
+  LatLng _pinnedLocation = const LatLng(
+    14.9133,
+    121.0436,
+  ); // Default Norzagaray
   bool _isSaving = false;
   final Location _location = Location();
 
@@ -110,7 +115,9 @@ class _AddEvacCenterScreenState extends State<AddEvacCenterScreen> {
         backgroundColor: const Color(0xFF1E293B),
         foregroundColor: Colors.white,
         title: Text(
-          widget.center == null ? 'Add Evacuation Center' : 'Edit Evacuation Center',
+          widget.center == null
+              ? 'Add Evacuation Center'
+              : 'Edit Evacuation Center',
         ),
       ),
       body: SingleChildScrollView(
@@ -124,8 +131,12 @@ class _AddEvacCenterScreenState extends State<AddEvacCenterScreen> {
               TextFormField(
                 controller: _nameController,
                 style: const TextStyle(color: Colors.white),
-                decoration: _inputDecoration('Evacuation Center Name *', Icons.night_shelter),
-                validator: (v) => v == null || v.isEmpty ? 'Center name is required' : null,
+                decoration: _inputDecoration(
+                  'Evacuation Center Name *',
+                  Icons.night_shelter,
+                ),
+                validator: (v) =>
+                    v == null || v.isEmpty ? 'Center name is required' : null,
               ),
               const SizedBox(height: 14),
 
@@ -133,7 +144,10 @@ class _AddEvacCenterScreenState extends State<AddEvacCenterScreen> {
               TextFormField(
                 controller: _addressController,
                 style: const TextStyle(color: Colors.white),
-                decoration: _inputDecoration('Street Address / Landmark (Optional)', Icons.location_on),
+                decoration: _inputDecoration(
+                  'Street Address / Landmark (Optional)',
+                  Icons.location_on,
+                ),
               ),
               const SizedBox(height: 20),
 
@@ -143,7 +157,11 @@ class _AddEvacCenterScreenState extends State<AddEvacCenterScreen> {
                 children: [
                   const Text(
                     'Pin Location on Map *',
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                    ),
                   ),
                   Text(
                     'Tap on map to set pin',
@@ -163,6 +181,18 @@ class _AddEvacCenterScreenState extends State<AddEvacCenterScreen> {
                       initialCenter: _pinnedLocation,
                       initialZoom: 15.0,
                       onTap: (_, point) {
+                        if (!MunicipalityBoundaryService.instance.contains(
+                          point,
+                        )) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Choose a location inside the active municipality boundary.',
+                              ),
+                            ),
+                          );
+                          return;
+                        }
                         setState(() {
                           _pinnedLocation = point;
                         });
@@ -170,10 +200,11 @@ class _AddEvacCenterScreenState extends State<AddEvacCenterScreen> {
                     ),
                     children: [
                       TileLayer(
-                        urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                        urlTemplate:
+                            'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                         userAgentPackageName: 'ph.gov.mdrrmo.norzagapay_mobile',
                       ),
-                      MarkerLayer(
+                      MunicipalityBoundaryMarkerLayer(
                         markers: [
                           Marker(
                             point: _pinnedLocation,
@@ -181,11 +212,18 @@ class _AddEvacCenterScreenState extends State<AddEvacCenterScreen> {
                             height: 50,
                             child: const Column(
                               children: [
-                                Icon(Icons.location_pin, color: Colors.redAccent, size: 44),
+                                Icon(
+                                  Icons.location_pin,
+                                  color: Colors.redAccent,
+                                  size: 44,
+                                ),
                               ],
                             ),
                           ),
                         ],
+                      ),
+                      const MunicipalityBoundaryMapLayer(
+                        outsideColor: Color(0xFFF5F6FA),
                       ),
                     ],
                   ),
@@ -194,11 +232,18 @@ class _AddEvacCenterScreenState extends State<AddEvacCenterScreen> {
               const SizedBox(height: 6),
               Row(
                 children: [
-                  const Icon(Icons.pin_drop, size: 14, color: Color(0xFF38BDF8)),
+                  const Icon(
+                    Icons.pin_drop,
+                    size: 14,
+                    color: Color(0xFF38BDF8),
+                  ),
                   const SizedBox(width: 4),
                   Text(
                     'Pinned Coordinates: ${_pinnedLocation.latitude.toStringAsFixed(6)}, ${_pinnedLocation.longitude.toStringAsFixed(6)}',
-                    style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
+                    style: const TextStyle(
+                      color: Color(0xFF94A3B8),
+                      fontSize: 12,
+                    ),
                   ),
                 ],
               ),
@@ -213,13 +258,20 @@ class _AddEvacCenterScreenState extends State<AddEvacCenterScreen> {
                   label: _isSaving
                       ? const CircularProgressIndicator(color: Colors.white)
                       : Text(
-                          widget.center == null ? 'Save Evacuation Center' : 'Save Changes',
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                          widget.center == null
+                              ? 'Save Evacuation Center'
+                              : 'Save Changes',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF0284C7),
                     foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                 ),
               ),

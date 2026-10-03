@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
@@ -14,11 +16,13 @@ import 'mdrrmo/services/offline_service.dart' as global_offline;
 import 'mdrrmo/screens/home_screen.dart' as global_home;
 import 'screens/mdrrmo_dispatcher_screen.dart';
 import 'mdrrmo/models/user.dart' as global_user;
+import 'services/municipality_boundary_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await AuthService.init();
   await global_offline.OfflineService.init();
+  await MunicipalityBoundaryService.instance.initialize();
 
   final authService = AuthService();
   await authService.loadSavedAuth();
@@ -30,17 +34,47 @@ void main() async {
       providers: [
         ChangeNotifierProvider<AuthService>.value(value: authService),
         ChangeNotifierProvider<SocketService>(create: (_) => SocketService()),
-        ChangeNotifierProvider<global_auth.AuthProvider>.value(value: mdrrmoAuth),
-        ChangeNotifierProvider<global_tasks.TaskProvider>(create: (_) => global_tasks.TaskProvider()),
-        ChangeNotifierProvider<global_gps.GpsService>(create: (_) => global_gps.GpsService()),
+        ChangeNotifierProvider<global_auth.AuthProvider>.value(
+          value: mdrrmoAuth,
+        ),
+        ChangeNotifierProvider<global_tasks.TaskProvider>(
+          create: (_) => global_tasks.TaskProvider(),
+        ),
+        ChangeNotifierProvider<global_gps.GpsService>(
+          create: (_) => global_gps.GpsService(),
+        ),
       ],
       child: const MobileApp(),
     ),
   );
 }
 
-class MobileApp extends StatelessWidget {
+class MobileApp extends StatefulWidget {
   const MobileApp({super.key});
+
+  @override
+  State<MobileApp> createState() => _MobileAppState();
+}
+
+class _MobileAppState extends State<MobileApp> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(MunicipalityBoundaryService.instance.refresh());
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -94,7 +128,11 @@ class _AuthGateState extends State<AuthGate> {
     }
 
     if (!barangayAuth.isAuthenticated || barangayAuth.currentUser == null) {
-      final introCompleted = Hive.box('barangay_settings').get('barangay_onboarding_completed', defaultValue: false) == true;
+      final introCompleted =
+          Hive.box(
+            'barangay_settings',
+          ).get('barangay_onboarding_completed', defaultValue: false) ==
+          true;
       if (!introCompleted) {
         return BarangayOnboardingScreen(onFinish: () => setState(() {}));
       }

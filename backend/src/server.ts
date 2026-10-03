@@ -28,6 +28,7 @@ import storageRoutes from './routes/storages';
 import weatherRoutes, { fetchOpenMeteoWeather } from './routes/weather';
 import barangayRoutes from './routes/barangay';
 import evacuationCenterRoutes from './routes/evacuationCenters';
+import municipalityBoundaryRoutes from './routes/municipalityBoundary';
 import debugRoutes from './routes/debug';
 import broadcastRoutes from './routes/broadcasts';
 
@@ -127,6 +128,7 @@ app.use('/api/weather', weatherRoutes);
 app.use('/api/barangay', barangayRoutes);
 app.use('/api/broadcasts', broadcastRoutes);
 app.use('/api/evacuation-centers', evacuationCenterRoutes);
+app.use('/api/municipality-boundary', municipalityBoundaryRoutes);
 app.use('/api/debug', debugRoutes);
 
 // Health check

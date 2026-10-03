@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import '../../widgets/municipality_boundary_map_layer.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/task.dart';
@@ -27,16 +28,22 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     setState(() => _isUpdating = true);
     try {
       final auth = Provider.of<AuthProvider>(context, listen: false);
-      await Provider.of<TaskProvider>(context, listen: false).updateTaskStatus(
-        widget.task.id,
-        status.name,
-        auth.token!,
-      );
-      if (mounted && (status == TaskStatus.completed || status == TaskStatus.cancelled)) {
+      await Provider.of<TaskProvider>(
+        context,
+        listen: false,
+      ).updateTaskStatus(widget.task.id, status.name, auth.token!);
+      if (mounted &&
+          (status == TaskStatus.completed || status == TaskStatus.cancelled)) {
         Navigator.pop(context);
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: const Color(AppColors.danger)));
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString()),
+            backgroundColor: const Color(AppColors.danger),
+          ),
+        );
     } finally {
       if (mounted) setState(() => _isUpdating = false);
     }
@@ -89,10 +96,13 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
       } catch (_) {}
 
       // Fallback: add to respond unit
-      if (response == null || (response.statusCode != 200 && response.statusCode != 201)) {
+      if (response == null ||
+          (response.statusCode != 200 && response.statusCode != 201)) {
         if (unitId != null) {
           await http.post(
-            Uri.parse('${AppConstants.apiBaseUrl}/respond-units/$unitId/members'),
+            Uri.parse(
+              '${AppConstants.apiBaseUrl}/respond-units/$unitId/members',
+            ),
             headers: {
               'Content-Type': 'application/json',
               'Authorization': 'Bearer ${auth.token}',
@@ -123,7 +133,10 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: const Color(AppColors.danger)),
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: const Color(AppColors.danger),
+          ),
         );
       }
     }
@@ -131,7 +144,9 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
 
   void _showAddMembersModal() {
     final auth = Provider.of<AuthProvider>(context, listen: false);
-    final currentMemberIds = auth.unitMembers.map((m) => m['id'].toString()).toList();
+    final currentMemberIds = auth.unitMembers
+        .map((m) => m['id'].toString())
+        .toList();
     final selected = <String>{};
 
     _fetchOfficers();
@@ -160,7 +175,10 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                     margin: const EdgeInsets.symmetric(vertical: 12),
                     width: 40,
                     height: 4,
-                    decoration: BoxDecoration(color: Color(0xFFE2E8F0), borderRadius: BorderRadius.circular(2)),
+                    decoration: BoxDecoration(
+                      color: Color(0xFFE2E8F0),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -169,30 +187,54 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                         Container(
                           padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
-                            color: const Color(AppColors.success).withOpacity(0.15),
+                            color: const Color(
+                              AppColors.success,
+                            ).withOpacity(0.15),
                             borderRadius: BorderRadius.circular(10),
                           ),
-                          child: const Icon(Icons.group_add_rounded, color: Color(AppColors.success), size: 22),
+                          child: const Icon(
+                            Icons.group_add_rounded,
+                            color: Color(AppColors.success),
+                            size: 22,
+                          ),
                         ),
                         const SizedBox(width: 12),
                         const Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('Add Members on the Move', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
-                              Text('Select officers to add to this dispatch', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                              Text(
+                                'Add Members on the Move',
+                                style: TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              Text(
+                                'Select officers to add to this dispatch',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey,
+                                ),
+                              ),
                             ],
                           ),
                         ),
                         TextButton(
-                          onPressed: selected.isEmpty ? null : () async {
-                            Navigator.pop(ctx);
-                            await _addMembersToDispatch(selected.toList());
-                          },
+                          onPressed: selected.isEmpty
+                              ? null
+                              : () async {
+                                  Navigator.pop(ctx);
+                                  await _addMembersToDispatch(
+                                    selected.toList(),
+                                  );
+                                },
                           child: Text(
                             'Add (${selected.length})',
                             style: TextStyle(
-                              color: selected.isEmpty ? Colors.grey : const Color(AppColors.success),
+                              color: selected.isEmpty
+                                  ? Colors.grey
+                                  : const Color(AppColors.success),
                               fontWeight: FontWeight.bold,
                               fontSize: 15,
                             ),
@@ -207,91 +249,168 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                     child: _loadingOfficers
                         ? const Center(child: CircularProgressIndicator())
                         : available.isEmpty
-                            ? const Center(
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(Icons.people_outline, size: 48, color: Colors.grey),
-                                    SizedBox(height: 12),
-                                    Text('No other officers available', style: TextStyle(color: Colors.grey)),
-                                  ],
+                        ? const Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.people_outline,
+                                  size: 48,
+                                  color: Colors.grey,
                                 ),
-                              )
-                            : ListView.builder(
-                                controller: controller,
-                                padding: const EdgeInsets.symmetric(horizontal: 12),
-                                itemCount: available.length,
-                                itemBuilder: (_, i) {
-                                  final officer = available[i];
-                                  final id = officer['id'].toString();
-                                  final isSelected = selected.contains(id);
-                                  return Container(
-                                    margin: const EdgeInsets.only(bottom: 8),
-                                    decoration: BoxDecoration(
-                                      color: isSelected
-                                          ? const Color(AppColors.success).withOpacity(0.1)
-                                          : const Color(0xFFF5F6FA).withOpacity(0.5),
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(
-                                        color: isSelected
-                                            ? const Color(AppColors.success).withOpacity(0.5)
-                                            : Color(0xFFE2E8F0),
-                                      ),
+                                SizedBox(height: 12),
+                                Text(
+                                  'No other officers available',
+                                  style: TextStyle(color: Colors.grey),
+                                ),
+                              ],
+                            ),
+                          )
+                        : ListView.builder(
+                            controller: controller,
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            itemCount: available.length,
+                            itemBuilder: (_, i) {
+                              final officer = available[i];
+                              final id = officer['id'].toString();
+                              final isSelected = selected.contains(id);
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 8),
+                                decoration: BoxDecoration(
+                                  color: isSelected
+                                      ? const Color(
+                                          AppColors.success,
+                                        ).withOpacity(0.1)
+                                      : const Color(
+                                          0xFFF5F6FA,
+                                        ).withOpacity(0.5),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: isSelected
+                                        ? const Color(
+                                            AppColors.success,
+                                          ).withOpacity(0.5)
+                                        : Color(0xFFE2E8F0),
+                                  ),
+                                ),
+                                child: ListTile(
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 4,
+                                  ),
+                                  leading: CircleAvatar(
+                                    backgroundColor: isSelected
+                                        ? const Color(AppColors.success)
+                                        : const Color(
+                                            AppColors.primary,
+                                          ).withOpacity(0.3),
+                                    child: isSelected
+                                        ? const Icon(
+                                            Icons.check,
+                                            color: Colors.white,
+                                            size: 18,
+                                          )
+                                        : Text(
+                                            (officer['name'] as String? ??
+                                                    'O')[0]
+                                                .toUpperCase(),
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                  ),
+                                  title: Text(
+                                    officer['name'] ?? 'Officer',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 14,
                                     ),
-                                    child: ListTile(
-                                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                                      leading: CircleAvatar(
-                                        backgroundColor: isSelected
-                                            ? const Color(AppColors.success)
-                                            : const Color(AppColors.primary).withOpacity(0.3),
-                                        child: isSelected
-                                            ? const Icon(Icons.check, color: Colors.white, size: 18)
-                                            : Text(
-                                                (officer['name'] as String? ?? 'O')[0].toUpperCase(),
-                                                style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
-                                              ),
-                                      ),
-                                      title: Text(officer['name'] ?? 'Officer', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                                      subtitle: (officer['specialization'] as String? ?? '').trim().isNotEmpty
-                                          ? Padding(
-                                              padding: const EdgeInsets.only(top: 4),
-                                              child: Wrap(
-                                                spacing: 4,
-                                                runSpacing: 4,
-                                                children: (officer['specialization'] as String)
+                                  ),
+                                  subtitle:
+                                      (officer['specialization'] as String? ??
+                                              '')
+                                          .trim()
+                                          .isNotEmpty
+                                      ? Padding(
+                                          padding: const EdgeInsets.only(
+                                            top: 4,
+                                          ),
+                                          child: Wrap(
+                                            spacing: 4,
+                                            runSpacing: 4,
+                                            children:
+                                                (officer['specialization']
+                                                        as String)
                                                     .split(',')
                                                     .map((s) => s.trim())
                                                     .where((s) => s.isNotEmpty)
-                                                    .map((s) => Container(
-                                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                                          decoration: BoxDecoration(
-                                                            color: const Color(0xFF0D9488).withValues(alpha: 0.12),
-                                                            borderRadius: BorderRadius.circular(4),
-                                                            border: Border.all(color: const Color(0xFF0D9488).withValues(alpha: 0.25)),
+                                                    .map(
+                                                      (s) => Container(
+                                                        padding:
+                                                            const EdgeInsets.symmetric(
+                                                              horizontal: 6,
+                                                              vertical: 2,
+                                                            ),
+                                                        decoration: BoxDecoration(
+                                                          color:
+                                                              const Color(
+                                                                0xFF0D9488,
+                                                              ).withValues(
+                                                                alpha: 0.12,
+                                                              ),
+                                                          borderRadius:
+                                                              BorderRadius.circular(
+                                                                4,
+                                                              ),
+                                                          border: Border.all(
+                                                            color:
+                                                                const Color(
+                                                                  0xFF0D9488,
+                                                                ).withValues(
+                                                                  alpha: 0.25,
+                                                                ),
                                                           ),
-                                                          child: Text(
-                                                            s,
-                                                            style: const TextStyle(fontSize: 10, color: Color(0xFF0D9488), fontWeight: FontWeight.w600),
-                                                          ),
-                                                        ))
+                                                        ),
+                                                        child: Text(
+                                                          s,
+                                                          style:
+                                                              const TextStyle(
+                                                                fontSize: 10,
+                                                                color: Color(
+                                                                  0xFF0D9488,
+                                                                ),
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w600,
+                                                              ),
+                                                        ),
+                                                      ),
+                                                    )
                                                     .toList(),
-                                              ),
-                                            )
-                                          : null,
-                                      trailing: Icon(
-                                        isSelected ? Icons.remove_circle_outline : Icons.add_circle_outline,
-                                        color: isSelected ? const Color(AppColors.danger) : const Color(0xFF0D9488),
-                                      ),
-                                      onTap: () {
-                                        setModalState(() {
-                                          if (isSelected) selected.remove(id);
-                                          else selected.add(id);
-                                        });
-                                      },
-                                    ),
-                                  );
-                                },
-                              ),
+                                          ),
+                                        )
+                                      : null,
+                                  trailing: Icon(
+                                    isSelected
+                                        ? Icons.remove_circle_outline
+                                        : Icons.add_circle_outline,
+                                    color: isSelected
+                                        ? const Color(AppColors.danger)
+                                        : const Color(0xFF0D9488),
+                                  ),
+                                  onTap: () {
+                                    setModalState(() {
+                                      if (isSelected)
+                                        selected.remove(id);
+                                      else
+                                        selected.add(id);
+                                    });
+                                  },
+                                ),
+                              );
+                            },
+                          ),
                   ),
                 ],
               ),
@@ -326,21 +445,30 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
             foregroundColor: const Color(0xFF0C243B),
             actions: [
               // Team Leader: Add Members on the Move button
-              if (isResponder && isTeamLeader &&
+              if (isResponder &&
+                  isTeamLeader &&
                   (task.status == TaskStatus.pending ||
-                   task.status == TaskStatus.accepted ||
-                   task.status == TaskStatus.in_progress))
+                      task.status == TaskStatus.accepted ||
+                      task.status == TaskStatus.in_progress))
                 Padding(
                   padding: const EdgeInsets.only(right: 8),
                   child: ElevatedButton.icon(
                     onPressed: _showAddMembersModal,
                     icon: const Icon(Icons.group_add_rounded, size: 16),
-                    label: const Text('Add Members', style: TextStyle(fontSize: 12)),
+                    label: const Text(
+                      'Add Members',
+                      style: TextStyle(fontSize: 12),
+                    ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(AppColors.success),
                       foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
                     ),
                   ),
                 ),
@@ -360,10 +488,11 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                       ),
                       children: [
                         TileLayer(
-                          urlTemplate: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+                          urlTemplate:
+                              'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
                           userAgentPackageName: 'com.norzagapay.app',
                         ),
-                        MarkerLayer(
+                        MunicipalityBoundaryMarkerLayer(
                           markers: [
                             Marker(
                               point: LatLng(lat, lng),
@@ -376,14 +505,28 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                                     decoration: BoxDecoration(
                                       color: const Color(AppColors.danger),
                                       shape: BoxShape.circle,
-                                      boxShadow: [BoxShadow(color: const Color(AppColors.danger).withOpacity(0.5), blurRadius: 12)],
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: const Color(
+                                            AppColors.danger,
+                                          ).withOpacity(0.5),
+                                          blurRadius: 12,
+                                        ),
+                                      ],
                                     ),
-                                    child: const Icon(Icons.warning_rounded, color: Colors.white, size: 20),
+                                    child: const Icon(
+                                      Icons.warning_rounded,
+                                      color: Colors.white,
+                                      size: 20,
+                                    ),
                                   ),
                                 ],
                               ),
                             ),
                           ],
+                        ),
+                        const MunicipalityBoundaryMapLayer(
+                          outsideColor: Color(0xFF0F172A),
                         ),
                       ],
                     ),
@@ -393,7 +536,10 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                     bottom: 10,
                     right: 10,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.black.withOpacity(0.7),
                         borderRadius: BorderRadius.circular(16),
@@ -401,7 +547,11 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                       ),
                       child: Text(
                         '${lat.toStringAsFixed(5)}, ${lng.toStringAsFixed(5)}',
-                        style: const TextStyle(color: Color(0xFF475569), fontSize: 10, fontFamily: 'monospace'),
+                        style: const TextStyle(
+                          color: Color(0xFF475569),
+                          fontSize: 10,
+                          fontFamily: 'monospace',
+                        ),
                       ),
                     ),
                   ),
@@ -413,7 +563,9 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                 child: Container(
                   decoration: const BoxDecoration(
                     color: Color(0xFFF5F6FA),
-                    borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                    borderRadius: BorderRadius.vertical(
+                      top: Radius.circular(24),
+                    ),
                   ),
                   child: SingleChildScrollView(
                     padding: const EdgeInsets.all(24),
@@ -430,13 +582,23 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(task.title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, letterSpacing: -0.3)),
+                                  Text(
+                                    task.title,
+                                    style: const TextStyle(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: -0.3,
+                                    ),
+                                  ),
                                   if (task.incidentTitle != null)
                                     Padding(
                                       padding: const EdgeInsets.only(top: 4),
                                       child: Text(
                                         task.incidentTitle!,
-                                        style: const TextStyle(color: Colors.grey, fontSize: 13),
+                                        style: const TextStyle(
+                                          color: Colors.grey,
+                                          fontSize: 13,
+                                        ),
                                       ),
                                     ),
                                 ],
@@ -446,19 +608,31 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                         ),
 
                         // Dispatcher classification from the incident record.
-                        if (task.incidentType != null || task.incidentSeverity != null) ...[
+                        if (task.incidentType != null ||
+                            task.incidentSeverity != null) ...[
                           const SizedBox(height: 14),
                           Container(
                             width: double.infinity,
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 11,
+                            ),
                             decoration: BoxDecoration(
                               color: const Color(0xFF0D9488).withOpacity(0.12),
                               borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: const Color(0xFF0D9488).withOpacity(0.35)),
+                              border: Border.all(
+                                color: const Color(
+                                  0xFF0D9488,
+                                ).withOpacity(0.35),
+                              ),
                             ),
                             child: Text(
                               'Dispatcher classification: ${(task.incidentType ?? 'Unclassified').replaceAll('_', ' ')} · ${(task.incidentSeverity ?? 'Unclassified').toUpperCase()}',
-                              style: const TextStyle(color: Color(0xFF0D9488), fontWeight: FontWeight.w700, fontSize: 13),
+                              style: const TextStyle(
+                                color: Color(0xFF0D9488),
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13,
+                              ),
                             ),
                           ),
                         ],
@@ -467,29 +641,53 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                         if (isResponder && isTeamLeader) ...[
                           const SizedBox(height: 16),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 10,
+                            ),
                             decoration: BoxDecoration(
-                              color: const Color(AppColors.success).withOpacity(0.1),
+                              color: const Color(
+                                AppColors.success,
+                              ).withOpacity(0.1),
                               borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: const Color(AppColors.success).withOpacity(0.3)),
+                              border: Border.all(
+                                color: const Color(
+                                  AppColors.success,
+                                ).withOpacity(0.3),
+                              ),
                             ),
                             child: Row(
                               children: [
-                                const Icon(Icons.star_rounded, color: Color(AppColors.success), size: 18),
+                                const Icon(
+                                  Icons.star_rounded,
+                                  color: Color(AppColors.success),
+                                  size: 18,
+                                ),
                                 const SizedBox(width: 8),
                                 const Expanded(
                                   child: Text(
                                     'You are the Team Leader — you can add members on the move.',
-                                    style: TextStyle(color: Color(AppColors.success), fontSize: 12),
+                                    style: TextStyle(
+                                      color: Color(AppColors.success),
+                                      fontSize: 12,
+                                    ),
                                   ),
                                 ),
                                 TextButton(
                                   onPressed: _showAddMembersModal,
                                   style: TextButton.styleFrom(
-                                    foregroundColor: const Color(AppColors.success),
+                                    foregroundColor: const Color(
+                                      AppColors.success,
+                                    ),
                                     padding: EdgeInsets.zero,
                                   ),
-                                  child: const Text('Add Members', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                                  child: const Text(
+                                    'Add Members',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
                                 ),
                               ],
                             ),
@@ -507,8 +705,13 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                             border: Border.all(color: Color(0xFFE2E8F0)),
                           ),
                           child: Text(
-                            task.description ?? 'A resident has reported an incident. Please proceed to the coordinates for verification and response.',
-                            style: const TextStyle(color: Color(0xFF475569), height: 1.6, fontSize: 14),
+                            task.description ??
+                                'A resident has reported an incident. Please proceed to the coordinates for verification and response.',
+                            style: const TextStyle(
+                              color: Color(0xFF475569),
+                              height: 1.6,
+                              fontSize: 14,
+                            ),
                           ),
                         ),
 
@@ -525,9 +728,21 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                             ),
                             child: Row(
                               children: [
-                                const Icon(Icons.location_on_rounded, color: Color(AppColors.danger), size: 20),
+                                const Icon(
+                                  Icons.location_on_rounded,
+                                  color: Color(AppColors.danger),
+                                  size: 20,
+                                ),
                                 const SizedBox(width: 12),
-                                Expanded(child: Text(task.address!, style: const TextStyle(color: Color(0xFF475569), fontSize: 14))),
+                                Expanded(
+                                  child: Text(
+                                    task.address!,
+                                    style: const TextStyle(
+                                      color: Color(0xFF475569),
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                ),
                               ],
                             ),
                           ),
@@ -550,68 +765,149 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                                   ),
                                   child: const Row(
                                     children: [
-                                      Icon(Icons.people_outline, color: Colors.grey),
+                                      Icon(
+                                        Icons.people_outline,
+                                        color: Colors.grey,
+                                      ),
                                       SizedBox(width: 10),
-                                      Text('No team members added yet', style: TextStyle(color: Colors.grey)),
+                                      Text(
+                                        'No team members added yet',
+                                        style: TextStyle(color: Colors.grey),
+                                      ),
                                     ],
                                   ),
                                 );
                               }
                               return Column(
-                                children: members.map((m) => Container(
-                                  margin: const EdgeInsets.only(bottom: 8),
-                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.circular(10),
-                                    border: Border.all(color: Color(0xFFE2E8F0)),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      CircleAvatar(
-                                        radius: 16,
-                                        backgroundColor: const Color(AppColors.primary).withOpacity(0.2),
-                                        child: Text(
-                                          (m['name'] as String? ?? 'O')[0].toUpperCase(),
-                                          style: const TextStyle(color: Color(0xFF0D9488), fontWeight: FontWeight.bold, fontSize: 13),
+                                children: members
+                                    .map(
+                                      (m) => Container(
+                                        margin: const EdgeInsets.only(
+                                          bottom: 8,
                                         ),
-                                      ),
-                                      const SizedBox(width: 10),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 14,
+                                          vertical: 10,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          borderRadius: BorderRadius.circular(
+                                            10,
+                                          ),
+                                          border: Border.all(
+                                            color: Color(0xFFE2E8F0),
+                                          ),
+                                        ),
+                                        child: Row(
                                           children: [
-                                             Text(m['name'] ?? 'Officer', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                                             if ((m['specialization'] as String? ?? '').trim().isNotEmpty) ...[
-                                               const SizedBox(height: 3),
-                                               Wrap(
-                                                 spacing: 4,
-                                                 runSpacing: 4,
-                                                 children: (m['specialization'] as String)
-                                                     .split(',')
-                                                     .map((s) => s.trim())
-                                                     .where((s) => s.isNotEmpty)
-                                                     .map((s) => Container(
-                                                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                                           decoration: BoxDecoration(
-                                                             color: const Color(0xFF0D9488).withValues(alpha: 0.12),
-                                                             borderRadius: BorderRadius.circular(4),
-                                                             border: Border.all(color: const Color(0xFF0D9488).withValues(alpha: 0.25)),
-                                                           ),
-                                                           child: Text(
-                                                             s,
-                                                             style: const TextStyle(fontSize: 10, color: Color(0xFF0D9488), fontWeight: FontWeight.w600),
-                                                           ),
-                                                         ))
-                                                     .toList(),
-                                               ),
-                                             ],
+                                            CircleAvatar(
+                                              radius: 16,
+                                              backgroundColor: const Color(
+                                                AppColors.primary,
+                                              ).withOpacity(0.2),
+                                              child: Text(
+                                                (m['name'] as String? ?? 'O')[0]
+                                                    .toUpperCase(),
+                                                style: const TextStyle(
+                                                  color: Color(0xFF0D9488),
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 13,
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 10),
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    m['name'] ?? 'Officer',
+                                                    style: const TextStyle(
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                      fontSize: 13,
+                                                    ),
+                                                  ),
+                                                  if ((m['specialization']
+                                                              as String? ??
+                                                          '')
+                                                      .trim()
+                                                      .isNotEmpty) ...[
+                                                    const SizedBox(height: 3),
+                                                    Wrap(
+                                                      spacing: 4,
+                                                      runSpacing: 4,
+                                                      children:
+                                                          (m['specialization']
+                                                                  as String)
+                                                              .split(',')
+                                                              .map(
+                                                                (s) => s.trim(),
+                                                              )
+                                                              .where(
+                                                                (s) => s
+                                                                    .isNotEmpty,
+                                                              )
+                                                              .map(
+                                                                (
+                                                                  s,
+                                                                ) => Container(
+                                                                  padding:
+                                                                      const EdgeInsets.symmetric(
+                                                                        horizontal:
+                                                                            6,
+                                                                        vertical:
+                                                                            2,
+                                                                      ),
+                                                                  decoration: BoxDecoration(
+                                                                    color:
+                                                                        const Color(
+                                                                          0xFF0D9488,
+                                                                        ).withValues(
+                                                                          alpha:
+                                                                              0.12,
+                                                                        ),
+                                                                    borderRadius:
+                                                                        BorderRadius.circular(
+                                                                          4,
+                                                                        ),
+                                                                    border: Border.all(
+                                                                      color:
+                                                                          const Color(
+                                                                            0xFF0D9488,
+                                                                          ).withValues(
+                                                                            alpha:
+                                                                                0.25,
+                                                                          ),
+                                                                    ),
+                                                                  ),
+                                                                  child: Text(
+                                                                    s,
+                                                                    style: const TextStyle(
+                                                                      fontSize:
+                                                                          10,
+                                                                      color: Color(
+                                                                        0xFF0D9488,
+                                                                      ),
+                                                                      fontWeight:
+                                                                          FontWeight
+                                                                              .w600,
+                                                                    ),
+                                                                  ),
+                                                                ),
+                                                              )
+                                                              .toList(),
+                                                    ),
+                                                  ],
+                                                ],
+                                              ),
+                                            ),
                                           ],
                                         ),
                                       ),
-                                    ],
-                                  ),
-                                )).toList(),
+                                    )
+                                    .toList(),
                               );
                             },
                           ),
@@ -620,13 +916,24 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                             width: double.infinity,
                             child: OutlinedButton.icon(
                               onPressed: _showAddMembersModal,
-                              icon: const Icon(Icons.group_add_rounded, size: 18),
+                              icon: const Icon(
+                                Icons.group_add_rounded,
+                                size: 18,
+                              ),
                               label: const Text('Add Members on the Move'),
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: const Color(AppColors.success),
-                                side: BorderSide(color: const Color(AppColors.success).withOpacity(0.5)),
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                side: BorderSide(
+                                  color: const Color(
+                                    AppColors.success,
+                                  ).withOpacity(0.5),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
                               ),
                             ),
                           ),
@@ -694,7 +1001,14 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
         children: [
           Icon(icon, color: color, size: 14),
           const SizedBox(width: 4),
-          Text(label, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold)),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
         ],
       ),
     );
@@ -703,7 +1017,12 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   Widget _buildSectionTitle(String title) {
     return Text(
       title,
-      style: const TextStyle(color: Colors.grey, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.5),
+      style: const TextStyle(
+        color: Colors.grey,
+        fontSize: 11,
+        fontWeight: FontWeight.bold,
+        letterSpacing: 1.5,
+      ),
     );
   }
 
@@ -714,22 +1033,36 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
         context: context,
         builder: (ctx) => AlertDialog(
           backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           title: const Row(
             children: [
-              Icon(Icons.warning_amber_rounded, color: Color(AppColors.warning), size: 24),
+              Icon(
+                Icons.warning_amber_rounded,
+                color: Color(AppColors.warning),
+                size: 24,
+              ),
               SizedBox(width: 8),
               Expanded(
                 child: Text(
                   'Barangay Responding',
-                  style: TextStyle(color: Color(0xFF0F172A), fontSize: 17, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    color: Color(0xFF0F172A),
+                    fontSize: 17,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ],
           ),
           content: Text(
             'Barangay ${task.barangayName ?? "Partida"} is currently responding to this incident.\n\nDo you want to also respond to this incident?',
-            style: const TextStyle(color: Color(0xFF475569), fontSize: 14, height: 1.5),
+            style: const TextStyle(
+              color: Color(0xFF475569),
+              fontSize: 14,
+              height: 1.5,
+            ),
           ),
           actions: [
             TextButton(
@@ -740,9 +1073,17 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
               onPressed: () => Navigator.pop(ctx, true),
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF0D9488),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
               ),
-              child: const Text('Yes, Also Respond', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              child: const Text(
+                'Yes, Also Respond',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ),
           ],
         ),
@@ -775,15 +1116,26 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                 shape: BoxShape.circle,
               ),
               child: Icon(
-                status == TaskStatus.completed ? Icons.check_circle_rounded : Icons.cancel_rounded,
-                color: status == TaskStatus.completed ? const Color(AppColors.success) : Colors.grey,
+                status == TaskStatus.completed
+                    ? Icons.check_circle_rounded
+                    : Icons.cancel_rounded,
+                color: status == TaskStatus.completed
+                    ? const Color(AppColors.success)
+                    : Colors.grey,
                 size: 52,
               ),
             ),
             const SizedBox(height: 12),
             Text(
-              status == TaskStatus.completed ? 'RESPONSE COMPLETED' : 'RESPONSE CANCELLED',
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18, letterSpacing: 1),
+              status == TaskStatus.completed
+                  ? 'RESPONSE COMPLETED'
+                  : 'RESPONSE CANCELLED',
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 18,
+                letterSpacing: 1,
+              ),
             ),
           ],
         ),
@@ -843,7 +1195,11 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     return const SizedBox.shrink();
   }
 
-  Widget _buildBtn({required String label, required Color color, required VoidCallback onTap}) {
+  Widget _buildBtn({
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
     return SizedBox(
       width: double.infinity,
       child: ElevatedButton(
@@ -852,11 +1208,16 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
           backgroundColor: color,
           foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(vertical: 16),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
           elevation: 4,
           shadowColor: color.withOpacity(0.4),
         ),
-        child: Text(label, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+        child: Text(
+          label,
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+        ),
       ),
     );
   }

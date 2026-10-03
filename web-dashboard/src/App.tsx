@@ -16,6 +16,8 @@ import AnalyticsPage from './pages/AnalyticsPage';
 import ReportsPage from './pages/ReportsPage';
 import WeatherMonitoringV2 from './pages/WeatherMonitoringV2';
 import EvacuationCentersPage from './pages/EvacuationCentersPage';
+import MunicipalityBoundaryPage from './pages/MunicipalityBoundaryPage';
+import { MunicipalityBoundaryProvider } from './context/MunicipalityBoundaryContext';
 
 import './index.css';
 
@@ -49,6 +51,7 @@ function AppRoutes() {
         <Route path="reports" element={<RoleAccess roles={['dispatcher']}><ReportsPage /></RoleAccess>} />
         <Route path="requests" element={<RoleAccess roles={['logistics']}><ResourceRequestsPage /></RoleAccess>} />
         <Route path="evacuation-centers" element={<RoleAccess roles={['admin', 'logistics']}><EvacuationCentersPage /></RoleAccess>} />
+        <Route path="municipality-boundary" element={<RoleAccess roles={['logistics']}><MunicipalityBoundaryPage /></RoleAccess>} />
         <Route path="verification" element={<Navigate to="/verification/officers" replace />} />
         <Route path="verification/officers" element={<RoleAccess roles={['admin']}><VerificationPage category="officers" /></RoleAccess>} />
         <Route path="verification/barangay" element={<RoleAccess roles={['admin']}><VerificationPage category="barangay" /></RoleAccess>} />
@@ -68,11 +71,13 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <NotificationManager />
-        <Toaster position="top-right" toastOptions={{
-          style: { background: '#1A2332', color: '#F4F6F7', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px' },
-        }} />
-        <AppRoutes />
+        <MunicipalityBoundaryProvider>
+          <NotificationManager />
+          <Toaster position="top-right" toastOptions={{
+            style: { background: '#1A2332', color: '#F4F6F7', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px' },
+          }} />
+          <AppRoutes />
+        </MunicipalityBoundaryProvider>
       </AuthProvider>
     </BrowserRouter>
   );

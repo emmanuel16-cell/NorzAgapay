@@ -2650,6 +2650,201 @@ tbody tr:last-child td { border-bottom: none; }
   border-radius: 12px;
 }
 
+.municipality-boundary-page {
+  display: grid;
+  gap: 14px;
+}
+
+.municipality-boundary-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px;
+}
+
+.municipality-boundary-status p {
+  margin: 8px 0 4px;
+  color: var(--text-secondary);
+  max-width: 720px;
+}
+
+.municipality-boundary-status small {
+  color: var(--text-muted);
+}
+
+.boundary-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.boundary-status-pill.enabled {
+  background: rgba(13, 148, 136, .14);
+  color: #0d9488;
+}
+
+.boundary-status-pill.disabled {
+  background: rgba(100, 116, 139, .14);
+  color: #64748b;
+}
+
+.boundary-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.municipality-boundary-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.municipality-boundary-edit-help {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.boundary-part-select {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.boundary-part-select select {
+  min-height: 34px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  padding: 4px 8px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
+
+.municipality-boundary-map-card {
+  position: relative;
+  padding: 10px;
+}
+
+.municipality-boundary-map {
+  height: min(68vh, 760px);
+  min-height: 460px;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+}
+
+.municipality-boundary-history {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+}
+
+.municipality-boundary-history h2 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 16px;
+}
+
+.municipality-boundary-history p {
+  margin: 5px 0 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.boundary-history-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.boundary-loading {
+  position: absolute;
+  z-index: 1000;
+  top: 22px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  box-shadow: 0 5px 18px rgba(0, 0, 0, .16);
+  font-size: 13px;
+}
+
+.boundary-spinner {
+  animation: boundary-spin .9s linear infinite;
+}
+
+@keyframes boundary-spin {
+  to { transform: rotate(360deg); }
+}
+
+.leaflet-div-icon.boundary-vertex-icon {
+  border: 0;
+  background: transparent;
+}
+
+.boundary-vertex {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #0d9488;
+  color: #fff;
+  box-shadow: 0 1px 5px rgba(15, 23, 42, .65);
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.boundary-vertex.selected {
+  background: #ea580c;
+  transform: scale(1.15);
+}
+
+@media (max-width: 800px) {
+  .municipality-boundary-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .municipality-boundary-actions {
+    justify-content: flex-start;
+  }
+
+  .municipality-boundary-edit-help {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .boundary-part-select {
+    margin-left: 27px;
+  }
+
+  .municipality-boundary-map {
+    min-height: 400px;
+    height: 62vh;
+  }
+}
+
 @media (max-width: 900px) {
   .evacuation-center-browser {
     grid-template-columns: minmax(0, 1fr);
