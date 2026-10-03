@@ -8,6 +8,7 @@ import { AuthPayload, AuthRequest, authenticate, authorize } from '../middleware
 import { io } from '../server';
 import { matchRespondersToIncident } from '../services/matchingEngine';
 import { isBarangayVerified } from '../services/verifiedBarangayService';
+import { isInsideNorzagaray } from '../utils/norzagarayBoundary';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -199,6 +200,13 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
     let resolvedBarangayId = barangay_id || null;
     const lat = parseFloat(latitude);
     const lng = parseFloat(longitude);
+
+    if (!isInsideNorzagaray(lat, lng)) {
+      res.status(403).json({
+        error: 'Incident reports can only be submitted for locations inside Norzagaray.',
+      });
+      return;
+    }
 
     if (!resolvedBarangayId && lat && lng) {
       const { data: barangays } = await supabaseAdmin
