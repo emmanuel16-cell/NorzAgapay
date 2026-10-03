@@ -128,7 +128,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       ];
 
       return SizedBox(
-        height: 174,
+        height: 132,
         child: SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: Row(
@@ -160,23 +160,23 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     child: InkWell(
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
                 CircleAvatar(
-                  radius: 26,
+                  radius: 21,
                   backgroundColor: color.withValues(alpha: 0.14),
-                  child: Icon(icon, color: color, size: 27),
+                  child: Icon(icon, color: color, size: 23),
                 ),
-                const SizedBox(width: 14),
+                const SizedBox(width: 10),
                 Expanded(
                   child: Text(
                     '$value',
                     style: const TextStyle(
-                      fontSize: 30,
+                      fontSize: 26,
                       fontWeight: FontWeight.bold,
                       color: Color(0xFF102A56),
                     ),
@@ -184,13 +184,13 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 5),
             Text(
               title,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                fontSize: 17,
+                fontSize: 15,
                 fontWeight: FontWeight.w600,
                 color: Color(0xFF0F172A),
               ),
@@ -213,7 +213,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontSize: 13,
+                      fontSize: 12,
                       color: Color(0xFF1E293B),
                     ),
                   ),
