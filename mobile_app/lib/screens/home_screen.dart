@@ -120,7 +120,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Widget _buildAccountScreen(dynamic user, AuthService auth) {
     String roleLabel = 'Barangay Staff';
-    Color roleColor = const Color(0xFF0D9488);
+    Color roleColor = const Color(0xFF7C3AED);
 
     if (user?.isDispatcher == true) {
       roleLabel = 'Barangay Dispatcher';
@@ -133,7 +133,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       roleColor = const Color(0xFF10B981);
     } else if (user?.role == 'staff') {
       roleLabel = 'Barangay Staff';
-      roleColor = const Color(0xFF0D9488);
+      roleColor = const Color(0xFF7C3AED);
     }
 
     return Scaffold(
@@ -221,22 +221,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               child: Text('Settings & Policies', style: TextStyle(color: Color(0xFF0F172A), fontSize: 16, fontWeight: FontWeight.bold)),
             ),
             const SizedBox(height: 10),
-            _actionTile(
-              icon: Icons.gavel_rounded,
-              iconColor: const Color(0xFF1B4F72),
-              label: 'Terms and Conditions',
-              subtitle: 'Review the Barangay App terms',
-              onTap: () => LegalDialogs.showTermsAndConditions(context),
-            ),
-            const SizedBox(height: 10),
-            _actionTile(
-              icon: Icons.privacy_tip_rounded,
-              iconColor: const Color(0xFF0D9488),
-              label: 'Privacy Policy',
-              subtitle: 'How account and incident information is handled',
-              onTap: () => LegalDialogs.showPrivacyPolicy(context),
-            ),
-            const SizedBox(height: 20),
 
             _actionTile(
               icon: Icons.groups_rounded,
@@ -249,6 +233,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 context,
                 MaterialPageRoute(builder: (_) => const TeamScreen()),
               ),
+            ),
+
+            const SizedBox(height: 12),
+
+            _actionTile(
+              icon: Icons.manage_accounts_outlined,
+              iconColor: const Color(0xFF7C3AED),
+              label: 'Edit Information',
+              subtitle: 'Update your name and contact number',
+              onTap: _showEditInformationDialog,
             ),
 
             const SizedBox(height: 12),
@@ -273,6 +267,27 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ),
               const SizedBox(height: 12),
             ],
+
+            const SizedBox(height: 4),
+            const Divider(color: Color(0xFFE2E8F0), height: 1),
+            const SizedBox(height: 12),
+
+            _actionTile(
+              icon: Icons.gavel_rounded,
+              iconColor: const Color(0xFF1B4F72),
+              label: 'Terms and Conditions',
+              subtitle: 'Review the Barangay App terms',
+              onTap: () => LegalDialogs.showTermsAndConditions(context),
+            ),
+            const SizedBox(height: 10),
+            _actionTile(
+              icon: Icons.privacy_tip_rounded,
+              iconColor: const Color(0xFF0D9488),
+              label: 'Privacy Policy',
+              subtitle: 'How account and incident information is handled',
+              onTap: () => LegalDialogs.showPrivacyPolicy(context),
+            ),
+            const SizedBox(height: 20),
 
             // Logout
             SizedBox(
@@ -329,6 +344,149 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (confirmed != true || !mounted) return;
     Provider.of<SocketService>(context, listen: false).disconnect();
     await Provider.of<AuthService>(context, listen: false).logout();
+  }
+
+  Future<void> _showEditInformationDialog() async {
+    final auth = Provider.of<AuthService>(context, listen: false);
+    final user = auth.currentUser;
+    if (user == null) return;
+
+    final formKey = GlobalKey<FormState>();
+    final nameController = TextEditingController(text: user.fullName);
+    final phoneController = TextEditingController(
+      text: PhoneNumberUtils.digitsOnly(user.phone),
+    );
+    var isSaving = false;
+    String? errorMessage;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: const Text('Edit Information'),
+          content: Form(
+            key: formKey,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'You can update your name and contact number.',
+                    style: TextStyle(color: Color(0xFF64748B), fontSize: 13),
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: nameController,
+                    textCapitalization: TextCapitalization.words,
+                    maxLength: 100,
+                    decoration: const InputDecoration(
+                      labelText: 'Full Name',
+                      prefixIcon: Icon(Icons.person_outline),
+                      border: OutlineInputBorder(),
+                    ),
+                    validator: (value) {
+                      final name = value?.trim() ?? '';
+                      if (name.length < 2) return 'Enter your name.';
+                      if (name.length > 100) return 'Name is too long.';
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  TextFormField(
+                    controller: phoneController,
+                    keyboardType: TextInputType.phone,
+                    inputFormatters: PhoneNumberUtils.inputFormatters,
+                    maxLength: 11,
+                    decoration: const InputDecoration(
+                      labelText: 'Phone Number',
+                      hintText: '09XXXXXXXXX',
+                      prefixIcon: Icon(Icons.phone_outlined),
+                      border: OutlineInputBorder(),
+                    ),
+                    validator: (value) {
+                      if ((value ?? '').trim().isEmpty) {
+                        return 'Enter your Philippine mobile number.';
+                      }
+                      return PhoneNumberUtils.validationMessage(value);
+                    },
+                  ),
+                  if (errorMessage != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      errorMessage!,
+                      style: const TextStyle(
+                        color: Color(0xFFDC2626),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: isSaving ? null : () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: isSaving
+                  ? null
+                  : () async {
+                      if (!formKey.currentState!.validate()) return;
+                      setDialogState(() {
+                        isSaving = true;
+                        errorMessage = null;
+                      });
+                      try {
+                        final phone = phoneController.text.trim();
+                        await auth.updateOwnProfile(
+                          fullName: nameController.text.trim(),
+                          phone: phone,
+                        );
+                        if (!dialogContext.mounted) return;
+                        Navigator.pop(dialogContext);
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Information updated.'),
+                              backgroundColor: Color(0xFF16A34A),
+                            ),
+                          );
+                        }
+                      } catch (error) {
+                        if (dialogContext.mounted) {
+                          setDialogState(() {
+                            errorMessage = error
+                                .toString()
+                                .replaceFirst('Exception: ', '');
+                          });
+                        }
+                      } finally {
+                        if (dialogContext.mounted) {
+                          setDialogState(() => isSaving = false);
+                        }
+                      }
+                    },
+              child: isSaving
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Save Changes'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    nameController.dispose();
+    phoneController.dispose();
   }
 
   Future<void> _showChangePasswordDialog(String email) async {

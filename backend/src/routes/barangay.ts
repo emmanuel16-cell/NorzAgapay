@@ -596,6 +596,47 @@ router.get('/me', authenticateBarangay, async (req: any, res: Response) => {
   }
 });
 
+// ─── PATCH /api/barangay/profile ────────────────────────────────────────────
+// Allow a signed-in barangay account to update only its own name and phone.
+router.patch('/profile', authenticateBarangay, async (req: any, res: Response) => {
+  try {
+    const schema = z.object({
+      full_name: z.string().trim().min(2).max(100),
+      phone: z.string().trim().min(1).max(11),
+    }).strict();
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Provide a valid name and phone number.' });
+      return;
+    }
+
+    const phone = parsed.data.phone;
+    if (phone && !/^09\d{9}$/.test(phone)) {
+      res.status(400).json({ error: 'Enter an 11-digit mobile number starting with 09.' });
+      return;
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('barangay_users')
+      .update({ full_name: parsed.data.full_name, phone })
+      .eq('id', req.barangayUser.userId)
+      .eq('barangay_id', req.barangayUser.barangayId)
+      .select('full_name, phone')
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) {
+      res.status(404).json({ error: 'Barangay account not found.' });
+      return;
+    }
+
+    res.json({ success: true, full_name: data.full_name, phone: data.phone });
+  } catch (err) {
+    console.error('Update barangay profile error:', err);
+    res.status(500).json({ error: 'Failed to update your information.' });
+  }
+});
+
 // ─── GET /api/barangay/dispatcher/authorization-pdf ──────────────────────────
 // Download / view prefilled Authorization & Certification PDF
 // Supports inline preview and attachment download via ?download=true

@@ -150,6 +150,9 @@ class BarangayUser {
   }
 
   BarangayUser copyWith({
+    String? fullName,
+    String? phone,
+    bool clearPhone = false,
     String? verificationStatus,
     String? verificationRefNo,
     String? punongBarangayName,
@@ -168,9 +171,9 @@ class BarangayUser {
   }) {
     return BarangayUser(
       id: id,
-      fullName: fullName,
+      fullName: fullName ?? this.fullName,
       email: email,
-      phone: phone,
+      phone: clearPhone ? null : (phone ?? this.phone),
       role: role,
       barangayId: barangayId,
       coordinationVerified: coordinationVerified ?? this.coordinationVerified,

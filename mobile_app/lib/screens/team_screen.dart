@@ -512,7 +512,7 @@ class _TeamScreenState extends State<TeamScreen> {
       badgeColor = const Color(0xFF10B981);
       roleLabel = 'RESPONDER';
     } else if (member.role == 'staff') {
-      badgeColor = const Color(0xFF10B981);
+      badgeColor = const Color(0xFF7C3AED);
       roleLabel = 'STAFF';
     }
 

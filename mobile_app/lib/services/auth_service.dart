@@ -341,6 +341,37 @@ class AuthService extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> updateOwnProfile({
+    required String fullName,
+    required String phone,
+  }) async {
+    if (_token == null || _currentUser == null) {
+      throw Exception('Sign in again to update your information.');
+    }
+
+    final response = await http.patch(
+      Uri.parse('$_apiBaseUrl/barangay/profile'),
+      headers: {
+        'Authorization': 'Bearer $_token',
+        'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': 'true',
+      },
+      body: jsonEncode({'full_name': fullName, 'phone': phone}),
+    );
+    final data = Map<String, dynamic>.from(jsonDecode(response.body));
+    if (response.statusCode != 200) {
+      throw Exception(data['error'] ?? 'Could not update your information.');
+    }
+
+    final savedPhone = data['phone'] as String?;
+    _currentUser = _currentUser!.copyWith(
+      fullName: data['full_name'] as String? ?? fullName,
+      phone: savedPhone,
+    );
+    await Hive.box(_authBoxName).put('user', _currentUser!.toJson());
+    notifyListeners();
+  }
+
   // URL for the prefilled Barangay Account Request PDF
   String getAuthorizationPdfUrl({bool download = false}) {
     final dlParam = download ? '&download=true' : '';

@@ -1,13 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:mobile_app/models/broadcast_post.dart';
 
-/// Displays media (images & videos) in a responsive grid layout matching the 1-6+ layouts:
-/// - 1 item  → 1 full square
-/// - 2 items → 2 squares side-by-side
-/// - 3 items → 1 top wide rectangle + 2 bottom squares
-/// - 4 items → 2×2 grid
-/// - 5 items → 2 top squares + 3 bottom squares
-/// - 6+ items → 2 top squares + 3 bottom squares (last cell has "+N" overlay)
+/// Displays post media using the resident feed's 1-6+ arrangement while
+/// retaining tappable image and video previews.
 class BroadcastMediaGrid extends StatelessWidget {
   final List<BroadcastMediaItem> mediaItems;
   final void Function(int index) onItemTap;
@@ -26,172 +21,203 @@ class BroadcastMediaGrid extends StatelessWidget {
 
     final count = mediaItems.length;
 
-    if (count == 1) return _buildOne();
-    if (count == 2) return _buildTwo();
-    if (count == 3) return _buildThree();
-    if (count == 4) return _buildFour();
-    if (count == 5) return _buildFive();
-    return _buildSixPlus();
+    final grid = switch (count) {
+      1 => _buildOne(),
+      2 => _buildTwo(),
+      3 => _buildThree(),
+      4 => _buildFour(),
+      5 => _buildFive(),
+      _ => _buildSixPlus(),
+    };
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: grid,
+    );
   }
 
-  // ── 1 Square ─────────────────────────────────────────────────────────────
+  // ── 1 media item ────────────────────────────────────────────────────────
   Widget _buildOne() {
-    return _cell(0, aspectRatio: 1.0, rounded: false);
+    return SizedBox(
+      width: double.infinity,
+      height: 210,
+      child: _cell(0, rounded: false),
+    );
   }
 
-  // ── 2 Squares ────────────────────────────────────────────────────────────
+  // ── 2 media items ───────────────────────────────────────────────────────
   Widget _buildTwo() {
-    return AspectRatio(
-      aspectRatio: 2.0,
+    return SizedBox(
+      width: double.infinity,
+      height: 180,
       child: Row(
         children: [
           Expanded(child: _cell(0, rounded: false)),
-          const SizedBox(width: 2),
+          const SizedBox(width: 4),
           Expanded(child: _cell(1, rounded: false)),
         ],
       ),
     );
   }
 
-  // ── 3 Squares ────────────────────────────────────────────────────────────
+  // ── 3 media items ───────────────────────────────────────────────────────
   Widget _buildThree() {
-    return Column(
-      children: [
-        _cell(0, aspectRatio: 16 / 9, rounded: false),
-        const SizedBox(height: 2),
-        AspectRatio(
-          aspectRatio: 2.0,
-          child: Row(
-            children: [
-              Expanded(child: _cell(1, rounded: false)),
-              const SizedBox(width: 2),
-              Expanded(child: _cell(2, rounded: false)),
-            ],
+    return SizedBox(
+      width: double.infinity,
+      height: 250,
+      child: Column(
+        children: [
+          Expanded(
+            flex: 14,
+            child: Row(
+              children: [Expanded(child: _cell(0, rounded: false))],
+            ),
           ),
-        ),
-      ],
+          const SizedBox(height: 4),
+          Expanded(
+            flex: 11,
+            child: Row(
+              children: [
+                Expanded(child: _cell(1, rounded: false)),
+                const SizedBox(width: 4),
+                Expanded(child: _cell(2, rounded: false)),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
-  // ── 4 Squares ────────────────────────────────────────────────────────────
+  // ── 4 media items ───────────────────────────────────────────────────────
   Widget _buildFour() {
-    return Column(
-      children: [
-        AspectRatio(
-          aspectRatio: 2.0,
-          child: Row(
-            children: [
-              Expanded(child: _cell(0, rounded: false)),
-              const SizedBox(width: 2),
-              Expanded(child: _cell(1, rounded: false)),
-            ],
+    return SizedBox(
+      width: double.infinity,
+      height: 240,
+      child: Column(
+        children: [
+          Expanded(
+            child: Row(
+              children: [
+                Expanded(child: _cell(0, rounded: false)),
+                const SizedBox(width: 4),
+                Expanded(child: _cell(1, rounded: false)),
+              ],
+            ),
           ),
-        ),
-        const SizedBox(height: 2),
-        AspectRatio(
-          aspectRatio: 2.0,
-          child: Row(
-            children: [
-              Expanded(child: _cell(2, rounded: false)),
-              const SizedBox(width: 2),
-              Expanded(child: _cell(3, rounded: false)),
-            ],
+          const SizedBox(height: 4),
+          Expanded(
+            child: Row(
+              children: [
+                Expanded(child: _cell(2, rounded: false)),
+                const SizedBox(width: 4),
+                Expanded(child: _cell(3, rounded: false)),
+              ],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
-  // ── 5 Squares ────────────────────────────────────────────────────────────
+  // ── 5 media items ───────────────────────────────────────────────────────
   Widget _buildFive() {
-    return Column(
-      children: [
-        AspectRatio(
-          aspectRatio: 2.0,
-          child: Row(
-            children: [
-              Expanded(child: _cell(0, rounded: false)),
-              const SizedBox(width: 2),
-              Expanded(child: _cell(1, rounded: false)),
-            ],
+    return SizedBox(
+      width: double.infinity,
+      height: 250,
+      child: Column(
+        children: [
+          Expanded(
+            flex: 13,
+            child: Row(
+              children: [
+                Expanded(child: _cell(0, rounded: false)),
+                const SizedBox(width: 4),
+                Expanded(child: _cell(1, rounded: false)),
+              ],
+            ),
           ),
-        ),
-        const SizedBox(height: 2),
-        AspectRatio(
-          aspectRatio: 3.0,
-          child: Row(
-            children: [
-              Expanded(child: _cell(2, rounded: false)),
-              const SizedBox(width: 2),
-              Expanded(child: _cell(3, rounded: false)),
-              const SizedBox(width: 2),
-              Expanded(child: _cell(4, rounded: false)),
-            ],
+          const SizedBox(height: 4),
+          Expanded(
+            flex: 11,
+            child: Row(
+              children: [
+                Expanded(child: _cell(2, rounded: false)),
+                const SizedBox(width: 4),
+                Expanded(child: _cell(3, rounded: false)),
+                const SizedBox(width: 4),
+                Expanded(child: _cell(4, rounded: false)),
+              ],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
-  // ── 6+ Squares ───────────────────────────────────────────────────────────
+  // ── 6+ media items ──────────────────────────────────────────────────────
   Widget _buildSixPlus() {
     final extraCount = mediaItems.length - 5;
-    return Column(
-      children: [
-        AspectRatio(
-          aspectRatio: 2.0,
-          child: Row(
-            children: [
-              Expanded(child: _cell(0, rounded: false)),
-              const SizedBox(width: 2),
-              Expanded(child: _cell(1, rounded: false)),
-            ],
+    return SizedBox(
+      width: double.infinity,
+      height: 250,
+      child: Column(
+        children: [
+          Expanded(
+            flex: 13,
+            child: Row(
+              children: [
+                Expanded(child: _cell(0, rounded: false)),
+                const SizedBox(width: 4),
+                Expanded(child: _cell(1, rounded: false)),
+              ],
+            ),
           ),
-        ),
-        const SizedBox(height: 2),
-        AspectRatio(
-          aspectRatio: 3.0,
-          child: Row(
-            children: [
-              Expanded(child: _cell(2, rounded: false)),
-              const SizedBox(width: 2),
-              Expanded(child: _cell(3, rounded: false)),
-              const SizedBox(width: 2),
-              Expanded(
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    _cell(4, rounded: false),
-                    GestureDetector(
-                      onTap: () {
-                        if (onPlusTap != null) {
-                          onPlusTap!();
-                        } else {
-                          onItemTap(4);
-                        }
-                      },
-                      child: Container(
-                        color: const Color(0xFF64748B).withValues(alpha: 0.65),
-                        child: Center(
-                          child: Text(
-                            '+$extraCount',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 22,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: 1,
+          const SizedBox(height: 4),
+          Expanded(
+            flex: 11,
+            child: Row(
+              children: [
+                Expanded(child: _cell(2, rounded: false)),
+                const SizedBox(width: 4),
+                Expanded(child: _cell(3, rounded: false)),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      _cell(4, rounded: false),
+                      GestureDetector(
+                        onTap: () {
+                          if (onPlusTap != null) {
+                            onPlusTap!();
+                          } else {
+                            onItemTap(4);
+                          }
+                        },
+                        child: Container(
+                          color: const Color(0xFF64748B).withValues(alpha: 0.65),
+                          child: Center(
+                            child: Text(
+                              '+$extraCount',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 22,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 1,
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 

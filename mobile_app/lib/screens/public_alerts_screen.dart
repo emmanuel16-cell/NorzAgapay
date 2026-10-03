@@ -376,7 +376,7 @@ class _PublicAlertsScreenState extends State<PublicAlertsScreen> {
                             onRefresh: _fetchPosts,
                             color: const Color(0xFF38BDF8),
                             child: ListView.builder(
-                              padding: const EdgeInsets.only(top: 8, bottom: 16),
+                              padding: const EdgeInsets.fromLTRB(14, 14, 14, 80),
                               itemCount: activePosts.length,
                               itemBuilder: (context, index) {
                                 final post = activePosts[index];
@@ -643,19 +643,12 @@ class _BroadcastPostCard extends StatefulWidget {
 }
 
 class _BroadcastPostCardState extends State<_BroadcastPostCard> {
-  bool _expanded = false;
-  static const int _collapsedLines = 3;
-
   String _formatTimestamp(DateTime dt) {
     final now = DateTime.now();
     final diff = now.difference(dt);
     if (diff.inMinutes < 1) return 'Just now';
     if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
-    if (diff.inHours < 24) {
-      final hour = dt.hour > 12 ? dt.hour - 12 : (dt.hour == 0 ? 12 : dt.hour);
-      final ampm = dt.hour >= 12 ? 'pm' : 'am';
-      return 'Today - $hour:${dt.minute.toString().padLeft(2, '0')} $ampm';
-    }
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
     if (diff.inDays == 1) return 'Yesterday';
     return '${dt.month}/${dt.day}/${dt.year}';
   }
@@ -670,15 +663,23 @@ class _BroadcastPostCardState extends State<_BroadcastPostCard> {
     final mediaItems = post.media;
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: post.isPinned
+              ? const Color(0xFFF59E0B)
+              : const Color(0xFFE2E8F0),
+          width: post.isPinned ? 2 : 1,
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.18),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
+            color: post.isPinned
+                ? const Color(0xFFF59E0B).withValues(alpha: 0.15)
+                : Colors.black.withValues(alpha: 0.04),
+            blurRadius: post.isPinned ? 12 : 8,
+            offset: const Offset(0, 3),
           ),
         ],
       ),
@@ -686,36 +687,52 @@ class _BroadcastPostCardState extends State<_BroadcastPostCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── "From Mdrrmo" Badge Banner (shown in Barangay tab) ───────────
+          if (post.isPinned)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+              decoration: const BoxDecoration(
+                color: Color(0xFFFEF3C7),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.push_pin_rounded, size: 14, color: Color(0xFFB45309)),
+                  SizedBox(width: 6),
+                  Text(
+                    'PINNED',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                      color: Color(0xFFB45309),
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+          // Keep the repost source visible in a light resident-feed style.
           if (isRepostedFromMdrrmo)
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
               decoration: const BoxDecoration(
-                color: Color(0xFF0F172A),
+                color: Color(0xFFEFF6FF),
                 border: Border(
-                  bottom: BorderSide(color: Color(0xFF334155), width: 1),
+                  bottom: BorderSide(color: Color(0xFFDBEAFE), width: 1),
                 ),
               ),
               child: Row(
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(3),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF0284C7).withValues(alpha: 0.2),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(Icons.shield_rounded,
-                        color: Color(0xFF38BDF8), size: 14),
-                  ),
-                  const SizedBox(width: 8),
+                  const Icon(Icons.shield_rounded, color: Color(0xFF1B4F72), size: 14),
+                  const SizedBox(width: 6),
                   const Text(
-                    'From Mdrrmo',
+                    'From MDRRMO',
                     style: TextStyle(
-                      color: Color(0xFF38BDF8),
-                      fontSize: 11.5,
+                      color: Color(0xFF1B4F72),
+                      fontSize: 11,
                       fontWeight: FontWeight.bold,
-                      letterSpacing: 0.3,
                     ),
                   ),
                   if (post.repostedBy != null) ...[
@@ -723,8 +740,8 @@ class _BroadcastPostCardState extends State<_BroadcastPostCard> {
                     Text(
                       '• Reposted by ${post.repostedBy}',
                       style: const TextStyle(
-                        color: Color(0xFF94A3B8),
-                        fontSize: 10.5,
+                        color: Color(0xFF64748B),
+                        fontSize: 10,
                       ),
                     ),
                   ],
@@ -736,29 +753,45 @@ class _BroadcastPostCardState extends State<_BroadcastPostCard> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 14, 10, 8),
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 // Name + Timestamp
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        isMdrrmoTab ? 'MDRRMO Norzagaray' : post.barangayName,
-                        style: const TextStyle(
-                          color: Color(0xFF0F172A),
-                          fontWeight: FontWeight.w800,
-                          fontSize: 16,
-                          letterSpacing: -0.3,
-                        ),
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              isMdrrmoTab
+                                  ? 'MDRRMO Norzagaray'
+                                  : (post.barangayName.toLowerCase().startsWith('barangay')
+                                      ? post.barangayName
+                                      : 'Barangay ${post.barangayName}'),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Color(0xFF0F172A),
+                                fontWeight: FontWeight.bold,
+                                fontSize: 15.5,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 5),
+                          const Icon(
+                            Icons.verified_rounded,
+                            size: 16,
+                            color: Color(0xFF1B4F72),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 2),
                       Text(
                         _formatTimestamp(post.createdAt),
                         style: const TextStyle(
                           color: Color(0xFF64748B),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
+                          fontSize: 11.5,
                         ),
                       ),
                     ],
@@ -766,14 +799,10 @@ class _BroadcastPostCardState extends State<_BroadcastPostCard> {
                 ),
 
                 // Pill (Category)
-                _CategoryPill(category: cat),
-                if (post.isPinned) ...[
-                  const SizedBox(width: 4),
-                  const Tooltip(
-                    message: 'Pinned to Resident Home',
-                    child: Icon(Icons.push_pin_rounded, color: Color(0xFF0284C7), size: 18),
-                  ),
-                ],
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 140),
+                  child: _CategoryPill(category: cat),
+                ),
                 const SizedBox(width: 4),
 
                 // 3-dot Menu:
@@ -864,62 +893,41 @@ class _BroadcastPostCardState extends State<_BroadcastPostCard> {
             ),
           ),
 
-          // ── Content Text with See More ───────────────────────────────────
+          // Match resident feed spacing and content/media/link ordering.
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                RichText(
-                  maxLines: _expanded ? null : _collapsedLines,
-                  overflow: _expanded
-                      ? TextOverflow.visible
-                      : TextOverflow.ellipsis,
-                  text: TextSpan(
-                    style: const TextStyle(
-                      color: Color(0xFF334155),
-                      fontSize: 13.5,
-                      height: 1.45,
-                    ),
-                    children: [
-                      TextSpan(text: post.content),
-                    ],
+                Text(
+                  post.content,
+                  style: const TextStyle(
+                    color: Color(0xFF1E293B),
+                    fontSize: 13.5,
+                    height: 1.45,
                   ),
                 ),
-                if (!_expanded && post.content.length > 130)
-                  GestureDetector(
-                    onTap: () => setState(() => _expanded = true),
-                    child: const Padding(
-                      padding: EdgeInsets.only(top: 3),
-                      child: Text(
-                        'See More.',
-                        style: TextStyle(
-                          color: Color(0xFF0284C7),
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
+                if (mediaItems.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  BroadcastMediaGrid(
+                    mediaItems: mediaItems,
+                    onItemTap: (idx) => widget.onImageTap(mediaItems, idx),
+                    onPlusTap: () => widget.onPlusTap(mediaItems),
                   ),
+                ],
+                if (post.links.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: post.links
+                        .map((link) => _LinkTile(url: link))
+                        .toList(),
+                  ),
+                ],
               ],
             ),
           ),
-
-          // ── Links ────────────────────────────────────────────────────────
-          if (post.links.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            ...post.links.map((link) => _LinkTile(url: link)),
-          ],
-
-          // ── Media Grid (Matches img 1: 1-6+ squares) ──────────────────────
-          if (mediaItems.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            BroadcastMediaGrid(
-              mediaItems: mediaItems,
-              onItemTap: (idx) => widget.onImageTap(mediaItems, idx),
-              onPlusTap: () => widget.onPlusTap(mediaItems),
-            ),
-          ],
         ],
       ),
     );
@@ -935,26 +943,79 @@ class _CategoryPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = category.pillColor;
+    late final Color color;
+    late final Color background;
+    late final Color border;
+    late final IconData icon;
+    switch (category) {
+      case BroadcastCategory.disasterAlertYellow:
+        color = const Color(0xFFD97706);
+        background = const Color(0xFFFFFBEB);
+        border = const Color(0xFFFDE68A);
+        icon = Icons.warning_amber_rounded;
+        break;
+      case BroadcastCategory.disasterAlertOrange:
+        color = const Color(0xFFF97316);
+        background = const Color(0xFFFFF7ED);
+        border = const Color(0xFFFDBA74);
+        icon = Icons.warning_amber_rounded;
+        break;
+      case BroadcastCategory.disasterAlertRed:
+        color = const Color(0xFFEF4444);
+        background = const Color(0xFFFEF2F2);
+        border = const Color(0xFFFCA5A5);
+        icon = Icons.local_fire_department_rounded;
+        break;
+      case BroadcastCategory.safetyAdvisory:
+        color = const Color(0xFF0D9488);
+        background = const Color(0xFFF0FDFA);
+        border = const Color(0xFF99F6E4);
+        icon = Icons.security_rounded;
+        break;
+      case BroadcastCategory.reliefAssistance:
+        color = const Color(0xFF16A34A);
+        background = const Color(0xFFF0FDF4);
+        border = const Color(0xFFBBF7D0);
+        icon = Icons.volunteer_activism_rounded;
+        break;
+      case BroadcastCategory.allClearNotice:
+        color = const Color(0xFF2563EB);
+        background = const Color(0xFFEFF6FF);
+        border = const Color(0xFFBFDBFE);
+        icon = Icons.check_circle_rounded;
+        break;
+    }
     final label = category.sublabel.isNotEmpty
-        ? '${category.label} (${category.sublabel})'
-        : category.label;
+        ? '${category.label} · ${category.sublabel}'
+        : category == BroadcastCategory.reliefAssistance
+            ? 'Relief & Assistance'
+            : category.label;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color, width: 1.5),
+        color: background,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: border),
       ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: color,
-          fontSize: 11,
-          fontWeight: FontWeight.w800,
-          letterSpacing: 0.1,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: color),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: color,
+                fontSize: 10.5,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -979,30 +1040,30 @@ class _LinkTile extends StatelessWidget {
     return GestureDetector(
       onTap: _launch,
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
           color: const Color(0xFFF1F5F9),
           borderRadius: BorderRadius.circular(8),
           border: Border.all(color: const Color(0xFFCBD5E1)),
         ),
         child: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.link_rounded, color: Color(0xFF0284C7), size: 16),
-            const SizedBox(width: 8),
-            Expanded(
+            const Icon(Icons.link_rounded, color: Color(0xFF1B4F72), size: 14),
+            const SizedBox(width: 4),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 240),
               child: Text(
-                url,
-                style: const TextStyle(
-                  color: Color(0xFF0284C7),
-                  fontSize: 12,
-                  decoration: TextDecoration.underline,
-                ),
+                url.replaceFirst(RegExp(r'https?://'), ''),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF1B4F72),
+                ),
               ),
             ),
-            const Icon(Icons.open_in_new_rounded, color: Color(0xFF64748B), size: 14),
           ],
         ),
       ),
