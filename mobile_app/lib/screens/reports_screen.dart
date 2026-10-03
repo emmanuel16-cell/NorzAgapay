@@ -1102,17 +1102,7 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'From: ${request['requested_by_user']?['full_name'] ?? 'Responder'}',
-                  style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 13, fontWeight: FontWeight.bold),
-                ),
-                if (request['incident_title'] != null) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    'Incident: ${request['incident_title']}',
-                    style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
-                  ),
-                ],
+                _buildAssistanceRequestSummary(request),
                 const SizedBox(height: 14),
                 const Text('Your Decision:', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 10),
@@ -1198,6 +1188,68 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
         }
       }
     }
+  }
+
+  Widget _buildAssistanceRequestSummary(Map<String, dynamic> request) {
+    final explanation = (request['explanation'] as String? ?? '').trim();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(11),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F172A),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFF334155)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'REQUEST DETAILS',
+            style: TextStyle(
+              color: Color(0xFF94A3B8),
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 0.7,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'From: ${request['requested_by_user']?['full_name'] ?? 'Responder'}',
+            style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 12, fontWeight: FontWeight.bold),
+          ),
+          if (request['incident_title'] != null) ...[
+            const SizedBox(height: 3),
+            Text(
+              'Incident: ${request['incident_title']}',
+              style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 11),
+            ),
+          ],
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              if (request['needs_more_manpower'] == true)
+                _needTag(Icons.people, 'Manpower', const Color(0xFF38BDF8)),
+              if (request['needs_resources'] == true)
+                _needTag(Icons.inventory_2, 'Resources', const Color(0xFFA78BFA)),
+              if (request['needs_equipment'] == true)
+                _needTag(Icons.construction, 'Equipment', const Color(0xFF34D399)),
+              if (request['beyond_barangay_capability'] == true)
+                _needTag(Icons.escalator_warning, 'Needs MDRRMO', const Color(0xFFF87171)),
+            ],
+          ),
+          if (explanation.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              explanation,
+              style: const TextStyle(color: Color(0xFFCBD5E1), fontSize: 12, height: 1.35),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 
   Widget _decisionOption({
