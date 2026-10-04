@@ -159,7 +159,7 @@ export default function MunicipalityBoundaryPage() {
       boundary.geometry,
       enabled,
       enabled
-        ? 'Use this boundary across the web dashboard, mobile app, and resident app? Map areas outside it will be hidden, and location/report checks will use it.'
+        ? 'Use this boundary across the web dashboard, mobile app, and resident app? Web dashboard maps will blur areas outside it, and location/report checks will use it.'
         : 'Disable the municipality boundary across all apps? Full maps will be visible and boundary-based restrictions will stop.',
     );
   };
@@ -235,7 +235,7 @@ export default function MunicipalityBoundaryPage() {
             {boundary.enabled ? 'Boundary in use' : 'Full map in use'}
           </div>
           <p>{boundary.enabled
-            ? 'Only the area inside this boundary is visible in all app maps. Location and resident report checks use this shape.'
+            ? 'Web dashboard maps blur areas outside this boundary. Location and resident report checks use this shape across apps.'
             : 'No boundary restriction is active. All app maps show the full map.'}</p>
           {boundary.updated_at && <small>Last saved {new Date(boundary.updated_at).toLocaleString()}</small>}
         </div>
@@ -275,7 +275,7 @@ export default function MunicipalityBoundaryPage() {
       <section className="card municipality-boundary-map-card">
         {loading && <div className="boundary-loading"><LoaderCircle className="boundary-spinner" size={22} /> Loading saved boundary…</div>}
         <div className="municipality-boundary-map">
-          <MapContainer center={DEFAULT_CENTER as LatLngExpression} zoom={10} scrollWheelZoom style={{ width: '100%', height: '100%', background: '#e9eef4' }}>
+          <MapContainer center={DEFAULT_CENTER as LatLngExpression} zoom={10} scrollWheelZoom style={{ width: '100%', height: '100%', background: '#0b1120' }}>
             <TileLayer attribution={CARTO_ATTRIBUTION} url={CARTO_DARK_MAP_URL} />
             <FitDraft parts={parts} fitKey={fitKey} />
             {editing && <DraftMapEvents editing={editing} onAdd={addPoint} />}
@@ -283,7 +283,7 @@ export default function MunicipalityBoundaryPage() {
               <Polygon
                 key={`draft-part-${partIndex}`}
                 positions={part as LatLngExpression[]}
-                pathOptions={{ color: '#0d9488', weight: 3, fillColor: '#0d9488', fillOpacity: part.length >= 3 ? 0.12 : 0 }}
+                pathOptions={{ color: '#d6f5c8', weight: 3, fillColor: '#0d9488', fillOpacity: part.length >= 3 ? 0.12 : 0 }}
               />
             ))}
             {parts.flatMap((part, partIndex) => part.map(([latitude, longitude], pointIndex) => (
@@ -303,7 +303,7 @@ export default function MunicipalityBoundaryPage() {
                 <Tooltip direction="top">Part {partIndex + 1} · Point {pointIndex + 1}</Tooltip>
               </Marker>
             )))}
-            <MunicipalityBoundaryMapLayer boundary={boundary} maskColor="#e9eef4" />
+            <MunicipalityBoundaryMapLayer boundary={boundary} />
           </MapContainer>
         </div>
       </section>

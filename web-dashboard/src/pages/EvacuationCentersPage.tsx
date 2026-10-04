@@ -173,7 +173,7 @@ export default function EvacuationCentersPage() {
           </section>
 
           <div className="evacuation-center-map">
-            <MapContainer center={DEFAULT_CENTER} zoom={12} style={{ width: '100%', height: '100%' }}>
+            <MapContainer center={DEFAULT_CENTER} zoom={12} style={{ width: '100%', height: '100%', background: '#0b1120' }}>
               <TileLayer attribution={CARTO_ATTRIBUTION} url={CARTO_DARK_MAP_URL} />
               <MunicipalityBoundaryViewport boundary={boundary} />
               <MapViewport stations={mapStations} selectedId={selectedId} />
@@ -190,7 +190,7 @@ export default function EvacuationCentersPage() {
                   </Marker>
                 );
               })}
-              <MunicipalityBoundaryMapLayer boundary={boundary} maskColor="#e9eef4" />
+              <MunicipalityBoundaryMapLayer boundary={boundary} />
             </MapContainer>
           </div>
         </div>

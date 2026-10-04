@@ -934,7 +934,7 @@ export default function CommandCenter() {
                 />
               );
             })}
-          <MunicipalityBoundaryMapLayer boundary={boundary} maskColor="#0b1120" />
+          <MunicipalityBoundaryMapLayer boundary={boundary} />
         </MapContainer>
 
         {activeModalType !== 'escalated' && <CurrentWeatherPanel />}
