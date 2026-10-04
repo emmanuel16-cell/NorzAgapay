@@ -7,29 +7,6 @@ const router = express.Router();
 // Data fetching functions
 // ============================================
 
-// Fetch weather data from PAGASA (primary source)
-const fetchPAGASAWeather = async () => {
-    try {
-        // In production, implement actual PAGASA API integration
-        // For now, return mock data simulating PAGASA data
-        return {
-            temperature: 28 + Math.random() * 5,
-            humidity: 60 + Math.random() * 30,
-            windSpeed: 5 + Math.random() * 15,
-            windDirection: Math.random() * 360,
-            rainfall: Math.random() * 20,
-            pressure: 1000 + Math.random() * 30,
-            visibility: 10 + Math.random() * 10,
-            uvIndex: 3 + Math.random() * 7,
-            weatherCondition: ['Sunny', 'Partly Cloudy', 'Cloudy', 'Rainy'][Math.floor(Math.random() * 4)],
-            source: 'PAGASA'
-        };
-    } catch (error) {
-        console.error('Error fetching from PAGASA:', error);
-        return null;
-    }
-};
-
 // Generate fallback predictive forecast for Norzagaray when external API is unreachable
 const generateFallbackForecast = () => {
     const hourly = [];
@@ -256,56 +233,14 @@ const calculateMunicipalityRisk = async () => {
 // Weather endpoints
 // ============================================
 
-// Get current weather (PAGASA primary, Open-Meteo backup)
+// Get current weather directly from Open-Meteo without persisting it.
 router.get('/current', async (req, res) => {
     try {
-        // Try PAGASA first
-        let weatherData = await fetchPAGASAWeather();
-        let source = 'PAGASA';
-        
-        // If PAGASA fails, use Open-Meteo
+        const weatherData = await fetchOpenMeteoWeather();
         if (!weatherData) {
-            const openMeteoData = await fetchOpenMeteoWeather();
-            if (openMeteoData) {
-                weatherData = openMeteoData;
-                source = 'Open-Meteo';
-            }
+            return res.status(502).json({ success: false, error: 'Failed to fetch current weather from Open-Meteo' });
         }
-        
-        if (!weatherData) {
-            return res.status(500).json({ success: false, error: 'Failed to fetch weather data from all sources' });
-        }
-        
-        // Store in database
-        const { data: storedData, error } = await supabaseAdmin
-            .from('weather_data')
-            .insert({
-                temperature: weatherData.temperature,
-                humidity: weatherData.humidity,
-                wind_speed: weatherData.windSpeed,
-                wind_direction: weatherData.windDirection,
-                rainfall: weatherData.rainfall,
-                pressure: weatherData.pressure,
-                visibility: weatherData.visibility,
-                uv_index: weatherData.uvIndex,
-                weather_condition: weatherData.weatherCondition,
-                data_source: source
-            })
-            .select()
-            .single();
-            
-        if (error) {
-            console.error('Error storing weather data:', error);
-        }
-        
-        // Add to activity feed
-        await supabaseAdmin.from('activity_feed').insert({
-            type: 'weather_update',
-            title: 'Weather Updated',
-            description: `Current temperature: ${weatherData.temperature.toFixed(1)}°C, ${weatherData.weatherCondition}`,
-            data_source: source
-        });
-        
+
         res.json({
             success: true,
             data: {
@@ -318,7 +253,7 @@ router.get('/current', async (req, res) => {
                 visibility: weatherData.visibility,
                 uv_index: weatherData.uvIndex,
                 weather_condition: weatherData.weatherCondition,
-                source: source,
+                source: weatherData.source || 'Open-Meteo',
                 location: 'Norzagaray',
                 last_updated: new Date().toISOString(),
                 units: {

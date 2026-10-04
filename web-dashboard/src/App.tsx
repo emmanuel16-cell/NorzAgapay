@@ -14,7 +14,6 @@ import AlertBroadcastsPage from './pages/AlertBroadcastsPage';
 import OfficersPage from './pages/OfficersPage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import ReportsPage from './pages/ReportsPage';
-import WeatherMonitoringV2 from './pages/WeatherMonitoringV2';
 import EvacuationCentersPage from './pages/EvacuationCentersPage';
 import MunicipalityBoundaryPage from './pages/MunicipalityBoundaryPage';
 import { MunicipalityBoundaryProvider } from './context/MunicipalityBoundaryContext';
@@ -45,9 +44,9 @@ function AppRoutes() {
       <Route path="/login" element={user ? <Navigate to="/" replace /> : <LoginPage />} />
       <Route path="/" element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
         <Route index element={<RoleAccess roles={['dispatcher']}><CommandCenter /></RoleAccess>} />
-        <Route path="weather-monitoring" element={<RoleAccess roles={[]}><WeatherMonitoringV2 /></RoleAccess>} />
-        <Route path="advisories" element={<Navigate to="/weather-monitoring" replace />} />
-        <Route path="earthquakes" element={<Navigate to="/weather-monitoring" replace />} />
+        <Route path="weather-monitoring" element={<Navigate to="/" replace />} />
+        <Route path="advisories" element={<Navigate to="/" replace />} />
+        <Route path="earthquakes" element={<Navigate to="/" replace />} />
         <Route path="reports" element={<RoleAccess roles={['dispatcher']}><ReportsPage /></RoleAccess>} />
         <Route path="requests" element={<RoleAccess roles={['logistics']}><ResourceRequestsPage /></RoleAccess>} />
         <Route path="evacuation-centers" element={<RoleAccess roles={['admin', 'logistics']}><EvacuationCentersPage /></RoleAccess>} />

@@ -8,6 +8,7 @@ import { reportAPI, respondUnitAPI, socket, taskAPI } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { useMunicipalityBoundary } from '../context/MunicipalityBoundaryContext';
 import MunicipalityBoundaryMapLayer, { MunicipalityBoundaryViewport } from '../components/MunicipalityBoundaryMapLayer';
+import CurrentWeatherPanel from '../components/CurrentWeatherPanel';
 import { isCoordinateInsideBoundary } from '../lib/municipalityBoundary';
 import toast from 'react-hot-toast';
 import { AlertTriangle, Siren, Users, CheckCircle2 } from 'lucide-react';
@@ -647,134 +648,126 @@ export default function CommandCenter() {
         </div>
       </div>
 
-      {/* Map Card */}
-      <div className="map-card-container">
-        {/* Floating Top HUD (Image 3) */}
-        <div className="command-hud-overlay">
-          <div className="command-hud-top-row">
-            {/* Collapse / Expand Toggle Arrow */}
-            <button
-              className="command-hud-toggle-btn"
-              onClick={() => setHudExpanded(!hudExpanded)}
-              title={hudExpanded ? 'Collapse HUD' : 'Expand HUD'}
+      {/* Compact stats and layer filters */}
+      <div className="command-center-toolbar">
+        <div className="command-hud-top-row">
+          <button
+            className="command-hud-toggle-btn"
+            onClick={() => setHudExpanded(!hudExpanded)}
+            title={hudExpanded ? 'Collapse stats and filters' : 'Expand stats and filters'}
+            aria-label={hudExpanded ? 'Collapse stats and filters' : 'Expand stats and filters'}
+            aria-expanded={hudExpanded}
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              style={{ transform: hudExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}
             >
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                style={{ transform: hudExpanded ? 'rotate(0deg)' : 'rotate(180deg)', transition: 'transform 0.2s' }}
-              >
-                <polyline points="9 18 15 12 9 6"></polyline>
-              </svg>
-            </button>
+              <polyline points="9 18 15 12 9 6"></polyline>
+            </svg>
+          </button>
 
-            {/* 4 Stat Cards */}
-            {hudExpanded && (
-              <>
-                <div className="command-stat-card incident">
-                  <div className="stat-info">
-                    <span className="stat-val">{stats.incident}</span>
-                    <span className="stat-name">Incident</span>
-                  </div>
-                  <span className="stat-card-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <AlertTriangle size={22} strokeWidth={2} color="#f59e0b" />
-                  </span>
-                </div>
-
-                <div className="command-stat-card escalated">
-                  <div className="stat-info">
-                    <span className="stat-val">{stats.escalated}</span>
-                    <span className="stat-name">Escalated</span>
-                  </div>
-                  <span className="stat-card-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Siren size={22} strokeWidth={2} color="#ef4444" />
-                  </span>
-                </div>
-
-                <div className="command-stat-card dispatch">
-                  <div className="stat-info">
-                    <span className="stat-val">{stats.dispatch}</span>
-                    <span className="stat-name">Dispatch Units</span>
-                  </div>
-                  <span className="stat-card-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Users size={22} strokeWidth={2} color="#38bdf8" />
-                  </span>
-                </div>
-
-                <div className="command-stat-card resolved">
-                  <div className="stat-info">
-                    <span className="stat-val">{stats.resolved}</span>
-                    <span className="stat-name">Resolved</span>
-                  </div>
-                  <span className="stat-card-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <CheckCircle2 size={22} strokeWidth={2} color="#10b981" />
-                  </span>
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* Filter Checkbox Row */}
           {hudExpanded && (
-            <div className="command-hud-filter-row">
-              <label className="hud-checkbox-label" style={{ color: filters.incidents ? '#f97316' : '#64748b' }}>
-                <input
-                  type="checkbox"
-                  checked={filters.incidents}
-                  onChange={(e) => setFilters({ ...filters, incidents: e.target.checked })}
-                  style={{ accentColor: '#f97316' }}
-                />
-                Incidents
-              </label>
+            <div className="command-hud-top-row-stats">
+              <div className="command-stat-card incident">
+                <div className="stat-info">
+                  <span className="stat-val">{stats.incident}</span>
+                  <span className="stat-name">Incident</span>
+                </div>
+                <span className="stat-card-icon"><AlertTriangle size={20} strokeWidth={2} color="#f59e0b" /></span>
+              </div>
 
-              <label className="hud-checkbox-label" style={{ color: filters.escalated ? '#ef4444' : '#64748b' }}>
-                <input
-                  type="checkbox"
-                  checked={filters.escalated}
-                  onChange={(e) => setFilters({ ...filters, escalated: e.target.checked })}
-                  style={{ accentColor: '#ef4444' }}
-                />
-                Escalated
-              </label>
+              <div className="command-stat-card escalated">
+                <div className="stat-info">
+                  <span className="stat-val">{stats.escalated}</span>
+                  <span className="stat-name">Escalated</span>
+                </div>
+                <span className="stat-card-icon"><Siren size={20} strokeWidth={2} color="#ef4444" /></span>
+              </div>
 
-              <label className="hud-checkbox-label" style={{ color: filters.dispatchUnits ? '#06b6d4' : '#64748b' }}>
-                <input
-                  type="checkbox"
-                  checked={filters.dispatchUnits}
-                  onChange={(e) => setFilters({ ...filters, dispatchUnits: e.target.checked })}
-                  style={{ accentColor: '#06b6d4' }}
-                />
-                Dispatch Units
-              </label>
+              <div className="command-stat-card dispatch">
+                <div className="stat-info">
+                  <span className="stat-val">{stats.dispatch}</span>
+                  <span className="stat-name">Dispatch Units</span>
+                </div>
+                <span className="stat-card-icon"><Users size={20} strokeWidth={2} color="#38bdf8" /></span>
+              </div>
 
-              <label className="hud-checkbox-label" style={{ color: filters.unitsLine ? '#818cf8' : '#64748b' }}>
-                <input
-                  type="checkbox"
-                  checked={filters.unitsLine}
-                  onChange={(e) => setFilters({ ...filters, unitsLine: e.target.checked })}
-                  style={{ accentColor: '#818cf8' }}
-                />
-                Units Line
-              </label>
-
-              <label className="hud-checkbox-label" style={{ color: filters.resolved ? '#10b981' : '#64748b' }}>
-                <input
-                  type="checkbox"
-                  checked={filters.resolved}
-                  onChange={(e) => setFilters({ ...filters, resolved: e.target.checked })}
-                  style={{ accentColor: '#10b981' }}
-                />
-                Resolved
-              </label>
+              <div className="command-stat-card resolved">
+                <div className="stat-info">
+                  <span className="stat-val">{stats.resolved}</span>
+                  <span className="stat-name">Resolved</span>
+                </div>
+                <span className="stat-card-icon"><CheckCircle2 size={20} strokeWidth={2} color="#10b981" /></span>
+              </div>
             </div>
           )}
         </div>
 
+        {hudExpanded && (
+          <div className="command-hud-filter-row">
+            <span className="command-hud-filter-heading">Showing:</span>
+            <label className="hud-checkbox-label" style={{ color: filters.incidents ? '#f97316' : '#64748b' }}>
+              <input
+                type="checkbox"
+                checked={filters.incidents}
+                onChange={(e) => setFilters({ ...filters, incidents: e.target.checked })}
+                style={{ accentColor: '#f97316' }}
+              />
+              Resident Report
+            </label>
+
+            <label className="hud-checkbox-label" style={{ color: filters.escalated ? '#ef4444' : '#64748b' }}>
+              <input
+                type="checkbox"
+                checked={filters.escalated}
+                onChange={(e) => setFilters({ ...filters, escalated: e.target.checked })}
+                style={{ accentColor: '#ef4444' }}
+              />
+              Escalated Report
+            </label>
+
+            <label className="hud-checkbox-label" style={{ color: filters.dispatchUnits ? '#06b6d4' : '#64748b' }}>
+              <input
+                type="checkbox"
+                checked={filters.dispatchUnits}
+                onChange={(e) => setFilters({ ...filters, dispatchUnits: e.target.checked })}
+                style={{ accentColor: '#06b6d4' }}
+              />
+              Rescuer Arrived
+            </label>
+
+            <label className="hud-checkbox-label" style={{ color: filters.unitsLine ? '#818cf8' : '#64748b' }}>
+              <input
+                type="checkbox"
+                checked={filters.unitsLine}
+                onChange={(e) => setFilters({ ...filters, unitsLine: e.target.checked })}
+                style={{ accentColor: '#818cf8' }}
+              />
+              Responding
+            </label>
+
+            <label className="hud-checkbox-label" style={{ color: filters.resolved ? '#10b981' : '#64748b' }}>
+              <input
+                type="checkbox"
+                checked={filters.resolved}
+                onChange={(e) => setFilters({ ...filters, resolved: e.target.checked })}
+                style={{ accentColor: '#10b981' }}
+              />
+              Resolved
+            </label>
+          </div>
+        )}
+      </div>
+
+      {/* Full-height operational map */}
+      <div className="map-card-container">
         {focusedResponderId && (
           <div className="map-responder-focus-card">
             <div className="map-responder-focus-heading">
@@ -924,6 +917,8 @@ export default function CommandCenter() {
             })}
           <MunicipalityBoundaryMapLayer boundary={boundary} maskColor="#0b1120" />
         </MapContainer>
+
+        <CurrentWeatherPanel />
 
         {/* ── MODALS (Image 5, 1, 2) ── */}
 

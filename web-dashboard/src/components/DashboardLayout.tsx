@@ -2,7 +2,6 @@ import { useState, useEffect, type ReactNode } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
-  CloudSun,
   MapPin,
   AlertTriangle,
   Tent,
@@ -28,8 +27,6 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { label: 'Monitoring', section: true },
-  { path: '/weather-monitoring', icon: <CloudSun size={19} strokeWidth={1.8} />, label: 'Weather Monitoring' },
   { label: 'Operations', section: true },
   { path: '/', icon: <MapPin size={19} strokeWidth={1.8} />, label: 'Command Center' },
   { path: '/reports', icon: <AlertTriangle size={19} strokeWidth={1.8} />, label: 'Incidents' },

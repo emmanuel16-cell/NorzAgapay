@@ -25,7 +25,7 @@ import dispatchUnitRoutes from './routes/dispatchUnits';
 import officerRoutes from './routes/officers';
 import respondUnitRoutes from './routes/respondUnits';
 import storageRoutes from './routes/storages';
-import weatherRoutes, { fetchOpenMeteoWeather } from './routes/weather';
+import weatherRoutes from './routes/weather';
 import barangayRoutes from './routes/barangay';
 import evacuationCenterRoutes from './routes/evacuationCenters';
 import municipalityBoundaryRoutes from './routes/municipalityBoundary';
@@ -269,97 +269,9 @@ io.on('connection', (socket) => {
 
 const runScheduledUpdates = async () => {
   try {
-    console.log('Running scheduled weather data update...');
-    
-    // 1. Update weather data (try PAGASA first, fallback to Open-Meteo)
-    let weatherData = null;
-    let source = 'PAGASA';
-    
-    // Try fetching from PAGASA first
-    const pagasaWeather = await (async () => {
-      try {
-        // In a real implementation, this would call a PAGASA API
-        // For now, we'll simulate it
-        return {
-          temperature: 28 + Math.random() * 5,
-          humidity: 60 + Math.random() * 30,
-          windSpeed: 5 + Math.random() * 15,
-          windDirection: Math.random() * 360,
-          rainfall: Math.random() * 20,
-          pressure: 1000 + Math.random() * 30,
-          visibility: 10 + Math.random() * 10,
-          uvIndex: 3 + Math.random() * 7,
-          weatherCondition: ['Sunny', 'Partly Cloudy', 'Cloudy', 'Rainy'][Math.floor(Math.random() * 4)]
-        };
-      } catch (error) {
-        console.error('Failed to fetch from PAGASA:', error);
-        return null;
-      }
-    })();
-    
-    if (pagasaWeather) {
-      weatherData = pagasaWeather;
-    } else {
-      // Fallback to Open-Meteo
-      const openMeteo = await fetchOpenMeteoWeather();
-      if (openMeteo) {
-        weatherData = openMeteo;
-        source = 'Open-Meteo';
-      }
-    }
-    
-    if (weatherData) {
-      await supabaseAdmin
-        .from('weather_data')
-        .insert({
-          temperature: weatherData.temperature,
-          humidity: weatherData.humidity,
-          wind_speed: weatherData.windSpeed,
-          wind_direction: weatherData.windDirection,
-          rainfall: weatherData.rainfall || 0,
-          pressure: weatherData.pressure,
-          visibility: weatherData.visibility,
-          uv_index: weatherData.uvIndex,
-          weather_condition: weatherData.weatherCondition,
-          data_source: source
-        });
-      
-      // Also update forecasts if we have Open-Meteo data
-      if (source === 'Open-Meteo' && (weatherData as any).hourly && (weatherData as any).daily) {
-        const { hourly, daily } = weatherData as any;
-        
-        // Insert hourly forecasts
-        if (hourly.time) {
-          for (let i = 0; i < hourly.time.length; i++) {
-            await supabaseAdmin.from('weather_forecasts').insert({
-              forecast_type: 'hourly',
-              forecast_time: hourly.time[i],
-              temperature: hourly.temperature_2m?.[i],
-              humidity: hourly.relative_humidity_2m?.[i],
-              wind_speed: hourly.wind_speed_10m?.[i],
-              wind_direction: hourly.wind_direction_10m?.[i],
-              rainfall_probability: hourly.precipitation_probability?.[i]
-            });
-          }
-        }
-        
-        // Insert daily forecasts
-        if (daily.time) {
-          for (let i = 0; i < daily.time.length; i++) {
-            await supabaseAdmin.from('weather_forecasts').insert({
-              forecast_type: 'daily',
-              forecast_time: daily.time[i],
-              temperature: daily.temperature_2m_max?.[i],
-              rainfall_probability: daily.precipitation_probability_max?.[i]
-            });
-          }
-        }
-      }
-      
-      console.log('Weather data updated successfully from', source);
-    }
+    console.log('Running scheduled river-level update...');
 
-    // 2. Update river levels (simulate real data for now - in production, use PAGASA Hydromet)
+    // Update river levels (simulate real data for now - in production, use PAGASA Hydromet)
     const { data: stations } = await supabaseAdmin.from('river_stations').select('*').eq('active', true);
     if (stations) {
       for (const station of stations) {
