@@ -1,0 +1,380 @@
+import 'dart:convert';
+
+class IncidentReport {
+  final String? id;
+  final String type;
+  final String title;
+  final String? specifics;
+  final String? description;
+  final double latitude;
+  final double longitude;
+  final String? proofUrl;
+  final String proofType;
+  final DateTime? createdAt;
+  final DateTime? dispatcherReviewedAt;
+  final DateTime? dispatchedAt;
+  final DateTime? acceptedAt;
+  final double? travelDistanceM;
+  final double? travelDistanceAccuracyM;
+  final DateTime? arrivedAt;
+  final String? arrivalMethod;
+  final double? arrivalDistanceM;
+  final DateTime? resolvedAt;
+  final String? status;
+  final String? address;
+  final String? reporterId;
+  final String? reporterName;
+  final String? reporterPhone;
+  final String? reporterPhotoUrl;
+  final String? reporterType;
+  final String? barangayId;
+  final String? barangayName;
+  final String? barangayResponderName;
+  final String? sendTo;
+  final String? barangayResponseStatus;
+  final String? barangayResponseNotes;
+  final String? mdrrmoResponseStatus;
+  final String? mdrrmoResponderName;
+  final String? mdrrmoCoordinationNotes;
+  final String? resolvedNotes;
+  final double? expectedResponseSeconds;
+  final double? expectedArrivalSeconds;
+  final double? expectedResolutionSeconds;
+  final int expectedResponseSampleCount;
+  final int expectedArrivalSampleCount;
+  final int expectedResolutionSampleCount;
+  final String? arrivalEstimateMethod;
+  final List<Map<String, dynamic>> responderMedia;
+
+  /// All proof URLs for this report. Falls back to [proofUrl] if the API
+  /// doesn't yet return a list.
+  final List<String> proofUrls;
+
+  /// Proof type for each item in [proofUrls].
+  final List<String> proofTypes;
+
+  IncidentReport({
+    this.id,
+    required this.type,
+    required this.title,
+    this.specifics,
+    this.description,
+    required this.latitude,
+    required this.longitude,
+    this.proofUrl,
+    required this.proofType,
+    this.createdAt,
+    this.dispatcherReviewedAt,
+    this.dispatchedAt,
+    this.acceptedAt,
+    this.travelDistanceM,
+    this.travelDistanceAccuracyM,
+    this.arrivedAt,
+    this.arrivalMethod,
+    this.arrivalDistanceM,
+    this.resolvedAt,
+    this.status,
+    this.address,
+    this.reporterId,
+    this.reporterName,
+    this.reporterPhone,
+    this.reporterPhotoUrl,
+    this.reporterType,
+    this.barangayId,
+    this.barangayName,
+    this.barangayResponderName,
+    this.sendTo,
+    this.barangayResponseStatus,
+    this.barangayResponseNotes,
+    this.mdrrmoResponseStatus,
+    this.mdrrmoResponderName,
+    this.mdrrmoCoordinationNotes,
+    this.resolvedNotes,
+    this.expectedResponseSeconds,
+    this.expectedArrivalSeconds,
+    this.expectedResolutionSeconds,
+    this.expectedResponseSampleCount = 0,
+    this.expectedArrivalSampleCount = 0,
+    this.expectedResolutionSampleCount = 0,
+    this.arrivalEstimateMethod,
+    List<Map<String, dynamic>>? responderMedia,
+    List<String>? proofUrls,
+    List<String>? proofTypes,
+  }) : proofUrls = proofUrls ?? (proofUrl != null ? [proofUrl] : []),
+       proofTypes = proofTypes ?? [proofType],
+       responderMedia = responderMedia ?? const [];
+
+  /// Normalized display status:
+  /// - 'resolved' if resolved by any responder or marked resolved
+  /// - 'responding' if team leader or mdrrmo is responding
+  /// - 'pending' if no one is responding
+  String get displayStatus {
+    final s = (status ?? '').toLowerCase().trim();
+    final m = (mdrrmoResponseStatus ?? '').toLowerCase().trim();
+    final b = (barangayResponseStatus ?? '').toLowerCase().trim();
+
+    if (s == 'resolved' || b == 'resolved') {
+      return 'resolved';
+    }
+    if (s == 'responding' || m == 'responding' || b == 'responding') {
+      return 'responding';
+    }
+    return 'pending';
+  }
+
+  bool get isMdrrmoHandled =>
+      sendTo == 'mdrrmo' ||
+      status == 'escalated' ||
+      mdrrmoResponseStatus == 'responding' ||
+      mdrrmoResponseStatus == 'resolved';
+
+  String get handlingUnitName => isMdrrmoHandled
+      ? 'MDRRMO'
+      : (barangayName?.trim().isNotEmpty == true
+            ? 'Barangay ${barangayName!}'
+            : 'your barangay');
+
+  String? get activeResponderName => isMdrrmoHandled
+      ? (mdrrmoResponderName?.trim().isNotEmpty == true
+            ? mdrrmoResponderName
+            : null)
+      : (barangayResponderName?.trim().isNotEmpty == true
+            ? barangayResponderName
+            : null);
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'type': type,
+      'title': title,
+      'specifics': specifics,
+      'description': description,
+      'latitude': latitude,
+      'longitude': longitude,
+      'proof_url': proofUrl,
+      'proof_type': proofType,
+      'created_at': createdAt?.toIso8601String(),
+      'dispatcher_reviewed_at': dispatcherReviewedAt?.toIso8601String(),
+      'dispatched_at': dispatchedAt?.toIso8601String(),
+      'accepted_at': acceptedAt?.toIso8601String(),
+      'travel_distance_m': travelDistanceM,
+      'travel_distance_accuracy_m': travelDistanceAccuracyM,
+      'arrived_at': arrivedAt?.toIso8601String(),
+      'arrival_method': arrivalMethod,
+      'arrival_distance_m': arrivalDistanceM,
+      'resolved_at': resolvedAt?.toIso8601String(),
+      'status': status,
+      'address': address,
+      'reporter_id': reporterId,
+      'reporter_name': reporterName,
+      'reporter_phone': reporterPhone,
+      'reporter_photo_url': reporterPhotoUrl,
+      'reporter_type': reporterType,
+      'barangay_id': barangayId,
+      'barangay_name': barangayName,
+      'barangay_responder_name': barangayResponderName,
+      'send_to': sendTo,
+      'barangay_response_status': barangayResponseStatus,
+      'barangay_response_notes': barangayResponseNotes,
+      'mdrrmo_response_status': mdrrmoResponseStatus,
+      'mdrrmo_responder_name': mdrrmoResponderName,
+      'mdrrmo_coordination_notes': mdrrmoCoordinationNotes,
+      'resolved_notes': resolvedNotes,
+      'expected_timings': {
+        'response_seconds': expectedResponseSeconds,
+        'arrival_seconds': expectedArrivalSeconds,
+        'resolution_seconds': expectedResolutionSeconds,
+        'sample_counts': {
+          'response': expectedResponseSampleCount,
+          'arrival': expectedArrivalSampleCount,
+          'resolution': expectedResolutionSampleCount,
+        },
+        'arrival_method': arrivalEstimateMethod,
+      },
+      'responder_media': responderMedia,
+    };
+  }
+
+  factory IncidentReport.fromJson(Map<String, dynamic> json) {
+    // Support both a legacy single proof_url and a future proof_urls list
+    List<String> proofUrls = [];
+    List<String> proofTypes = [];
+
+    if (json['proof_urls'] is List && (json['proof_urls'] as List).isNotEmpty) {
+      proofUrls = (json['proof_urls'] as List)
+          .map((e) => e.toString())
+          .toList();
+      proofTypes = json['proof_types'] is List
+          ? (json['proof_types'] as List).map((e) => e.toString()).toList()
+          : List.filled(proofUrls.length, json['proof_type'] ?? 'image');
+    } else if (json['proof_url'] != null) {
+      final rawProof = json['proof_url'].toString().trim();
+      if (rawProof.startsWith('[') && rawProof.endsWith(']')) {
+        try {
+          final decoded = jsonDecode(rawProof);
+          if (decoded is List) {
+            proofUrls = decoded.map((e) => e.toString()).toList();
+          }
+        } catch (_) {}
+      } else if (rawProof.contains('|||')) {
+        proofUrls = rawProof
+            .split('|||')
+            .map((s) => s.trim())
+            .where((s) => s.isNotEmpty)
+            .toList();
+      }
+      if (proofUrls.isEmpty && rawProof.isNotEmpty) {
+        proofUrls = [rawProof];
+      }
+      proofTypes = json['proof_types'] is List
+          ? (json['proof_types'] as List).map((e) => e.toString()).toList()
+          : List.filled(proofUrls.length, json['proof_type'] ?? 'image');
+    }
+
+    final primaryProofUrl = proofUrls.isNotEmpty
+        ? proofUrls.first
+        : json['proof_url'];
+    final primaryProofType = proofTypes.isNotEmpty
+        ? proofTypes.first
+        : (json['proof_type'] ?? 'image');
+    final expectedTimings = json['expected_timings'] is Map
+        ? Map<String, dynamic>.from(json['expected_timings'] as Map)
+        : <String, dynamic>{};
+    final expectedSamples = expectedTimings['sample_counts'] is Map
+        ? Map<String, dynamic>.from(expectedTimings['sample_counts'] as Map)
+        : <String, dynamic>{};
+
+    return IncidentReport(
+      id: json['id'],
+      type: json['type'],
+      title: json['title'],
+      specifics: json['specifics'],
+      description: json['description'],
+      latitude: json['latitude']?.toDouble() ?? 0.0,
+      longitude: json['longitude']?.toDouble() ?? 0.0,
+      proofUrl: primaryProofUrl,
+      proofType: primaryProofType,
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'])
+          : null,
+      dispatcherReviewedAt: json['dispatcher_reviewed_at'] != null
+          ? DateTime.tryParse(json['dispatcher_reviewed_at'])
+          : null,
+      dispatchedAt: json['dispatched_at'] != null
+          ? DateTime.tryParse(json['dispatched_at'])
+          : null,
+      acceptedAt: json['accepted_at'] != null
+          ? DateTime.tryParse(json['accepted_at'])
+          : null,
+      travelDistanceM: (json['travel_distance_m'] as num?)?.toDouble(),
+      travelDistanceAccuracyM: (json['travel_distance_accuracy_m'] as num?)
+          ?.toDouble(),
+      arrivedAt: json['arrived_at'] != null
+          ? DateTime.tryParse(json['arrived_at'])
+          : null,
+      arrivalMethod: json['arrival_method']?.toString(),
+      arrivalDistanceM: (json['arrival_distance_m'] as num?)?.toDouble(),
+      resolvedAt: json['resolved_at'] != null
+          ? DateTime.tryParse(json['resolved_at'])
+          : null,
+      status: json['status'],
+      address: json['address'],
+      reporterId: json['reporter_id'],
+      reporterName: json['reporter_name'],
+      reporterPhone: json['reporter_phone'],
+      reporterPhotoUrl: json['reporter_photo_url'],
+      reporterType: json['reporter_type'],
+      barangayId: json['barangay_id'],
+      barangayName: json['barangay_name']?.toString(),
+      barangayResponderName: json['barangay_responder_name']?.toString(),
+      sendTo: json['send_to']?.toString(),
+      barangayResponseStatus: json['barangay_response_status'],
+      barangayResponseNotes: json['barangay_response_notes'],
+      mdrrmoResponseStatus: json['mdrrmo_response_status'],
+      mdrrmoResponderName: json['mdrrmo_responder_name'],
+      mdrrmoCoordinationNotes: json['mdrrmo_coordination_notes'],
+      resolvedNotes: json['resolved_notes'],
+      expectedResponseSeconds: (expectedTimings['response_seconds'] as num?)
+          ?.toDouble(),
+      expectedArrivalSeconds: (expectedTimings['arrival_seconds'] as num?)
+          ?.toDouble(),
+      expectedResolutionSeconds: (expectedTimings['resolution_seconds'] as num?)
+          ?.toDouble(),
+      expectedResponseSampleCount:
+          (expectedSamples['response'] as num?)?.toInt() ?? 0,
+      expectedArrivalSampleCount:
+          (expectedSamples['arrival'] as num?)?.toInt() ?? 0,
+      expectedResolutionSampleCount:
+          (expectedSamples['resolution'] as num?)?.toInt() ?? 0,
+      arrivalEstimateMethod: expectedTimings['arrival_method']?.toString(),
+      responderMedia: json['responder_media'] is List
+          ? (json['responder_media'] as List)
+                .whereType<Map>()
+                .map((m) => Map<String, dynamic>.from(m))
+                .toList()
+          : const [],
+      proofUrls: proofUrls,
+      proofTypes: proofTypes,
+    );
+  }
+
+  /// Returns a copy with updated fields.
+  IncidentReport copyWith({
+    String? description,
+    List<String>? proofUrls,
+    List<String>? proofTypes,
+  }) {
+    return IncidentReport(
+      id: id,
+      type: type,
+      title: title,
+      specifics: specifics,
+      description: description ?? this.description,
+      latitude: latitude,
+      longitude: longitude,
+      proofUrl: proofUrls != null && proofUrls.isNotEmpty
+          ? proofUrls.first
+          : proofUrl,
+      proofType: proofTypes != null && proofTypes.isNotEmpty
+          ? proofTypes.first
+          : proofType,
+      createdAt: createdAt,
+      dispatcherReviewedAt: dispatcherReviewedAt,
+      dispatchedAt: dispatchedAt,
+      acceptedAt: acceptedAt,
+      travelDistanceM: travelDistanceM,
+      travelDistanceAccuracyM: travelDistanceAccuracyM,
+      arrivedAt: arrivedAt,
+      arrivalMethod: arrivalMethod,
+      arrivalDistanceM: arrivalDistanceM,
+      resolvedAt: resolvedAt,
+      status: status,
+      address: address,
+      reporterId: reporterId,
+      reporterName: reporterName,
+      reporterPhone: reporterPhone,
+      reporterPhotoUrl: reporterPhotoUrl,
+      reporterType: reporterType,
+      barangayId: barangayId,
+      barangayName: barangayName,
+      barangayResponderName: barangayResponderName,
+      sendTo: sendTo,
+      barangayResponseStatus: barangayResponseStatus,
+      barangayResponseNotes: barangayResponseNotes,
+      mdrrmoResponseStatus: mdrrmoResponseStatus,
+      mdrrmoResponderName: mdrrmoResponderName,
+      mdrrmoCoordinationNotes: mdrrmoCoordinationNotes,
+      resolvedNotes: resolvedNotes,
+      expectedResponseSeconds: expectedResponseSeconds,
+      expectedArrivalSeconds: expectedArrivalSeconds,
+      expectedResolutionSeconds: expectedResolutionSeconds,
+      expectedResponseSampleCount: expectedResponseSampleCount,
+      expectedArrivalSampleCount: expectedArrivalSampleCount,
+      expectedResolutionSampleCount: expectedResolutionSampleCount,
+      arrivalEstimateMethod: arrivalEstimateMethod,
+      responderMedia: responderMedia,
+      proofUrls: proofUrls ?? this.proofUrls,
+      proofTypes: proofTypes ?? this.proofTypes,
+    );
+  }
+}

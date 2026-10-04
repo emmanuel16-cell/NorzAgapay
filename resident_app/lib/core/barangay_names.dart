@@ -1,0 +1,15 @@
+const norzagarayBarangayNames = <String>[
+  'Bangkal',
+  'Baraka',
+  'Bigte',
+  'Bitungol',
+  'FVR',
+  'Matictic',
+  'Minuyan',
+  'Partida',
+  'Pinagtulayan',
+  'Poblacion',
+  'San Lorenzo',
+  'San Mateo',
+  'Tigbe',
+];
