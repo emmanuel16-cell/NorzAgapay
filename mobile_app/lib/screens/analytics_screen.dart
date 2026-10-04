@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/api_service.dart';
@@ -81,7 +83,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                       _overviewMetricCards(),
                       const SizedBox(height: 14),
                       _reportVolumeChartCard(),
-                      _averageHandlingChartCard(),
+                      _categoryDistributionChartCard(),
+                      _statusDistributionChartCard(),
+                      _activityHeatmapCard(),
                     ],
                   ),
       );
@@ -266,67 +270,243 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     );
   }
 
-  Widget _averageHandlingChartCard() {
-    Map<String, double?> valuesFor(String type) {
-      final byType = _reportStatistics['timing_by_type'] is Map
-          ? Map<String, dynamic>.from(
-              _reportStatistics['timing_by_type'] as Map,
-            )
-          : <String, dynamic>{};
-      final typeStats = byType[type] is Map
-          ? Map<String, dynamic>.from(byType[type] as Map)
-          : <String, dynamic>{};
-      double? minutesFor(String stage) {
-        final timing = typeStats[stage] is Map
-            ? Map<String, dynamic>.from(typeStats[stage] as Map)
-            : <String, dynamic>{};
-        final seconds = (timing['average_seconds'] as num?)?.toDouble();
-        return seconds == null ? null : seconds / 60;
-      }
-
-      return {
-        'Response': minutesFor('response'),
-        'Arrival': minutesFor('arrival'),
-        'Resolution': minutesFor('resolution'),
-      };
-    }
-
-    final community = valuesFor('community');
-    final emergency = valuesFor('emergency');
-    final hasData = [...community.values, ...emergency.values].any(
-      (value) => value != null,
+  Widget _categoryDistributionChartCard() {
+    final raw = _reportStatistics['category_distribution'];
+    final categories = raw is List
+        ? raw
+              .whereType<Map>()
+              .map((entry) => Map<String, dynamic>.from(entry))
+              .toList()
+        : <Map<String, dynamic>>[];
+    final maxCount = categories.fold<int>(
+      0,
+      (highest, item) => math
+          .max(highest, (item['count'] as num?)?.toInt() ?? 0)
+          .toInt(),
     );
 
     return _chartCard(
-      title: 'Average handling times',
-      subtitle: 'Resolved barangay reports · minutes',
-      legend: [
-        _chartLegendItem('Community', const Color(0xFF0284C7)),
-        _chartLegendItem('Emergency', const Color(0xFFF59E0B)),
-      ],
-      chart: hasData
-          ? SizedBox(
-              height: 176,
-              child: CustomPaint(
-                painter: _HandlingTimeChartPainter(
-                  community: community,
-                  emergency: emergency,
-                ),
-                child: const SizedBox.expand(),
-              ),
-            )
-          : const SizedBox(
-              height: 176,
+      title: 'Reports by incident category',
+      subtitle: 'Barangay reports · last 6 months',
+      legend: const [],
+      chart: categories.isEmpty
+          ? const SizedBox(
+              height: 84,
               child: Center(
                 child: Text(
-                  'Resolve barangay reports to see timing comparisons.',
-                  textAlign: TextAlign.center,
+                  'No category data for this period.',
+                  style: TextStyle(color: Color(0xFF64748B)),
+                ),
+              ),
+            )
+          : Column(
+              children: [
+                for (final category in categories)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                category['label']?.toString() ?? 'Unspecified',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Color(0xFF334155),
+                                ),
+                              ),
+                            ),
+                            Text(
+                              '${(category['count'] as num?)?.toInt() ?? 0}',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: LinearProgressIndicator(
+                            value: maxCount == 0
+                                ? 0
+                                : ((category['count'] as num?)?.toDouble() ?? 0) /
+                                      maxCount,
+                            minHeight: 7,
+                            color: const Color(0xFF0D9488),
+                            backgroundColor: const Color(0xFFE2E8F0),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+    );
+  }
+
+  Widget _statusDistributionChartCard() {
+    final distribution = _reportStatistics['status_distribution'] is Map
+        ? Map<String, dynamic>.from(
+            _reportStatistics['status_distribution'] as Map,
+          )
+        : <String, dynamic>{};
+    int count(String key) => (distribution[key] as num?)?.toInt() ?? 0;
+    final pending = count('pending');
+    final responding = count('responding');
+    final resolved = count('resolved');
+    final total = pending + responding + resolved;
+    const pendingColor = Color(0xFFF59E0B);
+    const respondingColor = Color(0xFF0284C7);
+    const resolvedColor = Color(0xFF0D9488);
+
+    return _chartCard(
+      title: 'Current report status',
+      subtitle: 'Barangay reports · last 6 months',
+      legend: [
+        _statusLegendItem('Pending', pending, pendingColor),
+        _statusLegendItem('Responding', responding, respondingColor),
+        _statusLegendItem('Resolved', resolved, resolvedColor),
+      ],
+      chart: SizedBox(
+        height: 150,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            CustomPaint(
+              painter: _StatusDonutPainter(
+                pending: pending,
+                responding: responding,
+                resolved: resolved,
+              ),
+              child: const SizedBox.expand(),
+            ),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '$total',
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF0F172A),
+                  ),
+                ),
+                const Text(
+                  'reports',
+                  style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _statusLegendItem(String label, int value, Color color) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Container(
+        width: 9,
+        height: 9,
+        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+      ),
+      const SizedBox(width: 5),
+      Text(
+        '$label $value',
+        style: const TextStyle(fontSize: 11, color: Color(0xFF475569)),
+      ),
+    ],
+  );
+
+  Widget _activityHeatmapCard() {
+    final activity = _reportStatistics['activity_heatmap'] is Map
+        ? Map<String, dynamic>.from(
+            _reportStatistics['activity_heatmap'] as Map,
+          )
+        : <String, dynamic>{};
+    final weekdays = (activity['weekdays'] as List?)
+            ?.map((day) => day.toString())
+            .toList() ??
+        const ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    final rawCounts = activity['counts'] as List? ?? const [];
+    final counts = rawCounts
+        .map(
+          (row) => row is List
+              ? row.map((value) => (value as num?)?.toInt() ?? 0).toList()
+              : List<int>.filled(24, 0),
+        )
+        .toList();
+    final hasActivity = counts.any((row) => row.any((value) => value > 0));
+
+    return _chartCard(
+      title: 'Reports by day and hour',
+      subtitle: 'Last 90 days · Philippines time',
+      legend: const [],
+      chart: hasActivity
+          ? Column(
+              children: [
+                SizedBox(
+                  height: 164,
+                  child: CustomPaint(
+                    painter: _ActivityHeatmapPainter(
+                      weekdays: weekdays,
+                      counts: counts,
+                    ),
+                    child: const SizedBox.expand(),
+                  ),
+                ),
+                const SizedBox(height: 5),
+                _heatmapScaleLegend(),
+              ],
+            )
+          : const SizedBox(
+              height: 90,
+              child: Center(
+                child: Text(
+                  'No report activity in the last 90 days.',
                   style: TextStyle(color: Color(0xFF64748B)),
                 ),
               ),
             ),
     );
   }
+
+  Widget _heatmapScaleLegend() => Row(
+    mainAxisAlignment: MainAxisAlignment.end,
+    children: [
+      const Text(
+        'Less',
+        style: TextStyle(fontSize: 10, color: Color(0xFF64748B)),
+      ),
+      const SizedBox(width: 6),
+      for (final color in const [
+        Color(0xFFE2E8F0),
+        Color(0xFF99F6E4),
+        Color(0xFF2DD4BF),
+        Color(0xFF0F766E),
+      ]) ...[
+        Container(
+          width: 11,
+          height: 11,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        const SizedBox(width: 3),
+      ],
+      const Text(
+        'More',
+        style: TextStyle(fontSize: 10, color: Color(0xFF64748B)),
+      ),
+    ],
+  );
 
   Widget _chartCard({
     required String title,
@@ -610,99 +790,128 @@ class _ReportVolumeChartPainter extends CustomPainter {
   bool shouldRepaint(covariant _ReportVolumeChartPainter oldDelegate) => true;
 }
 
-class _HandlingTimeChartPainter extends CustomPainter {
-  final Map<String, double?> community;
-  final Map<String, double?> emergency;
+class _StatusDonutPainter extends CustomPainter {
+  final int pending;
+  final int responding;
+  final int resolved;
 
-  const _HandlingTimeChartPainter({
-    required this.community,
-    required this.emergency,
+  const _StatusDonutPainter({
+    required this.pending,
+    required this.responding,
+    required this.resolved,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (size.width < 100 || size.height < 70) return;
-
-    const stages = ['Response', 'Arrival', 'Resolution'];
-    const left = 34.0;
-    const right = 8.0;
-    const top = 16.0;
-    const bottomPadding = 28.0;
-    final bottom = size.height - bottomPadding;
-    final plotWidth = size.width - left - right;
-    final plotHeight = bottom - top;
-    if (plotWidth <= 0 || plotHeight <= 0) return;
-
-    var highestMinutes = 0.0;
-    for (final values in [community, emergency]) {
-      for (final value in values.values) {
-        if (value != null && value.isFinite && value > highestMinutes) {
-          highestMinutes = value;
-        }
-      }
-    }
-    final axisMaximum = highestMinutes <= 1
-        ? 1.0
-        : (highestMinutes * 1.15).ceilToDouble();
-    final gridPaint = Paint()
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = math.min(size.shortestSide * 0.39, 64.0);
+    final rect = Rect.fromCircle(center: center, radius: radius);
+    const strokeWidth = 20.0;
+    const fullCircle = math.pi * 2;
+    final total = pending + responding + resolved;
+    final trackPaint = Paint()
       ..color = const Color(0xFFE2E8F0)
-      ..strokeWidth = 1;
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth;
+    canvas.drawArc(rect, -math.pi / 2, fullCircle, false, trackPaint);
+    if (total <= 0) return;
 
-    for (var tick = 0; tick <= 2; tick++) {
-      final ratio = tick / 2;
-      final y = bottom - plotHeight * ratio;
-      canvas.drawLine(Offset(left, y), Offset(size.width - right, y), gridPaint);
-      final tickValue = axisMaximum * ratio;
-      final label = tickValue == tickValue.roundToDouble()
-          ? tickValue.toInt().toString()
-          : tickValue.toStringAsFixed(1);
-      _paintChartLabel(
-        canvas,
-        label,
-        Offset(left - 5, y - 6),
-        align: TextAlign.right,
-      );
-    }
-
-    final groupWidth = plotWidth / stages.length;
-    final barWidth = groupWidth < 60 ? 11.0 : 16.0;
-    final barSpecs = [
-      (community, const Color(0xFF0284C7), -1.0),
-      (emergency, const Color(0xFFF59E0B), 1.0),
+    final segments = [
+      (pending, const Color(0xFFF59E0B)),
+      (responding, const Color(0xFF0284C7)),
+      (resolved, const Color(0xFF0D9488)),
     ];
-    for (var stageIndex = 0; stageIndex < stages.length; stageIndex++) {
-      final centerX = left + groupWidth * (stageIndex + 0.5);
-      for (final (series, color, side) in barSpecs) {
-        final value = series[stages[stageIndex]];
-        if (value == null || !value.isFinite) continue;
-        final barHeight = (value / axisMaximum * plotHeight)
-            .clamp(1.5, plotHeight)
-            .toDouble();
-        final x = centerX + side * (barWidth / 2 + 1.5) - barWidth / 2;
-        final rect = Rect.fromLTWH(x, bottom - barHeight, barWidth, barHeight);
-        canvas.drawRRect(
-          RRect.fromRectAndRadius(rect, const Radius.circular(3)),
-          Paint()..color = color,
-        );
-        _paintChartLabel(
-          canvas,
-          value.round().toString(),
-          Offset(centerX + side * (barWidth / 2 + 1.5), bottom - barHeight - 13),
-          align: TextAlign.center,
-          fontSize: 9,
-          color: const Color(0xFF475569),
-        );
-      }
-      _paintChartLabel(
-        canvas,
-        stages[stageIndex],
-        Offset(centerX, bottom + 7),
-        align: TextAlign.center,
-        fontSize: 9,
-      );
+    var startAngle = -math.pi / 2;
+    for (final (value, color) in segments) {
+      if (value <= 0) continue;
+      final sweepAngle = fullCircle * value / total;
+      final segmentPaint = Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = strokeWidth;
+      canvas.drawArc(rect, startAngle, sweepAngle, false, segmentPaint);
+      startAngle += sweepAngle;
     }
   }
 
   @override
-  bool shouldRepaint(covariant _HandlingTimeChartPainter oldDelegate) => true;
+  bool shouldRepaint(covariant _StatusDonutPainter oldDelegate) => true;
+}
+
+class _ActivityHeatmapPainter extends CustomPainter {
+  final List<String> weekdays;
+  final List<List<int>> counts;
+
+  const _ActivityHeatmapPainter({
+    required this.weekdays,
+    required this.counts,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.width < 120 || size.height < 90) return;
+
+    const labelWidth = 31.0;
+    const rightPadding = 2.0;
+    const top = 20.0;
+    const cellHeight = 13.0;
+    const rowGap = 4.0;
+    const columnGap = 2.0;
+    final plotWidth = size.width - labelWidth - rightPadding;
+    final cellWidth = (plotWidth - 23 * columnGap) / 24;
+    if (cellWidth <= 0) return;
+
+    var highestCount = 0;
+    for (final row in counts) {
+      for (final value in row) {
+        if (value > highestCount) highestCount = value;
+      }
+    }
+
+    for (final hour in const [0, 6, 12, 18]) {
+      final x = labelWidth + hour * (cellWidth + columnGap);
+      _paintChartLabel(
+        canvas,
+        '${hour.toString().padLeft(2, '0')}:00',
+        Offset(x, 1),
+        fontSize: 9,
+      );
+    }
+
+    for (var dayIndex = 0; dayIndex < 7; dayIndex++) {
+      final y = top + dayIndex * (cellHeight + rowGap);
+      _paintChartLabel(
+        canvas,
+        dayIndex < weekdays.length ? weekdays[dayIndex] : '',
+        Offset(0, y + 1),
+        fontSize: 9,
+      );
+      for (var hour = 0; hour < 24; hour++) {
+        final value = dayIndex < counts.length && hour < counts[dayIndex].length
+            ? counts[dayIndex][hour]
+            : 0;
+        final intensity = highestCount == 0 ? 0.0 : value / highestCount;
+        final color = value == 0
+            ? const Color(0xFFE2E8F0)
+            : Color.lerp(
+                const Color(0xFF99F6E4),
+                const Color(0xFF0F766E),
+                intensity,
+              )!;
+        final rect = Rect.fromLTWH(
+          labelWidth + hour * (cellWidth + columnGap),
+          y,
+          cellWidth,
+          cellHeight,
+        );
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(rect, const Radius.circular(2)),
+          Paint()..color = color,
+        );
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _ActivityHeatmapPainter oldDelegate) => true;
 }

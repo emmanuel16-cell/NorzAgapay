@@ -1323,16 +1323,9 @@ router.get('/reports/statistics', authenticateBarangay, requireRole(['admin']), 
     const selectedReports = requestedType
       ? resolvedReports.filter((report: any) => report.type === requestedType)
       : resolvedReports;
-    const timingByType = {
-      community: summarizeReportTimings(
-        resolvedReports.filter((report: any) => report.type === 'community'),
-      ),
-      emergency: summarizeReportTimings(
-        resolvedReports.filter((report: any) => report.type === 'emergency'),
-      ),
-    };
     const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const now = new Date();
+    const sixMonthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 5, 1));
     const monthlyVolume = Array.from({ length: 6 }, (_, index) => {
       const month = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 5 + index, 1));
       const year = month.getUTCFullYear();
@@ -1344,6 +1337,49 @@ router.get('/reports/statistics', authenticateBarangay, requireRole(['admin']), 
         emergency: 0,
       };
     });
+    const recentReports = (barangayHandledReports as any[]).filter((report) => {
+      const createdAt = new Date(report.created_at);
+      return Number.isFinite(createdAt.getTime()) && createdAt >= sixMonthStart && createdAt <= now;
+    });
+    const categoryCounts = new Map<string, { label: string; count: number }>();
+    for (const report of recentReports) {
+      const label = String(report.specifics || report.title || 'Unspecified').trim() || 'Unspecified';
+      const key = label.toLowerCase();
+      const existing = categoryCounts.get(key);
+      if (existing) existing.count += 1;
+      else categoryCounts.set(key, { label, count: 1 });
+    }
+    const sortedCategories = [...categoryCounts.values()].sort((a, b) => b.count - a.count);
+    const topCategories = sortedCategories.slice(0, 8);
+    const otherCategoryCount = sortedCategories
+      .slice(8)
+      .reduce((total, category) => total + category.count, 0);
+    if (otherCategoryCount > 0) topCategories.push({ label: 'Other', count: otherCategoryCount });
+
+    const statusDistribution = { pending: 0, responding: 0, resolved: 0 };
+    for (const report of recentReports) {
+      if (isReportResolved(report)) {
+        statusDistribution.resolved += 1;
+        continue;
+      }
+      const status = String(report.barangay_response_status || report.status || '').toLowerCase();
+      if (['responding', 'in_progress', 'in progress', 'dispatched'].includes(status)) {
+        statusDistribution.responding += 1;
+      } else {
+        statusDistribution.pending += 1;
+      }
+    }
+
+    const activityHeatmap = Array.from({ length: 7 }, () => Array<number>(24).fill(0));
+    const heatmapStart = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+    const philippinesOffsetMs = 8 * 60 * 60 * 1000;
+    for (const report of barangayHandledReports as any[]) {
+      const createdAt = new Date(report.created_at);
+      if (!Number.isFinite(createdAt.getTime()) || createdAt < heatmapStart || createdAt > now) continue;
+      const philippinesTime = new Date(createdAt.getTime() + philippinesOffsetMs);
+      activityHeatmap[philippinesTime.getUTCDay()][philippinesTime.getUTCHours()] += 1;
+    }
+
     const monthIndexes = new Map<string, number>(
       monthlyVolume.map((month, index) => [month.period, index] as const),
     );
@@ -1367,8 +1403,14 @@ router.get('/reports/statistics', authenticateBarangay, requireRole(['admin']), 
       type: requestedType || 'all',
       report_count: reports.length,
       averages: summarizeReportTimings(selectedReports),
-      timing_by_type: timingByType,
       report_volume_by_month: monthlyVolume,
+      category_distribution: topCategories,
+      status_distribution: statusDistribution,
+      activity_heatmap: {
+        timezone: 'Asia/Manila',
+        weekdays: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+        counts: activityHeatmap,
+      },
       reports,
     });
   } catch (err) {
