@@ -281,8 +281,9 @@ class _EvacCentersScreenState extends State<EvacCentersScreen> {
 
   Widget _stationMap(bool canManage) {
     final mappableCenters = _centers.where(_hasCoordinates).toList();
-    final firstMappedCenter =
-        mappableCenters.isEmpty ? null : mappableCenters.first;
+    final firstMappedCenter = mappableCenters.isEmpty
+        ? null
+        : mappableCenters.first;
     final initialCenter =
         _userLocation ??
         (firstMappedCenter == null
@@ -292,7 +293,7 @@ class _EvacCentersScreenState extends State<EvacCentersScreen> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final collapsedPanelHeight = math
-            .min(250.0, constraints.maxHeight * 0.42)
+            .min(64.0, constraints.maxHeight * 0.12)
             .toDouble();
         final expandedPanelHeight = math
             .min(460.0, constraints.maxHeight * 0.7)
@@ -315,6 +316,7 @@ class _EvacCentersScreenState extends State<EvacCentersScreen> {
                   urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                   userAgentPackageName: 'ph.gov.mdrrmo.norzagapay_mobile',
                 ),
+                const MunicipalityBoundaryMapLayer(outsideColor: Colors.white),
                 MunicipalityBoundaryMarkerLayer(
                   markers: [
                     ...mappableCenters.map(
@@ -350,15 +352,15 @@ class _EvacCentersScreenState extends State<EvacCentersScreen> {
                             shape: BoxShape.circle,
                             border: Border.all(color: Colors.white, width: 4),
                             boxShadow: const [
-                              BoxShadow(color: Color(0x40000000), blurRadius: 6),
+                              BoxShadow(
+                                color: Color(0x40000000),
+                                blurRadius: 6,
+                              ),
                             ],
                           ),
                         ),
                       ),
                   ],
-                ),
-                const MunicipalityBoundaryMapLayer(
-                  outsideColor: Color(0xFFF5F6FA),
                 ),
               ],
             ),
@@ -576,7 +578,7 @@ class _StationListPanel extends StatelessWidget {
     child: Column(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 10, 8, 6),
+          padding: const EdgeInsets.fromLTRB(16, 6, 8, 6),
           child: Row(
             children: [
               Expanded(
@@ -603,6 +605,9 @@ class _StationListPanel extends StatelessWidget {
                 ),
               ),
               IconButton(
+                visualDensity: VisualDensity.compact,
+                constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                padding: EdgeInsets.zero,
                 tooltip: expanded
                     ? 'Collapse station list'
                     : 'Expand station list',
@@ -617,51 +622,53 @@ class _StationListPanel extends StatelessWidget {
             ],
           ),
         ),
-        const Divider(height: 1, color: Color(0xFFE2E8F0)),
-        Expanded(
-          child: ListView.builder(
-            controller: scrollController,
-            itemExtent: 76,
-            itemCount: centers.length,
-            itemBuilder: (context, index) {
-              final center = centers[index];
-              final selected = center.id == selectedId;
-              return ListTile(
-                selected: selected,
-                selectedTileColor: const Color(0xFFE6F7F5),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-                leading: Icon(
-                  Icons.location_on_rounded,
-                  color: selected
-                      ? const Color(0xFF0D9488)
-                      : const Color(0xFF64748B),
-                ),
-                title: Text(
-                  center.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF0F172A),
+        if (expanded) ...[
+          const Divider(height: 1, color: Color(0xFFE2E8F0)),
+          Expanded(
+            child: ListView.builder(
+              controller: scrollController,
+              itemExtent: 76,
+              itemCount: centers.length,
+              itemBuilder: (context, index) {
+                final center = centers[index];
+                final selected = center.id == selectedId;
+                return ListTile(
+                  selected: selected,
+                  selectedTileColor: const Color(0xFFE6F7F5),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                  leading: Icon(
+                    Icons.location_on_rounded,
+                    color: selected
+                        ? const Color(0xFF0D9488)
+                        : const Color(0xFF64748B),
                   ),
-                ),
-                subtitle: Text(
-                  center.address?.isNotEmpty == true
-                      ? center.address!
-                      : 'View station details',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Color(0xFF64748B)),
-                ),
-                trailing: const Icon(
-                  Icons.chevron_right_rounded,
-                  color: Color(0xFF94A3B8),
-                ),
-                onTap: () => onSelect(center),
-              );
-            },
+                  title: Text(
+                    center.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF0F172A),
+                    ),
+                  ),
+                  subtitle: Text(
+                    center.address?.isNotEmpty == true
+                        ? center.address!
+                        : 'View station details',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Color(0xFF64748B)),
+                  ),
+                  trailing: const Icon(
+                    Icons.chevron_right_rounded,
+                    color: Color(0xFF94A3B8),
+                  ),
+                  onTap: () => onSelect(center),
+                );
+              },
+            ),
           ),
-        ),
+        ],
       ],
     ),
   );
