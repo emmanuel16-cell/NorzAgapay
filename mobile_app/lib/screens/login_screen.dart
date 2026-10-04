@@ -52,12 +52,14 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _fetchBarangays() async {
+    if (!mounted) return;
     setState(() => _loadingBarangays = true);
     try {
       final list = await ApiService.getBarangays();
+      if (!mounted) return;
       setState(() => _barangays = list);
     } catch (_) {}
-    setState(() => _loadingBarangays = false);
+    if (mounted) setState(() => _loadingBarangays = false);
   }
 
   Future<void> _handleSubmit() async {
@@ -361,6 +363,20 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       final accounts = await auth.getDebugAccounts();
       if (!mounted) return;
+      if (_barangays.isEmpty) await _fetchBarangays();
+      if (!mounted) return;
+      final accountsByBarangay = <String, List<Map<String, dynamic>>>{};
+      for (final account in accounts) {
+        final barangayId = account['barangay_id'] as String?;
+        final groupKey = (barangayId == null || barangayId.isEmpty)
+            ? 'unassigned'
+            : barangayId;
+        accountsByBarangay.putIfAbsent(groupKey, () => []).add(account);
+      }
+      final barangayGroups = accountsByBarangay.entries.toList()
+        ..sort((a, b) => _debugBarangayName(a.value.first)
+            .toLowerCase()
+            .compareTo(_debugBarangayName(b.value.first).toLowerCase()));
       await showModalBottomSheet<void>(
         context: context,
         backgroundColor: Colors.white,
@@ -376,25 +392,37 @@ class _LoginScreenState extends State<LoginScreen> {
               Expanded(
                 child: accounts.isEmpty
                     ? const Center(child: Text('No active barangay accounts', style: TextStyle(color: Color(0xFF64748B))))
-                    : ListView.builder(
-                        itemCount: accounts.length,
-                        itemBuilder: (_, index) {
-                          final account = accounts[index];
-                          return ListTile(
-                            leading: const Icon(Icons.account_circle, color: Color(0xFF38BDF8)),
-                            title: Text(account['full_name'] ?? '', style: const TextStyle(color: Color(0xFF0F172A))),
-                            subtitle: Text('${account['email']} • ${account['role']}', style: const TextStyle(color: Color(0xFF64748B))),
-                            onTap: () async {
-                              Navigator.pop(sheetContext);
-                              try {
-                                await auth.debugQuickLogin(account['id'] as String);
-                                await Provider.of<global_auth.AuthProvider>(context, listen: false).logout();
-                              } catch (error) {
-                                if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Quick login failed: $error'), backgroundColor: Colors.red));
-                              }
-                            },
-                          );
-                        },
+                    : ListView(
+                        children: [
+                          for (final group in barangayGroups) ...[
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                              child: Text(
+                                _debugBarangayName(group.value.first),
+                                style: const TextStyle(
+                                  color: Color(0xFF475569),
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            for (final account in group.value)
+                              ListTile(
+                                leading: const Icon(Icons.account_circle, color: Color(0xFF38BDF8)),
+                                title: Text(account['full_name'] ?? '', style: const TextStyle(color: Color(0xFF0F172A))),
+                                subtitle: Text('${account['email']} • ${account['role']}', style: const TextStyle(color: Color(0xFF64748B))),
+                                onTap: () async {
+                                  Navigator.pop(sheetContext);
+                                  try {
+                                    await auth.debugQuickLogin(account['id'] as String);
+                                    await Provider.of<global_auth.AuthProvider>(context, listen: false).logout();
+                                  } catch (error) {
+                                    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Quick login failed: $error'), backgroundColor: Colors.red));
+                                  }
+                                },
+                              ),
+                          ],
+                        ],
                       ),
               ),
             ]),
@@ -404,6 +432,25 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (error) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Debug accounts unavailable: $error')));
     }
+  }
+
+  String _debugBarangayName(Map<String, dynamic> account) {
+    var name = (account['barangay_name'] as String?)?.trim();
+    final barangayId = account['barangay_id'] as String?;
+    if ((name == null || name.isEmpty) && barangayId != null) {
+      for (final barangay in _barangays) {
+        if (barangay['id'] == barangayId) {
+          name = (barangay['name'] as String?)?.trim();
+          break;
+        }
+      }
+    }
+    if (name == null || name.isEmpty) {
+      return barangayId == null || barangayId.isEmpty
+          ? 'Unassigned Barangay'
+          : 'Barangay $barangayId';
+    }
+    return name.toLowerCase().startsWith('barangay') ? name : 'Barangay $name';
   }
 
   @override
