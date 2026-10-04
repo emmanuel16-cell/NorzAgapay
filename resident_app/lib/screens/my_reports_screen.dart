@@ -573,6 +573,14 @@ class _MyReportsScreenState extends State<MyReportsScreen> {
         statusColor = const Color(0xFF1E88E5);
         statusLabel = 'RESPONDING';
         break;
+      case 'inconclusive':
+        statusColor = const Color(0xFFF97316);
+        statusLabel = 'INCONCLUSIVE';
+        break;
+      case 'false_report':
+        statusColor = const Color(0xFFDC2626);
+        statusLabel = 'FALSE REPORT';
+        break;
       case 'pending':
       default:
         statusColor = const Color(0xFFF39C12);

@@ -46,6 +46,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
       if (updated.id != id) continue;
       final hasChanged =
           updated.displayStatus != _report.displayStatus ||
+          updated.reviewOutcome != _report.reviewOutcome ||
+          updated.reviewReason != _report.reviewReason ||
           updated.acceptedAt != _report.acceptedAt ||
           updated.arrivedAt != _report.arrivedAt ||
           updated.resolvedAt != _report.resolvedAt ||
@@ -85,9 +87,12 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
   }
 
   bool get _isResolved => _report.displayStatus == 'resolved';
+  bool get _isReviewClosed =>
+      _report.displayStatus == 'inconclusive' ||
+      _report.displayStatus == 'false_report';
 
   void _openEditModal() {
-    if (_isResolved) return;
+    if (_isResolved || _isReviewClosed) return;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -135,22 +140,24 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                   ),
                   const SizedBox(height: 16),
                   _buildDetailsSection(),
-                  const SizedBox(height: 16),
-                  _buildResponseProgress(),
-                  const SizedBox(height: 16),
-                  _buildResponseTimeline(),
+                  if (!_isReviewClosed) ...[
+                    const SizedBox(height: 16),
+                    _buildResponseProgress(),
+                    const SizedBox(height: 16),
+                    _buildResponseTimeline(),
+                  ],
                   const SizedBox(height: 16),
                   _buildProofSection(),
                   if (_report.responderMedia.isNotEmpty) ...[
                     const SizedBox(height: 16),
                     _buildResponderMedia(),
                   ],
-                  SizedBox(height: _isResolved ? 24 : 100),
+                  SizedBox(height: _isResolved || _isReviewClosed ? 24 : 100),
                 ],
               ),
             ),
           ),
-          if (!_isResolved) _buildEditButton(),
+          if (!_isResolved && !_isReviewClosed) _buildEditButton(),
         ],
       ),
     );
@@ -342,6 +349,40 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
             ],
           ),
 
+          if (_isReviewClosed) ...[
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: _report.displayStatus == 'inconclusive'
+                    ? const Color(0xFFFFF7ED)
+                    : const Color(0xFFFEF2F2),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: _report.displayStatus == 'inconclusive'
+                      ? const Color(0xFFFDBA74)
+                      : const Color(0xFFFCA5A5),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _report.displayStatus == 'inconclusive'
+                        ? 'This report is inconclusive'
+                        : 'This report was marked false',
+                    style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1F2937)),
+                  ),
+                  if (_report.reviewReason?.trim().isNotEmpty == true) ...[
+                    const SizedBox(height: 5),
+                    Text(_report.reviewReason!, style: const TextStyle(height: 1.4, color: Color(0xFF475569))),
+                  ],
+                ],
+              ),
+            ),
+          ],
+
           const SizedBox(height: 10),
 
           // Description box
@@ -405,6 +446,14 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
       case 'responding':
         color = const Color(0xFF1E88E5);
         label = 'RESPONDING';
+        break;
+      case 'inconclusive':
+        color = const Color(0xFFF97316);
+        label = 'INCONCLUSIVE';
+        break;
+      case 'false_report':
+        color = const Color(0xFFDC2626);
+        label = 'FALSE REPORT';
         break;
       case 'pending':
       default:

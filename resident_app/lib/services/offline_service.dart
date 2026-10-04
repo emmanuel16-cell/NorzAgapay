@@ -51,6 +51,19 @@ class OfflineService {
     return data != null ? Map<String, dynamic>.from(data) : null;
   }
 
+  static bool hasSeenReviewNotice(String reportId) {
+    final seen = Hive.box(profileBoxName).get('seen_review_notice_ids');
+    return seen is List && seen.map((value) => value.toString()).contains(reportId);
+  }
+
+  static Future<void> markReviewNoticeSeen(String reportId) async {
+    final box = Hive.box(profileBoxName);
+    final seen = box.get('seen_review_notice_ids');
+    final ids = seen is List ? seen.map((value) => value.toString()).toSet() : <String>{};
+    ids.add(reportId);
+    await box.put('seen_review_notice_ids', ids.toList());
+  }
+
   static bool isLoggedIn() {
     final profile = getProfile();
     if (profile == null) return false;

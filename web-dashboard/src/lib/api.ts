@@ -171,6 +171,7 @@ export const reportAPI = {
   list: (params?: any) => api.get('/incident-reports', { params }),
   get: (id: string) => api.get(`/incident-reports/${id}`),
   verify: (id: string, data: { incident_type: string; severity: string; address?: string }) => api.post(`/incident-reports/${id}/verify`, data),
+  review: (id: string, data: { outcome: 'inconclusive' | 'false_report'; reason?: string }) => api.patch(`/incident-reports/${id}/review`, data),
 };
 
 // Weather

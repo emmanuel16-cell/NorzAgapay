@@ -11,7 +11,7 @@ import MunicipalityBoundaryMapLayer, { MunicipalityBoundaryViewport } from '../c
 import CurrentWeatherPanel from '../components/CurrentWeatherPanel';
 import { isCoordinateInsideBoundary } from '../lib/municipalityBoundary';
 import toast from 'react-hot-toast';
-import { AlertTriangle, Siren, Users, CheckCircle2 } from 'lucide-react';
+import { AlertTriangle, Siren, Users, CheckCircle2, X } from 'lucide-react';
 
 interface IncidentItem {
   id: string;
@@ -37,6 +37,12 @@ interface IncidentItem {
   created_at?: string;
   reporter_name?: string;
   reporter_phone?: string;
+  reporter_id?: string | null;
+  reporter_type?: string;
+  reporter_false_report_count?: number;
+  reporter_account_status?: string;
+  review_outcome?: 'inconclusive' | 'false_report' | null;
+  review_reason?: string | null;
   responder_name?: string;
   responder_phone?: string;
   barangay_response_notes?: string;
@@ -46,6 +52,7 @@ interface IncidentItem {
   barangay_responder_name?: string;
   mdrrmo_response_status?: string;
   mdrrmo_responder_name?: string;
+  mdrrmo_response_notes?: string;
 }
 
 interface DispatchUnitItem {
@@ -108,6 +115,27 @@ function asMapCoordinate(value: number | string | null | undefined): number | nu
   return Number.isFinite(coordinate) ? coordinate : null;
 }
 
+function parseFieldAssessment(notes?: string) {
+  const content = (notes || '')
+    .replace(/^\[ASSIGNED:[^\]]+\]\s*/i, '')
+    .replace(/\[RESPONDER_MEDIA:[\s\S]*?\]/gi, '')
+    .trim();
+  const marker = content.indexOf('FIELD ASSESSMENT');
+  const assessment = marker >= 0 ? content.slice(marker + 'FIELD ASSESSMENT'.length) : '';
+  const fields: Record<string, string> = {};
+  assessment.split(/\r?\n/).forEach((line) => {
+    const splitAt = line.indexOf(':');
+    if (splitAt < 0) return;
+    fields[line.slice(0, splitAt).trim().toLowerCase()] = line.slice(splitAt + 1).trim();
+  });
+  return {
+    situation: fields.situation || '',
+    people: fields['people affected / urgency'] || '',
+    actions: fields['actions taken'] || '',
+    risks: fields['risks / resources'] || '',
+  };
+}
+
 function mapDistanceKm(from: [number, number], to: [number, number]): number {
   const radians = (degrees: number) => degrees * Math.PI / 180;
   const latitudeDelta = radians(to[0] - from[0]);
@@ -118,12 +146,12 @@ function mapDistanceKm(from: [number, number], to: [number, number]): number {
 }
 
 function createResponderMapIcon(selected: boolean) {
-  const color = selected ? '#f97316' : '#06b6d4';
+  const size = selected ? 50 : 42;
   return L.divIcon({
-    html: `<div style="width:${selected ? 48 : 38}px;height:${selected ? 48 : 38}px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:${color};border:${selected ? 4 : 3}px solid #fff;box-shadow:0 0 ${selected ? 24 : 14}px ${color}99,0 4px 12px #0009"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="7" r="4"/><path d="M5 21v-2a7 7 0 0 1 14 0v2"/></svg></div>`,
+    html: `<div class="command-map-dot ${selected ? 'selected' : ''}" style="width:${size}px;height:${size}px;background:#064ee8"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="7" r="4"/><path d="M5 21v-2a7 7 0 0 1 14 0v2"/></svg></div>`,
     className: 'command-responder-location-marker',
-    iconSize: [selected ? 48 : 38, selected ? 48 : 38],
-    iconAnchor: [selected ? 24 : 19, selected ? 24 : 19],
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
   });
 }
 
@@ -136,85 +164,36 @@ const isVideoProof = (url?: string | null, proof_type?: string | null): boolean 
     lower.endsWith('.3gp') || lower.endsWith('.mkv') || lower.endsWith('.avi');
 };
 
-// Custom Marker Creators matching image 3
-const createTeardropPin = (color: string, symbol: string, isUnread = false) => {
-  const width = 42;
-  const height = 54;
-  const unreadDot = isUnread ? `
-    <div style="
-      position: absolute;
-      top: -4px;
-      right: -4px;
-      width: 13px;
-      height: 13px;
-      border-radius: 50%;
-      background: #EF4444;
-      border: 2px solid #0b1120;
-      box-shadow: 0 0 6px rgba(239,68,68,0.8);
-      z-index: 10;
-      animation: unread-pulse 1.5s ease-in-out infinite;
-    "></div>
-  ` : '';
+// Circular incident badges use the white normal ring and yellow selected ring
+// shown in the map legend reference.
+const createTeardropPin = (color: string, symbol: string, isUnread = false, selected = false) => {
+  const size = selected ? 50 : 42;
   return L.divIcon({
     html: `
-      <div style="position: relative; width: ${width}px; height: ${height}px; cursor: pointer; filter: drop-shadow(0 6px 10px rgba(0,0,0,0.45));">
-        <svg width="${width}" height="${height}" viewBox="0 0 36 46" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M18 0C8.05888 0 0 8.05888 0 18C0 29.5 18 46 18 46C18 46 36 29.5 36 18C36 8.05888 27.9411 0 18 0Z" fill="${color}" stroke="#FFFFFF" stroke-width="2"/>
-          <circle cx="18" cy="18" r="11" fill="#FFFFFF"/>
-        </svg>
-        <div style="
-          position: absolute;
-          top: 7px;
-          left: 0;
-          width: ${width}px;
-          height: 22px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-weight: 900;
-          font-size: 18px;
-          color: ${color};
-          user-select: none;
-        ">${symbol}</div>
-        ${unreadDot}
+      <div class="command-map-dot ${selected ? 'selected' : ''}" style="width:${size}px;height:${size}px;background:${color}">
+        <span>${symbol}</span>
+        ${isUnread ? '<i class="command-map-dot-unread"></i>' : ''}
       </div>
-      <style>
-        @keyframes unread-pulse {
-          0%, 100% { transform: scale(1); opacity: 1; }
-          50% { transform: scale(1.3); opacity: 0.75; }
-        }
-      </style>
     `,
-    className: 'custom-teardrop-marker',
-    iconSize: [width, height],
-    iconAnchor: [width / 2, height],
-    popupAnchor: [0, -height],
+    className: 'command-map-dot-icon',
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+    popupAnchor: [0, -size / 2],
   });
 };
 
-const createResponderUnitBadge = () => {
-  const size = 40;
+const createResponderUnitBadge = (selected = false) => {
+  const size = selected ? 50 : 42;
   return L.divIcon({
     html: `
-      <div style="
-        width: ${size}px;
-        height: ${size}px;
-        border-radius: 50%;
-        background: #00B4D8;
-        border: 2.5px solid #FFFFFF;
-        box-shadow: 0 4px 14px rgba(0, 180, 216, 0.45);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-      ">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <div class="command-map-dot ${selected ? 'selected' : ''}" style="width:${size}px;height:${size}px;background:#06b6d4">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
           <circle cx="12" cy="7" r="4"></circle>
         </svg>
       </div>
     `,
-    className: 'custom-responder-marker',
+    className: 'command-map-dot-icon',
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
   });
@@ -324,6 +303,12 @@ export default function CommandCenter() {
   const [selectedIncident, setSelectedIncident] = useState<IncidentItem | null>(null);
   const [selectedUnit, setSelectedUnit] = useState<DispatchUnitItem | null>(null);
   const [selectedVisualUrl, setSelectedVisualUrl] = useState<string | null>(null);
+  const [proofPreviewOpen, setProofPreviewOpen] = useState(false);
+  const [invalidReviewStep, setInvalidReviewStep] = useState<'choice' | 'reason' | null>(null);
+  const [invalidReason, setInvalidReason] = useState('');
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [dispatching, setDispatching] = useState(false);
+  const [mdrrmoNotes, setMdrrmoNotes] = useState('');
   const previewMediaRef = useRef<HTMLImageElement | HTMLVideoElement>(null);
 
   // Fetch data
@@ -382,12 +367,19 @@ export default function CommandCenter() {
             responder_name: r.barangay_responder_name || r.mdrrmo_responder_name || '',
             responder_phone: '',
             barangay_response_notes: r.barangay_response_notes || '',
+            reporter_id: r.reporter_id || null,
+            reporter_type: r.reporter_type || '',
+            reporter_false_report_count: Number(r.reporter_false_report_count || 0),
+            reporter_account_status: r.reporter_account_status || '',
+            review_outcome: r.review_outcome || null,
+            review_reason: r.review_reason || null,
             assigned_unit_id: r.assigned_unit_id || null,
             barangay_name: r.barangay_name || (r.barangays && r.barangays.name) || '',
             barangay_response_status: r.barangay_response_status || 'pending',
             barangay_responder_name: r.barangay_responder_name,
             mdrrmo_response_status: r.mdrrmo_response_status || 'pending',
             mdrrmo_responder_name: r.mdrrmo_responder_name,
+            mdrrmo_response_notes: r.mdrrmo_response_notes || '',
           });
         });
       }
@@ -549,6 +541,10 @@ export default function CommandCenter() {
       return next;
     });
     setSelectedIncident(item);
+    setInvalidReviewStep(null);
+    setInvalidReason('');
+    setMdrrmoNotes(item.mdrrmo_response_notes || '');
+    setProofPreviewOpen(false);
     const firstVisual = (item.proof_urls && item.proof_urls.length > 0)
       ? item.proof_urls[0]
       : (item.proof_url || (item.responder_media && item.responder_media.length > 0 ? item.responder_media[0].url : null));
@@ -561,6 +557,9 @@ export default function CommandCenter() {
   };
 
   const handleOpenUnitPin = (unit: DispatchUnitItem) => {
+    setSelectedIncident(null);
+    setSelectedVisualUrl(null);
+    setProofPreviewOpen(false);
     setSelectedUnit(unit);
     setActiveModalType('unit');
   };
@@ -570,6 +569,45 @@ export default function CommandCenter() {
     setSelectedIncident(null);
     setSelectedUnit(null);
     setSelectedVisualUrl(null);
+    setProofPreviewOpen(false);
+    setInvalidReviewStep(null);
+    setInvalidReason('');
+  };
+
+  const closeInvalidReview = () => {
+    setInvalidReviewStep(null);
+    setInvalidReason('');
+  };
+
+  const submitInvalidReview = async (outcome: 'inconclusive' | 'false_report') => {
+    if (!selectedIncident || reviewSubmitting) return;
+    const reason = invalidReason.trim();
+    if (outcome === 'inconclusive' && !reason) {
+      toast.error('Enter a reason before marking this report inconclusive.');
+      return;
+    }
+    setReviewSubmitting(true);
+    try {
+      const response = await reportAPI.review(selectedIncident.id, { outcome, reason });
+      const count = Number(response.data?.false_report_count ?? selectedIncident.reporter_false_report_count ?? 0);
+      if (outcome === 'false_report') {
+        toast.success(response.data?.resident_status === 'inactive'
+          ? 'Report marked false. The resident account has been deactivated after 3 false reports.'
+          : selectedIncident.reporter_id
+            ? `Report marked false (${count} of 3 resident marks).`
+            : 'Report marked false. No linked resident account was available for a strike.');
+      } else {
+        toast.success('Report marked inconclusive. The resident will be notified.');
+      }
+      setInvalidReviewStep(null);
+      setSelectedIncident(null);
+      setActiveModalType(null);
+      await fetchData();
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error || 'Could not save the report decision.');
+    } finally {
+      setReviewSubmitting(false);
+    }
   };
 
   const copyToClipboard = (text?: string) => {
@@ -594,10 +632,12 @@ export default function CommandCenter() {
   } | null>(null);
 
   const executeMdrrmoDispatch = async (incident: IncidentItem) => {
+    if (dispatching) return;
+    setDispatching(true);
     try {
       const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
       const token = localStorage.getItem('token');
-      await fetch(`${baseUrl}/incident-reports/${incident.id}/mdrrmo-respond`, {
+      const response = await fetch(`${baseUrl}/incident-reports/${incident.id}/mdrrmo-respond`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -605,16 +645,20 @@ export default function CommandCenter() {
         },
         body: JSON.stringify({
           responder_name: user?.full_name || user?.email || 'MDRRMO Command Unit',
-          notes: 'MDRRMO responding from Command Center dispatch'
+          notes: mdrrmoNotes.trim() || 'MDRRMO responding from Command Center dispatch'
         })
       });
-    } catch (e) {
-      console.warn('Could not notify backend of mdrrmo respond:', e);
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.error || 'Could not initiate MDRRMO response.');
+      toast.success('Dispatch action initiated! MDRRMO responders alerted.');
+      setCoResponseConfirmModal(null);
+      closeModal();
+      fetchData();
+    } catch (e: any) {
+      toast.error(e?.message || 'Could not initiate MDRRMO response.');
+    } finally {
+      setDispatching(false);
     }
-    toast.success('Dispatch action initiated! MDRRMO responders alerted.');
-    setCoResponseConfirmModal(null);
-    closeModal();
-    fetchData();
   };
 
   const handleDispatch = (overrideConfirm = false) => {
@@ -845,7 +889,8 @@ export default function CommandCenter() {
                 <Marker
                   key={inc.id}
                   position={[inc.latitude, inc.longitude]}
-                  icon={createTeardropPin('#F97316', '!', isUnread)}
+                  icon={createTeardropPin('#F97316', '!', isUnread, selectedIncident?.id === inc.id)}
+                  zIndexOffset={selectedIncident?.id === inc.id ? 1600 : 0}
                   eventHandlers={{ click: () => handleOpenIncidentPin(inc) }}
                 />
               );
@@ -857,7 +902,8 @@ export default function CommandCenter() {
                 <Marker
                   key={inc.id}
                   position={[inc.latitude, inc.longitude]}
-                  icon={createTeardropPin('#EF4444', '!', isUnread)}
+                  icon={createTeardropPin('#EF4444', '‼', isUnread, selectedIncident?.id === inc.id)}
+                  zIndexOffset={selectedIncident?.id === inc.id ? 1600 : 0}
                   eventHandlers={{ click: () => handleOpenIncidentPin(inc) }}
                 />
               );
@@ -869,7 +915,8 @@ export default function CommandCenter() {
                 <Marker
                   key={inc.id}
                   position={[inc.latitude, inc.longitude]}
-                  icon={createTeardropPin('#10B981', '✓', isUnread)}
+                  icon={createTeardropPin('#10B981', '✓', isUnread, selectedIncident?.id === inc.id)}
+                  zIndexOffset={selectedIncident?.id === inc.id ? 1600 : 0}
                   eventHandlers={{ click: () => handleOpenIncidentPin(inc) }}
                 />
               );
@@ -885,7 +932,8 @@ export default function CommandCenter() {
               <Marker
                 key={u.id}
                 position={[u.latitude, u.longitude]}
-                icon={createResponderUnitBadge()}
+                icon={createResponderUnitBadge(selectedUnit?.id === u.id)}
+                zIndexOffset={selectedUnit?.id === u.id ? 1600 : 0}
                 eventHandlers={{ click: () => handleOpenUnitPin(u) }}
               />
             ))}
@@ -918,16 +966,20 @@ export default function CommandCenter() {
           <MunicipalityBoundaryMapLayer boundary={boundary} maskColor="#0b1120" />
         </MapContainer>
 
-        <CurrentWeatherPanel />
+        {activeModalType !== 'escalated' && <CurrentWeatherPanel />}
 
         {/* ── MODALS (Image 5, 1, 2) ── */}
 
         {/* 1. ORANGE INCIDENT PIN CLICK: 2-Panel Modal (Image 5) */}
         {activeModalType === 'incident' && selectedIncident && (
-          <div className="pin-modal-backdrop" onClick={closeModal}>
+          <div className="pin-modal-backdrop report-selection-overlay resident-selection-overlay" onClick={closeModal}>
             <div className="pin-modal-container" onClick={(e) => e.stopPropagation()}>
               {/* Left Card: Resident Details & Visual Proofs */}
               <div className="panel-resident">
+                <div className="selection-panel-heading">
+                  <div><span>Emergency Incident</span><strong>Resident Report</strong></div>
+                  <button className="selection-close-btn" onClick={closeModal} aria-label="Close report"><X size={20} /></button>
+                </div>
                 {/* Resident Header */}
                 <div className="panel-header-user">
                   <div className="user-identity">
@@ -986,7 +1038,7 @@ export default function CommandCenter() {
                           <div
                             key={url + idx}
                             className={`grid-thumb-item ${isActive ? 'active' : ''}`}
-                            onClick={() => setSelectedVisualUrl(url)}
+                            onClick={() => { setSelectedVisualUrl(url); setProofPreviewOpen(true); }}
                             style={{
                               position: 'relative',
                               width: '64px',
@@ -1035,7 +1087,7 @@ export default function CommandCenter() {
                           <div
                             key={item.url + mIdx}
                             className={`grid-thumb-item ${isActive ? 'active' : ''}`}
-                            onClick={() => setSelectedVisualUrl(item.url)}
+                            onClick={() => { setSelectedVisualUrl(item.url); setProofPreviewOpen(true); }}
                             title={`Uploaded by ${item.uploader_name || 'Responder'}`}
                             style={{
                               position: 'relative',
@@ -1080,6 +1132,18 @@ export default function CommandCenter() {
                   <div>
                     {selectedIncident.description || 'No description provided.'}
                   </div>
+                </div>
+                {selectedIncident.reporter_id && (
+                  <div className="false-report-count">
+                    False Reporter marks: <strong>{selectedIncident.reporter_false_report_count || 0} / 3</strong>
+                    {selectedIncident.reporter_account_status === 'inactive' && <span>Account deactivated</span>}
+                  </div>
+                )}
+                <div className="selection-actions">
+                  <button className="selection-invalid-btn" onClick={() => setInvalidReviewStep('choice')}>Invalid Report</button>
+                  <button className="selection-dispatch-btn" onClick={() => handleDispatch()} disabled={dispatching}>
+                    {dispatching ? 'Dispatching…' : 'Dispatch'}
+                  </button>
                 </div>
               </div>
 
@@ -1152,10 +1216,14 @@ export default function CommandCenter() {
 
         {/* 2. RED ESCALATED PIN CLICK: 3-Panel Modal (User request Image 1) */}
         {activeModalType === 'escalated' && selectedIncident && (
-          <div className="pin-modal-backdrop" onClick={closeModal}>
+          <div className="pin-modal-backdrop report-selection-overlay escalated-selection-overlay" onClick={closeModal}>
             <div className="pin-modal-container" onClick={(e) => e.stopPropagation()}>
               {/* Left Card: Resident Details & Visual Proofs */}
               <div className="panel-resident">
+                <div className="selection-panel-heading">
+                  <div><span>Escalated Incident</span><strong>Escalated Report</strong></div>
+                  <button className="selection-close-btn" onClick={closeModal} aria-label="Close report"><X size={20} /></button>
+                </div>
                 <div className="panel-header-user">
                   <div className="user-identity">
                     <div className="user-avatar-circle">
@@ -1212,7 +1280,7 @@ export default function CommandCenter() {
                           <div
                             key={url + idx}
                             className={`grid-thumb-item ${isActive ? 'active' : ''}`}
-                            onClick={() => setSelectedVisualUrl(url)}
+                            onClick={() => { setSelectedVisualUrl(url); setProofPreviewOpen(true); }}
                             style={{
                               position: 'relative',
                               width: '64px',
@@ -1261,7 +1329,7 @@ export default function CommandCenter() {
                           <div
                             key={item.url + mIdx}
                             className={`grid-thumb-item ${isActive ? 'active' : ''}`}
-                            onClick={() => setSelectedVisualUrl(item.url)}
+                            onClick={() => { setSelectedVisualUrl(item.url); setProofPreviewOpen(true); }}
                             title={`Uploaded by ${item.uploader_name || 'Responder'}`}
                             style={{
                               position: 'relative',
@@ -1424,7 +1492,103 @@ export default function CommandCenter() {
                   </div>
                 </div>
               </div>
+              <div className="panel-field-assessment">
+                <div className="field-assessment-heading">
+                  <div>
+                    <span>Barangay {selectedIncident.barangay_name || 'Barangay'} Field Assessment</span>
+                    <small>Submitted by {selectedIncident.responder_name || selectedIncident.barangay_responder_name || 'barangay responder'}</small>
+                  </div>
+                  <button className="selection-close-btn" onClick={closeModal} aria-label="Close assessment"><X size={20} /></button>
+                </div>
+                {(() => {
+                  const assessment = parseFieldAssessment(selectedIncident.barangay_response_notes);
+                  const sections = [
+                    { label: 'Situation', value: assessment.situation },
+                    { label: 'People Affected / Urgency', value: assessment.people },
+                    { label: 'Action Taken', value: assessment.actions },
+                    { label: 'Risk / Resource', value: assessment.risks },
+                  ];
+                  return (
+                    <div className="assessment-sections">
+                      {sections.map(({ label, value }) => (
+                        <section key={label}>
+                          <h3>{label}</h3>
+                          <p>{value || 'No details provided.'}</p>
+                        </section>
+                      ))}
+                    </div>
+                  );
+                })()}
+                <label className="mdrrmo-notes-label" htmlFor="mdrrmo-dispatch-notes">MDRRMO dispatch notes</label>
+                <textarea
+                  id="mdrrmo-dispatch-notes"
+                  className="mdrrmo-notes-input"
+                  placeholder="Add coordination notes for this escalation…"
+                  value={mdrrmoNotes}
+                  onChange={(event) => setMdrrmoNotes(event.target.value)}
+                />
+                {selectedIncident.responder_media && selectedIncident.responder_media.length > 0 && (
+                  <div className="assessment-field-photos">
+                    <strong>Field Photos · {selectedIncident.responder_media.length}</strong>
+                    <div>
+                      {selectedIncident.responder_media.map((media, index) => (
+                        <button key={`${media.url}-${index}`} onClick={() => { setSelectedVisualUrl(media.url); setProofPreviewOpen(true); }} title={media.uploader_name || 'Field photo'}>
+                          {isVideoProof(media.url, media.type) ? <span>▶ Video</span> : <img src={media.url} alt="Barangay field evidence" />}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <button className="selection-dispatch-btn field-dispatch-btn" onClick={() => handleDispatch()} disabled={dispatching}>
+                  {dispatching ? 'Dispatching…' : 'Dispatch MDRRMO'}
+                </button>
+              </div>
             </div>
+          </div>
+        )}
+
+        {invalidReviewStep && selectedIncident && (
+          <div className="invalid-review-overlay" onClick={closeInvalidReview}>
+            <section className="invalid-review-dialog" role="dialog" aria-modal="true" aria-labelledby="invalid-review-title" onClick={(event) => event.stopPropagation()}>
+              <button className="selection-close-btn invalid-review-close" onClick={closeInvalidReview} aria-label="Close review"><X size={20} /></button>
+              <h2 id="invalid-review-title">
+                {invalidReviewStep === 'choice'
+                  ? `Why is ${selectedIncident.reporter_name || 'the resident'}’s Report Invalid?`
+                  : 'Why is this report inconclusive?'}
+              </h2>
+              {invalidReviewStep === 'choice' ? (
+                <>
+                  <p>Choose how MDRRMO should record this review.</p>
+                  <div className="invalid-review-options">
+                    <button className="inconclusive-option" onClick={() => setInvalidReviewStep('reason')}>Inconclusive</button>
+                    <button className="false-reporter-option" onClick={() => void submitInvalidReview('false_report')} disabled={reviewSubmitting}>
+                      {reviewSubmitting ? 'Saving…' : 'False Reporter'}
+                      <small>{selectedIncident.reporter_id
+                        ? `${selectedIncident.reporter_false_report_count || 0} of 3 marks${(selectedIncident.reporter_false_report_count || 0) >= 2 ? ' · next mark deactivates account' : ''}`
+                        : 'No linked resident account'}</small>
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p>The resident will receive this reason with the report status.</p>
+                  <textarea autoFocus className="invalid-review-reason" value={invalidReason} onChange={(event) => setInvalidReason(event.target.value)} placeholder="Explain what could not be confirmed…" maxLength={1000} />
+                  <div className="invalid-review-actions">
+                    <button onClick={closeInvalidReview} disabled={reviewSubmitting}>Cancel</button>
+                    <button onClick={() => void submitInvalidReview('inconclusive')} disabled={reviewSubmitting || !invalidReason.trim()}>{reviewSubmitting ? 'Saving…' : 'Notify Resident'}</button>
+                  </div>
+                </>
+              )}
+            </section>
+          </div>
+        )}
+
+        {proofPreviewOpen && selectedVisualUrl && selectedIncident && (
+          <div className="proof-lightbox" onClick={() => setProofPreviewOpen(false)}>
+            <button className="selection-close-btn" onClick={() => setProofPreviewOpen(false)} aria-label="Close preview"><X size={22} /></button>
+            {isVideoProof(selectedVisualUrl, selectedIncident.proof_type)
+              ? <video ref={(element) => { previewMediaRef.current = element; }} src={selectedVisualUrl} controls autoPlay playsInline onClick={(event) => event.stopPropagation()} />
+              : <img ref={(element) => { previewMediaRef.current = element; }} src={selectedVisualUrl} alt="Report evidence" onClick={(event) => event.stopPropagation()} />}
           </div>
         )}
 

@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { config } from '../config';
+import { supabaseAdmin } from '../config/supabase';
 
 export interface AuthPayload {
   userId: string;
@@ -18,7 +19,7 @@ export interface AuthRequest extends Request {
  * JWT authentication middleware.
  * Extracts and verifies JWT from Authorization header.
  */
-export function authenticate(req: AuthRequest, res: Response, next: NextFunction): void {
+export async function authenticate(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -28,8 +29,15 @@ export function authenticate(req: AuthRequest, res: Response, next: NextFunction
 
   const token = authHeader.split(' ')[1];
 
+  let decoded: AuthPayload;
   try {
-    const decoded = jwt.verify(token, config.jwtSecret) as AuthPayload;
+    decoded = jwt.verify(token, config.jwtSecret) as AuthPayload;
+  } catch (err) {
+    res.status(401).json({ error: 'Invalid or expired token.' });
+    return;
+  }
+
+  try {
     // Barangay sessions use their own account lookup and barangay-wide
     // activation gate in authenticateBarangay. Never let their overlapping
     // `admin` / `dispatcher` role names authorize command-center APIs.
@@ -37,10 +45,28 @@ export function authenticate(req: AuthRequest, res: Response, next: NextFunction
       res.status(403).json({ error: 'Use a barangay account endpoint for this session.' });
       return;
     }
+
+    if (decoded.role === 'resident') {
+      const { data: resident, error } = await supabaseAdmin
+        .from('resident_user')
+        .select('status')
+        .eq('id', decoded.userId)
+        .maybeSingle();
+      if (error) {
+        res.status(503).json({ error: 'Unable to verify resident account status.' });
+        return;
+      }
+      if (!resident || resident.status !== 'active') {
+        res.status(403).json({ error: 'This resident account is not active.' });
+        return;
+      }
+    }
+
     req.user = decoded;
     next();
   } catch (err) {
-    res.status(401).json({ error: 'Invalid or expired token.' });
+    console.error('Authentication account check failed:', err);
+    res.status(503).json({ error: 'Unable to verify account status.' });
     return;
   }
 }

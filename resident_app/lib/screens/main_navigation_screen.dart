@@ -137,18 +137,42 @@ class MainNavigationScreenState extends State<MainNavigationScreen>
     if (!_isLoggedIn || _isPollingReportStatus) return;
     final profile = OfflineService.getProfile();
     final contactNumber = profile?['contact_number']?.toString();
-    if (contactNumber == null || contactNumber.trim().isEmpty) return;
+    final token = profile?['token']?.toString();
+    final hasContact = contactNumber != null && contactNumber.trim().isNotEmpty;
+    final hasToken = token != null && token.isNotEmpty;
+    if (!hasContact && !hasToken) return;
 
     _isPollingReportStatus = true;
     try {
       final response = await http
           .get(
-            Uri.parse(
-              '${AppConstants.apiBaseUrl}/incident-reports/resident',
-            ).replace(queryParameters: {'contact_number': contactNumber}),
-            headers: const {'ngrok-skip-browser-warning': 'true'},
+            Uri.parse('${AppConstants.apiBaseUrl}/incident-reports/resident')
+                .replace(queryParameters: hasContact ? {'contact_number': contactNumber!} : null),
+            headers: {
+              'ngrok-skip-browser-warning': 'true',
+              if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
+            },
           )
           .timeout(const Duration(seconds: 12));
+      if (response.statusCode == 403 && hasToken && mounted) {
+        await OfflineService.logout();
+        _checkAuthState();
+        if (mounted) {
+          await showDialog<void>(
+            context: context,
+            builder: (dialogContext) => AlertDialog(
+              title: const Text('Resident account deactivated'),
+              content: const Text(
+                'Your account has been deactivated after three false-reporter marks. Contact the Norzagaray MDRRMO office for assistance.',
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('OK')),
+              ],
+            ),
+          );
+        }
+        return;
+      }
       if (response.statusCode != 200 || !mounted) return;
 
       final reports = (jsonDecode(response.body) as List)
@@ -158,6 +182,22 @@ class MainNavigationScreenState extends State<MainNavigationScreen>
           )
           .toList();
       ResidentReportUpdates.publish(reports);
+      IncidentReport? reviewNotice;
+      for (final report in reports) {
+        final id = report.id;
+        if (id == null ||
+            (report.displayStatus != 'inconclusive' &&
+                report.displayStatus != 'false_report') ||
+            OfflineService.hasSeenReviewNotice(id)) {
+          continue;
+        }
+        reviewNotice = report;
+        break;
+      }
+      if (reviewNotice != null) {
+        unawaited(_showReviewNotice(reviewNotice));
+        return;
+      }
       if (!_hasLoadedReportSnapshot) {
         _reportMilestones
           ..clear()
@@ -212,6 +252,38 @@ class MainNavigationScreenState extends State<MainNavigationScreen>
       // A later polling cycle retries transient connectivity or server errors.
     } finally {
       _isPollingReportStatus = false;
+    }
+  }
+
+  Future<void> _showReviewNotice(IncidentReport report) async {
+    if (!mounted || _showingReportUpdate) return;
+    final id = report.id;
+    if (id == null) return;
+    _showingReportUpdate = true;
+    final isInconclusive = report.displayStatus == 'inconclusive';
+    final reason = report.reviewReason?.trim();
+    final message = isInconclusive
+        ? 'MDRRMO could not confirm your report, so it has been marked inconclusive.${reason?.isNotEmpty == true ? '\n\nReason: $reason' : ''}'
+        : 'MDRRMO marked this report as a false report. It will not be dispatched.';
+
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          title: Text(
+            isInconclusive ? 'Report marked inconclusive' : 'Report review update',
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
+          ),
+          content: Text(message, style: const TextStyle(fontSize: 16, height: 1.4)),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('OK')),
+          ],
+        ),
+      );
+      await OfflineService.markReviewNoticeSeen(id);
+    } finally {
+      _showingReportUpdate = false;
     }
   }
 

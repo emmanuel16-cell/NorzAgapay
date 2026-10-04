@@ -37,6 +37,8 @@ class IncidentReport {
   final String? mdrrmoResponderName;
   final String? mdrrmoCoordinationNotes;
   final String? resolvedNotes;
+  final String? reviewOutcome;
+  final String? reviewReason;
   final double? expectedResponseSeconds;
   final double? expectedArrivalSeconds;
   final double? expectedResolutionSeconds;
@@ -90,6 +92,8 @@ class IncidentReport {
     this.mdrrmoResponderName,
     this.mdrrmoCoordinationNotes,
     this.resolvedNotes,
+    this.reviewOutcome,
+    this.reviewReason,
     this.expectedResponseSeconds,
     this.expectedArrivalSeconds,
     this.expectedResolutionSeconds,
@@ -109,6 +113,8 @@ class IncidentReport {
   /// - 'responding' if team leader or mdrrmo is responding
   /// - 'pending' if no one is responding
   String get displayStatus {
+    final outcome = (reviewOutcome ?? '').toLowerCase().trim();
+    if (outcome == 'inconclusive' || outcome == 'false_report') return outcome;
     final s = (status ?? '').toLowerCase().trim();
     final m = (mdrrmoResponseStatus ?? '').toLowerCase().trim();
     final b = (barangayResponseStatus ?? '').toLowerCase().trim();
@@ -180,6 +186,8 @@ class IncidentReport {
       'mdrrmo_responder_name': mdrrmoResponderName,
       'mdrrmo_coordination_notes': mdrrmoCoordinationNotes,
       'resolved_notes': resolvedNotes,
+      'review_outcome': reviewOutcome,
+      'review_reason': reviewReason,
       'expected_timings': {
         'response_seconds': expectedResponseSeconds,
         'arrival_seconds': expectedArrivalSeconds,
@@ -294,6 +302,8 @@ class IncidentReport {
       mdrrmoResponderName: json['mdrrmo_responder_name'],
       mdrrmoCoordinationNotes: json['mdrrmo_coordination_notes'],
       resolvedNotes: json['resolved_notes'],
+      reviewOutcome: json['review_outcome']?.toString(),
+      reviewReason: json['review_reason']?.toString(),
       expectedResponseSeconds: (expectedTimings['response_seconds'] as num?)
           ?.toDouble(),
       expectedArrivalSeconds: (expectedTimings['arrival_seconds'] as num?)
@@ -365,6 +375,8 @@ class IncidentReport {
       mdrrmoResponderName: mdrrmoResponderName,
       mdrrmoCoordinationNotes: mdrrmoCoordinationNotes,
       resolvedNotes: resolvedNotes,
+      reviewOutcome: reviewOutcome,
+      reviewReason: reviewReason,
       expectedResponseSeconds: expectedResponseSeconds,
       expectedArrivalSeconds: expectedArrivalSeconds,
       expectedResolutionSeconds: expectedResolutionSeconds,

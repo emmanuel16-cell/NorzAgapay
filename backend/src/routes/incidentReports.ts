@@ -18,16 +18,42 @@ const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
 // Middleware for optional authentication
-const optionalAuthenticate = (req: AuthRequest, res: Response, next: NextFunction) => {
+const optionalAuthenticate = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const token = authHeader.split(' ')[1];
+    let decoded: AuthPayload;
     try {
-      const decoded = jwt.verify(token, config.jwtSecret) as AuthPayload;
-      req.user = decoded;
+      decoded = jwt.verify(token, config.jwtSecret) as AuthPayload;
     } catch (err) {
       // Ignore invalid token, treat as anonymous
+      next();
+      return;
     }
+
+    if (decoded.role === 'resident') {
+      try {
+        const { data: resident, error } = await supabaseAdmin
+          .from('resident_user')
+          .select('status')
+          .eq('id', decoded.userId)
+          .maybeSingle();
+        if (error) {
+          res.status(503).json({ error: 'Unable to verify resident account status.' });
+          return;
+        }
+        if (!resident || resident.status !== 'active') {
+          res.status(403).json({ error: 'This resident account is not active.' });
+          return;
+        }
+      } catch (err) {
+        console.error('Optional resident account check failed:', err);
+        res.status(503).json({ error: 'Unable to verify resident account status.' });
+        return;
+      }
+    }
+
+    req.user = decoded;
   }
   next();
 };
@@ -451,19 +477,21 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response) => {
  * GET /api/incident-reports/resident
  * Get reports submitted by a resident using first_name, last_name, contact_number
  */
-router.get('/resident', async (req: Request, res: Response) => {
+router.get('/resident', optionalAuthenticate, async (req: AuthRequest, res: Response) => {
   try {
     const { contact_number } = req.query;
-    if (!contact_number) {
+    if (req.user?.role !== 'resident' && !contact_number) {
       return res.status(400).json({ error: 'Missing required field: contact_number' });
     }
 
-    const { data: reports, error } = await supabaseAdmin
+    let query = supabaseAdmin
       .from('incident_reports')
       .select('*, barangays(name)')
-      .eq('reporter_type', 'resident')
-      .eq('reporter_phone', contact_number)
-      .order('created_at', { ascending: false });
+      .eq('reporter_type', 'resident');
+    query = req.user?.role === 'resident'
+      ? query.eq('reporter_id', req.user.userId)
+      : query.eq('reporter_phone', String(contact_number));
+    const { data: reports, error } = await query.order('created_at', { ascending: false });
 
     if (error) {
       console.error('Database error fetching resident reports:', error);
@@ -533,7 +561,7 @@ router.get('/resident', async (req: Request, res: Response) => {
  * GET /api/incident-reports
  * List all incident reports (Admin and master admin only)
  */
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', optionalAuthenticate, async (req: AuthRequest, res: Response) => {
     try {
         const { type } = req.query;
         let query = supabaseAdmin
@@ -553,11 +581,36 @@ router.get('/', async (req: Request, res: Response) => {
             return;
         }
 
-        const formatted = (reports || []).map(formatIncidentReport);
+        let formatted = (reports || []).map(formatIncidentReport);
+        if (req.user && ['dispatcher', 'admin', 'master_admin'].includes(req.user.role)) {
+          const residentIds = [...new Set(formatted
+            .filter((report) => report.reporter_type === 'resident' && report.reporter_id)
+            .map((report) => report.reporter_id as string))];
+          if (residentIds.length > 0) {
+            const { data: residents, error: residentsError } = await supabaseAdmin
+              .from('resident_user')
+              .select('id, false_report_count, status')
+              .in('id', residentIds);
+            if (residentsError) {
+              console.warn('Could not load resident review counts:', residentsError);
+            } else {
+              const residentById = new Map((residents || []).map((resident) => [resident.id, resident]));
+              formatted = formatted.map((report) => {
+                const resident = report.reporter_id ? residentById.get(report.reporter_id) : null;
+                return resident ? {
+                  ...report,
+                  reporter_false_report_count: resident.false_report_count || 0,
+                  reporter_account_status: resident.status,
+                } : report;
+              });
+            }
+          }
+        }
         // MDRRMO sees Emergency reports and barangay reports escalated for
         // MDRRMO handling. Community reports stay with the barangay unless
         // explicitly escalated. A report remains one row and one statistics sample.
         const mdrrmoReports = formatted.filter(r => {
+          if (r.review_outcome) return false;
           const isEscalated = r.status === 'escalated' ||
                               r.mdrrmo_response_status === 'responding' ||
                               r.mdrrmo_response_status === 'resolved' ||
@@ -797,6 +850,20 @@ router.patch('/:id/mdrrmo-respond', optionalAuthenticate, async (req: AuthReques
     try {
         const { id } = req.params;
         const { responder_name, notes, assigned_unit_id } = req.body;
+        const { data: reportBeforeRespond, error: reportBeforeRespondError } = await supabaseAdmin
+            .from('incident_reports')
+            .select('review_outcome')
+            .eq('id', id)
+            .maybeSingle();
+        if (reportBeforeRespondError) throw reportBeforeRespondError;
+        if (!reportBeforeRespond) {
+            res.status(404).json({ error: 'Report not found' });
+            return;
+        }
+        if (reportBeforeRespond.review_outcome) {
+            res.status(409).json({ error: 'This report has already received an invalid-report decision.' });
+            return;
+        }
         const responderName = responder_name || (req.user as any)?.name || req.user?.email || 'MDRRMO Command Unit';
         const reviewedAndDispatchedAt = new Date().toISOString();
 
@@ -817,6 +884,7 @@ router.patch('/:id/mdrrmo-respond', optionalAuthenticate, async (req: AuthReques
                     dispatched_at: reviewedAndDispatchedAt,
                 })
                 .eq('id', id)
+                .is('review_outcome', null)
                 .select('*, barangays(name)')
                 .single();
 
@@ -831,6 +899,7 @@ router.patch('/:id/mdrrmo-respond', optionalAuthenticate, async (req: AuthReques
                     status: 'responding',
                 })
                 .eq('id', id)
+                .is('review_outcome', null)
                 .select('*, barangays(name)')
                 .single();
 
@@ -868,6 +937,74 @@ router.patch('/:id/mdrrmo-respond', optionalAuthenticate, async (req: AuthReques
 });
 
 /**
+ * PATCH /api/incident-reports/:id/review
+ * Record an MDRRMO decision for a pending report that appears invalid.
+ */
+const invalidReportReviewSchema = z.object({
+    outcome: z.enum(['inconclusive', 'false_report']),
+    reason: z.string().trim().max(1000).optional().default(''),
+});
+
+router.patch('/:id/review', authenticate, authorize('admin', 'dispatcher'), async (req: AuthRequest, res: Response): Promise<void> => {
+    const parsed = invalidReportReviewSchema.safeParse(req.body);
+    if (!parsed.success) {
+        res.status(400).json({ error: 'Choose a valid report review outcome.', details: parsed.error.flatten() });
+        return;
+    }
+    const { outcome, reason } = parsed.data;
+    if (outcome === 'inconclusive' && !reason.trim()) {
+        res.status(400).json({ error: 'Enter a reason for marking the report inconclusive.' });
+        return;
+    }
+
+    try {
+        const { data, error } = await supabaseAdmin.rpc('review_incident_report', {
+            p_report_id: req.params.id,
+            p_review_outcome: outcome,
+            p_review_reason: reason,
+            p_reviewed_by: req.user!.userId,
+        });
+        if (error) {
+            const status = error.code === 'P0002' ? 404
+                : error.code === 'P0001' ? 409
+                    : error.code === '22023' ? 400
+                        : 500;
+            res.status(status).json({ error: error.message || 'Could not save the report review.' });
+            return;
+        }
+
+        const result = data as {
+            report?: any;
+            false_report_count?: number | null;
+            resident_status?: string | null;
+            already_reviewed?: boolean;
+        };
+        if (!result?.report) {
+            res.status(500).json({ error: 'Report review returned no report.' });
+            return;
+        }
+
+        const formatted = formatIncidentReport(result.report);
+        io.to('dashboard_staff').emit('incident_report:reviewed', formatted);
+        io.to('dashboard_staff').emit('incident_report:updated', formatted);
+        io.emit('incident_report:updated', formatted);
+        if (formatted.reporter_id) {
+            io.to(`user:${formatted.reporter_id}`).emit('incident_report:reviewed', formatted);
+        }
+
+        res.json({
+            report: formatted,
+            false_report_count: result.false_report_count ?? null,
+            resident_status: result.resident_status ?? null,
+            already_reviewed: result.already_reviewed === true,
+        });
+    } catch (err) {
+        console.error('Invalid report review error:', err);
+        res.status(500).json({ error: 'Failed to save the report review.' });
+    }
+});
+
+/**
  * POST /api/incident-reports/:id/verify
  * Verifies a report and creates an incident response task for active responders.
  */
@@ -896,6 +1033,11 @@ router.post('/:id/verify', authenticate, authorize('admin', 'dispatcher'), async
 
         if (fetchError || !report) {
             res.status(404).json({ error: 'Report not found' });
+            return;
+        }
+
+        if (report.review_outcome) {
+            res.status(409).json({ error: 'This report has already received an invalid-report decision.' });
             return;
         }
 
@@ -955,6 +1097,7 @@ router.post('/:id/verify', authenticate, authorize('admin', 'dispatcher'), async
                 dispatched_at: reviewedAndDispatchedAt,
             })
             .eq('id', id)
+            .is('review_outcome', null)
             .select('*')
             .single();
         if (updateError) {
