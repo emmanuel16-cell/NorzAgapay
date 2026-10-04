@@ -269,9 +269,6 @@ export default function CommandCenter() {
     return () => clearInterval(timer);
   }, []);
 
-  // HUD collapse state
-  const [hudExpanded, setHudExpanded] = useState(true);
-
   // Filters matching Image 3
   const [filters, setFilters] = useState({
     incidents: true,
@@ -695,30 +692,7 @@ export default function CommandCenter() {
       {/* Compact stats and layer filters */}
       <div className="command-center-toolbar">
         <div className="command-hud-top-row">
-          <button
-            className="command-hud-toggle-btn"
-            onClick={() => setHudExpanded(!hudExpanded)}
-            title={hudExpanded ? 'Collapse stats and filters' : 'Expand stats and filters'}
-            aria-label={hudExpanded ? 'Collapse stats and filters' : 'Expand stats and filters'}
-            aria-expanded={hudExpanded}
-          >
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              style={{ transform: hudExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}
-            >
-              <polyline points="9 18 15 12 9 6"></polyline>
-            </svg>
-          </button>
-
-          {hudExpanded && (
-            <div className="command-hud-top-row-stats">
+          <div className="command-hud-top-row-stats">
               <div className="command-stat-card incident">
                 <div className="stat-info">
                   <span className="stat-val">{stats.incident}</span>
@@ -750,12 +724,10 @@ export default function CommandCenter() {
                 </div>
                 <span className="stat-card-icon"><CheckCircle2 size={20} strokeWidth={2} color="#10b981" /></span>
               </div>
-            </div>
-          )}
+          </div>
         </div>
 
-        {hudExpanded && (
-          <div className="command-hud-filter-row">
+        <div className="command-hud-filter-row">
             <span className="command-hud-filter-heading">Showing:</span>
             <label className="hud-checkbox-label" style={{ color: filters.incidents ? '#f97316' : '#64748b' }}>
               <input
@@ -806,8 +778,7 @@ export default function CommandCenter() {
               />
               Resolved
             </label>
-          </div>
-        )}
+        </div>
       </div>
 
       {/* Full-height operational map */}
@@ -977,9 +948,12 @@ export default function CommandCenter() {
               {/* Left Card: Resident Details & Visual Proofs */}
               <div className="panel-resident">
                 <div className="selection-panel-heading">
-                  <div><span>Emergency Incident</span><strong>Resident Report</strong></div>
+                  <span>Emergency Incident</span>
+                  <strong>Resident Report</strong>
                   <button className="selection-close-btn" onClick={closeModal} aria-label="Close report"><X size={20} /></button>
                 </div>
+                <section className="reporter-detail-card">
+                  <h2>Reporter Detail</h2>
                 {/* Resident Header */}
                 <div className="panel-header-user">
                   <div className="user-identity">
@@ -994,6 +968,10 @@ export default function CommandCenter() {
                       <span className="user-phone">{selectedIncident.reporter_phone || '09510173028'}</span>
                     </div>
                   </div>
+                  <div className="reporter-phone-row">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2A19.8 19.8 0 0 1 11.19 18a19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.09 3.18 2 2 0 0 1 4.08 1h3a2 2 0 0 1 2 1.72c.12.9.34 1.78.65 2.62a2 2 0 0 1-.45 2.11L8 8.73a16 16 0 0 0 6 6l1.28-1.28a2 2 0 0 1 2.11-.45c.84.31 1.72.53 2.62.65A2 2 0 0 1 22 16.92z" /></svg>
+                    <span>{selectedIncident.reporter_phone || 'Phone number unavailable'}</span>
+                  </div>
                   <button
                     className="copy-btn"
                     title="Copy phone number"
@@ -1005,14 +983,16 @@ export default function CommandCenter() {
                     </svg>
                   </button>
                 </div>
+                </section>
 
                 {/* Section Title */}
-                <div className="section-label-row">
+                <div className="section-label-row resident-proof-heading">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" strokeWidth="2.5">
                     <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
                     <circle cx="12" cy="13" r="4"></circle>
                   </svg>
-                  <span>From the reporter</span>
+                  <span>Proof</span>
+                  <strong>{(selectedIncident.proof_urls?.length || (selectedIncident.proof_url ? 1 : 0))} Attachment{(selectedIncident.proof_urls?.length || (selectedIncident.proof_url ? 1 : 0)) === 1 ? '' : 's'}</strong>
                 </div>
 
                 {/* Proof thumbnail grid */}
@@ -1023,14 +1003,14 @@ export default function CommandCenter() {
 
                   if (proofs.length === 0) {
                     return (
-                      <div style={{ padding: '12px 0', color: '#64748b', fontSize: '12px', textAlign: 'center' }}>
+                      <div className="resident-proof-grid resident-proof-empty">
                         No visual proof submitted
                       </div>
                     );
                   }
 
                   return (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '8px' }}>
+                    <div className="resident-proof-grid">
                       {proofs.map((url, idx) => {
                         const isVid = isVideoProof(url, selectedIncident.proof_types?.[idx] || selectedIncident.proof_type);
                         const isActive = selectedVisualUrl === url;
@@ -1129,16 +1109,13 @@ export default function CommandCenter() {
                     <line x1="16" y1="17" x2="8" y2="17"></line>
                     <polyline points="10 9 9 9 8 9"></polyline>
                   </svg>
-                  <div>
-                    {selectedIncident.description || 'No description provided.'}
+                  <div className="reporter-note-content">
+                    <strong>Details about the report..</strong>
+                    {selectedIncident.description?.trim()
+                      ? <p>{selectedIncident.description}</p>
+                      : <div className="reporter-note-empty"><strong>No Details Provided</strong><span>Review the attached media</span></div>}
                   </div>
                 </div>
-                {selectedIncident.reporter_id && (
-                  <div className="false-report-count">
-                    False Reporter marks: <strong>{selectedIncident.reporter_false_report_count || 0} / 3</strong>
-                    {selectedIncident.reporter_account_status === 'inactive' && <span>Account deactivated</span>}
-                  </div>
-                )}
                 <div className="selection-actions">
                   <button className="selection-invalid-btn" onClick={() => setInvalidReviewStep('choice')}>Invalid Report</button>
                   <button className="selection-dispatch-btn" onClick={() => handleDispatch()} disabled={dispatching}>
