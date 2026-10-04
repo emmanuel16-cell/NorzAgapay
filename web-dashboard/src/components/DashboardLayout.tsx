@@ -28,6 +28,7 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
+  { label: 'Monitoring', section: true },
   { path: '/weather-monitoring', icon: <CloudSun size={19} strokeWidth={1.8} />, label: 'Weather Monitoring' },
   { label: 'Operations', section: true },
   { path: '/', icon: <MapPin size={19} strokeWidth={1.8} />, label: 'Command Center' },
