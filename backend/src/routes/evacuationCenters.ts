@@ -21,6 +21,38 @@ const haversineDistance = (lat1: number, lon1: number, lat2: number, lon2: numbe
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 };
 
+const canManageCenters = (role: string | undefined) =>
+  ['admin', 'staff'].includes(role || '');
+
+// Barangay mobile directory: scope is taken from the verified session, never
+// from a caller-supplied barangay_id query parameter.
+router.get('/barangay', authenticateBarangay, async (req: any, res: Response) => {
+  try {
+    const { data: centers, error } = await supabaseAdmin
+      .from('evacuation_centers')
+      .select(`
+        id,
+        name,
+        address,
+        latitude,
+        longitude,
+        is_active,
+        created_at,
+        barangay_id,
+        barangays ( id, name, municipality )
+      `)
+      .eq('barangay_id', req.barangayUser.barangayId)
+      .eq('is_active', true)
+      .order('name', { ascending: true });
+
+    if (error) throw error;
+    res.json(centers || []);
+  } catch (err) {
+    console.error('Fetch barangay evacuation centers error:', err);
+    res.status(500).json({ error: 'Failed to fetch barangay evacuation centers' });
+  }
+});
+
 // ─── GET /api/evacuation-centers ─────────────────────────────────────────────
 // Public operations list; the resident-facing directory uses /nearest.
 
@@ -113,7 +145,7 @@ router.get('/nearest', async (req: Request, res: Response) => {
 });
 
 // ─── POST /api/evacuation-centers ─────────────────────────────────────────────
-// Administrator, responder, or staff: create new evac center
+// Barangay admin or staff: create a station in their own barangay.
 
 const createCenterSchema = z.object({
   name: z.string().min(2),
@@ -124,8 +156,8 @@ const createCenterSchema = z.object({
 
 router.post('/', authenticateBarangay, async (req: any, res: Response): Promise<void> => {
   try {
-    if (!['admin', 'responder', 'staff'].includes(req.barangayUser?.role)) {
-      res.status(403).json({ error: 'Your account cannot add evacuation centers.' });
+    if (!canManageCenters(req.barangayUser?.role)) {
+      res.status(403).json({ error: 'Only barangay admins and staff can add evacuation centers.' });
       return;
     }
 
@@ -168,14 +200,11 @@ const updateCenterSchema = z.object({
   longitude: z.number().min(-180).max(180),
 });
 
-const canManageCenters = (role: string | undefined) =>
-  ['admin', 'responder', 'staff'].includes(role || '');
-
-// Barangay users who can add stations may edit stations in their own barangay.
+// Barangay admins and staff may edit stations in their own barangay.
 router.patch('/:id', authenticateBarangay, async (req: any, res: Response): Promise<void> => {
   try {
     if (!canManageCenters(req.barangayUser?.role)) {
-      res.status(403).json({ error: 'Your account cannot edit evacuation centers.' });
+      res.status(403).json({ error: 'Only barangay admins and staff can edit evacuation centers.' });
       return;
     }
 
@@ -216,7 +245,7 @@ router.patch('/:id', authenticateBarangay, async (req: any, res: Response): Prom
 router.delete('/:id', authenticateBarangay, async (req: any, res: Response): Promise<void> => {
   try {
     if (!canManageCenters(req.barangayUser?.role)) {
-      res.status(403).json({ error: 'Your account cannot remove evacuation centers.' });
+      res.status(403).json({ error: 'Only barangay admins and staff can remove evacuation centers.' });
       return;
     }
 

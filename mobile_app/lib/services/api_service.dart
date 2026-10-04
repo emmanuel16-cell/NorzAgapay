@@ -378,6 +378,29 @@ class ApiService {
   }
 
   // ── Evacuation Centers ─────────────────────────────────────────────────────
+  static Future<List<EvacuationCenter>> getMyBarangayEvacuationCenters(
+    String token,
+  ) async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/evacuation-centers/barangay'),
+      headers: _headers(token),
+    );
+    if (res.statusCode == 200) {
+      final List<dynamic> data = jsonDecode(res.body);
+      return data
+          .map(
+            (entry) => EvacuationCenter.fromJson(
+              Map<String, dynamic>.from(entry as Map),
+            ),
+          )
+          .toList();
+    }
+    final data = jsonDecode(res.body);
+    throw Exception(
+      data['error'] ?? 'Failed to fetch barangay evacuation stations',
+    );
+  }
+
   static Future<List<EvacuationCenter>> getEvacuationCenters(String token, {String? barangayId}) async {
     String url = '$baseUrl/evacuation-centers';
     if (barangayId != null) {

@@ -52,7 +52,7 @@ class BarangayUser {
   bool get isResponder => role == 'responder';
   bool get isStaff => role == 'staff';
   bool get canManageTeam => isBarangayAdmin || isResponder;
-  bool get canAddEvacuationCenter => isBarangayAdmin || isResponder || isStaff;
+  bool get canManageEvacuationCenters => isBarangayAdmin || isStaff;
   bool get canManageContent => isBarangayAdmin || isStaff;
   bool get canViewReports => (isDispatcher && isActive && coordinationVerified) || isResponder;
   bool get canRespondToEmergency => canViewReports;

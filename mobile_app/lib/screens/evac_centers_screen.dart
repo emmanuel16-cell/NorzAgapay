@@ -22,9 +22,11 @@ class EvacCentersScreen extends StatefulWidget {
 class _EvacCentersScreenState extends State<EvacCentersScreen> {
   final _location = Location();
   final _mapController = MapController();
+  final _stationListController = ScrollController();
   List<EvacuationCenter> _centers = [];
   LatLng? _userLocation;
   String? _selectedCenterId;
+  bool _stationListExpanded = false;
   bool _loading = true;
   String? _error;
 
@@ -32,6 +34,12 @@ class _EvacCentersScreenState extends State<EvacCentersScreen> {
   void initState() {
     super.initState();
     _loadStations();
+  }
+
+  @override
+  void dispose() {
+    _stationListController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadStations() async {
@@ -47,18 +55,21 @@ class _EvacCentersScreenState extends State<EvacCentersScreen> {
       if (auth.token == null || user == null) {
         throw Exception('Please sign in again.');
       }
-      final centers = await ApiService.getEvacuationCenters(auth.token!);
-      final location = await _getCurrentLocation();
+      final centers = await ApiService.getMyBarangayEvacuationCenters(
+        auth.token!,
+      );
       if (!mounted) return;
       setState(() {
-        _centers = centers.where(_hasCoordinates).toList();
+        _centers = centers;
         if (_selectedCenterId != null &&
             !_centers.any((center) => center.id == _selectedCenterId)) {
           _selectedCenterId = null;
         }
-        _userLocation = location;
         _loading = false;
       });
+      final location = await _getCurrentLocation();
+      if (!mounted) return;
+      setState(() => _userLocation = location);
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -95,7 +106,7 @@ class _EvacCentersScreenState extends State<EvacCentersScreen> {
 
   double? _distanceKm(EvacuationCenter center) {
     final origin = _userLocation;
-    if (origin == null) return null;
+    if (origin == null || !_hasCoordinates(center)) return null;
     const radius = 6371.0;
     final dLat = (center.latitude - origin.latitude) * math.pi / 180;
     final dLon = (center.longitude - origin.longitude) * math.pi / 180;
@@ -182,16 +193,22 @@ class _EvacCentersScreenState extends State<EvacCentersScreen> {
     }
   }
 
-  void _showDetails(EvacuationCenter center) {
-    setState(() => _selectedCenterId = center.id);
-    _mapController.move(LatLng(center.latitude, center.longitude), 15.5);
+  void _showDetails(EvacuationCenter center, {bool revealInList = false}) {
+    setState(() {
+      _selectedCenterId = center.id;
+      if (revealInList) _stationListExpanded = true;
+    });
+    if (_hasCoordinates(center)) {
+      _mapController.move(LatLng(center.latitude, center.longitude), 15.5);
+    }
+    if (revealInList) _scrollToStation(center.id);
     final distance = _distanceKm(center);
     final minutes = distance == null
         ? null
         : (distance * 1.3 / 25 * 60).round().clamp(1, 9999).toInt();
     final user = context.read<AuthService>().currentUser;
     final canManage =
-        user?.canAddEvacuationCenter == true &&
+        user?.canManageEvacuationCenters == true &&
         user?.barangayId == center.barangayId;
     showModalBottomSheet<void>(
       context: context,
@@ -214,10 +231,26 @@ class _EvacCentersScreenState extends State<EvacCentersScreen> {
     );
   }
 
+  void _scrollToStation(String stationId) {
+    final index = _centers.indexWhere((center) => center.id == stationId);
+    if (index < 0) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_stationListController.hasClients) return;
+      final targetOffset = (index * 76.0)
+          .clamp(0.0, _stationListController.position.maxScrollExtent)
+          .toDouble();
+      _stationListController.animateTo(
+        targetOffset,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    final canAdd = context.select<AuthService, bool>(
-      (auth) => auth.currentUser?.canAddEvacuationCenter ?? false,
+    final canManage = context.select<AuthService, bool>(
+      (auth) => auth.currentUser?.canManageEvacuationCenters ?? false,
     );
     final hasStations = _centers.isNotEmpty;
     return Scaffold(
@@ -225,11 +258,9 @@ class _EvacCentersScreenState extends State<EvacCentersScreen> {
       appBar: AppBar(
         backgroundColor: const Color(0xFF0C243B),
         foregroundColor: Colors.white,
-        title: Text(
-          !hasStations && canAdd
-              ? 'Add Evacuation Station'
-              : 'Evacuation Stations',
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+        title: const Text(
+          'Evacuation Stations',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
         ),
         actions: [
           IconButton(
@@ -243,119 +274,135 @@ class _EvacCentersScreenState extends State<EvacCentersScreen> {
           : _error != null && !hasStations
           ? _ErrorState(message: _error!, onRetry: _loadStations)
           : !hasStations
-          ? _EmptyState(canAdd: canAdd, onAdd: _openAddScreen)
-          : _stationMap(canAdd),
+          ? _EmptyState(canAdd: canManage, onAdd: _openAddScreen)
+          : _stationMap(canManage),
     );
   }
 
-  Widget _stationMap(bool canAdd) {
+  Widget _stationMap(bool canManage) {
+    final mappableCenters = _centers.where(_hasCoordinates).toList();
+    final firstMappedCenter =
+        mappableCenters.isEmpty ? null : mappableCenters.first;
     final initialCenter =
         _userLocation ??
-        LatLng(_centers.first.latitude, _centers.first.longitude);
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        FlutterMap(
-          mapController: _mapController,
-          options: MapOptions(initialCenter: initialCenter, initialZoom: 12.5),
+        (firstMappedCenter == null
+            ? LatLng(14.9133, 121.0436)
+            : LatLng(firstMappedCenter.latitude, firstMappedCenter.longitude));
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final collapsedPanelHeight = math
+            .min(250.0, constraints.maxHeight * 0.42)
+            .toDouble();
+        final expandedPanelHeight = math
+            .min(460.0, constraints.maxHeight * 0.7)
+            .toDouble();
+        final panelHeight = _stationListExpanded
+            ? expandedPanelHeight
+            : collapsedPanelHeight;
+
+        return Stack(
+          fit: StackFit.expand,
           children: [
-            TileLayer(
-              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-              userAgentPackageName: 'ph.gov.mdrrmo.norzagapay_mobile',
-            ),
-            MunicipalityBoundaryMarkerLayer(
-              markers: [
-                ..._centers.map(
-                  (center) => Marker(
-                    point: LatLng(center.latitude, center.longitude),
-                    width: 54,
-                    height: 58,
-                    alignment: Alignment.bottomCenter,
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () => _showDetails(center),
-                      child: Transform.scale(
-                        scale: center.id == _selectedCenterId ? 1.12 : 1,
-                        child: Icon(
-                          Icons.location_pin,
-                          size: 48,
-                          color: center.id == _selectedCenterId
-                              ? const Color(0xFFF97316)
-                              : center.isActive
-                              ? const Color(0xFF0D9488)
-                              : const Color(0xFF64748B),
+            FlutterMap(
+              mapController: _mapController,
+              options: MapOptions(
+                initialCenter: initialCenter,
+                initialZoom: 12.5,
+              ),
+              children: [
+                TileLayer(
+                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  userAgentPackageName: 'ph.gov.mdrrmo.norzagapay_mobile',
+                ),
+                MunicipalityBoundaryMarkerLayer(
+                  markers: [
+                    ...mappableCenters.map(
+                      (center) => Marker(
+                        point: LatLng(center.latitude, center.longitude),
+                        width: 54,
+                        height: 58,
+                        alignment: Alignment.bottomCenter,
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () => _showDetails(center, revealInList: true),
+                          child: Transform.scale(
+                            scale: center.id == _selectedCenterId ? 1.12 : 1,
+                            child: Icon(
+                              Icons.location_pin,
+                              size: 48,
+                              color: center.id == _selectedCenterId
+                                  ? const Color(0xFFF97316)
+                                  : const Color(0xFF0D9488),
+                            ),
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ),
-                if (_userLocation != null)
-                  Marker(
-                    point: _userLocation!,
-                    width: 28,
-                    height: 28,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF2563EB),
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 4),
-                        boxShadow: const [
-                          BoxShadow(color: Color(0x40000000), blurRadius: 6),
-                        ],
+                    if (_userLocation != null)
+                      Marker(
+                        point: _userLocation!,
+                        width: 28,
+                        height: 28,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF2563EB),
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 4),
+                            boxShadow: const [
+                              BoxShadow(color: Color(0x40000000), blurRadius: 6),
+                            ],
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
+                  ],
+                ),
+                const MunicipalityBoundaryMapLayer(
+                  outsideColor: Color(0xFFF5F6FA),
+                ),
               ],
             ),
-            const MunicipalityBoundaryMapLayer(outsideColor: Color(0xFFF5F6FA)),
+            if (_userLocation == null)
+              const Positioned(
+                top: 14,
+                left: 16,
+                child: _MapBadge(
+                  icon: Icons.my_location_rounded,
+                  text: 'Location unavailable',
+                ),
+              ),
+            if (canManage)
+              Positioned(
+                right: 16,
+                bottom: panelHeight + 12,
+                child: FloatingActionButton.extended(
+                  heroTag: 'add-evacuation-station',
+                  onPressed: _openAddScreen,
+                  backgroundColor: const Color(0xFF0D9488),
+                  foregroundColor: Colors.white,
+                  icon: const Icon(Icons.add_location_alt_rounded),
+                  label: const Text('Add Station'),
+                ),
+              ),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              height: panelHeight,
+              child: _StationListPanel(
+                centers: _centers,
+                selectedId: _selectedCenterId,
+                expanded: _stationListExpanded,
+                scrollController: _stationListController,
+                onToggleExpanded: () => setState(
+                  () => _stationListExpanded = !_stationListExpanded,
+                ),
+                onSelect: _showDetails,
+              ),
+            ),
           ],
-        ),
-        Positioned(
-          top: 12,
-          left: 16,
-          right: 16,
-          child: _StationSelector(
-            centers: _centers,
-            selectedId: _selectedCenterId,
-            onChanged: (id) {
-              if (id == null) return;
-              final center = _centers.firstWhere((item) => item.id == id);
-              _showDetails(center);
-            },
-          ),
-        ),
-        Positioned(
-          top: 82,
-          left: 16,
-          child: _MapBadge(
-            icon: Icons.location_on_rounded,
-            text:
-                '${_centers.length} station${_centers.length == 1 ? '' : 's'}',
-          ),
-        ),
-        if (_userLocation == null)
-          const Positioned(
-            top: 128,
-            left: 16,
-            child: _MapBadge(
-              icon: Icons.my_location_rounded,
-              text: 'Location unavailable',
-            ),
-          ),
-        if (canAdd)
-          Positioned(
-            right: 16,
-            bottom: 20,
-            child: FloatingActionButton.extended(
-              heroTag: 'add-evacuation-station',
-              onPressed: _openAddScreen,
-              backgroundColor: const Color(0xFF0D9488),
-              foregroundColor: Colors.white,
-              icon: const Icon(Icons.add_location_alt_rounded),
-              label: const Text('Add Station'),
-            ),
-          ),
-      ],
+        );
+      },
     );
   }
 }
@@ -503,45 +550,119 @@ class _MapBadge extends StatelessWidget {
   );
 }
 
-class _StationSelector extends StatelessWidget {
+class _StationListPanel extends StatelessWidget {
   final List<EvacuationCenter> centers;
   final String? selectedId;
-  final ValueChanged<String?> onChanged;
+  final bool expanded;
+  final ScrollController scrollController;
+  final VoidCallback onToggleExpanded;
+  final ValueChanged<EvacuationCenter> onSelect;
 
-  const _StationSelector({
+  const _StationListPanel({
     required this.centers,
     required this.selectedId,
-    required this.onChanged,
+    required this.expanded,
+    required this.scrollController,
+    required this.onToggleExpanded,
+    required this.onSelect,
   });
 
   @override
   Widget build(BuildContext context) => Material(
     color: Colors.white,
-    elevation: 5,
-    borderRadius: BorderRadius.circular(14),
-    child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: selectedId,
-          isExpanded: true,
-          hint: const Text('Select an evacuation station'),
-          icon: const Icon(Icons.expand_more_rounded),
-          items: centers
-              .map(
-                (center) => DropdownMenuItem<String>(
-                  value: center.id,
-                  child: Text(
-                    center.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+    elevation: 12,
+    borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+    clipBehavior: Clip.antiAlias,
+    child: Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 8, 6),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Evacuation stations',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF0F172A),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${centers.length} station${centers.length == 1 ? '' : 's'} in your barangay',
+                      style: const TextStyle(
+                        color: Color(0xFF64748B),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: expanded
+                    ? 'Collapse station list'
+                    : 'Expand station list',
+                onPressed: onToggleExpanded,
+                icon: Icon(
+                  expanded
+                      ? Icons.keyboard_arrow_down_rounded
+                      : Icons.keyboard_arrow_up_rounded,
+                  color: const Color(0xFF475569),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const Divider(height: 1, color: Color(0xFFE2E8F0)),
+        Expanded(
+          child: ListView.builder(
+            controller: scrollController,
+            itemExtent: 76,
+            itemCount: centers.length,
+            itemBuilder: (context, index) {
+              final center = centers[index];
+              final selected = center.id == selectedId;
+              return ListTile(
+                selected: selected,
+                selectedTileColor: const Color(0xFFE6F7F5),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                leading: Icon(
+                  Icons.location_on_rounded,
+                  color: selected
+                      ? const Color(0xFF0D9488)
+                      : const Color(0xFF64748B),
+                ),
+                title: Text(
+                  center.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF0F172A),
                   ),
                 ),
-              )
-              .toList(),
-          onChanged: onChanged,
+                subtitle: Text(
+                  center.address?.isNotEmpty == true
+                      ? center.address!
+                      : 'View station details',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Color(0xFF64748B)),
+                ),
+                trailing: const Icon(
+                  Icons.chevron_right_rounded,
+                  color: Color(0xFF94A3B8),
+                ),
+                onTap: () => onSelect(center),
+              );
+            },
+          ),
         ),
-      ),
+      ],
     ),
   );
 }
