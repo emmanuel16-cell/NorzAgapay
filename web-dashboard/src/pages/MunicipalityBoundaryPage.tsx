@@ -159,7 +159,7 @@ export default function MunicipalityBoundaryPage() {
       boundary.geometry,
       enabled,
       enabled
-        ? 'Use this boundary across the web dashboard, mobile app, and resident app? Web dashboard maps will blur areas outside it, and location/report checks will use it.'
+        ? 'Use this boundary across the web dashboard, mobile app, and resident app? Web dashboard maps will show white outside it, and location/report checks will use it.'
         : 'Disable the municipality boundary across all apps? Full maps will be visible and boundary-based restrictions will stop.',
     );
   };
@@ -235,7 +235,7 @@ export default function MunicipalityBoundaryPage() {
             {boundary.enabled ? 'Boundary in use' : 'Full map in use'}
           </div>
           <p>{boundary.enabled
-            ? 'Web dashboard maps blur areas outside this boundary. Location and resident report checks use this shape across apps.'
+            ? 'Web dashboard maps show white outside this boundary. Location and resident report checks use this shape across apps.'
             : 'No boundary restriction is active. All app maps show the full map.'}</p>
           {boundary.updated_at && <small>Last saved {new Date(boundary.updated_at).toLocaleString()}</small>}
         </div>
@@ -275,7 +275,7 @@ export default function MunicipalityBoundaryPage() {
       <section className="card municipality-boundary-map-card">
         {loading && <div className="boundary-loading"><LoaderCircle className="boundary-spinner" size={22} /> Loading saved boundary…</div>}
         <div className="municipality-boundary-map">
-          <MapContainer center={DEFAULT_CENTER as LatLngExpression} zoom={10} scrollWheelZoom style={{ width: '100%', height: '100%', background: '#0b1120' }}>
+          <MapContainer center={DEFAULT_CENTER as LatLngExpression} zoom={10} scrollWheelZoom style={{ width: '100%', height: '100%', background: '#ffffff' }}>
             <TileLayer attribution={CARTO_ATTRIBUTION} url={CARTO_DARK_MAP_URL} />
             <FitDraft parts={parts} fitKey={fitKey} />
             {editing && <DraftMapEvents editing={editing} onAdd={addPoint} />}

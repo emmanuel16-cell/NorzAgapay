@@ -817,7 +817,7 @@ export default function CommandCenter() {
           center={[14.9055, 121.0450]}
           zoom={13}
           zoomControl={false}
-          style={{ width: '100%', height: '100%', background: '#0b1120' }}
+          style={{ width: '100%', height: '100%', background: '#ffffff' }}
         >
           <TileLayer url={CARTO_DARK_MAP_URL} attribution={CARTO_ATTRIBUTION} />
           <MunicipalityBoundaryViewport boundary={boundary} />
