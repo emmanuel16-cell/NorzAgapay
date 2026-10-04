@@ -87,10 +87,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
   Widget _overviewMetricCards() => LayoutBuilder(
     builder: (context, constraints) {
-      final fitsThreeCards = constraints.maxWidth >= 700;
-      final cardWidth = fitsThreeCards
-          ? (constraints.maxWidth - 24) / 3
-          : 220.0;
       final cards = [
         _overviewMetricCard(
           title: 'Published posts',
@@ -128,17 +124,15 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       ];
 
       return SizedBox(
-        height: 116,
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
-              for (var index = 0; index < cards.length; index++) ...[
-                SizedBox(width: cardWidth, child: cards[index]),
-                if (index < cards.length - 1) const SizedBox(width: 12),
-              ],
+        height: constraints.maxWidth < 420 ? 108 : 116,
+        child: Row(
+          children: [
+            for (var index = 0; index < cards.length; index++) ...[
+              Expanded(child: cards[index]),
+              if (index < cards.length - 1)
+                SizedBox(width: constraints.maxWidth < 420 ? 6 : 12),
             ],
-          ),
+          ],
         ),
       );
     },
@@ -159,74 +153,79 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     clipBehavior: Clip.antiAlias,
     child: InkWell(
       onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 160;
+          return Padding(
+            padding: EdgeInsets.all(compact ? 8 : 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                CircleAvatar(
-                  radius: 21,
-                  backgroundColor: color.withValues(alpha: 0.14),
-                  child: Icon(icon, color: color, size: 23),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    '$value',
-                    style: const TextStyle(
-                      fontSize: 26,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF102A56),
+                Row(
+                  children: [
+                    CircleAvatar(
+                      radius: compact ? 17 : 21,
+                      backgroundColor: color.withValues(alpha: 0.14),
+                      child: Icon(icon, color: color, size: compact ? 18 : 23),
                     ),
+                    SizedBox(width: compact ? 5 : 10),
+                    Expanded(
+                      child: Text(
+                        '$value',
+                        style: TextStyle(
+                          fontSize: compact ? 22 : 26,
+                          fontWeight: FontWeight.bold,
+                          color: const Color(0xFF102A56),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                SizedBox(height: compact ? 3 : 5),
+                Text(
+                  title,
+                  maxLines: compact ? 2 : 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: compact ? 12 : 15,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF0F172A),
                   ),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Container(
+                      width: 7,
+                      height: 7,
+                      decoration: BoxDecoration(
+                        color: color,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 5),
+                    Expanded(
+                      child: Text(
+                        compact ? 'View' : viewLabel,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: compact ? 10 : 12,
+                          color: const Color(0xFF1E293B),
+                        ),
+                      ),
+                    ),
+                    Icon(
+                      Icons.chevron_right_rounded,
+                      size: compact ? 16 : 21,
+                      color: const Color(0xFF94A3B8),
+                    ),
+                  ],
                 ),
               ],
             ),
-            const SizedBox(height: 5),
-            Text(
-              title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF0F172A),
-              ),
-            ),
-            const Spacer(),
-            Row(
-              children: [
-                Container(
-                  width: 7,
-                  height: 7,
-                  decoration: BoxDecoration(
-                    color: color,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    viewLabel,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Color(0xFF1E293B),
-                    ),
-                  ),
-                ),
-                const Icon(
-                  Icons.chevron_right_rounded,
-                  size: 21,
-                  color: Color(0xFF94A3B8),
-                ),
-              ],
-            ),
-          ],
-        ),
+          );
+        },
       ),
     ),
   );
