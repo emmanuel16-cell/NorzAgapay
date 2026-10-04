@@ -1313,7 +1313,7 @@ router.get('/reports/statistics', authenticateBarangay, requireRole(['admin']), 
       return report.send_to === 'mdrrmo' ||
         /\[SEND_TO:mdrrmo\]/i.test(routeText) ||
         String(report.status || '').toLowerCase() === 'escalated' ||
-        ['pending', 'responding', 'resolved'].includes(mdrrmoStatus) ||
+        ['responding', 'resolved'].includes(mdrrmoStatus) ||
         String(report.barangay_response_notes || '').toLowerCase().includes('escalated');
     };
     const resolvedReports = (data || []).filter(
