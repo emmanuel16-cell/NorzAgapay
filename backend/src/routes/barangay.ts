@@ -1316,12 +1316,47 @@ router.get('/reports/statistics', authenticateBarangay, requireRole(['admin']), 
         ['responding', 'resolved'].includes(mdrrmoStatus) ||
         String(report.barangay_response_notes || '').toLowerCase().includes('escalated');
     };
-    const resolvedReports = (data || []).filter(
-      (report: any) => isReportResolved(report) && !mdrrmoHandled(report),
+    const barangayHandledReports = (data || []).filter(
+      (report: any) => !mdrrmoHandled(report),
     );
+    const resolvedReports = barangayHandledReports.filter(isReportResolved);
     const selectedReports = requestedType
       ? resolvedReports.filter((report: any) => report.type === requestedType)
       : resolvedReports;
+    const timingByType = {
+      community: summarizeReportTimings(
+        resolvedReports.filter((report: any) => report.type === 'community'),
+      ),
+      emergency: summarizeReportTimings(
+        resolvedReports.filter((report: any) => report.type === 'emergency'),
+      ),
+    };
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const now = new Date();
+    const monthlyVolume = Array.from({ length: 6 }, (_, index) => {
+      const month = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 5 + index, 1));
+      const year = month.getUTCFullYear();
+      const monthNumber = month.getUTCMonth() + 1;
+      return {
+        period: `${year}-${String(monthNumber).padStart(2, '0')}`,
+        label: monthNames[month.getUTCMonth()],
+        community: 0,
+        emergency: 0,
+      };
+    });
+    const monthIndexes = new Map<string, number>(
+      monthlyVolume.map((month, index) => [month.period, index] as const),
+    );
+    for (const report of barangayHandledReports as any[]) {
+      if (report.type !== 'community' && report.type !== 'emergency') continue;
+      const createdAt = new Date(report.created_at);
+      if (!Number.isFinite(createdAt.getTime())) continue;
+      const period = `${createdAt.getUTCFullYear()}-${String(createdAt.getUTCMonth() + 1).padStart(2, '0')}`;
+      const monthIndex = monthIndexes.get(period);
+      if (monthIndex === undefined) continue;
+      if (report.type === 'community') monthlyVolume[monthIndex].community += 1;
+      else monthlyVolume[monthIndex].emergency += 1;
+    }
     const reports = selectedReports.map((report: any) => ({
       ...formatIncidentReport(report),
       timing_durations: reportStageDurations(report),
@@ -1332,6 +1367,8 @@ router.get('/reports/statistics', authenticateBarangay, requireRole(['admin']), 
       type: requestedType || 'all',
       report_count: reports.length,
       averages: summarizeReportTimings(selectedReports),
+      timing_by_type: timingByType,
+      report_volume_by_month: monthlyVolume,
       reports,
     });
   } catch (err) {
