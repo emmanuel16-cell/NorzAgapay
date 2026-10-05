@@ -1,1009 +1,314 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { format, formatDistanceToNowStrict } from 'date-fns';
+import { AlertTriangle, CheckCircle2, Image as ImageIcon, MapPin, Paperclip, Phone, Send, UserRound, X } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { reportAPI, socket } from '../lib/api';
 import { INCIDENT_SEVERITY_OPTIONS, INCIDENT_TYPE_OPTIONS } from '../lib/incidentClassification';
-import { format } from 'date-fns';
-import toast from 'react-hot-toast';
+
+type ReportGroup = 'resident' | 'escalated';
+type ReportStage = 'pending' | 'responding' | 'resolved';
+type Assignment = { responder_id: string; status: string; assigned_at?: string; accepted_at?: string; arrived_at?: string; resolved_at?: string; responder?: { full_name?: string; phone?: string } | null };
+type FieldAssessment = { situation: string; people: string; actions: string; risks: string };
 
 interface IncidentReport {
-  id: string;
-  type: string;
-  title: string;
-  specifics?: string;
-  description: string;
-  status: string;
-  send_to?: string;
-  mdrrmo_response_status?: string;
-  severity?: string;
-  incident_type?: string;
-  latitude: number;
-  longitude: number;
-  proof_url?: string;
-  proof_type?: 'image' | 'video';
-  proof_urls?: string[];
-  proof_types?: ('image' | 'video' | string)[];
-  responder_media?: Array<{
-    url: string;
-    type?: 'image' | 'video' | string;
-    uploader_name?: string;
-    role?: string;
-    uploader_role?: string;
-    created_at?: string;
-  }>;
-  reporter_type?: string;
-  reporter_name?: string;
-  reporter_phone?: string;
-  reporter_photo_url?: string;
-  barangay_responder_name?: string;
-  barangay_response_notes?: string;
-  mdrrmo_coordination_notes?: string;
-  created_at: string;
-  dispatcher_reviewed_at?: string;
-  dispatched_at?: string;
-  mdrrmo_dispatch_notes?: string;
-  mdrrmo_assignments?: Array<{ responder_id: string; status: string; responder?: { full_name?: string } | null }>;
-  accepted_at?: string;
-  travel_distance_m?: number;
-  travel_distance_accuracy_m?: number;
-  travel_distance_fix_at?: string;
-  arrived_at?: string;
-  arrival_recorded_at?: string;
-  arrival_method?: string;
-  arrival_distance_m?: number;
-  resolved_at?: string;
-  reporter?: {
-    id: string;
-    full_name: string;
-    role: string;
-  };
+  id: string; type: string; title?: string; specifics?: string; description?: string; status: string;
+  send_to?: string; is_escalated?: boolean; beyond_barangay_capability?: boolean; mdrrmo_response_status?: string;
+  severity?: string; incident_type?: string; latitude?: number | string | null; longitude?: number | string | null;
+  address?: string | null; location_name?: string | null; barangay_name?: string | null;
+  proof_url?: string | null; proof_type?: string | null; proof_urls?: string[]; proof_types?: string[];
+  responder_media?: Array<{ url: string; type?: string; uploader_name?: string; role?: string; uploader_role?: string; created_at?: string }>;
+  reporter_type?: string; reporter_name?: string | null; reporter_phone?: string | null;
+  barangay_responder_name?: string | null; barangay_response_notes?: string | null; mdrrmo_coordination_notes?: string | null;
+  mdrrmo_response_notes?: string | null; mdrrmo_dispatch_notes?: string | null; mdrrmo_responder_name?: string | null;
+  resolved_notes?: string | null; created_at: string; dispatcher_reviewed_at?: string | null;
+  dispatched_at?: string | null; accepted_at?: string | null; arrived_at?: string | null;
+  arrival_recorded_at?: string | null; resolved_at?: string | null; mdrrmo_assignments?: Assignment[];
+  reporter?: { id: string; full_name: string; role: string } | null;
 }
+type ResponderOption = { id: string; full_name: string; phone?: string | null; unit_type?: string | null };
 
-type TabType = 'incidents' | 'escalated' | 'responding' | 'resolved';
-
-// Helper to detect video from URL or proof_type
-const isVideoProof = (url?: string | null, proof_type?: string | null): boolean => {
-  if (proof_type === 'video') return true;
-  if (!url) return false;
-  const lower = url.toLowerCase().split('?')[0];
-  return (
-    lower.endsWith('.mp4') ||
-    lower.endsWith('.mov') ||
-    lower.endsWith('.webm') ||
-    lower.endsWith('.3gp') ||
-    lower.endsWith('.mkv') ||
-    lower.endsWith('.avi')
-  );
+const isVideo = (url?: string | null, type?: string | null) => type === 'video' || Boolean(url && /\.(mp4|mov|webm|3gp|mkv|avi)(\?.*)?$/i.test(url));
+const getStage = (report: IncidentReport): ReportStage => {
+  const status = String(report.status || '').toLowerCase();
+  const response = String(report.mdrrmo_response_status || '').toLowerCase();
+  if (['resolved', 'closed'].includes(status) || ['resolved', 'closed'].includes(response)) return 'resolved';
+  if (status === 'responding' || response === 'responding') return 'responding';
+  return 'pending';
+};
+const getGroup = (report: IncidentReport): ReportGroup => {
+  const barangayNotes = String(report.barangay_response_notes || '').toLowerCase();
+  return report.is_escalated || report.beyond_barangay_capability ||
+    String(report.status || '').toLowerCase() === 'escalated' ||
+    Boolean(report.mdrrmo_coordination_notes?.trim()) || barangayNotes.includes('escalated') ? 'escalated' : 'resident';
+};
+const getProofs = (report: IncidentReport) => report.proof_urls?.length ? report.proof_urls : report.proof_url ? [report.proof_url] : [];
+const timeAgo = (value?: string | null, fallback = 'Time unavailable') => {
+  if (!value) return fallback;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? fallback : formatDistanceToNowStrict(date, { addSuffix: true });
+};
+const dateTime = (value?: string | null) => {
+  if (!value) return 'Not recorded';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 'Not recorded' : format(date, 'MMM d, yyyy · h:mm a');
+};
+const hasPin = (report: IncidentReport) => report.latitude != null && report.longitude != null && Number.isFinite(Number(report.latitude)) && Number.isFinite(Number(report.longitude));
+const parseAssessment = (notes?: string | null): FieldAssessment => {
+  const text = String(notes || '').replace(/\[RESPONDER_MEDIA:[\s\S]*?\]/gi, '').trim();
+  const marker = text.match(/\[(?:MDRRMO )?FIELD ASSESSMENT\]/i);
+  const body = marker?.index !== undefined ? text.slice(marker.index + marker[0].length) : text;
+  const fields: Record<string, string> = {};
+  body.split(/\r?\n/).forEach((line) => { const i = line.indexOf(':'); if (i >= 0) fields[line.slice(0, i).trim().toLowerCase()] = line.slice(i + 1).trim(); });
+  return {
+    situation: fields.situation || '',
+    people: fields['people affected / urgency'] || fields['people affected'] || '',
+    actions: fields['actions taken'] || fields['action taken'] || '',
+    risks: fields['risks / resources'] || fields['risk / resource'] || '',
+  };
 };
 
 export default function ReportsPage() {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [currentTime, setCurrentTime] = useState(() => new Date());
   const [reports, setReports] = useState<IncidentReport[]>([]);
-  const [selectedReport, setSelectedReport] = useState<IncidentReport | null>(null);
-  const [selectedProofIdx, setSelectedProofIdx] = useState<number>(0);
-  const [activeTab, setActiveTab] = useState<TabType>('incidents');
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [group, setGroup] = useState<ReportGroup>('resident');
+  const [stage, setStage] = useState<ReportStage>('pending');
   const [loading, setLoading] = useState(true);
-  const [verifying, setVerifying] = useState(false);
-  const [classifyingReport, setClassifyingReport] = useState<IncidentReport | null>(null);
-  const [classificationType, setClassificationType] = useState('');
-  const [classificationSeverity, setClassificationSeverity] = useState('');
-  const [activeResponders, setActiveResponders] = useState<Array<{ id: string; full_name: string; phone?: string | null; unit_type?: string | null }>>([]);
-  const [selectedResponderIds, setSelectedResponderIds] = useState<string[]>([]);
+  const [dispatchReport, setDispatchReport] = useState<IncidentReport | null>(null);
+  const [incidentType, setIncidentType] = useState('');
+  const [severity, setSeverity] = useState('');
+  const [responders, setResponders] = useState<ResponderOption[]>([]);
+  const [responderIds, setResponderIds] = useState<string[]>([]);
   const [dispatchNotes, setDispatchNotes] = useState('');
   const [loadingResponders, setLoadingResponders] = useState(false);
-  const [responderLoadError, setResponderLoadError] = useState('');
-  const [previewMedia, setPreviewMedia] = useState<{ url: string; isVideo: boolean } | null>(null);
-
-  const formatTimestamp = (value?: string) => {
-    if (!value) return 'Not recorded';
-    const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? 'Not recorded' : format(date, 'MMM d, yyyy · h:mm a');
-  };
-  const formatElapsed = (start?: string, end?: string) => {
-    if (!start || !end) return '—';
-    const seconds = Math.floor((new Date(end).getTime() - new Date(start).getTime()) / 1000);
-    if (!Number.isFinite(seconds) || seconds < 0) return '—';
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const remainder = seconds % 60;
-    if (hours > 0) return `${hours}h ${minutes}m`;
-    if (minutes > 0) return `${minutes}m ${remainder}s`;
-    return `${remainder}s`;
-  };
-  const formatDistance = (distanceM?: number) => {
-    if (distanceM == null || !Number.isFinite(distanceM)) return null;
-    return distanceM >= 1000
-      ? `${Number((distanceM / 1000).toFixed(distanceM >= 10000 ? 1 : 2))} km`
-      : `${Math.round(distanceM)} m`;
-  };
-
-  useEffect(() => {
-    fetchReports();
-  }, []);
-
-  useEffect(() => {
-    const handleReportUpdate = (updated: IncidentReport) => {
-      if (!updated?.id) return;
-      setReports((current) => current.map((report) => report.id === updated.id ? { ...report, ...updated } : report));
-      setSelectedReport((current) => current?.id === updated.id ? { ...current, ...updated } : current);
-    };
-    socket.on('incident_report:updated', handleReportUpdate);
-    return () => {
-      socket.off('incident_report:updated', handleReportUpdate);
-    };
-  }, []);
-
-  useEffect(() => {
-    const reportId = searchParams.get('id');
-    if (reportId && reports.length > 0) {
-      const report = reports.find(r => r.id === reportId);
-      if (report) {
-        setSelectedReport(report);
-      }
-    }
-  }, [searchParams, reports]);
+  const [responderError, setResponderError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [preview, setPreview] = useState<{ url: string; video: boolean } | null>(null);
 
   const fetchReports = async () => {
     try {
       setLoading(true);
-      const res = await reportAPI.mdrrmoQueue();
-      let data: IncidentReport[] = [];
-      if (Array.isArray(res.data)) {
-        data = res.data;
-      }
-      setReports(data);
-    } catch (err) {
-      console.error('Failed to fetch reports', err);
+      const response = await reportAPI.mdrrmoQueue();
+      setReports(Array.isArray(response.data) ? response.data : []);
+    } catch (error) {
+      console.error('Failed to fetch reports', error);
       toast.error('Failed to load incident reports');
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
+  };
+  useEffect(() => { void fetchReports(); }, []);
+  useEffect(() => {
+    const timer = window.setInterval(() => setCurrentTime(new Date()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  useEffect(() => {
+    const handleUpdate = (updated: IncidentReport) => {
+      if (!updated?.id) return;
+      setReports((current) => current.some((item) => item.id === updated.id)
+        ? current.map((item) => item.id === updated.id ? { ...item, ...updated } : item)
+        : [...current, updated]);
+    };
+    socket.on('incident_report:updated', handleUpdate);
+    return () => { socket.off('incident_report:updated', handleUpdate); };
+  }, []);
+  useEffect(() => {
+    const id = searchParams.get('id');
+    if (!id || !reports.length) return;
+    const target = reports.find((item) => item.id === id);
+    if (target) { setSelectedId(target.id); setGroup(getGroup(target)); setStage(getStage(target)); }
+  }, [searchParams, reports]);
+
+  const inGroup = useMemo(() => reports.filter((item) => getGroup(item) === group), [reports, group]);
+  const counts = useMemo(() => ({
+    pending: inGroup.filter((item) => getStage(item) === 'pending').length,
+    responding: inGroup.filter((item) => getStage(item) === 'responding').length,
+    resolved: inGroup.filter((item) => getStage(item) === 'resolved').length,
+  }), [inGroup]);
+  const visible = useMemo(() => inGroup.filter((item) => getStage(item) === stage), [inGroup, stage]);
+  const selected = visible.find((item) => item.id === selectedId) || visible[0] || null;
+
+  const clearLink = () => {
+    if (!searchParams.has('id') && !searchParams.has('status')) return;
+    const next = new URLSearchParams(searchParams); next.delete('id'); next.delete('status');
+    setSearchParams(next, { replace: true });
+  };
+  const selectGroup = (value: ReportGroup) => { setGroup(value); setSelectedId(null); clearLink(); };
+  const selectStage = (value: ReportStage) => { setStage(value); setSelectedId(null); clearLink(); };
+  const selectReport = (report: IncidentReport) => {
+    setSelectedId(report.id);
+    setSearchParams({ id: report.id, status: getStage(report) }, { replace: true });
   };
 
-  const filteredReports = reports.filter(r => {
-    const status = (r.status || 'pending').toLowerCase();
-    const responseStatus = (r.mdrrmo_response_status || 'pending').toLowerCase();
-    const hasDispatch = Boolean(r.dispatched_at || r.mdrrmo_assignments?.length);
-    if (activeTab === 'incidents') {
-      return !hasDispatch && responseStatus !== 'responding' && status !== 'escalated' && status !== 'resolved' && status !== 'closed';
-    }
-    if (activeTab === 'escalated') {
-      return status === 'escalated' && !hasDispatch;
-    }
-    if (activeTab === 'responding') {
-      return responseStatus === 'responding' || hasDispatch && status !== 'resolved' && status !== 'closed';
-    }
-    if (activeTab === 'resolved') {
-      return status === 'resolved' || status === 'closed';
-    }
-    return true;
-  });
-
-  const openDispatchDialog = async (report: IncidentReport) => {
-    setClassificationType(report.incident_type || '');
-    setClassificationSeverity(report.severity || '');
+  const openDispatch = async (report: IncidentReport) => {
+    setIncidentType(report.incident_type || '');
+    setSeverity(report.severity || '');
     setDispatchNotes(report.mdrrmo_dispatch_notes || '');
-    setSelectedResponderIds((report.mdrrmo_assignments || []).filter((assignment) => assignment.status !== 'removed').map((assignment) => assignment.responder_id));
-    setResponderLoadError('');
-    setClassifyingReport(report);
+    setResponderIds((report.mdrrmo_assignments || []).filter((item) => item.status !== 'removed').map((item) => item.responder_id));
+    setResponderError(''); setDispatchReport(report);
     try {
       setLoadingResponders(true);
       const response = await reportAPI.mdrrmoResponders();
-      const available = response.data.responders || [];
-      setActiveResponders(available);
-      setSelectedResponderIds((current) => current.filter((id) => available.some((responder) => responder.id === id)));
+      const available: ResponderOption[] = response.data.responders || [];
+      setResponders(available);
+      setResponderIds((current) => current.filter((id) => available.some((item) => item.id === id)));
     } catch (error) {
-      setResponderLoadError('Could not load active MDRRMO responders.');
-      setActiveResponders([]);
-    } finally {
-      setLoadingResponders(false);
-    }
+      console.error('Could not load responders', error);
+      setResponderError('Could not load active MDRRMO responders.'); setResponders([]);
+    } finally { setLoadingResponders(false); }
   };
-
-  const handleVerify = async () => {
-    if (!classifyingReport || !classificationType || !classificationSeverity || selectedResponderIds.length === 0) {
-      toast.error('Choose the incident type, severity, and at least one active responder');
-      return;
+  const submitDispatch = async () => {
+    if (!dispatchReport || !incidentType || !severity || !responderIds.length) {
+      toast.error('Choose an incident category, priority, and at least one active responder'); return;
     }
     try {
-      setVerifying(true);
-      await reportAPI.dispatchToMdrrmo(classifyingReport.id, {
-        incident_type: classificationType,
-        severity: classificationSeverity,
-        responder_ids: selectedResponderIds,
-        notes: dispatchNotes.trim(),
-      });
+      setSaving(true);
+      await reportAPI.dispatchToMdrrmo(dispatchReport.id, { incident_type: incidentType, severity, responder_ids: responderIds, notes: dispatchNotes.trim() });
       toast.success('Incident classified and assigned to MDRRMO responders.');
-      setClassifyingReport(null);
-      setSelectedReport(null);
-      setActiveTab('responding');
-      fetchReports();
-    } catch (err) {
-      console.error('Verification failed', err);
-      toast.error('Failed to dispatch report to MDRRMO responders');
-    } finally {
-      setVerifying(false);
-    }
+      setDispatchReport(null); setStage('pending'); await fetchReports();
+    } catch (error) {
+      console.error('Dispatch failed', error); toast.error('Failed to dispatch report to MDRRMO responders');
+    } finally { setSaving(false); }
+  };
+  const markInvalid = async (report: IncidentReport) => {
+    if (!window.confirm('Mark this report as invalid? This decision will be recorded for the report.')) return;
+    try {
+      await reportAPI.review(report.id, { outcome: 'false_report', reason: '' });
+      toast.success('Report marked invalid.');
+      setReports((current) => current.filter((item) => item.id !== report.id)); setSelectedId(null);
+    } catch (error) { console.error('Invalid-report review failed', error); toast.error('Could not mark this report invalid'); }
   };
 
+  const residentCount = reports.filter((item) => getGroup(item) === 'resident').length;
+  const escalatedCount = reports.filter((item) => getGroup(item) === 'escalated').length;
+  const assessment = parseAssessment(selected?.mdrrmo_response_notes || selected?.barangay_response_notes);
+  const assignment = selected?.mdrrmo_assignments?.find((item) => item.status !== 'removed');
+  const reporterName = selected?.reporter_name || selected?.reporter?.full_name || 'Resident';
+  const locationName = selected?.location_name || selected?.address || selected?.barangay_name || 'Norzagaray, Bulacan';
+  const locationNote = selected?.address && selected.address !== locationName ? selected.address : selected && hasPin(selected) ? 'Location pin received from the resident' : 'Location not provided';
+  const proofs = selected ? getProofs(selected) : [];
+  const fieldMedia = selected?.responder_media || [];
+  const category = INCIDENT_TYPE_OPTIONS.find((item) => item.value === selected?.incident_type)?.label || selected?.incident_type?.replaceAll('_', ' ');
+  const priority = INCIDENT_SEVERITY_OPTIONS.find((item) => item.value === selected?.severity)?.label || selected?.severity;
+
   return (
-    <div className="incidents-reports-container">
-      {/* Header with 4 Status Pill Buttons (Image 4) */}
-      <div className="incidents-header-row">
-        <h1 className="incidents-title">Incidents Reports</h1>
+    <main className="reports-workspace-v2">
+      <header className="reports-page-header-v2">
+        <div><h1>Incidents Reports</h1><span>Dispatcher workspace</span></div>
+        <div className="reports-live-indicator"><i /> Live <span>·</span> {format(currentTime, 'h:mm a')}</div>
+      </header>
+      <nav className="reports-group-tabs-v2" aria-label="Report type">
+        <button type="button" className={group === 'resident' ? 'active' : ''} onClick={() => selectGroup('resident')}>Resident Reports <span>{residentCount}</span></button>
+        <button type="button" className={group === 'escalated' ? 'active' : ''} onClick={() => selectGroup('escalated')}>Escalate Reports <span>{escalatedCount}</span></button>
+      </nav>
+      <nav className="reports-stage-tabs-v2" aria-label="Report status">
+        {([['pending', 'Pending'], ['responding', 'Responding'], ['resolved', 'Resolved']] as Array<[ReportStage, string]>).map(([value, label]) => (
+          <button key={value} type="button" className={'stage-' + value + (stage === value ? ' active' : '')} onClick={() => selectStage(value)}>{label} <span>{counts[value]}</span></button>
+        ))}
+      </nav>
 
-        <div className="incidents-tab-pills">
-          <button
-            className={`incident-pill-btn pill-btn-incidents ${activeTab === 'incidents' ? 'active' : ''}`}
-            onClick={() => setActiveTab('incidents')}
-          >
-            Incidents
-          </button>
+      <section className="reports-split-view-v2">
+        <aside className="reports-queue-v2">
+          <div className="reports-queue-heading"><h2>{stage === 'pending' ? 'Pending queue' : stage === 'responding' ? 'Responding reports' : 'Resolved reports'}</h2><span>{visible.length}</span></div>
+          {loading ? <div className="reports-empty-v2"><span className="spinner" /><p>Loading reports…</p></div>
+            : visible.length === 0 ? <div className="reports-empty-v2"><AlertTriangle size={22} /><strong>No {stage} reports</strong><p>Reports in this queue will appear here.</p></div>
+              : <div className="reports-queue-list-v2">{visible.map((report) => {
+                const reportProofs = getProofs(report);
+                const active = selected?.id === report.id;
+                return <button key={report.id} type="button" className={'reports-queue-item-v2 ' + stage + (active ? ' selected' : '')} onClick={() => selectReport(report)}>
+                  <span className="reports-queue-item-top"><strong>{report.description?.trim() || 'No report details provided.'}</strong><span className={'report-status-chip-v2 ' + stage}>{stage === 'responding' ? 'Responding' : stage === 'resolved' ? 'Resolved' : 'Pending'}</span></span>
+                  <span className="reports-queue-time">{stage === 'pending' ? timeAgo(report.created_at) : stage === 'responding' ? 'Accepted ' + timeAgo(report.accepted_at || report.dispatched_at) : 'Resolved ' + timeAgo(report.resolved_at)}</span>
+                  <span className="reports-queue-meta"><span><MapPin size={14} /> {report.barangay_name || 'Location not provided'}</span><span><Paperclip size={13} /> {reportProofs.length} attachment{reportProofs.length === 1 ? '' : 's'}</span></span>
+                  {stage !== 'pending' && (report.incident_type || report.severity) && <span className="reports-classification-tags">
+                    {report.incident_type && <small>{INCIDENT_TYPE_OPTIONS.find((item) => item.value === report.incident_type)?.label || report.incident_type.replaceAll('_', ' ')}</small>}
+                    {report.severity && <small className="priority">{INCIDENT_SEVERITY_OPTIONS.find((item) => item.value === report.severity)?.label || report.severity} priority</small>}
+                  </span>}
+                </button>;
+              })}</div>}
+        </aside>
 
-          <button
-            className={`incident-pill-btn pill-btn-escalated ${activeTab === 'escalated' ? 'active' : ''}`}
-            onClick={() => setActiveTab('escalated')}
-          >
-            Escalated
-          </button>
+        <section className="reports-detail-v2">
+          {!selected ? <div className="reports-detail-empty-v2"><div><ImageIcon size={28} /></div><strong>Select a report</strong><p>Choose an item from the {stage} queue to see its details.</p></div> : <>
+            <div className="reports-detail-scroll-v2">
+              <header className="reports-detail-heading-v2">
+                <div><span className="reports-eyebrow-v2">Selected report</span><h2>Report details</h2><p>{stage === 'pending' ? 'Submitted ' : stage === 'responding' ? 'Received ' : 'Resolved '}{timeAgo(stage === 'resolved' ? selected.resolved_at : stage === 'responding' ? selected.accepted_at || selected.dispatched_at : selected.created_at)} · {selected.barangay_name || 'Norzagaray'}</p></div>
+                <span className={'report-status-chip-v2 detail ' + stage}>{stage === 'responding' ? 'Responding' : stage === 'resolved' ? 'Resolved' : 'Pending'}</span>
+              </header>
 
-          <button
-            className={`incident-pill-btn pill-btn-responding ${activeTab === 'responding' ? 'active' : ''}`}
-            onClick={() => setActiveTab('responding')}
-          >
-            Responding
-          </button>
+              <section className="reports-detail-section-v2"><h3>Reporter details</h3><div className="reports-info-grid-v2">
+                <div className="reports-info-card-v2"><span>Resident</span><strong><UserRound size={17} /> {reporterName}</strong></div>
+                <div className="reports-info-card-v2"><span>Contact number</span><strong><Phone size={17} /> {selected.reporter_phone || 'Not provided'}</strong></div>
+              </div></section>
 
-          <button
-            className={`incident-pill-btn pill-btn-resolved ${activeTab === 'resolved' ? 'active' : ''}`}
-            onClick={() => setActiveTab('resolved')}
-          >
-            Resolved
-          </button>
-        </div>
-      </div>
+              <section className="reports-detail-section-v2"><h3>Resident’s report</h3><div className="reports-text-card-v2">{selected.description?.trim() || 'No details provided.'}</div></section>
 
-      {/* Reports List */}
-      {loading ? (
-        <div className="flex justify-center p-12">
-          <div className="spinner" />
-        </div>
-      ) : filteredReports.length === 0 ? (
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '80px 20px',
-            background: '#0d1322',
-            borderRadius: '18px',
-            border: '1px solid rgba(255, 255, 255, 0.06)',
-            color: '#64748b',
-          }}
-        >
-          <div style={{ fontSize: '48px', marginBottom: '12px' }}>📋</div>
-          <div style={{ fontSize: '16px', fontWeight: 600, color: '#94a3b8' }}>No reports in this status</div>
-          <div style={{ fontSize: '13px', marginTop: '4px' }}>All incidents under "{activeTab}" have been attended to.</div>
-        </div>
-      ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: '16px' }}>
-          {filteredReports.map((report) => {
-            const isEscalated = report.status === 'escalated';
-            const isResponding = report.status === 'responding';
-            const isResolved = report.status === 'resolved';
+              {stage !== 'pending' && (category || priority) && <section className="reports-detail-section-v2"><h3>Incident classification</h3><div className="reports-info-grid-v2">
+                <div className="reports-info-card-v2"><span>Incident category</span><strong>{category || 'Not classified'}</strong></div>
+                <div className="reports-info-card-v2"><span>Priority</span><strong>{priority || 'Not classified'}</strong></div>
+              </div></section>}
 
-            let accentColor = '#ea580c';
-            if (isEscalated) accentColor = '#dc2626';
-            else if (isResponding) accentColor = '#0891b2';
-            else if (isResolved) accentColor = '#16a34a';
+              <section className="reports-detail-section-v2"><h3>Reported location</h3><div className="reports-location-card-v2"><MapPin size={20} /><div><strong>{locationName}</strong><span>{locationNote}</span></div>{hasPin(selected) && <small>Map pin available</small>}</div></section>
 
-            return (
-              <div
-                key={report.id}
-                className="incident-report-card"
-                style={{
-                  background: '#0f172a',
-                  border: `1.5px solid ${accentColor}40`,
-                  borderRadius: '16px',
-                  padding: '18px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '12px',
-                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.35)',
-                  transition: 'transform 0.2s, border-color 0.2s',
-                  position: 'relative',
-                  overflow: 'hidden',
-                }}
-              >
-                {/* Accent Top Border */}
-                <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '4px', background: accentColor }} />
-
-                {/* Top Meta Row */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span
-                      style={{
-                        padding: '4px 10px',
-                        borderRadius: '6px',
-                        fontSize: '11px',
-                        fontWeight: 800,
-                        textTransform: 'uppercase',
-                        background: `${accentColor}25`,
-                        color: accentColor,
-                        border: `1px solid ${accentColor}60`,
-                      }}
-                    >
-                      {report.status?.toUpperCase() || 'INCIDENT'}
-                    </span>
-                    {report.severity && (
-                      <span
-                        className="incident-severity"
-                        style={{
-                          padding: '3px 8px',
-                          borderRadius: '6px',
-                          fontSize: '10px',
-                          fontWeight: 700,
-                          textTransform: 'uppercase',
-                          background: 'rgba(255, 255, 255, 0.08)',
-                          color: '#cbd5e1',
-                        }}
-                      >
-                        {report.severity}
-                      </span>
-                    )}
-                    {report.incident_type && <span className="incident-severity" style={{ color: '#38bdf8', borderColor: 'rgba(56,189,248,.35)' }}>
-                      {INCIDENT_TYPE_OPTIONS.find((option) => option.value === report.incident_type)?.label || report.incident_type.replaceAll('_', ' ')}
-                    </span>}
-                  </div>
-                  <span style={{ fontSize: '11px', color: '#64748b' }}>
-                    {report.created_at ? format(new Date(report.created_at), 'MMM d, h:mm a') : 'Recent'}
-                  </span>
-                </div>
-
-                {/* Title & Specifics */}
-                <div>
-                  <h3 className="incident-report-title" style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: '#fff' }}>{report.title}</h3>
-                  {report.specifics && (
-                    <div style={{ fontSize: '12px', color: '#38bdf8', fontWeight: 600, marginTop: '2px' }}>
-                      {report.specifics}
-                    </div>
-                  )}
-                </div>
-
-                {/* Description */}
-                <p
-                  className="incident-report-description"
-                  style={{
-                    margin: 0,
-                    fontSize: '13px',
-                    color: '#94a3b8',
-                    lineHeight: 1.4,
-                    display: '-webkit-box',
-                    WebkitLineClamp: 2,
-                    WebkitBoxOrient: 'vertical',
-                    overflow: 'hidden',
-                  }}
-                >
-                  {report.description}
-                </p>
-
-                {/* Proof thumbnail preview if present */}
-                {(() => {
-                  const proofs = (report.proof_urls && report.proof_urls.length > 0)
-                    ? report.proof_urls
-                    : (report.proof_url ? [report.proof_url] : []);
-                  if (proofs.length === 0) return null;
-                  const firstProof = proofs[0];
-                  const firstType = report.proof_types?.[0] || report.proof_type;
-                  const isVid = isVideoProof(firstProof, firstType);
-
-                  return (
-                    <div
-                      style={{
-                        height: '140px',
-                        borderRadius: '10px',
-                        overflow: 'hidden',
-                        position: 'relative',
-                        cursor: 'pointer',
-                        border: '1px solid rgba(255, 255, 255, 0.1)',
-                        background: '#000',
-                      }}
-                      onClick={() => {
-                        setPreviewMedia({ url: firstProof, isVideo: isVid });
-                      }}
-                    >
-                      {isVid ? (
-                        <>
-                          <video
-                            src={firstProof}
-                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                          />
-                          <div
-                            style={{
-                              position: 'absolute',
-                              inset: 0,
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              background: 'rgba(0,0,0,0.3)',
-                            }}
-                          >
-                            <div
-                              style={{
-                                width: '36px',
-                                height: '36px',
-                                borderRadius: '50%',
-                                background: 'rgba(0,0,0,0.65)',
-                                border: '1px solid rgba(255,255,255,0.4)',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                              }}
-                            >
-                              <svg width="18" height="18" viewBox="0 0 24 24" fill="#fff">
-                                <polygon points="5 3 19 12 5 21 5 3"></polygon>
-                              </svg>
-                            </div>
-                          </div>
-                        </>
-                      ) : (
-                        <img
-                          src={firstProof}
-                          alt="Proof"
-                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                        />
-                      )}
-
-                      {/* Multi-proof badge */}
-                      {proofs.length > 1 && (
-                        <div
-                          style={{
-                            position: 'absolute',
-                            top: '8px',
-                            left: '8px',
-                            background: 'rgba(2, 132, 199, 0.85)',
-                            padding: '3px 7px',
-                            borderRadius: '6px',
-                            fontSize: '11px',
-                            fontWeight: 600,
-                            color: '#fff',
-                            backdropFilter: 'blur(4px)',
-                            border: '1px solid rgba(56, 189, 248, 0.4)',
-                          }}
-                        >
-                          📸 {proofs.length} Visuals
-                        </div>
-                      )}
-
-                      {/* Responder media badge */}
-                      {report.responder_media && report.responder_media.length > 0 && (
-                        <div
-                          style={{
-                            position: 'absolute',
-                            top: '8px',
-                            right: '8px',
-                            background: 'rgba(16, 185, 129, 0.85)',
-                            padding: '3px 7px',
-                            borderRadius: '6px',
-                            fontSize: '11px',
-                            fontWeight: 600,
-                            color: '#fff',
-                            backdropFilter: 'blur(4px)',
-                            border: '1px solid rgba(52, 211, 153, 0.4)',
-                          }}
-                        >
-                          🦺 {report.responder_media.length} Field
-                        </div>
-                      )}
-
-                      <div
-                        style={{
-                          position: 'absolute',
-                          bottom: '8px',
-                          right: '8px',
-                          background: 'rgba(0, 0, 0, 0.75)',
-                          padding: '4px 8px',
-                          borderRadius: '6px',
-                          fontSize: '11px',
-                          color: '#fff',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                        }}
-                      >
-                        {isVid ? (
-                          <>
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="#fff">
-                              <polygon points="5 3 19 12 5 21 5 3"></polygon>
-                            </svg>
-                            Play Video
-                          </>
-                        ) : (
-                          <>
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <circle cx="11" cy="11" r="8"></circle>
-                              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                            </svg>
-                            Tap to enlarge
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                {/* Resident & Responder Info Row */}
-                <div
-                  className="incident-report-contact"
-                  style={{
-                    background: 'rgba(0, 0, 0, 0.25)',
-                    borderRadius: '10px',
-                    padding: '8px 12px',
-                    fontSize: '12px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '4px',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: '#64748b' }}>Reporter:</span>
-                    <span style={{ color: '#38bdf8', fontWeight: 600 }}>
-                      {report.reporter_name || 'Resident'} ({report.reporter_phone || 'No phone'})
-                    </span>
-                  </div>
-                  {report.barangay_responder_name && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: '#64748b' }}>Barangay Unit:</span>
-                      <span style={{ color: '#c084fc', fontWeight: 600 }}>{report.barangay_responder_name}</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Action Buttons */}
-                <div style={{ display: 'flex', gap: '8px', marginTop: 'auto', paddingTop: '6px' }}>
-                  <button
-                    className="btn btn-outline btn-sm incident-view-details"
-                    style={{ flex: 1, borderColor: 'rgba(255,255,255,0.15)', color: '#fff' }}
-                    onClick={() => setSelectedReport(report)}
-                  >
-                    View Details
-                  </button>
-
-                  {!isResolved && (
-                    <button
-                      className="btn btn-primary btn-sm"
-                      style={{ flex: 1.2, background: '#0284c7', borderColor: '#0284c7' }}
-                      onClick={() => openDispatchDialog(report)}
-                      disabled={verifying}
-                    >
-                      {isResponding ? 'Update Dispatch' : 'Dispatch Responders'}
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Media Preview Modal */}
-      {previewMedia && (
-        <div
-          className="pin-modal-backdrop"
-          onClick={() => setPreviewMedia(null)}
-          style={{ zIndex: 3000 }}
-        >
-          <div
-            style={{
-              position: 'relative',
-              maxWidth: '90vw',
-              maxHeight: '85vh',
-              borderRadius: '16px',
-              overflow: 'hidden',
-              boxShadow: '0 20px 60px rgba(0,0,0,0.8)',
-              background: '#0f172a',
-              border: '1px solid rgba(255,255,255,0.2)',
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              style={{
-                position: 'absolute',
-                top: '12px',
-                right: '12px',
-                background: 'rgba(0,0,0,0.7)',
-                color: '#fff',
-                border: 'none',
-                borderRadius: '50%',
-                width: '32px',
-                height: '32px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                fontSize: '16px',
-                zIndex: 10,
-              }}
-              onClick={() => setPreviewMedia(null)}
-            >
-              ✕
-            </button>
-            {previewMedia.isVideo ? (
-              <video
-                src={previewMedia.url}
-                controls
-                autoPlay
-                playsInline
-                style={{ maxWidth: '85vw', maxHeight: '80vh', display: 'block', background: '#000' }}
-              />
-            ) : (
-              <img
-                src={previewMedia.url}
-                alt="Visual Preview Enlarged"
-                style={{ maxWidth: '85vw', maxHeight: '80vh', objectFit: 'contain', display: 'block' }}
-              />
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Full Details Modal */}
-      {selectedReport && (
-        <div className="pin-modal-backdrop" onClick={() => setSelectedReport(null)}>
-          <div
-            style={{
-              width: '560px',
-              maxWidth: '92vw',
-              background: '#0d172e',
-              border: '1.5px solid #1e3a8a',
-              borderRadius: '20px',
-              padding: '24px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '16px',
-              boxShadow: '0 20px 50px rgba(0,0,0,0.7)',
-              color: '#fff',
-              maxHeight: '90vh',
-              overflowY: 'auto',
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <span style={{ fontSize: '24px' }}>🚨</span>
-                <div>
-                  <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 800 }}>{selectedReport.title}</h2>
-                  <span style={{ fontSize: '12px', color: '#38bdf8' }}>{selectedReport.specifics || 'Incident Report'}</span>
-                </div>
-              </div>
-              <button
-                className="close-x-btn"
-                onClick={() => setSelectedReport(null)}
-                style={{ fontSize: '20px', color: '#94a3b8' }}
-              >
-                ✕
-              </button>
+              {stage === 'pending' ? <section className="reports-detail-section-v2">
+                <div className="reports-section-heading-v2"><h3>Proof of incident</h3><span>{proofs.length} attachment{proofs.length === 1 ? '' : 's'}</span></div>
+                {proofs.length ? <div className="reports-media-grid-v2 proof">{proofs.map((url, index) => {
+                  const video = isVideo(url, selected.proof_types?.[index] || selected.proof_type);
+                  return <button type="button" key={url + index} onClick={() => setPreview({ url, video })} aria-label={'Open proof attachment ' + (index + 1)}>
+                    {video ? <span className="reports-video-thumb">▶ Video</span> : <img src={url} alt={'Incident proof ' + (index + 1)} />}
+                    <span>{video ? 'Video' : 'Photo'} {String(index + 1).padStart(2, '0')}</span>
+                  </button>;
+                })}</div> : <div className="reports-no-media-v2">No proof attached to this report.</div>}
+              </section> : <>
+                {getGroup(selected) === 'escalated' && (selected.mdrrmo_coordination_notes || selected.barangay_response_notes) && <section className="reports-detail-section-v2"><h3>Escalation notes</h3><div className="reports-text-card-v2">{selected.mdrrmo_coordination_notes || selected.barangay_response_notes}</div></section>}
+                <section className="reports-detail-section-v2"><h3>Responder and response timeline</h3><div className="reports-timeline-grid-v2">
+                  <div className="reports-assignee-card-v2"><strong>{assignment?.responder?.full_name || selected.mdrrmo_responder_name || 'Assigned responder'}</strong><span>MDRRMO response unit</span><em>{stage === 'resolved' ? 'Resolved' : assignment?.status === 'responding' ? 'Accepted' : 'Assigned'}</em></div>
+                  <div className="reports-timeline-card-v2">{([
+                    ['Report received', selected.created_at],
+                    ['Dispatched to MDRRMO', selected.dispatched_at],
+                    ['Accepted by responder', selected.accepted_at || assignment?.accepted_at],
+                    ['Arrived at incident area', selected.arrived_at || assignment?.arrived_at],
+                    ['Incident resolved', selected.resolved_at || assignment?.resolved_at],
+                  ] as Array<[string, string | null | undefined]>).filter(([, value]) => Boolean(value)).map(([label, value]) => <div key={label}><CheckCircle2 size={14} /><span>{label}</span><time title={dateTime(value)}>{timeAgo(value)}</time></div>)}</div>
+                </div></section>
+                <section className="reports-detail-section-v2"><h3>Field assessment</h3><div className="reports-assessment-grid-v2">{([
+                  ['Situation', assessment.situation], ['People affected / urgency', assessment.people], ['Actions taken', assessment.actions], ['Risks / resources', assessment.risks],
+                ] as Array<[string, string]>).map(([label, value]) => <div key={label}><strong>{label}</strong><p>{value || 'Not submitted yet'}</p></div>)}</div></section>
+                <section className="reports-detail-section-v2">
+                  <div className="reports-section-heading-v2"><h3>Field photos / videos</h3><span>{fieldMedia.length} attachment{fieldMedia.length === 1 ? '' : 's'}</span></div>
+                  {fieldMedia.length ? <div className="reports-media-grid-v2 field">{fieldMedia.map((item, index) => {
+                    const video = isVideo(item.url, item.type);
+                    return <button type="button" key={item.url + index} onClick={() => setPreview({ url: item.url, video })} aria-label={'Open field attachment ' + (index + 1)}>{video ? <span className="reports-video-thumb">▶ Video</span> : <img src={item.url} alt={'Responder field evidence ' + (index + 1)} />}</button>;
+                  })}</div> : <div className="reports-no-media-v2">No responder field media submitted yet.</div>}
+                </section>
+                {stage === 'resolved' && <section className="reports-resolve-notes-v2"><strong>Resolve notes</strong><p>{selected.resolved_notes?.trim() || 'No resolve notes provided.'}</p></section>}
+              </>}
             </div>
+            {stage === 'pending' && <footer className="reports-detail-actions-v2">
+              <button type="button" className="reports-invalid-button-v2" onClick={() => void markInvalid(selected)}>Mark invalid</button>
+              <button type="button" className="reports-dispatch-button-v2" onClick={() => void openDispatch(selected)} disabled={saving}><Send size={17} /> {selected.dispatched_at ? 'Update dispatch' : 'Dispatch to MDRRMO'}</button>
+            </footer>}
+          </>}
+        </section>
+      </section>
 
-            {/* Proofs Gallery with Thumbnails Switcher */}
-            {(() => {
-              const proofs = (selectedReport.proof_urls && selectedReport.proof_urls.length > 0)
-                ? selectedReport.proof_urls
-                : (selectedReport.proof_url ? [selectedReport.proof_url] : []);
-              if (proofs.length === 0) return null;
-              const activeIdx = (selectedProofIdx < proofs.length) ? selectedProofIdx : 0;
-              const currentUrl = proofs[activeIdx];
-              const currentType = selectedReport.proof_types?.[activeIdx] || selectedReport.proof_type;
-              const isVid = isVideoProof(currentUrl, currentType);
+      {dispatchReport && <div className="reports-modal-backdrop-v2" onClick={() => setDispatchReport(null)}>
+        <section className="reports-dispatch-modal-v2" role="dialog" aria-modal="true" aria-labelledby="dispatch-title-v2" onClick={(event) => event.stopPropagation()}>
+          <header><div><span className="reports-eyebrow-v2">Dispatcher review</span><h2 id="dispatch-title-v2">{dispatchReport.dispatched_at ? 'Update dispatch' : 'Classify and dispatch'}</h2></div><button type="button" aria-label="Close" onClick={() => setDispatchReport(null)}><X size={19} /></button></header>
+          <div className="reports-modal-report-v2">{dispatchReport.description?.trim() || 'No details provided.'}</div>
+          {getProofs(dispatchReport).length > 0 && <div className="reports-modal-proof-links-v2"><strong>Submitted evidence</strong>{getProofs(dispatchReport).map((url, index) => <a key={url + index} href={url} target="_blank" rel="noreferrer">Open attachment {index + 1}</a>)}</div>}
+          <label htmlFor="report-category-v2">Incident category</label><select id="report-category-v2" value={incidentType} onChange={(event) => setIncidentType(event.target.value)}><option value="">Select incident category</option>{INCIDENT_TYPE_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>
+          <label htmlFor="report-priority-v2">Priority</label><select id="report-priority-v2" value={severity} onChange={(event) => setSeverity(event.target.value)}><option value="">Select priority</option>{INCIDENT_SEVERITY_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>
+          <label htmlFor="report-dispatch-notes-v2">Dispatcher notes <span>(optional)</span></label><textarea id="report-dispatch-notes-v2" rows={3} maxLength={1000} value={dispatchNotes} onChange={(event) => setDispatchNotes(event.target.value)} placeholder="Add instructions or response details…" />
+          <div className="reports-responder-list-heading-v2"><strong>Active MDRRMO responders</strong>{responders.length > 0 && <button type="button" onClick={() => setResponderIds(responderIds.length === responders.length ? [] : responders.map((item) => item.id))}>{responderIds.length === responders.length ? 'Deselect all' : 'Select all'}</button>}</div>
+          <div className="reports-responder-list-v2">{loadingResponders ? <p>Loading active responders…</p> : responderError ? <p className="error">{responderError}</p> : responders.length === 0 ? <p>No active MDRRMO responders are available.</p> : responders.map((item) => <label key={item.id}><input type="checkbox" checked={responderIds.includes(item.id)} onChange={(event) => setResponderIds((current) => event.target.checked ? [...current, item.id] : current.filter((id) => id !== item.id))} /><span><strong>{item.full_name}</strong><small>{[item.unit_type, item.phone].filter(Boolean).join(' · ') || 'MDRRMO responder'}</small></span></label>)}</div>
+          <footer><button type="button" className="reports-invalid-button-v2" onClick={() => setDispatchReport(null)}>Cancel</button><button type="button" className="reports-dispatch-button-v2" disabled={saving || loadingResponders || !incidentType || !severity || responderIds.length === 0} onClick={() => void submitDispatch()}>{saving ? 'Saving dispatch…' : 'Send responders'}</button></footer>
+        </section>
+      </div>}
 
-              return (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 700 }}>
-                      VISUAL PROOF ({proofs.length} item{proofs.length > 1 ? 's' : ''})
-                    </div>
-                    {proofs.length > 1 && (
-                      <span style={{ fontSize: '11px', color: '#38bdf8' }}>
-                        {activeIdx + 1} of {proofs.length}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Main Preview */}
-                  <div
-                    style={{
-                      width: '100%',
-                      height: '240px',
-                      borderRadius: '12px',
-                      overflow: 'hidden',
-                      border: '1px solid rgba(255,255,255,0.1)',
-                      background: '#000',
-                      position: 'relative',
-                    }}
-                  >
-                    {isVid ? (
-                      <video
-                        key={currentUrl}
-                        src={currentUrl}
-                        controls
-                        playsInline
-                        style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-                      />
-                    ) : (
-                      <img
-                        key={currentUrl}
-                        src={currentUrl}
-                        alt="Incident Proof"
-                        style={{ width: '100%', height: '100%', objectFit: 'contain', cursor: 'pointer' }}
-                        onClick={() => setPreviewMedia({ url: currentUrl, isVideo: false })}
-                      />
-                    )}
-                    <button
-                      style={{
-                        position: 'absolute',
-                        top: '8px',
-                        right: '8px',
-                        background: 'rgba(0,0,0,0.6)',
-                        border: '1px solid rgba(255,255,255,0.3)',
-                        borderRadius: '6px',
-                        color: '#fff',
-                        padding: '4px 8px',
-                        cursor: 'pointer',
-                        fontSize: '11px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                      }}
-                      onClick={() => setPreviewMedia({ url: currentUrl, isVideo: isVid })}
-                    >
-                      Enlarge ↗
-                    </button>
-                  </div>
-
-                  {/* Thumbnail Row if multiple proofs */}
-                  {proofs.length > 1 && (
-                    <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px' }}>
-                      {proofs.map((url, idx) => {
-                        const thumbIsVid = isVideoProof(url, selectedReport.proof_types?.[idx]);
-                        const isActive = idx === activeIdx;
-                        return (
-                          <div
-                            key={url + idx}
-                            onClick={() => setSelectedProofIdx(idx)}
-                            style={{
-                              width: '56px',
-                              height: '56px',
-                              borderRadius: '8px',
-                              overflow: 'hidden',
-                              flexShrink: 0,
-                              cursor: 'pointer',
-                              border: isActive ? '2px solid #38bdf8' : '1px solid rgba(255,255,255,0.15)',
-                              background: '#000',
-                              position: 'relative',
-                            }}
-                          >
-                            {thumbIsVid ? (
-                              <>
-                                <video src={url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.3)' }}>
-                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="#fff"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                                </div>
-                              </>
-                            ) : (
-                              <img src={url} alt={`Thumbnail ${idx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
-
-            {/* Responder Field Photos / Media */}
-            {selectedReport.responder_media && selectedReport.responder_media.length > 0 && (
-              <div>
-                <div style={{ fontSize: '12px', color: '#10b981', fontWeight: 700, marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span>RESPONDER FIELD PHOTOS & MEDIA ({selectedReport.responder_media.length})</span>
-                </div>
-                <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px' }}>
-                  {selectedReport.responder_media.map((item, idx) => {
-                    const itemIsVid = isVideoProof(item.url, item.type);
-                    return (
-                      <div
-                        key={item.url + idx}
-                        onClick={() => setPreviewMedia({ url: item.url, isVideo: itemIsVid })}
-                        style={{
-                          width: '80px',
-                          borderRadius: '8px',
-                          overflow: 'hidden',
-                          flexShrink: 0,
-                          cursor: 'pointer',
-                          border: '1px solid rgba(16, 185, 129, 0.4)',
-                          background: '#0a192f',
-                          display: 'flex',
-                          flexDirection: 'column',
-                        }}
-                      >
-                        <div style={{ width: '100%', height: '60px', position: 'relative', background: '#000' }}>
-                          {itemIsVid ? (
-                            <>
-                              <video src={item.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.35)' }}>
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="#fff"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                              </div>
-                            </>
-                          ) : (
-                            <img src={item.url} alt="Field media" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                          )}
-                        </div>
-                        <div style={{ padding: '3px 4px', fontSize: '9px', color: '#cbd5e1', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {item.uploader_name || 'Responder'}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            <div>
-              <div style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 700, marginBottom: '4px' }}>
-                INCIDENT DESCRIPTION
-              </div>
-              <div
-                style={{
-                  background: '#081023',
-                  borderRadius: '10px',
-                  padding: '12px',
-                  border: '1px solid rgba(255,255,255,0.06)',
-                  fontSize: '13px',
-                  lineHeight: 1.5,
-                  color: '#e2e8f0',
-                }}
-              >
-                {selectedReport.description}
-              </div>
-            </div>
-
-            {selectedReport.barangay_response_notes && (
-              <div>
-                <div style={{ fontSize: '12px', color: '#a78bfa', fontWeight: 700, marginBottom: '4px' }}>
-                  BARANGAY RESPONSE LOG
-                </div>
-                <div
-                  style={{
-                    background: '#13112a',
-                    borderRadius: '10px',
-                    padding: '12px',
-                    border: '1px solid rgba(168,85,247,0.2)',
-                    fontSize: '13px',
-                    lineHeight: 1.5,
-                    color: '#e2e8f0',
-                  }}
-                >
-                  {selectedReport.barangay_response_notes}
-                </div>
-              </div>
-            )}
-
-            <div style={{ background: '#081023', borderRadius: 10, padding: 14, border: '1px solid rgba(255,255,255,0.08)' }}>
-              <div style={{ fontSize: 12, color: '#38bdf8', fontWeight: 700, marginBottom: 10 }}>RESPONSE TIMELINE</div>
-              {([
-                ['Report received', selectedReport.created_at, ''],
-                ['Dispatcher reviewed', selectedReport.dispatcher_reviewed_at, ''],
-                ['Responder dispatched', selectedReport.dispatched_at, ''],
-                ['Responder accepted', selectedReport.accepted_at, `Response to acceptance: ${formatElapsed(selectedReport.created_at, selectedReport.accepted_at)}`],
-                ['Arrived at incident area', selectedReport.arrived_at, `Travel to arrival: ${formatElapsed(selectedReport.accepted_at, selectedReport.arrived_at)}`],
-                ['Incident resolved', selectedReport.resolved_at, `Time to resolve: ${formatElapsed(selectedReport.arrived_at, selectedReport.resolved_at)}`],
-              ] as Array<[string, string | undefined, string]>).map(([label, timestamp, duration]) => (
-                <div key={label} style={{ display: 'grid', gridTemplateColumns: 'minmax(145px, 1fr) 1.5fr', gap: 10, padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', fontSize: 12 }}>
-                  <span style={{ color: '#cbd5e1', fontWeight: 600 }}>{label}</span>
-                  <span style={{ color: '#94a3b8' }}>
-                    {formatTimestamp(timestamp)}{duration ? <span style={{ display: 'block', color: '#38bdf8' }}>{duration}</span> : null}
-                  </span>
-                </div>
-              ))}
-              {selectedReport.travel_distance_m != null && (
-                <div style={{ color: '#38bdf8', fontSize: 11, marginTop: 8 }}>
-                  Responder distance at acceptance: {formatDistance(selectedReport.travel_distance_m)} from incident
-                  {selectedReport.travel_distance_accuracy_m != null ? ` · GPS accuracy ±${Math.round(selectedReport.travel_distance_accuracy_m)} m` : ''}
-                </div>
-              )}
-              {selectedReport.arrived_at && (
-                <div style={{ color: '#94a3b8', fontSize: 11, marginTop: 8 }}>
-                  Arrival recorded {selectedReport.arrival_method === 'gps' ? 'by GPS' : 'manually'}
-                  {selectedReport.arrival_distance_m != null ? ` · ${Math.round(selectedReport.arrival_distance_m)} m from incident` : ''}
-                </div>
-              )}
-            </div>
-
-            <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
-              <button
-                className="btn btn-outline"
-                style={{ flex: 1, borderColor: 'rgba(255,255,255,0.2)', color: '#fff' }}
-                onClick={() => setSelectedReport(null)}
-              >
-                Close
-              </button>
-              {selectedReport.status !== 'resolved' && (
-                <button
-                  className="btn btn-primary"
-                  style={{ flex: 1.2, background: '#0284c7', borderColor: '#0284c7' }}
-                  onClick={() => openDispatchDialog(selectedReport)}
-                  disabled={verifying}
-                >
-                  Dispatch Units
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {classifyingReport && (
-        <div className="pin-modal-backdrop" style={{ zIndex: 3600 }} onClick={() => setClassifyingReport(null)}>
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="dispatch-classification-title"
-            onClick={(event) => event.stopPropagation()}
-            style={{ width: 560, maxWidth: '92vw', maxHeight: '90vh', overflowY: 'auto', background: '#0d172e', color: '#fff', border: '1px solid #1e3a8a', borderRadius: 18, padding: 22, boxShadow: '0 20px 50px rgba(0,0,0,.65)' }}
-          >
-            <div style={{ marginBottom: 16 }}>
-              <div className="eyebrow" style={{ color: '#38bdf8' }}>Dispatcher review</div>
-              <h2 id="dispatch-classification-title" style={{ margin: '5px 0 6px' }}>Classify and dispatch</h2>
-              <div style={{ color: '#94a3b8', fontSize: 13 }}>{classifyingReport.title} · {classifyingReport.specifics || 'Emergency report'}</div>
-            </div>
-            <div style={{ borderRadius: 12, padding: 12, background: '#081023', color: '#cbd5e1', fontSize: 13, lineHeight: 1.5, marginBottom: 14 }}>
-              {classifyingReport.description || 'No additional description was provided.'}
-            </div>
-            {(classifyingReport.proof_urls?.length ? classifyingReport.proof_urls : classifyingReport.proof_url ? [classifyingReport.proof_url] : []).length > 0 && (
-              <div style={{ marginBottom: 16 }}>
-                <div className="form-label">Submitted evidence</div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                  {(classifyingReport.proof_urls?.length ? classifyingReport.proof_urls : [classifyingReport.proof_url!]).map((url, index) => (
-                    <a key={`${url}-${index}`} href={url} target="_blank" rel="noreferrer" className="btn btn-outline btn-sm">Open evidence {index + 1}</a>
-                  ))}
-                </div>
-              </div>
-            )}
-            <label className="form-label" htmlFor="mdrrmo-incident-type">Incident type</label>
-            <select id="mdrrmo-incident-type" className="form-select" value={classificationType} onChange={(event) => setClassificationType(event.target.value)}>
-              <option value="">Select the assessed incident type</option>
-              {INCIDENT_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </select>
-            <label className="form-label" htmlFor="mdrrmo-incident-severity" style={{ marginTop: 12 }}>Severity</label>
-            <select id="mdrrmo-incident-severity" className="form-select" value={classificationSeverity} onChange={(event) => setClassificationSeverity(event.target.value)}>
-              <option value="">Select assessed severity</option>
-              {INCIDENT_SEVERITY_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </select>
-            <label className="form-label" htmlFor="mdrrmo-dispatch-notes" style={{ marginTop: 12 }}>Dispatcher notes <span style={{ color: '#94a3b8' }}>(optional)</span></label>
-            <textarea id="mdrrmo-dispatch-notes" className="form-control" rows={3} maxLength={1000} value={dispatchNotes} onChange={(event) => setDispatchNotes(event.target.value)} placeholder="Add instructions or response details…" />
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 16, marginBottom: 8 }}>
-              <label className="form-label" style={{ margin: 0 }}>Active MDRRMO responders</label>
-              {activeResponders.length > 0 && <button type="button" className="btn btn-outline btn-sm" onClick={() => setSelectedResponderIds(selectedResponderIds.length === activeResponders.length ? [] : activeResponders.map((responder) => responder.id))}>{selectedResponderIds.length === activeResponders.length ? 'Deselect all' : 'Select all'}</button>}
-            </div>
-            <div style={{ maxHeight: 190, overflowY: 'auto', padding: 6, border: '1px solid #334155', borderRadius: 10, background: '#081023' }}>
-              {loadingResponders ? <div style={{ padding: 12, color: '#94a3b8' }}>Loading active responders…</div>
-                : responderLoadError ? <div style={{ padding: 12, color: '#fca5a5' }}>{responderLoadError}</div>
-                  : activeResponders.length === 0 ? <div style={{ padding: 12, color: '#94a3b8' }}>No active MDRRMO responders are available.</div>
-                    : activeResponders.map((responder) => <label key={responder.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8, color: '#e2e8f0', cursor: 'pointer' }}>
-                      <input type="checkbox" checked={selectedResponderIds.includes(responder.id)} onChange={(event) => setSelectedResponderIds((current) => event.target.checked ? [...current, responder.id] : current.filter((id) => id !== responder.id))} />
-                      <span style={{ display: 'flex', flexDirection: 'column' }}><strong>{responder.full_name}</strong><small style={{ color: '#94a3b8' }}>{[responder.unit_type, responder.phone].filter(Boolean).join(' · ') || 'MDRRMO responder'}</small></span>
-                    </label>)}
-            </div>
-            <p className="field-help" style={{ marginTop: 10 }}>This classification is sent with the dispatch and will be visible to responders. Barangay escalations arrive with the barangay dispatcher’s values preselected so you can confirm or adjust them.</p>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
-              <button className="btn btn-outline" onClick={() => setClassifyingReport(null)}>Cancel</button>
-              <button className="btn btn-primary" disabled={verifying || loadingResponders || !classificationType || !classificationSeverity || selectedResponderIds.length === 0} onClick={() => void handleVerify()}>
-                {verifying ? 'Dispatching…' : 'Send responders'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+      {preview && <div className="reports-media-preview-v2" role="dialog" aria-modal="true" aria-label="Attachment preview" onClick={() => setPreview(null)}>
+        <button type="button" aria-label="Close preview" onClick={() => setPreview(null)}><X size={22} /></button>
+        {preview.video ? <video src={preview.url} controls autoPlay onClick={(event) => event.stopPropagation()} /> : <img src={preview.url} alt="Report attachment preview" onClick={(event) => event.stopPropagation()} />}
+      </div>}
+    </main>
   );
 }

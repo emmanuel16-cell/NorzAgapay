@@ -258,6 +258,8 @@ function ResponderAssessmentPanel({
   onPreview: (url: string) => void;
   showTitle?: boolean;
 }) {
+  const navigate = useNavigate();
+
   return (
     <div className="responder-detail-panel">
       {showTitle && <div className="responder-panel-title">RESPONDER</div>}
@@ -279,7 +281,13 @@ function ResponderAssessmentPanel({
                 <strong>Resolve notes</strong>
                 <p>{incident.resolved_notes?.trim() || 'No resolve notes provided.'}</p>
               </section>
-              <button type="button" className="resolved-view-details">View Details</button>
+              <button
+                type="button"
+                className="resolved-view-details"
+                onClick={() => navigate('/reports?id=' + encodeURIComponent(incident.id) + '&status=resolved')}
+              >
+                View Details
+              </button>
             </>
           )}
         </div>
