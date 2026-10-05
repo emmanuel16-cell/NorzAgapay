@@ -1,10 +1,10 @@
 import { config } from '../config';
 
-function toPhilippineLocalNumber(phoneNumber: string): string | null {
+function toPhilippineInternationalNumber(phoneNumber: string): string | null {
   const digits = phoneNumber.replace(/\D/g, '');
-  if (/^09\d{9}$/.test(digits)) return digits;
-  if (/^639\d{9}$/.test(digits)) return `0${digits.slice(2)}`;
-  if (/^9\d{9}$/.test(digits)) return `0${digits}`;
+  if (/^09\d{9}$/.test(digits)) return `+63${digits.slice(1)}`;
+  if (/^639\d{9}$/.test(digits)) return `+${digits}`;
+  if (/^9\d{9}$/.test(digits)) return `+63${digits}`;
   return null;
 }
 
@@ -32,7 +32,7 @@ async function sendSms(phoneNumber: string, message: string, purpose: string): P
     return false;
   }
 
-  const recipient = toPhilippineLocalNumber(phoneNumber);
+  const recipient = toPhilippineInternationalNumber(phoneNumber);
   if (!recipient) {
     console.error(`[SmsService] ${purpose} recipient is not a valid Philippine mobile number.`);
     return false;
