@@ -31,6 +31,7 @@ class _FeedScreenState extends State<FeedScreen> {
   String? _loadError;
   List<Map<String, dynamic>> _posts = [];
   List<String> _verifiedBarangayNames = [];
+  Set<String> _residentPinnedBroadcastIds = {};
 
   // Category definitions with rich color palette matching web-dashboard
   final List<Map<String, dynamic>> _categories = [
@@ -111,6 +112,7 @@ class _FeedScreenState extends State<FeedScreen> {
   @override
   void initState() {
     super.initState();
+    _residentPinnedBroadcastIds = OfflineService.getPinnedBroadcastIds();
     _loadVerifiedBarangays();
     _fetchBroadcasts();
   }
@@ -239,9 +241,51 @@ class _FeedScreenState extends State<FeedScreen> {
     return postCategory == tabId;
   }
 
+  String? _postPinKey(Map<String, dynamic> post) {
+    final id = post['id']?.toString();
+    if (id == null || id.isEmpty) return null;
+    final source = post['is_mdrrmo'] == false ? 'barangay' : 'mdrrmo';
+    return '$source:$id';
+  }
+
+  Future<void> _setResidentPinned(
+    Map<String, dynamic> post,
+    bool isPinned,
+  ) async {
+    final key = _postPinKey(post);
+    if (key == null) return;
+
+    final updated = Set<String>.from(_residentPinnedBroadcastIds);
+    if (isPinned) {
+      updated.add(key);
+    } else {
+      updated.remove(key);
+    }
+
+    try {
+      await OfflineService.savePinnedBroadcastIds(updated);
+      if (!mounted) return;
+      setState(() => _residentPinnedBroadcastIds = updated);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(isPinned ? 'Added to Pinned.' : 'Your pin was removed.'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not update pinned posts: $error')),
+      );
+    }
+  }
+
   List<Map<String, dynamic>> _filteredPosts() {
     return _posts.where((p) {
-      final isPinned = p['is_pinned'] == true;
+      final key = _postPinKey(p);
+      final isPinned =
+          p['is_pinned'] == true ||
+          (key != null && _residentPinnedBroadcastIds.contains(key));
       final isMdrrmo = p['is_mdrrmo'] != false;
       if (!isMdrrmo &&
           !_verifiedBarangayNames.any(
@@ -254,7 +298,8 @@ class _FeedScreenState extends State<FeedScreen> {
 
       // 1. Source filter: 'barangay' vs 'mdrrmo' vs 'pinned'
       if (_selectedSource == 'pinned') {
-        // Pin tab: ALL pinned posts (from both Barangay and MDRRMO)
+        // The personal pin view includes both sources and ignores the current
+        // barangay selection. Category filters can still narrow the results.
         if (!isPinned) return false;
       } else if (_selectedSource == 'barangay') {
         // Show only posts from the selected Barangay, never MDRRMO posts.
@@ -439,7 +484,7 @@ class _FeedScreenState extends State<FeedScreen> {
                                   _loadError != null
                                       ? 'Unable to load public alerts'
                                       : _selectedSource == 'pinned'
-                                      ? 'No pinned official broadcasts'
+                                      ? 'No pinned broadcasts'
                                       : 'No posts found for this view',
                                   style: TextStyle(
                                     fontSize: 16,
@@ -452,7 +497,7 @@ class _FeedScreenState extends State<FeedScreen> {
                                   _loadError != null
                                       ? _loadError!
                                       : _selectedSource == 'pinned'
-                                      ? 'Official priority alerts pinned by MDRRMO or Barangay will be listed here.'
+                                      ? 'Broadcasts you pin from any verified Barangay or MDRRMO will be listed here.'
                                       : 'Try switching tabs or tapping the blue list button to change category.',
                                   style: TextStyle(
                                     fontSize: 12.5,
@@ -482,6 +527,10 @@ class _FeedScreenState extends State<FeedScreen> {
                           return _BroadcastCard(
                             post: filtered[index],
                             onOpenLink: _launchLink,
+                            isResidentPinned: _residentPinnedBroadcastIds
+                                .contains(_postPinKey(filtered[index])),
+                            onResidentPinChanged: (isPinned) =>
+                                _setResidentPinned(filtered[index], isPinned),
                           );
                         },
                       ),
@@ -720,7 +769,10 @@ class _FeedScreenState extends State<FeedScreen> {
                         vertical: 4,
                       ),
                       child: InkWell(
-                        onTap: () => setState(() => _selectedSource = 'pinned'),
+                        onTap: () => setState(() {
+                          _selectedSource = 'pinned';
+                          _selectedCategory = 'all';
+                        }),
                         borderRadius: BorderRadius.circular(20),
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 200),
@@ -974,8 +1026,15 @@ class _CategoryFilterModal extends StatelessWidget {
 class _BroadcastCard extends StatelessWidget {
   final Map<String, dynamic> post;
   final Function(String) onOpenLink;
+  final bool isResidentPinned;
+  final ValueChanged<bool> onResidentPinChanged;
 
-  const _BroadcastCard({required this.post, required this.onOpenLink});
+  const _BroadcastCard({
+    required this.post,
+    required this.onOpenLink,
+    required this.isResidentPinned,
+    required this.onResidentPinChanged,
+  });
 
   Map<String, dynamic> _getCategoryConfig(String category) {
     switch (category) {
@@ -1040,7 +1099,7 @@ class _BroadcastCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isPinned = post['is_pinned'] == true;
+    final isPinned = post['is_pinned'] == true || isResidentPinned;
     final isMdrrmo = post['is_mdrrmo'] != false;
     // author_name unused in header (source shown as entity origin only)
     final barangay =
@@ -1110,15 +1169,14 @@ class _BroadcastCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // ── Author & Source Header (No profile image, only Barangay or MDRRMO origin) ──
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
+                // ── Source and time on the left, menu and notice pill on the right ──
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Row(
                             children: [
                               Flexible(
                                 child: Text(
@@ -1145,48 +1203,90 @@ class _BroadcastCard extends StatelessWidget {
                               ),
                             ],
                           ),
-                          const SizedBox(height: 2),
-                          Text(
+                        ),
+                        PopupMenuButton<bool>(
+                          tooltip: 'More options',
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints.tightFor(
+                            width: 36,
+                            height: 36,
+                          ),
+                          onSelected: onResidentPinChanged,
+                          itemBuilder: (_) => [
+                            PopupMenuItem<bool>(
+                              value: !isResidentPinned,
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    isResidentPinned
+                                        ? Icons.push_pin_outlined
+                                        : Icons.push_pin_rounded,
+                                    size: 18,
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Text(
+                                    isResidentPinned
+                                        ? 'Remove my pin'
+                                        : 'Pin this post',
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                          child: const SizedBox(
+                            width: 36,
+                            height: 36,
+                            child: Icon(
+                              Icons.more_vert_rounded,
+                              color: Color(0xFF64748B),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
                             timeStr,
                             style: TextStyle(
                               fontSize: 11.5,
                               color: Colors.grey.shade600,
                             ),
                           ),
-                        ],
-                      ),
-                    ),
-
-                    // Category Pill on Top Right
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: cfg['bg'] as Color,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: cfg['border'] as Color),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            cfg['icon'] as IconData,
-                            size: 12,
-                            color: cfg['color'] as Color,
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
                           ),
-                          const SizedBox(width: 4),
-                          Text(
-                            cfg['label'] as String,
-                            style: TextStyle(
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.bold,
-                              color: cfg['color'] as Color,
-                            ),
+                          decoration: BoxDecoration(
+                            color: cfg['bg'] as Color,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: cfg['border'] as Color),
                           ),
-                        ],
-                      ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                cfg['icon'] as IconData,
+                                size: 12,
+                                color: cfg['color'] as Color,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                cfg['label'] as String,
+                                style: TextStyle(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: cfg['color'] as Color,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),

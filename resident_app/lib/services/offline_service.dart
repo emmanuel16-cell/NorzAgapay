@@ -51,6 +51,20 @@ class OfflineService {
     return data != null ? Map<String, dynamic>.from(data) : null;
   }
 
+  static const String _residentPinnedBroadcastsKey =
+      'resident_pinned_broadcast_ids';
+
+  static Set<String> getPinnedBroadcastIds() {
+    final data = Hive.box(profileBoxName).get(_residentPinnedBroadcastsKey);
+    if (data is! Iterable) return <String>{};
+    return data.map((id) => id.toString()).where((id) => id.isNotEmpty).toSet();
+  }
+
+  static Future<void> savePinnedBroadcastIds(Iterable<String> ids) async {
+    final normalized = ids.where((id) => id.isNotEmpty).toSet().toList();
+    await Hive.box(profileBoxName).put(_residentPinnedBroadcastsKey, normalized);
+  }
+
   static bool hasSeenReviewNotice(String reportId) {
     final seen = Hive.box(profileBoxName).get('seen_review_notice_ids');
     return seen is List && seen.map((value) => value.toString()).contains(reportId);
