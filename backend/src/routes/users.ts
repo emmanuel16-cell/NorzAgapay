@@ -148,7 +148,7 @@ router.post('/', authenticate, authorize('admin', 'master_admin'), async (req: A
         status: 'active',
         verified: true,
       })
-      .select('id, full_name, email, role, status, verified, created_at')
+      .select('id, full_name, email, role, phone, unit_type, status, verified, created_at')
       .single();
     if (error?.code === '23505') {
       res.status(409).json({ error: 'An account with this email already exists.' });
@@ -195,8 +195,6 @@ router.post('/', authenticate, authorize('admin', 'master_admin'), async (req: A
           throw certificationError;
         }
       }
-      data.phone = phone?.trim() || null;
-      data.unit_type = unitType;
     }
     res.status(201).json({ user: data });
   } catch (err) {
