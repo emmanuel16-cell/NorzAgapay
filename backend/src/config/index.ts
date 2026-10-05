@@ -32,8 +32,8 @@ export const config = {
   sendGridApiKey: process.env.SENDGRID_API_KEY || '',
   emailFrom: process.env.EMAIL_FROM || '',
 
-  // SMS API PH
-  smsApiKey: process.env.SMS_API_KEY || '',
-  smsApiBaseUrl: (process.env.SMS_API_BASE_URL || 'https://smsapiph.onrender.com/api/v1')
+  // TextBee SMS gateway
+  textBeeApiKey: process.env.TEXTBEE_API_KEY || '',
+  textBeeBaseUrl: (process.env.TEXTBEE_BASE_URL || 'https://api.textbee.dev/api/v1')
     .replace(/\/$/, ''),
 };

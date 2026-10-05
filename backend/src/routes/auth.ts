@@ -566,8 +566,8 @@ router.post('/resident/register-otp', async (req: Request, res: Response): Promi
       return;
     }
 
-    if (deliveryMethod === 'sms' && !config.smsApiKey) {
-      res.status(503).json({ error: 'SMS verification is not configured yet. Please choose email or contact the administrator.' });
+    if (deliveryMethod === 'sms' && !config.textBeeApiKey) {
+      res.status(503).json({ error: 'TextBee SMS is not configured yet. Please choose email or contact the administrator.' });
       return;
     }
 

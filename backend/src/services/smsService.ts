@@ -27,8 +27,8 @@ export const smsService = {
 };
 
 async function sendSms(phoneNumber: string, message: string, purpose: string): Promise<boolean> {
-  if (!config.smsApiKey) {
-    console.error('[SmsService] SMS_API_KEY is not configured.');
+  if (!config.textBeeApiKey) {
+    console.error('[SmsService] TEXTBEE_API_KEY is not configured.');
     return false;
   }
 
@@ -39,21 +39,28 @@ async function sendSms(phoneNumber: string, message: string, purpose: string): P
   }
 
   try {
-    const response = await fetch(`${config.smsApiBaseUrl}/send/sms`, {
+    const response = await fetch(`${config.textBeeBaseUrl}/gateway/send-sms`, {
       method: 'POST',
       headers: {
-        'x-api-key': config.smsApiKey,
+        'x-api-key': config.textBeeApiKey,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        recipient,
+        recipients: [recipient],
         message,
       }),
       signal: AbortSignal.timeout(15000),
     });
 
-    const result = await response.json().catch(() => null) as { success?: boolean; error?: string; message?: string } | null;
-    if (!response.ok || result?.success === false) {
+    const result = await response.json().catch(() => null) as {
+      success?: boolean;
+      error?: string;
+      message?: string;
+      data?: { success?: boolean; successCount?: number; failureCount?: number };
+    } | null;
+    const resultData = result?.data;
+    const noMessagesAccepted = resultData?.successCount === 0 && resultData?.failureCount !== undefined;
+    if (!response.ok || result?.success === false || resultData?.success === false || noMessagesAccepted) {
       console.error(`[SmsService] SMS API rejected the ${purpose} request (HTTP ${response.status}).`);
       return false;
     }
