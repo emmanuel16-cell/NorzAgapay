@@ -589,7 +589,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     if (!dialogCtx.mounted) return;
                                     Navigator.pop(dialogCtx);
 
-                                    _showTemporaryPasswordNoticeDialog(email, tempPass);
+                                    _showTemporaryPasswordNoticeDialog(
+                                      email: email,
+                                      contact: contact,
+                                      deliveryMethod: data['temporaryPasswordDeliveryMethod']?.toString() ?? deliveryMethod,
+                                      passwordSent: data['temporaryPasswordSent'] == true,
+                                      tempPassword: tempPass,
+                                    );
                                   } catch (err) {
                                     if (!dialogCtx.mounted) return;
                                     setDialogState(() {
@@ -640,7 +646,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
     });
   }
 
-  void _showTemporaryPasswordNoticeDialog(String email, [String? tempPassword]) {
+  void _showTemporaryPasswordNoticeDialog({
+    required String email,
+    required String contact,
+    required String deliveryMethod,
+    required bool passwordSent,
+    String? tempPassword,
+  }) {
+    final isSms = deliveryMethod == 'sms';
+    final deliveryChannel = isSms ? 'SMS' : 'email';
+    final deliveryDestination = isSms ? contact : email;
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -680,9 +695,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   left: BorderSide(color: Color(0xFF1B4F72), width: 4),
                 ),
               ),
-              child: const Text(
-                'NorzAgapay sent a temporary password. Don\'t share this to anyone. If it\'s not you that requested it, please ignore.',
-                style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: Color(0xFF0F172A), height: 1.45),
+              child: Text(
+                passwordSent
+                    ? 'NorzAgapay sent your temporary password by $deliveryChannel. Don\'t share it with anyone.'
+                    : 'We could not send the temporary password by $deliveryChannel. It is shown below; save it securely.',
+                style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: Color(0xFF0F172A), height: 1.45),
               ),
             ),
             if (tempPassword != null && tempPassword.isNotEmpty) ...[
@@ -709,7 +726,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ],
             const SizedBox(height: 14),
             Text(
-              'A temporary password has also been sent to your email address ($email).',
+              passwordSent
+                  ? 'The temporary password was sent to $deliveryDestination by $deliveryChannel.'
+                  : 'The temporary password could not be sent to $deliveryDestination. Use the password shown above.',
               style: TextStyle(fontSize: 13, color: Colors.grey.shade700, height: 1.4),
             ),
             const SizedBox(height: 8),
@@ -1781,7 +1800,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           Align(
             alignment: Alignment.centerLeft,
             child: Text(
-              'Your email is still used for your account and temporary password.',
+              'Email is required for your account. The code and temporary password use this selection.',
               style: TextStyle(fontSize: 11.5, color: Colors.grey.shade600),
             ),
           ),

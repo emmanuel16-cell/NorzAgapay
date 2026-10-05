@@ -630,7 +630,7 @@ router.get('/resident/verify-register-otp', (_req: Request, res: Response): void
     status: 'online',
     endpoint: '/api/auth/resident/verify-register-otp',
     method: 'POST',
-    description: 'Verifies the 6-digit OTP and generates an account with a temporary password sent to email.',
+    description: 'Verifies the 6-digit OTP and sends the temporary password through the selected email or SMS channel.',
     expectedBody: {
       email: 'user@example.com',
       otp: '123456',
@@ -708,10 +708,16 @@ router.post('/resident/verify-register-otp', async (req: Request, res: Response)
     // Clean up OTP from Redis
     await deleteOtp(key);
 
-    // Send temporary password email non-blocking in background
-    emailService.sendTemporaryPasswordEmail(key, tempPassword, fullName).catch((err) => {
-      console.warn('[ResidentAuth] Failed to send temporary password email:', err.message);
-    });
+    // Send the temporary password through the same channel used for the OTP.
+    const deliveryMethod = record.deliveryMethod === 'sms' ? 'sms' : 'email';
+    let temporaryPasswordSent = false;
+    try {
+      temporaryPasswordSent = deliveryMethod === 'sms'
+        ? await smsService.sendTemporaryPasswordSms(contactNumber || '', tempPassword)
+        : await emailService.sendTemporaryPasswordEmail(key, tempPassword, fullName);
+    } catch (err: any) {
+      console.warn(`[ResidentAuth] Failed to send temporary password by ${deliveryMethod}:`, err.message);
+    }
 
     // Generate JWT token for immediate access
     const token = jwt.sign(
@@ -727,9 +733,12 @@ router.post('/resident/verify-register-otp', async (req: Request, res: Response)
 
     res.status(201).json({
       success: true,
-      message: 'Account verified! NorzAgapay sent a temporary password to your email.',
+      message: temporaryPasswordSent
+        ? `Account verified. Temporary password sent by ${deliveryMethod}.`
+        : `Account verified, but the temporary password could not be sent by ${deliveryMethod}. It is shown in the app.`,
       temporaryPassword: tempPassword,
-      temporaryPasswordSent: true,
+      temporaryPasswordSent,
+      temporaryPasswordDeliveryMethod: deliveryMethod,
       user: {
         id: finalUser.id,
         full_name: finalUser.full_name,
