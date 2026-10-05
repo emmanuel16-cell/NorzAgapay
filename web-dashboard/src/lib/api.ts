@@ -83,7 +83,14 @@ export const taskAPI = {
 // Users
 export const userAPI = {
   list: (params?: any) => api.get('/users', { params }),
-  create: (data: { full_name: string; email: string; password: string; role: string }) => api.post('/users', data),
+  create: (data: {
+    full_name: string;
+    email: string;
+    password: string;
+    role: string;
+    phone?: string | null;
+    unit_type?: string | null;
+  }) => api.post('/users', data),
   get: (id: string) => api.get(`/users/${id}`),
   update: (id: string, data: any) => api.patch(`/users/${id}`, data),
 };
