@@ -5,6 +5,8 @@ import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../services/municipality_boundary_service.dart';
+import '../../widgets/municipality_boundary_map_layer.dart';
 import '../models/mdrrmo_report.dart';
 import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
@@ -29,6 +31,10 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
   late MdrrmoReport _report;
   late final TabController _tabs;
   bool _busy = false;
+  int _assessmentAgencyIndex = 0;
+  String _assistanceRequestType = 'goods';
+  final _assistanceCategory = TextEditingController();
+  final _assistanceDetails = TextEditingController();
 
   @override
   void initState() {
@@ -40,6 +46,8 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
   @override
   void dispose() {
     _tabs.dispose();
+    _assistanceCategory.dispose();
+    _assistanceDetails.dispose();
     super.dispose();
   }
 
@@ -419,6 +427,74 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
     }, 'Field media uploaded.');
   }
 
+  Future<void> _recordFieldAssessment() async {
+    final situation = TextEditingController();
+    final people = TextEditingController();
+    final actions = TextEditingController();
+    final risks = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('MDRRMO Field Assessment'),
+        content: Form(
+          key: formKey,
+          child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+            TextFormField(controller: situation, maxLines: 3, decoration: const InputDecoration(labelText: 'Situation observed *'), validator: (value) => (value?.trim().isEmpty ?? true) ? 'Describe what you observed.' : null),
+            TextFormField(controller: people, maxLines: 2, decoration: const InputDecoration(labelText: 'People affected / urgency')),
+            TextFormField(controller: actions, maxLines: 2, decoration: const InputDecoration(labelText: 'Actions taken')),
+            TextFormField(controller: risks, maxLines: 2, decoration: const InputDecoration(labelText: 'Risks / resources needed')),
+          ])),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () { if (formKey.currentState!.validate()) Navigator.pop(dialogContext, true); }, child: const Text('Save Assessment')),
+        ],
+      ),
+    );
+    if (saved == true && mounted) {
+      final token = context.read<AuthProvider>().token;
+      if (token != null) {
+        await _run(() async {
+          _report = await ApiService.saveMdrrmoFieldAssessment(
+            token,
+            _report.id,
+            situation: situation.text.trim(),
+            affectedPeople: people.text.trim(),
+            actionsTaken: actions.text.trim(),
+            risksResources: risks.text.trim(),
+          );
+        }, 'MDRRMO field assessment saved.');
+      }
+    }
+    situation.dispose();
+    people.dispose();
+    actions.dispose();
+    risks.dispose();
+  }
+
+  Future<void> _submitAssistanceRequest() async {
+    final category = _assistanceCategory.text.trim();
+    final details = _assistanceDetails.text.trim();
+    if (category.isEmpty || details.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Add the requested resource and explain why it is needed.')));
+      return;
+    }
+    final token = context.read<AuthProvider>().token;
+    if (token == null) return;
+    await _run(() async {
+      await ApiService.requestMdrrmoAssistance(
+        token,
+        _report.id,
+        requestType: _assistanceRequestType,
+        subType: category,
+        details: details,
+      );
+      _assistanceCategory.clear();
+      _assistanceDetails.clear();
+    }, 'Assistance request sent to command staff.');
+  }
+
   Future<void> _run(Future<void> Function() action, String success) async {
     setState(() => _busy = true);
     try {
@@ -592,7 +668,7 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
                               'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                           userAgentPackageName: 'com.norzagapay.mobile',
                         ),
-                        MarkerLayer(
+                        MunicipalityBoundaryMarkerLayer(
                           markers: [
                             Marker(
                               point: LatLng(
@@ -609,6 +685,9 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
                             ),
                           ],
                         ),
+                        const MunicipalityBoundaryMapLayer(
+                          outsideColor: Colors.white,
+                        ),
                       ],
                     ),
                   ),
@@ -623,9 +702,55 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
   Widget _fieldAssessment() {
     final media = _report.responderMedia;
     final assignments = _report.assignments;
+    final user = context.read<AuthProvider>().user;
+    final assignmentStatus = _myAssignment(user?.id)?['status']?.toString();
+    final canEditAssessment = user?.role.name == 'responder' &&
+        (assignmentStatus == 'assigned' || assignmentStatus == 'responding') &&
+        !_report.isResolved;
+    final showBarangayAssessment = _report.isEscalated && _assessmentAgencyIndex == 0;
+    final assessmentText = showBarangayAssessment
+        ? _extractFieldAssessment(_report.barangayResponseNotes)
+        : _report.mdrrmoResponseNotes;
     return ListView(
       padding: const EdgeInsets.all(14),
       children: [
+        if (_report.isEscalated)
+          _section(
+            'Field Assessment Agency',
+            Wrap(spacing: 8, children: [
+              ChoiceChip(
+                label: const Text('Barangay'),
+                selected: showBarangayAssessment,
+                onSelected: (_) => setState(() => _assessmentAgencyIndex = 0),
+                selectedColor: const Color(0xFFDBEAFE),
+              ),
+              ChoiceChip(
+                label: const Text('MDRRMO'),
+                selected: !showBarangayAssessment,
+                onSelected: (_) => setState(() => _assessmentAgencyIndex = 1),
+                selectedColor: const Color(0xFFCCFBF1),
+              ),
+            ]),
+          ),
+        _section(
+          showBarangayAssessment ? 'Barangay Responder Assessment' : 'MDRRMO Responder Assessment',
+          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(
+              (assessmentText ?? '').trim().isEmpty
+                  ? 'No field assessment recorded yet.'
+                  : assessmentText!.trim(),
+              style: const TextStyle(color: Color(0xFF334155), height: 1.5),
+            ),
+            if (!showBarangayAssessment && canEditAssessment) ...[
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: _busy ? null : _recordFieldAssessment,
+                icon: const Icon(Icons.edit_note_rounded),
+                label: Text((assessmentText ?? '').isEmpty ? 'Record Field Assessment' : 'Update Field Assessment'),
+              ),
+            ],
+          ]),
+        ),
         _section(
           'Dispatcher Classification',
           Text(
@@ -780,6 +905,78 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
     );
   }
 
+  String? _extractFieldAssessment(String? notes) {
+    final value = (notes ?? '').trim();
+    if (value.isEmpty) return null;
+    final upper = value.toUpperCase();
+    final taggedStart = upper.indexOf('[MDRRMO FIELD ASSESSMENT]');
+    final start = taggedStart >= 0 ? taggedStart : upper.indexOf('FIELD ASSESSMENT');
+    if (start < 0) return null;
+    final markerLength = taggedStart >= 0
+        ? '[MDRRMO FIELD ASSESSMENT]'.length
+        : 'FIELD ASSESSMENT'.length;
+    return value.substring(start + markerLength).trim();
+  }
+
+  Widget _requestAssistance() {
+    final user = context.read<AuthProvider>().user;
+    final assignment = _myAssignment(user?.id);
+    final canRequest = user?.role.name == 'responder' &&
+        (assignment?['status'] == 'assigned' || assignment?['status'] == 'responding') &&
+        !_report.isResolved;
+    return ListView(
+      padding: const EdgeInsets.all(14),
+      children: [
+      _section(
+        'Request Assistance',
+        Text(
+          canRequest
+              ? 'Send a resource or responder request to command staff. The report is attached automatically and command staff receive a live notification.'
+              : 'Assistance requests are available to responders assigned to this active report.',
+          style: const TextStyle(color: Color(0xFF475569), height: 1.45),
+        ),
+      ),
+      if (canRequest) _section(
+        'Assistance Needed',
+        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          DropdownButtonFormField<String>(
+            value: _assistanceRequestType,
+            decoration: const InputDecoration(labelText: 'Request type'),
+            items: const [
+              DropdownMenuItem(value: 'goods', child: Text('Supplies / Equipment')),
+              DropdownMenuItem(value: 'responders', child: Text('Additional Responders')),
+            ],
+            onChanged: _busy ? null : (value) { if (value != null) setState(() => _assistanceRequestType = value); },
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _assistanceCategory,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: InputDecoration(labelText: _assistanceRequestType == 'goods' ? 'Supplies or equipment' : 'Responder skills / team'),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _assistanceDetails,
+            maxLines: 4,
+            maxLength: 1000,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: const InputDecoration(labelText: 'Why is it needed?', alignLabelWithHint: true),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: _busy ? null : _submitAssistanceRequest,
+              icon: const Icon(Icons.send_rounded),
+              label: Text(_busy ? 'Sending…' : 'Send Request'),
+            ),
+          ),
+        ]),
+      ),
+      ],
+    );
+  }
+
   Widget _timeline(String label, DateTime? date) => Padding(
     padding: const EdgeInsets.symmetric(vertical: 5),
     child: Row(
@@ -908,8 +1105,8 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
           unselectedLabelColor: Colors.white70,
           tabs: const [
             Tab(text: 'Report Details'),
-            Tab(text: 'Field Assessment'),
-            Tab(text: 'Response Status'),
+          Tab(text: 'Request Assistance'),
+          Tab(text: 'Field Assessment'),
           ],
         ),
       ),
@@ -958,7 +1155,7 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
               controller: _tabs,
               children: [
                 _reportDetails(),
-                _fieldAssessment(),
+                _requestAssistance(),
                 _fieldAssessment(),
               ],
             ),

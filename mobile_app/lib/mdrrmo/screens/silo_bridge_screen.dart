@@ -123,7 +123,7 @@ class _SiloBridgeScreenState extends State<SiloBridgeScreen> {
                 ),
           ],
         ),
-        const MunicipalityBoundaryMapLayer(outsideColor: Color(0xFFF5F6FA)),
+        const MunicipalityBoundaryMapLayer(outsideColor: Colors.white),
       ],
     );
   }

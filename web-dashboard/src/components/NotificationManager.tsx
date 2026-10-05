@@ -43,6 +43,23 @@ export default function NotificationManager() {
       }
     });
 
+    socket.on('resource:request', (request: any) => {
+      toast((t) => (
+        <div
+          onClick={() => {
+            toast.dismiss(t.id);
+            navigate(request.incident_id ? `/reports?id=${request.incident_id}` : '/requests');
+          }}
+          style={{ width: '100%', cursor: 'pointer', padding: '10px' }}
+        >
+          <div style={{ fontWeight: 'bold', color: 'white' }}>Assistance requested</div>
+          <div style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.9)' }}>
+            {request.requested_by_user?.full_name || 'Responder'} submitted a {request.request_type || 'resource'} request.
+          </div>
+        </div>
+      ), { duration: 30000, position: 'top-right' });
+    });
+
     // Mock simulate function for testing
     (window as any).simulateNewReport = (reportId: string, title: string) => {
       showIncidentNotification(reportId, title);
@@ -50,6 +67,7 @@ export default function NotificationManager() {
 
     return () => {
       socket.off('incident_report:new');
+      socket.off('resource:request');
       delete (window as any).simulateNewReport;
     };
   }, [navigate, user]);

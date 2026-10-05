@@ -672,7 +672,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                           ],
                         ),
                         const MunicipalityBoundaryMapLayer(
-                          outsideColor: Color(0xFF0F172A),
+                          outsideColor: Colors.white,
                         ),
                       ],
                     ),

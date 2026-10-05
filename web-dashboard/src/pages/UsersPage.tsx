@@ -22,7 +22,7 @@ export default function UsersPage() {
   const [editUser, setEditUser] = useState<User|null>(null);
   const [editForm, setEditForm] = useState({ status:'', role:'' });
   const [showCreate, setShowCreate] = useState(false);
-  const [createForm, setCreateForm] = useState({ full_name:'', email:'', password:'', role:'logistics' });
+  const [createForm, setCreateForm] = useState({ full_name:'', email:'', password:'', phone:'', unit_type:'', role:'logistics' });
   const [creating, setCreating] = useState(false);
 
   const fetchUsers = () => {
@@ -37,7 +37,10 @@ export default function UsersPage() {
 
   const openEdit = (u: User) => {
     setEditUser(u);
-    setEditForm({ status: u.status, role: u.role });
+    setEditForm({
+      status: u.role === 'responder' && u.status === 'pending_verification' ? 'active' : u.status,
+      role: u.role,
+    });
   };
 
   const handleSave = async () => {
@@ -54,10 +57,14 @@ export default function UsersPage() {
     event.preventDefault();
     setCreating(true);
     try {
-      await userAPI.create(createForm);
+      await userAPI.create({
+        ...createForm,
+        phone: createForm.phone.trim() || undefined,
+        unit_type: createForm.role === 'responder' ? createForm.unit_type || undefined : undefined,
+      });
       toast.success(`${createForm.role.replace(/_/g, ' ')} account created`);
       setShowCreate(false);
-      setCreateForm({ full_name:'', email:'', password:'', role:'logistics' });
+      setCreateForm({ full_name:'', email:'', password:'', phone:'', unit_type:'', role:'logistics' });
       fetchUsers();
     } catch (error: any) {
       toast.error(error.response?.data?.error || 'Account creation failed');
@@ -77,9 +84,7 @@ export default function UsersPage() {
           {isMasterAdmin && <option value="admin">Admin</option>}
           <option value="logistics">Logistics</option>
           <option value="dispatcher">Dispatcher</option>
-          {isMasterAdmin && <>
-            <option value="responder">Responder</option>
-          </>}
+          <option value="responder">Responder</option>
         </select>
         <button className="btn btn-primary" onClick={() => setShowCreate(true)}>Create Account</button>
         </div>
@@ -120,7 +125,7 @@ export default function UsersPage() {
             <div className="form-group">
               <label className="form-label">Role</label>
               {isMasterAdmin ? (
-                <select className="form-select" value={editForm.role} onChange={e=>setEditForm({...editForm,role:e.target.value})}>
+                <select className="form-select" value={editForm.role} onChange={e=>setEditForm({...editForm,role:e.target.value,...(e.target.value === 'responder' ? {status:'active'} : {})})}>
                   <option value="admin">Admin</option>
                   <option value="logistics">Logistics</option>
                   <option value="dispatcher">Dispatcher</option>
@@ -133,7 +138,7 @@ export default function UsersPage() {
               <select className="form-select" value={editForm.status} onChange={e=>setEditForm({...editForm,status:e.target.value})}>
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>
-                <option value="pending_verification">Pending Verification</option>
+                {editForm.role !== 'responder' && <option value="pending_verification">Pending Verification</option>}
               </select>
             </div>
             <div className="modal-footer">
@@ -169,8 +174,35 @@ export default function UsersPage() {
                 {isMasterAdmin && <option value="admin">Admin</option>}
                 <option value="logistics">Logistics</option>
                 <option value="dispatcher">Dispatcher</option>
+                <option value="responder">Responder</option>
               </select>
             </div>
+            {createForm.role === 'responder' && (
+              <>
+                <div className="form-group">
+                  <label className="form-label">Contact Number (optional)</label>
+                  <input className="form-input" type="tel" maxLength={30} value={createForm.phone} onChange={event => setCreateForm({...createForm,phone:event.target.value})} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Starting Specialization (optional)</label>
+                  <select className="form-select" value={createForm.unit_type} onChange={event => setCreateForm({...createForm,unit_type:event.target.value})}>
+                    <option value="">No specialization yet</option>
+                    <option value="Rescue Officer">Rescue Officer</option>
+                    <option value="Swift Water Rescue Officer">Swift Water Rescue Officer</option>
+                    <option value="Mountain Rescue Officer">Mountain Rescue Officer</option>
+                    <option value="Emergency Medical Responder (EMR)">Emergency Medical Responder (EMR)</option>
+                    <option value="Ambulance Officer / EMS Personnel">Ambulance Officer / EMS Personnel</option>
+                    <option value="Fire Response Officer">Fire Response Officer</option>
+                    <option value="Evacuation Officer">Evacuation Officer</option>
+                    <option value="Safety & Security Officer">Safety &amp; Security Officer</option>
+                    <option value="Traffic & Road Clearing Officer">Traffic &amp; Road Clearing Officer</option>
+                    <option value="Communications Officer">Communications Officer</option>
+                    <option value="Logistics Response Officer">Logistics Response Officer</option>
+                    <option value="Damage Assessment Officer">Damage Assessment Officer</option>
+                  </select>
+                </div>
+              </>
+            )}
             <div className="modal-footer">
               <button type="button" className="btn btn-outline" onClick={() => setShowCreate(false)}>Cancel</button>
               <button type="submit" className="btn btn-primary" disabled={creating}>{creating ? 'Creating…' : 'Create Account'}</button>

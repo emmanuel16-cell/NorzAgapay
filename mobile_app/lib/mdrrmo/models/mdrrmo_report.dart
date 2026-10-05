@@ -19,6 +19,9 @@ class MdrrmoReport {
   final String? severity;
   final String? dispatchNotes;
   final String? resolutionNotes;
+  final String? barangayResponseNotes;
+  final String? mdrrmoResponseNotes;
+  final bool isEscalated;
   final String? barangayName;
   final String? responderName;
   final DateTime? dispatchedAt;
@@ -50,6 +53,9 @@ class MdrrmoReport {
     this.severity,
     this.dispatchNotes,
     this.resolutionNotes,
+    this.barangayResponseNotes,
+    this.mdrrmoResponseNotes,
+    this.isEscalated = false,
     this.barangayName,
     this.responderName,
     this.dispatchedAt,
@@ -133,6 +139,11 @@ class MdrrmoReport {
       severity: json['severity']?.toString(),
       dispatchNotes: json['mdrrmo_dispatch_notes']?.toString(),
       resolutionNotes: json['resolved_notes']?.toString(),
+      barangayResponseNotes: json['barangay_response_notes']?.toString(),
+      mdrrmoResponseNotes: json['mdrrmo_response_notes']?.toString(),
+      isEscalated: json['is_escalated'] == true ||
+          json['status'] == 'escalated' ||
+          (json['barangay_response_notes']?.toString().toLowerCase().contains('escalated') ?? false),
       barangayName:
           (json['barangay_name'] ??
                   (json['barangays'] is Map ? json['barangays']['name'] : null))

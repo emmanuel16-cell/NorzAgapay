@@ -10,10 +10,12 @@ import 'screens/mdrrmo_reports_screen.dart';
 import 'models/user.dart';
 import 'core/constants.dart';
 import 'services/offline_service.dart';
+import '../services/municipality_boundary_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await OfflineService.init();
+  await MunicipalityBoundaryService.instance.initialize();
   runApp(const NorzAgapayApp());
 }
 

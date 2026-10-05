@@ -172,7 +172,7 @@ class NorzagarayBoundary {
             points: polygon.outer,
             holePointsList: polygon.holes,
             color: Colors.transparent,
-            borderColor: const Color(0xFF263238),
+            borderColor: const Color(0xFFD6F5C8),
             borderStrokeWidth: 1.5,
           ),
         )

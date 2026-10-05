@@ -45,6 +45,7 @@ function formatReport(report: any): any {
   return {
     ...report,
     barangay_name: report.barangays?.name || report.barangay_name || null,
+    is_escalated: report.status === 'escalated' || Boolean(report.barangay_response_notes?.toLowerCase().includes('escalated')),
     proof_urls: proofUrls,
     proof_types: proofTypes,
     proof_url: proofUrls[0] || null,
@@ -324,6 +325,55 @@ const arrivalSchema = z.object({
   accuracy_m: z.number().min(0).optional(),
   fix_at: z.string().optional(),
 }).refine((data) => (data.latitude === undefined) === (data.longitude === undefined), 'Send both coordinates or neither.');
+
+router.patch('/:id/field-assessment', authenticate, authorize('responder'), async (req: AuthRequest, res: Response): Promise<void> => {
+  const parsed = z.object({
+    situation: z.string().trim().min(1).max(1500),
+    affected_people: z.string().trim().max(1000).optional().default(''),
+    actions_taken: z.string().trim().max(1000).optional().default(''),
+    risks_resources: z.string().trim().max(1000).optional().default(''),
+  }).safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Describe the situation observed before saving the field assessment.', details: parsed.error.flatten() });
+    return;
+  }
+  try {
+    const report = await reportForAction(req.params.id);
+    if (!report || !isMdrrmoReport(report)) { res.status(404).json({ error: 'MDRRMO report not found.' }); return; }
+    if (isResolved(report)) { res.status(409).json({ error: 'This report is already resolved.' }); return; }
+    const assignment = await findAssignment(report.id, req.user!.userId);
+    if (!assignment) { res.status(403).json({ error: 'This report is not assigned to your responder account.' }); return; }
+
+    const now = new Date().toISOString();
+    const previousResponseNotes = String(report.mdrrmo_response_notes || '').trim();
+    const taggedAssessmentStart = previousResponseNotes.toUpperCase().indexOf('[MDRRMO FIELD ASSESSMENT]');
+    const legacyAssessmentStart = previousResponseNotes.toUpperCase().indexOf('FIELD ASSESSMENT');
+    const assessmentStart = taggedAssessmentStart >= 0 ? taggedAssessmentStart : legacyAssessmentStart;
+    const coordinationNotes = assessmentStart >= 0
+      ? previousResponseNotes.slice(0, assessmentStart).trim()
+      : previousResponseNotes;
+    const responseNotes = [
+      coordinationNotes,
+      '[MDRRMO FIELD ASSESSMENT]',
+      `Situation: ${parsed.data.situation}`,
+      parsed.data.affected_people ? `People affected / urgency: ${parsed.data.affected_people}` : '',
+      parsed.data.actions_taken ? `Actions taken: ${parsed.data.actions_taken}` : '',
+      parsed.data.risks_resources ? `Risks / resources: ${parsed.data.risks_resources}` : '',
+    ].filter(Boolean).join('\n\n');
+    const { data, error } = await supabaseAdmin
+      .from('incident_reports')
+      .update({ mdrrmo_response_notes: responseNotes, mdrrmo_responded_at: now, mdrrmo_responded_by: req.user!.userId })
+      .eq('id', report.id)
+      .select('*, barangays(name)')
+      .single();
+    if (error) throw error;
+    const assignments = await getAssignments([report.id]);
+    res.json(await emitReportUpdate(data, assignments));
+  } catch (err) {
+    console.error('MDRRMO field assessment error:', err);
+    res.status(500).json({ error: 'Could not save the MDRRMO field assessment.' });
+  }
+});
 
 router.patch('/:id/arrive', authenticate, authorize('responder'), async (req: AuthRequest, res: Response): Promise<void> => {
   const parsed = arrivalSchema.safeParse(req.body);

@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../../services/auth_service.dart';
 import '../core/constants.dart';
-import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -303,25 +302,13 @@ class _LoginScreenState extends State<LoginScreen> {
                 label: const Text('Back to account selection'),
               ),
 
-              // Register link
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Text("Don't have an account? ", style: TextStyle(color: Colors.grey)),
-                  TextButton(
-                    onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const RegisterScreen()),
-                    ),
-                    child: const Text(
-                      'Register Now',
-                      style: TextStyle(
-                        color: Color(AppColors.accent),
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ],
+              const Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: Text(
+                  'Responder accounts are created by an MDRRMO administrator.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.grey, fontSize: 12),
+                ),
               ),
             ],
           ),

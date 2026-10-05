@@ -72,19 +72,26 @@ export default function VerificationPage({ category }: { category: 'officers' | 
   const fetchVerifications = async () => {
     setLoading(true);
     try {
-      const [pendingRes, archivedRes, dispPendingRes, dispArchivedRes, dispApprovedRes] = await Promise.allSettled([
-        verificationAPI.pending(),
-        verificationAPI.archived(),
+      const [dispPendingRes, dispArchivedRes, dispApprovedRes] = await Promise.allSettled([
         verificationAPI.barangayAccountRequestsPending(),
         verificationAPI.barangayAccountRequestsArchived(),
         verificationAPI.barangayAccountRequestsApproved(),
       ]);
 
-      if (pendingRes.status === 'fulfilled') {
-        setPending(pendingRes.value.data.pending_verifications || []);
-      }
-      if (archivedRes.status === 'fulfilled') {
-        setArchived(archivedRes.value.data.archived_verifications || []);
+      if (category === 'officers') {
+        const [pendingRes, archivedRes] = await Promise.allSettled([
+          verificationAPI.pending(),
+          verificationAPI.archived(),
+        ]);
+        if (pendingRes.status === 'fulfilled') {
+          setPending(pendingRes.value.data.pending_verifications || []);
+        }
+        if (archivedRes.status === 'fulfilled') {
+          setArchived(archivedRes.value.data.archived_verifications || []);
+        }
+      } else {
+        setPending([]);
+        setArchived([]);
       }
       if (dispPendingRes.status === 'fulfilled') {
         setPendingDispatchers(dispPendingRes.value.data.pending_dispatchers || []);

@@ -223,7 +223,7 @@ class _AddEvacCenterScreenState extends State<AddEvacCenterScreen> {
                         ],
                       ),
                       const MunicipalityBoundaryMapLayer(
-                        outsideColor: Color(0xFFF5F6FA),
+                        outsideColor: Colors.white,
                       ),
                     ],
                   ),

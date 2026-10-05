@@ -134,7 +134,7 @@ class MunicipalityBoundaryService extends ChangeNotifier {
           points: rings.first,
           holePointsList: rings.skip(1).toList(growable: false),
           color: Colors.transparent,
-          borderColor: const Color(0xFF263238),
+          borderColor: const Color(0xFFD6F5C8),
           borderStrokeWidth: 1.5,
         ),
       ),

@@ -6,6 +6,20 @@ import { authenticate, authorize, AuthRequest } from '../middleware/auth';
 import { setUserGPS } from '../config/redis';
 
 const router = Router();
+const responderSpecializations = [
+  'Rescue Officer',
+  'Swift Water Rescue Officer',
+  'Mountain Rescue Officer',
+  'Emergency Medical Responder (EMR)',
+  'Ambulance Officer / EMS Personnel',
+  'Fire Response Officer',
+  'Evacuation Officer',
+  'Safety & Security Officer',
+  'Traffic & Road Clearing Officer',
+  'Communications Officer',
+  'Logistics Response Officer',
+  'Damage Assessment Officer',
+] as const;
 
 // ============================================
 // GET /api/users — list dashboard users or responder profiles
@@ -30,7 +44,7 @@ router.get(
         .select('id, full_name, email, phone, role, unit_type, status, verified, latitude, longitude, last_seen, created_at')
         .order('created_at', { ascending: false });
 
-      if (user.role === 'admin') query = query.in('role', ['logistics', 'dispatcher']);
+      if (user.role === 'admin') query = query.in('role', ['logistics', 'dispatcher', 'responder']);
       if (role) query = query.eq('role', role as string);
       if (status) query = query.eq('status', status as string);
       if (verified !== undefined) query = query.eq('verified', verified === 'true');
@@ -87,30 +101,53 @@ router.get(
   }
 );
 
-// Create dashboard accounts. A master admin may create every dashboard role;
-// an admin may create logistics and dispatcher accounts only.
+// Create dashboard accounts. Responder accounts are provisioned by administrators;
+// contact details and starting specialization are intentionally optional.
 router.post('/', authenticate, authorize('admin', 'master_admin'), async (req: AuthRequest, res: Response): Promise<void> => {
   const schema = z.object({
     full_name: z.string().trim().min(2).max(120),
     email: z.string().trim().email().transform((value) => value.toLowerCase()),
     password: z.string().min(8).max(128),
-    role: z.enum(['admin', 'logistics', 'dispatcher']),
+    phone: z.string().trim().max(30).nullable().optional(),
+    unit_type: z.union([
+      z.string().trim().max(800),
+      z.array(z.enum(responderSpecializations)).max(responderSpecializations.length),
+    ]).nullable().optional(),
+    role: z.enum(['admin', 'logistics', 'dispatcher', 'responder']),
   });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: 'Validation failed', details: parsed.error.flatten() });
     return;
   }
-  const { role, full_name, email, password } = parsed.data;
+  const { role, full_name, email, password, phone } = parsed.data;
   if (req.user!.role !== 'master_admin' && role === 'admin') {
     res.status(403).json({ error: 'Only a master admin can create admin accounts.' });
     return;
   }
+  const specializationValues = Array.isArray(parsed.data.unit_type)
+    ? parsed.data.unit_type
+    : (parsed.data.unit_type || '').split(',').map((value) => value.trim()).filter(Boolean);
+  const specializations = [...new Set(specializationValues)];
+  if (role === 'responder' && specializations.some((value) => !responderSpecializations.includes(value as typeof responderSpecializations[number]))) {
+    res.status(400).json({ error: 'Choose valid responder specializations.' });
+    return;
+  }
+  const unitType = specializations.length ? specializations.join(', ') : null;
   try {
     const password_hash = await bcrypt.hash(password, 12);
     const { data, error } = await supabaseAdmin
       .from('users')
-      .insert({ full_name, email, password_hash, role, status: 'active', verified: true })
+      .insert({
+        full_name,
+        email,
+        phone: phone?.trim() || null,
+        password_hash,
+        role,
+        unit_type: role === 'responder' ? unitType : null,
+        status: 'active',
+        verified: true,
+      })
       .select('id, full_name, email, role, status, verified, created_at')
       .single();
     if (error?.code === '23505') {
@@ -122,10 +159,166 @@ router.post('/', authenticate, authorize('admin', 'master_admin'), async (req: A
       res.status(500).json({ error: 'Failed to create account.' });
       return;
     }
+    if (role === 'responder') {
+      const { data: existingOfficer, error: officerLookupError } = await supabaseAdmin
+        .from('officers')
+        .select('id')
+        .eq('email', email)
+        .limit(1)
+        .maybeSingle();
+      if (officerLookupError) throw officerLookupError;
+      const officerValues = {
+        name: full_name,
+        email,
+        phone: phone?.trim() || null,
+        specialization: unitType || '',
+        status: 'active',
+      };
+      const { error: officerError } = existingOfficer
+        ? await supabaseAdmin.from('officers').update(officerValues).eq('id', existingOfficer.id)
+        : await supabaseAdmin.from('officers').insert(officerValues);
+      if (officerError) {
+        await supabaseAdmin.from('users').delete().eq('id', data.id);
+        throw officerError;
+      }
+      if (specializations.length) {
+        const { error: certificationError } = await supabaseAdmin.from('certifications').insert(
+          specializations.map((certType) => ({
+            user_id: data.id,
+            cert_type: certType,
+            cert_number: 'SPECIALIZATION',
+            verified: true,
+          })),
+        );
+        if (certificationError) {
+          await supabaseAdmin.from('users').delete().eq('id', data.id);
+          throw certificationError;
+        }
+      }
+      data.phone = phone?.trim() || null;
+      data.unit_type = unitType;
+    }
     res.status(201).json({ user: data });
   } catch (err) {
     console.error('Create dashboard user error:', err);
     res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+// ============================================
+// PATCH /api/users/me/profile — responder self-service details
+// ============================================
+
+const responderProfileSchema = z.object({
+  full_name: z.string().trim().min(2).max(120).optional(),
+  phone: z.string().trim().max(30).nullable().optional(),
+  specializations: z.array(z.enum(responderSpecializations)).max(responderSpecializations.length).optional(),
+}).refine((value) => Object.keys(value).length > 0, 'Provide at least one profile field to update.');
+
+router.patch('/me/profile', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+  if (req.user!.role !== 'responder') {
+    res.status(403).json({ error: 'This endpoint is only for MDRRMO responders.' });
+    return;
+  }
+  const parsed = responderProfileSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Validation failed', details: parsed.error.flatten() });
+    return;
+  }
+
+  try {
+    const updates: Record<string, unknown> = {};
+    if (parsed.data.full_name !== undefined) updates.full_name = parsed.data.full_name;
+    if (parsed.data.phone !== undefined) updates.phone = parsed.data.phone?.trim() || null;
+    if (parsed.data.specializations !== undefined) {
+      updates.unit_type = [...new Set(parsed.data.specializations)].join(', ') || null;
+    }
+
+    const { data: user, error } = await supabaseAdmin
+      .from('users')
+      .update(updates)
+      .eq('id', req.user!.userId)
+      .select('id, full_name, email, phone, role, unit_type, status, verified, latitude, longitude')
+      .single();
+    if (error || !user) throw error || new Error('User not found.');
+
+    if (parsed.data.specializations !== undefined) {
+      const { error: deleteError } = await supabaseAdmin
+        .from('certifications')
+        .delete()
+        .eq('user_id', user.id)
+        .eq('cert_number', 'SPECIALIZATION');
+      if (deleteError) throw deleteError;
+      if (parsed.data.specializations.length) {
+        const { error: insertError } = await supabaseAdmin.from('certifications').insert(
+          [...new Set(parsed.data.specializations)].map((certType) => ({
+            user_id: user.id,
+            cert_type: certType,
+            cert_number: 'SPECIALIZATION',
+            verified: true,
+          })),
+        );
+        if (insertError) throw insertError;
+      }
+      await supabaseAdmin
+        .from('officers')
+        .update({
+          ...(parsed.data.full_name !== undefined ? { name: user.full_name } : {}),
+          ...(parsed.data.phone !== undefined ? { phone: user.phone } : {}),
+          specialization: user.unit_type || '',
+        })
+        .eq('email', user.email);
+    } else if (parsed.data.full_name !== undefined || parsed.data.phone !== undefined) {
+      await supabaseAdmin
+        .from('officers')
+        .update({
+          ...(parsed.data.full_name !== undefined ? { name: user.full_name } : {}),
+          ...(parsed.data.phone !== undefined ? { phone: user.phone } : {}),
+        })
+        .eq('email', user.email);
+    }
+
+    res.json({ user });
+  } catch (err) {
+    console.error('Update responder profile error:', err);
+    res.status(500).json({ error: 'Could not update your responder profile.' });
+  }
+});
+
+router.post('/me/change-password', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+  if (req.user!.role !== 'responder') {
+    res.status(403).json({ error: 'This endpoint is only for MDRRMO responders.' });
+    return;
+  }
+  const parsed = z.object({
+    current_password: z.string().min(1).max(128),
+    new_password: z.string().min(8).max(128),
+  }).safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Enter your current password and a new password with at least 8 characters.' });
+    return;
+  }
+  try {
+    const { data: user, error } = await supabaseAdmin
+      .from('users')
+      .select('password_hash')
+      .eq('id', req.user!.userId)
+      .single();
+    if (error || !user) throw error || new Error('User not found.');
+    if (!(await bcrypt.compare(parsed.data.current_password, user.password_hash))) {
+      res.status(400).json({ error: 'Current password is incorrect.' });
+      return;
+    }
+    const password_hash = await bcrypt.hash(parsed.data.new_password, 12);
+    const { error: updateError } = await supabaseAdmin
+      .from('users')
+      .update({ password_hash })
+      .eq('id', req.user!.userId);
+    if (updateError) throw updateError;
+    res.json({ message: 'Password updated.' });
+  } catch (err) {
+    console.error('Change responder password error:', err);
+    res.status(500).json({ error: 'Could not change your password.' });
   }
 });
 
@@ -154,8 +347,8 @@ router.get('/:id', authenticate, async (req: AuthRequest, res: Response): Promis
       return;
     }
 
-    if (user.role === 'admin' && !['logistics', 'dispatcher'].includes(data.role)) {
-      res.status(403).json({ error: 'Admins may only view logistics and dispatcher accounts.' });
+    if (user.role === 'admin' && !['logistics', 'dispatcher', 'responder'].includes(data.role)) {
+      res.status(403).json({ error: 'Admins may only view logistics, dispatcher, and responder accounts.' });
       return;
     }
 
@@ -245,17 +438,36 @@ router.patch(
         return;
       }
 
+      const { data: target, error: targetError } = await supabaseAdmin
+        .from('users')
+        .select('role, status, verified')
+        .eq('id', req.params.id)
+        .maybeSingle();
+      if (targetError) throw targetError;
+      if (!target) {
+        res.status(404).json({ error: 'User not found.' });
+        return;
+      }
       if (req.user!.role !== 'master_admin') {
-        const { data: target } = await supabaseAdmin.from('users').select('role').eq('id', req.params.id).maybeSingle();
-        if (!target || !['logistics', 'dispatcher'].includes(target.role)) {
-          res.status(403).json({ error: 'Admins may only manage logistics and dispatcher accounts.' });
+        if (!['logistics', 'dispatcher', 'responder'].includes(target.role)) {
+          res.status(403).json({ error: 'Admins may only manage logistics, dispatcher, and responder accounts.' });
           return;
         }
       }
+      const resultingRole = parsed.data.role ?? target.role;
+      if (resultingRole === 'responder' && (parsed.data.status === 'pending_verification' || parsed.data.verified === false)) {
+        res.status(400).json({ error: 'MDRRMO responder accounts are provisioned by administrators and do not use officer verification.' });
+        return;
+      }
 
+      const updateData = { ...parsed.data };
+      if (resultingRole === 'responder') {
+        if (target.status === 'pending_verification' && parsed.data.status === undefined) updateData.status = 'active';
+        if (target.verified === false && parsed.data.verified === undefined) updateData.verified = true;
+      }
       const { data: user, error } = await supabaseAdmin
         .from('users')
-        .update(parsed.data)
+        .update(updateData)
         .eq('id', req.params.id)
         .select('id, full_name, email, role, status, verified')
         .single();

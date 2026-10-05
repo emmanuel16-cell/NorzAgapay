@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import { z } from 'zod';
 import { supabaseAdmin } from '../config/supabase';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth';
+import { io } from '../server';
 
 const router = Router();
 
@@ -32,8 +33,8 @@ router.get('/', authenticate, authorize('logistics'), async (req: AuthRequest, r
 // ============================================
 const createRequestSchema = z.object({
   request_type: z.enum(['responders', 'goods']),
-  sub_type: z.string().optional(),
-  details: z.string(),
+  sub_type: z.string().trim().max(120).optional(),
+  details: z.string().trim().min(1).max(2000),
   incident_id: z.string().uuid().nullable().optional(),
 });
 
@@ -45,6 +46,35 @@ router.post('/', authenticate, authorize('responder', 'logistics'), async (req: 
       return;
     }
 
+    if (req.user!.role === 'responder') {
+      if (!parsed.data.incident_id) {
+        res.status(400).json({ error: 'Responder assistance requests must be attached to an assigned incident.' });
+        return;
+      }
+      const { data: assignment, error: assignmentError } = await supabaseAdmin
+        .from('mdrrmo_report_assignments')
+        .select('status')
+        .eq('report_id', parsed.data.incident_id)
+        .eq('responder_id', req.user!.userId)
+        .neq('status', 'removed')
+        .maybeSingle();
+      if (assignmentError) throw assignmentError;
+      if (!assignment || !['assigned', 'responding'].includes(assignment.status)) {
+        res.status(403).json({ error: 'You can request assistance only for an incident assigned to you.' });
+        return;
+      }
+      const { data: report, error: reportError } = await supabaseAdmin
+        .from('incident_reports')
+        .select('status, mdrrmo_response_status')
+        .eq('id', parsed.data.incident_id)
+        .maybeSingle();
+      if (reportError) throw reportError;
+      if (!report || report.mdrrmo_response_status === 'resolved' || ['resolved', 'closed'].includes(report.status)) {
+        res.status(409).json({ error: 'Assistance cannot be requested for a resolved incident.' });
+        return;
+      }
+    }
+
     const { data: request, error } = await supabaseAdmin
       .from('resource_requests')
       .insert({
@@ -52,7 +82,7 @@ router.post('/', authenticate, authorize('responder', 'logistics'), async (req: 
         requested_by: req.user!.userId,
         status: 'pending',
       })
-      .select()
+      .select('*, requested_by_user:users!requested_by(full_name, role)')
       .single();
 
     if (error) {
@@ -61,6 +91,7 @@ router.post('/', authenticate, authorize('responder', 'logistics'), async (req: 
       return;
     }
 
+    io.to('dashboard_staff').emit('resource:request', request);
     res.status(201).json({ message: 'Resource request submitted successfully.', request });
   } catch (err) {
     console.error('Create request error:', err);

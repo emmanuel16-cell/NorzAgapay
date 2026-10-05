@@ -1,5 +1,5 @@
 import { useState, useEffect, type ReactNode } from 'react';
-import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
   MapPin,
@@ -23,7 +23,6 @@ interface NavItem {
   icon?: ReactNode;
   label: string;
   section?: boolean;
-  children?: { path: string; label: string }[];
 }
 
 const navItems: NavItem[] = [
@@ -37,15 +36,7 @@ const navItems: NavItem[] = [
   { path: '/respond-units', icon: <Ambulance size={19} strokeWidth={1.8} />, label: 'Respond Units' },
   { path: '/responder-tracker', icon: <Ambulance size={19} strokeWidth={1.8} />, label: 'Responder Tracker' },
   { label: 'Administration', section: true },
-  {
-    path: '/verification/officers',
-    icon: <CheckCircle2 size={19} strokeWidth={1.8} />,
-    label: 'Verification Queue',
-    children: [
-      { path: '/verification/officers', label: 'Officer' },
-      { path: '/verification/barangay', label: 'Barangay Account Requests' },
-    ],
-  },
+  { path: '/verification/barangay', icon: <CheckCircle2 size={19} strokeWidth={1.8} />, label: 'Barangay Verification' },
   { path: '/users', icon: <Users size={19} strokeWidth={1.8} />, label: 'User Management' },
   { path: '/alert-broadcasts', icon: <Megaphone size={19} strokeWidth={1.8} />, label: 'Alert Broadcasts' },
   { path: '/officers', icon: <Award size={19} strokeWidth={1.8} />, label: 'Officers' },
@@ -55,7 +46,6 @@ const navItems: NavItem[] = [
 export default function DashboardLayout() {
   const { user, logout, isMasterAdmin } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
   const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
     return localStorage.getItem('sidebar_collapsed') === 'true';
   });
@@ -101,7 +91,7 @@ export default function DashboardLayout() {
   const roleNav = isMasterAdmin
     ? navItems
     : user?.role === 'admin'
-      ? navItems.filter(item => ['Administration', '/verification/officers', '/users', '/alert-broadcasts', '/officers', '/analytics'].includes(item.path || item.label))
+      ? navItems.filter(item => ['Administration', '/verification/barangay', '/users', '/alert-broadcasts', '/officers', '/analytics'].includes(item.path || item.label))
       : user?.role === 'logistics'
         ? navItems.filter(item => ['Logistics', '/evacuation-centers', '/municipality-boundary', '/requests', '/respond-units', '/responder-tracker'].includes(item.path || item.label))
         : user?.role === 'dispatcher'
@@ -153,31 +143,6 @@ export default function DashboardLayout() {
                 title={isCollapsed ? item.label : undefined}
               >
                 {isCollapsed ? <div className="nav-section-divider" /> : item.label}
-              </div>
-            ) : item.children ? (
-              <div key={i}>
-                <NavLink
-                  to={item.path!}
-                  className={`nav-item nav-expandable ${location.pathname.startsWith('/verification') ? 'active' : ''} ${isCollapsed ? 'collapsed' : ''}`}
-                  title={isCollapsed ? item.label : undefined}
-                >
-                  <span className="nav-icon">{item.icon}</span>
-                  {!isCollapsed && <span className="nav-text">{item.label}</span>}
-                </NavLink>
-                {!isCollapsed && location.pathname.startsWith('/verification') && (
-                  <div className="nav-submenu">
-                    {item.children.map((child) => (
-                      <NavLink
-                        key={child.path}
-                        to={child.path}
-                        end
-                        className={({ isActive }) => `nav-item nav-subitem ${isActive ? 'active' : ''}`}
-                      >
-                        {child.label}
-                      </NavLink>
-                    ))}
-                  </div>
-                )}
               </div>
             ) : (
               <NavLink

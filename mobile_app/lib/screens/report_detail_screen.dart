@@ -2336,7 +2336,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                           ],
                         ),
                         const MunicipalityBoundaryMapLayer(
-                          outsideColor: Color(0xFFF5F6FA),
+                          outsideColor: Colors.white,
                         ),
                       ],
                     ),

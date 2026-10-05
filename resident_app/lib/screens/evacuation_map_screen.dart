@@ -269,7 +269,7 @@ class _EvacuationCentersScreenState extends State<EvacuationCentersScreen> {
     final visibleCenters = _visibleCenters;
     final hasVisibleStations = visibleCenters.isNotEmpty;
     return Scaffold(
-      backgroundColor: const Color(0xFFF3F6FA),
+      backgroundColor: Colors.white,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         flexibleSpace: const ResidentGradientAppBar(),
@@ -351,7 +351,7 @@ class _EvacuationCentersScreenState extends State<EvacuationCentersScreen> {
                 ],
               ),
               const MunicipalityBoundaryMapLayer(
-                outsideColor: Color(0xFFF3F6FA),
+                outsideColor: Colors.white,
               ),
             ],
           ),

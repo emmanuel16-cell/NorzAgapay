@@ -32,6 +32,63 @@ class ApiService {
     throw Exception(message ?? 'Failed to fetch MDRRMO reports');
   }
 
+  static Future<List<Map<String, dynamic>>> getMdrrmoBroadcasts(String token) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/broadcasts/mdrrmo'),
+      headers: _headers(token),
+    );
+    final body = response.body.isEmpty ? const [] : jsonDecode(response.body);
+    if (response.statusCode == 200 && body is List) {
+      return body.whereType<Map>().map((item) => Map<String, dynamic>.from(item)).toList();
+    }
+    final message = body is Map ? body['error'] : null;
+    throw Exception(message ?? 'Failed to load MDRRMO posts');
+  }
+
+  static Future<MdrrmoReport> saveMdrrmoFieldAssessment(
+    String token,
+    String reportId, {
+    required String situation,
+    String affectedPeople = '',
+    String actionsTaken = '',
+    String risksResources = '',
+  }) async {
+    final response = await http.patch(
+      Uri.parse('$baseUrl/mdrrmo/reports/$reportId/field-assessment'),
+      headers: _headers(token),
+      body: jsonEncode({
+        'situation': situation,
+        'affected_people': affectedPeople,
+        'actions_taken': actionsTaken,
+        'risks_resources': risksResources,
+      }),
+    );
+    return _mdrrmoReportFromResponse(response, 'Failed to save field assessment');
+  }
+
+  static Future<void> requestMdrrmoAssistance(
+    String token,
+    String reportId, {
+    required String requestType,
+    required String subType,
+    required String details,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/requests'),
+      headers: _headers(token),
+      body: jsonEncode({
+        'request_type': requestType,
+        'sub_type': subType,
+        'details': details,
+        'incident_id': reportId,
+      }),
+    );
+    final body = response.body.isEmpty ? <String, dynamic>{} : jsonDecode(response.body);
+    if (response.statusCode != 201) {
+      throw Exception(body is Map ? body['error'] ?? 'Failed to submit assistance request' : 'Failed to submit assistance request');
+    }
+  }
+
   static Future<List<Map<String, dynamic>>> getActiveMdrrmoResponders(String token) async {
     final response = await http.get(
       Uri.parse('$baseUrl/mdrrmo/reports/responders'),
@@ -201,31 +258,4 @@ class ApiService {
     throw Exception('Failed to fetch evacuation centers');
   }
 
-  // ── Officer Account Registration ─────────────────────────────────────────
-  static Future<Map<String, dynamic>> registerOfficer({
-    required String fullName,
-    required String email,
-    required String password,
-    String? phone,
-    required String specialization,
-  }) async {
-    final res = await http.post(
-      Uri.parse('$baseUrl/auth/register'),
-      headers: _headers(null),
-      body: jsonEncode({
-        'full_name': fullName,
-        'email': email,
-        'password': password,
-        'phone': phone,
-        'role': 'responder',
-        'unit_type': specialization,
-      }),
-    );
-
-    final data = jsonDecode(res.body);
-    if (res.statusCode == 201 || res.statusCode == 200) {
-      return data;
-    }
-    throw Exception(data['error'] ?? 'Registration failed');
-  }
 }

@@ -12,7 +12,8 @@ const _mdPage = Color(0xFFF5F6FA);
 const _mdMuted = Color(0xFF64748B);
 
 class MdrrmoReportsScreen extends StatefulWidget {
-  const MdrrmoReportsScreen({super.key});
+  final bool embedded;
+  const MdrrmoReportsScreen({super.key, this.embedded = false});
   @override
   State<MdrrmoReportsScreen> createState() => _MdrrmoReportsScreenState();
 }
@@ -46,6 +47,7 @@ class _MdrrmoReportsScreenState extends State<MdrrmoReportsScreen>
     _tabs.dispose();
     SocketService.socket.off('mdrrmo:report_assigned', _reportListener);
     SocketService.socket.off('mdrrmo:report_updated', _reportListener);
+    SocketService.disconnect();
     super.dispose();
   }
 
@@ -290,9 +292,21 @@ class _MdrrmoReportsScreenState extends State<MdrrmoReportsScreen>
   @override
   Widget build(BuildContext context) {
     final user = context.watch<AuthProvider>().user;
+    final statusTabs = TabBar(
+      controller: _tabs,
+      indicatorColor: const Color(0xFF64D2B4),
+      labelColor: Colors.white,
+      unselectedLabelColor: Colors.white70,
+      tabs: [
+        Tab(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [const Text('Pending'), _badge(_forTab(0).length, const Color(0xFFEF4444))])),
+        Tab(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [const Text('Responding'), _badge(_forTab(1).length, const Color(0xFFF59E0B))])),
+        Tab(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [const Text('Resolved'), _badge(_forTab(2).length, const Color(0xFF10B981))])),
+      ],
+    );
+    final reportTabs = TabBarView(controller: _tabs, children: [_list(0), _list(1), _list(2)]);
     return Scaffold(
       backgroundColor: _mdPage,
-      appBar: AppBar(
+      appBar: widget.embedded ? null : AppBar(
         backgroundColor: _mdNavy,
         foregroundColor: Colors.white,
         surfaceTintColor: Colors.transparent,
@@ -318,46 +332,11 @@ class _MdrrmoReportsScreenState extends State<MdrrmoReportsScreen>
             icon: const Icon(Icons.refresh_rounded),
           ),
         ],
-        bottom: TabBar(
-          controller: _tabs,
-          indicatorColor: const Color(0xFF64D2B4),
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white70,
-          tabs: [
-            Tab(
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Text('Pending'),
-                  _badge(_forTab(0).length, const Color(0xFFEF4444)),
-                ],
-              ),
-            ),
-            Tab(
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Text('Responding'),
-                  _badge(_forTab(1).length, const Color(0xFFF59E0B)),
-                ],
-              ),
-            ),
-            Tab(
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Text('Resolved'),
-                  _badge(_forTab(2).length, const Color(0xFF10B981)),
-                ],
-              ),
-            ),
-          ],
-        ),
+        bottom: statusTabs,
       ),
-      body: TabBarView(
-        controller: _tabs,
-        children: [_list(0), _list(1), _list(2)],
-      ),
+      body: widget.embedded
+          ? Column(children: [Material(color: _mdNavy, child: statusTabs), Expanded(child: reportTabs)])
+          : reportTabs,
     );
   }
 }

@@ -191,7 +191,7 @@ router.get('/', async (_req: Request, res: Response) => {
 });
 
 // MDRRMO post manager data.
-router.get('/mdrrmo', authenticate, authorize('admin', 'master_admin'), async (_req: AuthRequest, res: Response) => {
+router.get('/mdrrmo', authenticate, authorize('admin', 'master_admin', 'responder'), async (_req: AuthRequest, res: Response) => {
   try {
     const { data, error } = await supabaseAdmin
       .from('public_broadcasts')

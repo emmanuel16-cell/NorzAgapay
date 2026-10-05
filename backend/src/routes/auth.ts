@@ -19,17 +19,9 @@ const registerSchema = z.object({
   full_name: z.string().min(2, 'Full name is required'),
   email: z.string().trim().email('Invalid email address').transform((value) => value.toLowerCase()),
   phone: z.string().max(30).optional().nullable(),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
   role: z.enum(['responder']),
   unit_type: z.string().nullable().optional(),
-}).refine(data => {
-  if (!data.unit_type) {
-    return false;
-  }
-  return true;
-}, {
-  message: 'A responder specialization is required.',
-  path: ['unit_type'],
 });
 
 const loginSchema = z.object({
@@ -103,7 +95,7 @@ router.post('/master-admin-setup', async (req: Request, res: Response): Promise<
 // POST /api/auth/register
 // ============================================
 
-router.post('/register', async (req: Request, res: Response): Promise<void> => {
+router.post('/register', authenticate, authorize('admin', 'master_admin'), async (req: Request, res: Response): Promise<void> => {
   try {
     const parsed = registerSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -129,8 +121,8 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
     const password_hash = await bcrypt.hash(password, 12);
 
     // Insert user
-    const isAutoActive = false;
-    const initialStatus = 'pending_verification';
+    const isAutoActive = true;
+    const initialStatus = 'active';
 
     // Preserve responder specializations for incident response matching.
     const rawUnitType = unit_type || '';
@@ -138,7 +130,7 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
       .split(',')
       .map((s: string) => s.trim())
       .filter(Boolean);
-    const primaryUnitType = specs[0] || 'Rescue Officer';
+    const primaryUnitType = specs[0] || null;
 
     const { data: newUser, error: insertError } = await supabaseAdmin
       .from('users')
@@ -161,7 +153,7 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Store each selected responder specialization for verification and matching.
+    // Store selected responder specializations for dispatch matching.
     if (specs.length > 0) {
       const certRows = specs.map((spec: string) => ({
         user_id: newUser.id,
@@ -178,32 +170,9 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
     const responseUnitType = specs.length > 0 ? specs.join(', ') : newUser.unit_type;
     const returnUser = { ...newUser, unit_type: responseUnitType };
 
-    // If account requires verification, return pending response without auth token
-    if (newUser.status === 'pending_verification') {
-      res.status(201).json({
-        message: 'Registration successful! Your Responder account is pending administrator verification in the Web Dashboard.',
-        user: returnUser,
-        requiresVerification: true,
-      });
-      return;
-    }
-
-    // Generate JWT for auto-approved accounts
-    const token = jwt.sign(
-      {
-        userId: newUser.id,
-        email: newUser.email,
-        role: newUser.role,
-        unitType: responseUnitType,
-      },
-      config.jwtSecret,
-      { expiresIn: config.jwtExpiresIn as any }
-    );
-
     res.status(201).json({
-      message: 'Registration successful.',
+      message: 'Responder account created by administrator.',
       user: returnUser,
-      token,
     });
   } catch (err) {
     console.error('Registration error:', err);

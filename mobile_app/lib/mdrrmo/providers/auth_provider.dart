@@ -53,10 +53,9 @@ class AuthProvider with ChangeNotifier {
           );
           final String? officerSpec = myMember['specialization'];
           String? updatedUnitTypeString = _user!.unitTypeString;
-          if (officerSpec != null && officerSpec.trim().isNotEmpty) {
-            if (updatedUnitTypeString == null || officerSpec.contains(',') || !updatedUnitTypeString.contains(',')) {
-              updatedUnitTypeString = officerSpec;
-            }
+          if ((updatedUnitTypeString == null || updatedUnitTypeString.trim().isEmpty) &&
+              officerSpec != null && officerSpec.trim().isNotEmpty) {
+            updatedUnitTypeString = officerSpec;
           }
 
           _user = User(
@@ -105,7 +104,6 @@ class AuthProvider with ChangeNotifier {
         }
         _token = token;
         _user = user;
-        await fetchMyUnit();
         notifyListeners();
       } else {
         await logout();
@@ -138,7 +136,6 @@ class AuthProvider with ChangeNotifier {
         _token = data['token'];
         _user = user;
         await _storage.write(key: AppConstants.tokenKey, value: _token);
-        await fetchMyUnit();
         notifyListeners();
       } else {
         throw data['error'] ?? 'Login failed';
@@ -185,46 +182,6 @@ class AuthProvider with ChangeNotifier {
       _token = data['token'];
       _user = user;
       await _storage.write(key: AppConstants.tokenKey, value: _token);
-      await fetchMyUnit();
-    } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
-  }
-
-  Future<Map<String, dynamic>> register(Map<String, dynamic> userData) async {
-    _isLoading = true;
-    notifyListeners();
-
-    try {
-      final response = await http.post(
-        Uri.parse('${AppConstants.apiBaseUrl}/auth/register'),
-        body: json.encode(userData),
-        headers: {
-          'Content-Type': 'application/json',
-          'ngrok-skip-browser-warning': 'true',
-        },
-      );
-
-      final data = json.decode(response.body);
-      if (response.statusCode == 201) {
-        return data;
-      } else {
-        String msg = data['error'] ?? 'Registration failed';
-        if (data['details'] != null && data['details'] is Map) {
-          final details = data['details'] as Map;
-          if (details['fieldErrors'] != null && details['fieldErrors'] is Map) {
-            final fieldErrors = details['fieldErrors'] as Map;
-            final errors = fieldErrors.entries
-                .map((e) => '${e.key}: ${(e.value as List).join(", ")}')
-                .join('\n');
-            if (errors.isNotEmpty) {
-              msg = '$msg:\n$errors';
-            }
-          }
-        }
-        throw msg;
-      }
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -359,6 +316,46 @@ class AuthProvider with ChangeNotifier {
     } catch (e) {
       rethrow;
     }
+  }
+
+  Future<void> updateMyProfile({
+    String? fullName,
+    String? phone,
+    List<String>? specializations,
+  }) async {
+    if (_token == null || _user == null) throw 'Authentication required';
+    final response = await http.patch(
+      Uri.parse('${AppConstants.apiBaseUrl}/users/me/profile'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $_token',
+        'ngrok-skip-browser-warning': 'true',
+      },
+      body: json.encode({
+        if (fullName != null) 'full_name': fullName.trim(),
+        if (phone != null) 'phone': phone.trim().isEmpty ? null : phone.trim(),
+        if (specializations != null) 'specializations': specializations,
+      }),
+    );
+    final data = json.decode(response.body);
+    if (response.statusCode != 200) throw data['error'] ?? 'Could not update profile';
+    _user = User.fromJson(Map<String, dynamic>.from(data['user']));
+    notifyListeners();
+  }
+
+  Future<void> changeMyPassword(String currentPassword, String newPassword) async {
+    if (_token == null) throw 'Authentication required';
+    final response = await http.post(
+      Uri.parse('${AppConstants.apiBaseUrl}/users/me/change-password'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $_token',
+        'ngrok-skip-browser-warning': 'true',
+      },
+      body: json.encode({'current_password': currentPassword, 'new_password': newPassword}),
+    );
+    final data = json.decode(response.body);
+    if (response.statusCode != 200) throw data['error'] ?? 'Could not change password';
   }
 
   Future<void> logout() async {
