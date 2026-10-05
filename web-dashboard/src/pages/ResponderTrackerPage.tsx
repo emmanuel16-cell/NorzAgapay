@@ -28,6 +28,16 @@ interface Incident {
   longitude?: number | string;
 }
 
+interface IncidentReportDetails {
+  id: string;
+  type?: string | null;
+  title?: string | null;
+  incident_type?: string | null;
+  severity?: string | null;
+  dispatched_at?: string | null;
+  resolved_at?: string | null;
+}
+
 interface TaskResponder {
   responder_id?: string;
   status?: string;
@@ -48,7 +58,9 @@ interface ResponseTask {
   arrived_at?: string | null;
   returning_at?: string | null;
   completed_at?: string | null;
+  returned_at?: string | null;
   incident?: Incident | null;
+  report?: IncidentReportDetails | null;
   address?: string;
   latitude?: number | string;
   longitude?: number | string;
@@ -64,11 +76,11 @@ interface ResponderLocation {
 type Filter = 'active' | 'all' | 'resolved';
 
 const stages = [
-  { label: 'Accepted', icon: Check },
-  { label: 'Going to incident', icon: Navigation },
-  { label: 'On scene', icon: MapPin },
-  { label: 'Returning', icon: RotateCcw },
-  { label: 'Resolved', icon: ShieldCheck },
+  { id: 'accepted', label: 'Accepted', icon: Check },
+  { id: 'en-route', label: 'En route', icon: Navigation },
+  { id: 'arrived', label: 'Arrived', icon: MapPin },
+  { id: 'resolved', label: 'Resolved', icon: ShieldCheck },
+  { id: 'returned', label: 'Returned', icon: RotateCcw },
 ];
 
 function asCoordinate(value: number | string | undefined): number | null {
@@ -93,6 +105,116 @@ function formatTime(value?: string | null): string | null {
   return date.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
+function formatClock(value?: string | null): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+function durationMinutes(from?: string | null, to?: string | null): number | null {
+  if (!from || !to) return null;
+  const start = new Date(from).getTime();
+  const end = new Date(to).getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return null;
+  return Math.max(0, Math.round((end - start) / 60000));
+}
+
+function formatDuration(minutes: number | null): string | null {
+  if (minutes === null) return null;
+  if (minutes < 1) return 'Less than 1 min';
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  if (hours === 0) return `${minutes} min${minutes === 1 ? '' : 's'}`;
+  if (remainingMinutes === 0) return `${hours} hr${hours === 1 ? '' : 's'}`;
+  return `${hours} hr${hours === 1 ? '' : 's'} ${remainingMinutes} min`;
+}
+
+function dispatchedAt(task: ResponseTask): string | null {
+  return task.report?.dispatched_at || task.created_at || null;
+}
+
+function resolvedAt(task: ResponseTask): string | null {
+  return task.report?.resolved_at || task.incident?.resolved_at || null;
+}
+
+function stageTimestamp(task: ResponseTask, index: number): string | null {
+  switch (index) {
+    case 0: return task.accepted_at || null;
+    case 1: return task.accepted_at || null;
+    case 2: return task.arrived_at || null;
+    case 3: return resolvedAt(task);
+    case 4: return task.returned_at || null;
+    default: return null;
+  }
+}
+
+function stageCompleted(task: ResponseTask, index: number): boolean {
+  switch (index) {
+    case 0: return Boolean(task.accepted_at);
+    case 1: return Boolean(task.arrived_at);
+    case 2: return Boolean(task.arrived_at);
+    case 3: return Boolean(resolvedAt(task));
+    case 4: return Boolean(task.returned_at);
+    default: return false;
+  }
+}
+
+function stageCurrentIndex(task: ResponseTask): number {
+  if (task.status === 'pending') return 0;
+  if (task.status === 'accepted') return 1;
+  if (task.status === 'in_progress') return 2;
+  if (task.status === 'returning') return 4;
+  return -1;
+}
+
+function stageTimeLabel(task: ResponseTask, index: number): string | null {
+  if (index === 4 && task.status === 'returning' && !task.returned_at) {
+    const returnStart = formatClock(task.returning_at || resolvedAt(task));
+    return returnStart ? `In progress since ${returnStart}` : 'Return in progress';
+  }
+  const timestamp = stageTimestamp(task, index);
+  const clock = formatClock(timestamp);
+  if (!clock) return null;
+  return index === 1 ? `Since ${clock}` : clock;
+}
+
+function stageDurationLabel(task: ResponseTask, index: number, now: number): string | null {
+  const dispatch = dispatchedAt(task);
+  const accepted = task.accepted_at || null;
+  const arrived = task.arrived_at || null;
+  const resolved = resolvedAt(task);
+  const returned = task.returned_at || null;
+  const liveTime = new Date(now).toISOString();
+  let minutes: number | null = null;
+  let suffix = '';
+
+  if (index === 0) {
+    minutes = durationMinutes(dispatch, accepted);
+    suffix = 'from dispatch';
+  } else if (index === 1) {
+    minutes = durationMinutes(accepted, arrived || (task.status === 'accepted' ? liveTime : null));
+    suffix = 'to arrival';
+  } else if (index === 2) {
+    minutes = durationMinutes(arrived, resolved || (task.status === 'in_progress' ? liveTime : null));
+    suffix = 'on scene';
+  } else if (index === 3) {
+    minutes = durationMinutes(resolved, returned);
+    suffix = 'to return';
+  } else {
+    if (returned) {
+      minutes = durationMinutes(dispatch, returned);
+      suffix = 'total response';
+    } else if (task.status === 'returning') {
+      minutes = durationMinutes(resolved, liveTime);
+      suffix = 'on return trip';
+    }
+  }
+
+  const value = formatDuration(minutes);
+  return value ? `${value} ${suffix}` : null;
+}
+
 function isReturning(task: ResponseTask, location: ResponderLocation | null): boolean {
   if (task.status === 'returning') return true;
   if (task.status !== 'in_progress' || !location || Date.now() - location.timestamp >= 5 * 60 * 1000) return false;
@@ -101,37 +223,28 @@ function isReturning(task: ResponseTask, location: ResponderLocation | null): bo
   return latitude !== null && longitude !== null && distanceKm(location, latitude, longitude) > 0.5;
 }
 
-function stageIndex(task: ResponseTask, location: ResponderLocation | null): number {
-  if (task.incident?.status === 'resolved') return 4;
-  if (task.status === 'completed') return 3;
-  switch (task.status) {
-    case 'accepted': return 1;
-    case 'in_progress': return isReturning(task, location) ? 3 : 2;
-    case 'returning': return 3;
-    default: return 0;
-  }
-}
-
-function taskIsResolved(task: ResponseTask): boolean {
-  return task.status === 'cancelled' || task.incident?.status === 'resolved';
+function taskIsFinished(task: ResponseTask): boolean {
+  return task.status === 'cancelled' || task.status === 'completed';
 }
 
 function taskStatusLabel(task: ResponseTask, location: ResponderLocation | null): string {
   if (task.status === 'cancelled') return 'Cancelled';
-  if (task.incident?.status === 'resolved') return 'Resolved';
+  if (task.status === 'completed') return task.returned_at ? 'Returned' : 'Completed · return not recorded';
+  if (task.status === 'returning') return 'Returning to base';
   if (task.status === 'pending') return 'Awaiting acceptance';
   if (task.status === 'accepted') return 'En route';
-  if (task.status === 'in_progress') return isReturning(task, location) ? 'Returning' : 'On scene';
-  if (task.status === 'returning' || task.status === 'completed') return 'Returning';
+  if (task.status === 'in_progress') return isReturning(task, location) ? 'Returning · GPS' : 'On scene';
   return 'Dispatched';
 }
 
 function respondersFor(task: ResponseTask): string {
-  if (task.assigned_user?.full_name) return task.assigned_user.full_name;
-  const names = (task.responders || [])
-    .map((responder) => responder.responder?.full_name)
+  const responderNames = (task.responders || [])
+    .filter((responder) => responder.status !== 'left')
+    .map((responder) => responder.responder?.full_name);
+  const names = [task.assigned_user?.full_name, ...responderNames]
     .filter((name): name is string => Boolean(name));
-  return names.length ? names.join(', ') : 'Responder not assigned';
+  const uniqueNames = [...new Set(names)];
+  return uniqueNames.length ? uniqueNames.join(', ') : 'Responder not assigned';
 }
 
 function locationFor(task: ResponseTask, locations: Record<string, ResponderLocation>): ResponderLocation | null {
@@ -144,55 +257,13 @@ function locationFor(task: ResponseTask, locations: Record<string, ResponderLoca
   return null;
 }
 
-function stageDetail(
-  task: ResponseTask,
-  index: number,
-  isCurrent: boolean,
-  location: ResponderLocation | null,
-): string {
-  const acceptedAt = formatTime(task.accepted_at);
-  const arrivedAt = formatTime(task.arrived_at);
-  const returningAt = formatTime(task.returning_at);
-  const completedAt = formatTime(task.completed_at);
-
-  if (index === 0) {
-    if (task.status === 'pending') return 'Waiting for the responder to accept the dispatch';
-    return acceptedAt ? `Accepted · ${acceptedAt}` : 'Dispatch accepted';
-  }
-
-  if (index === 1) {
-    if (task.status === 'pending') return 'Starts when the responder accepts';
-    if (!isCurrent) return acceptedAt ? `Departed · ${acceptedAt}` : 'Responder accepted and departed';
-    const latitude = asCoordinate(task.latitude ?? task.incident?.latitude);
-    const longitude = asCoordinate(task.longitude ?? task.incident?.longitude);
-    const isFresh = location && Date.now() - location.timestamp < 5 * 60 * 1000;
-    if (latitude === null || longitude === null) return 'Incident location is unavailable for an ETA';
-    if (!location) return 'Waiting for a live responder location to estimate arrival';
-    if (!isFresh) return 'Responder location is stale; waiting for a fresh GPS update';
-    const km = distanceKm(location, latitude, longitude);
-    const minutes = Math.max(1, Math.round((km / 25) * 60));
-    return `About ${minutes} min · ${km.toFixed(1)} km straight-line estimate`;
-  }
-
-  if (index === 2) {
-    if (task.status === 'pending' || task.status === 'accepted') return 'Arrival will be recorded when the responder marks on scene';
-    return arrivedAt ? `Arrived · ${arrivedAt}` : 'Responder marked on scene';
-  }
-
-  if (index === 3) {
-    if (task.status === 'completed') {
-      return completedAt ? `Field response complete · ${completedAt}; awaiting incident resolution` : 'Field response complete; return phase active';
-    }
-    if (task.status === 'in_progress' && isReturning(task, location)) return 'Live GPS shows the responder moving away from the incident';
-    if (task.status !== 'returning' && task.incident?.status !== 'resolved') {
-      return 'Return trip starts after the response is complete';
-    }
-    return returningAt ? `Return started · ${returningAt}` : 'Responder is returning to base';
-  }
-
-  if (task.incident?.status !== 'resolved') return 'Waiting for the incident to be marked resolved';
-  const resolvedAt = formatTime(task.incident.resolved_at);
-  return resolvedAt ? `Incident resolved · ${resolvedAt}` : 'Incident resolved';
+function arrivalEstimate(task: ResponseTask, location: ResponderLocation | null): string | null {
+  const latitude = asCoordinate(task.latitude ?? task.incident?.latitude);
+  const longitude = asCoordinate(task.longitude ?? task.incident?.longitude);
+  if (latitude === null || longitude === null || !location || Date.now() - location.timestamp >= 5 * 60 * 1000) return null;
+  const km = distanceKm(location, latitude, longitude);
+  const minutes = Math.max(1, Math.round((km / 25) * 60));
+  return `About ${minutes} min ETA · ${km.toFixed(1)} km straight-line`;
 }
 
 export default function ResponderTrackerPage() {
@@ -202,6 +273,12 @@ export default function ResponderTrackerPage() {
   const [locations, setLocations] = useState<Record<string, ResponderLocation>>({});
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Filter>('active');
+  const [clockNow, setClockNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const interval = window.setInterval(() => setClockNow(Date.now()), 30000);
+    return () => window.clearInterval(interval);
+  }, []);
 
   const fetchTasks = useCallback(() => {
     taskAPI.list()
@@ -238,15 +315,15 @@ export default function ResponderTrackerPage() {
 
   const trackedTasks = useMemo(() => {
     const assigned = tasks.filter((task) => task.assigned_to || task.responders?.some((responder) => responder.status !== 'left'));
-    if (filter === 'active') return assigned.filter((task) => !taskIsResolved(task));
-    if (filter === 'resolved') return assigned.filter(taskIsResolved);
+    if (filter === 'active') return assigned.filter((task) => !taskIsFinished(task));
+    if (filter === 'resolved') return assigned.filter(taskIsFinished);
     return assigned;
   }, [filter, tasks]);
 
-  const activeCount = tasks.filter((task) => (task.assigned_to || task.responders?.some((responder) => responder.status !== 'left')) && !taskIsResolved(task)).length;
-  const enRouteCount = tasks.filter((task) => task.status === 'accepted' && !taskIsResolved(task)).length;
+  const activeCount = tasks.filter((task) => (task.assigned_to || task.responders?.some((responder) => responder.status !== 'left')) && !taskIsFinished(task)).length;
+  const enRouteCount = tasks.filter((task) => task.status === 'accepted' && !taskIsFinished(task)).length;
   const returningCount = tasks.filter((task) =>
-    !taskIsResolved(task) && (task.status === 'completed' || isReturning(task, locationFor(task, locations)))).length;
+    !taskIsFinished(task) && (task.status === 'returning' || isReturning(task, locationFor(task, locations)))).length;
 
   const openResponderOnMap = (task: ResponseTask) => {
     const responder = task.assigned_to
@@ -314,10 +391,17 @@ export default function ResponderTrackerPage() {
           <div className="responder-tracker-grid">
             {trackedTasks.map((task) => {
               const responderLocation = locationFor(task, locations);
-              const currentStage = stageIndex(task, responderLocation);
+              const currentStage = stageCurrentIndex(task);
               const incidentName = task.incident?.title || task.title || 'Incident response';
               const address = task.address || task.incident?.address;
               const cancelled = task.status === 'cancelled';
+              const finished = taskIsFinished(task);
+              const reportType = task.report?.type || 'Not specified';
+              const reportCategory = task.report?.title || task.incident?.type?.replace(/_/g, ' ') || task.task_type?.replace(/_/g, ' ') || 'Not specified';
+              const priority = task.report?.severity || task.incident?.severity || 'Not specified';
+              const priorityTone = ['low', 'moderate', 'high', 'critical'].includes(priority.toLowerCase())
+                ? priority.toLowerCase()
+                : 'unknown';
               const locationUpdated = responderLocation
                 ? Date.now() - responderLocation.timestamp < 5 * 60 * 1000
                 : false;
@@ -332,17 +416,28 @@ export default function ResponderTrackerPage() {
                         <h2>{respondersFor(task)}</h2>
                       </div>
                     </div>
-                    <span className={`responder-status-pill ${cancelled ? 'cancelled' : taskIsResolved(task) ? 'resolved' : 'active'}`}>
+                    <span className={`responder-status-pill ${cancelled ? 'cancelled' : finished ? 'resolved' : 'active'}`}>
                       {taskStatusLabel(task, responderLocation)}
                     </span>
                   </div>
 
                   <div className="responder-incident-summary">
                     <div className="responder-incident-title">{incidentName}</div>
-                    <div className="responder-incident-meta">
-                      <span><Siren size={14} />{(task.incident?.type || task.task_type || 'Response').replace(/_/g, ' ')}</span>
-                      {address && <span><MapPin size={14} />{address}</span>}
+                    <div className="responder-report-facts">
+                      <div className="responder-report-fact">
+                        <span>Type</span>
+                        <strong>{reportType.replace(/_/g, ' ')}</strong>
+                      </div>
+                      <div className="responder-report-fact">
+                        <span>Category</span>
+                        <strong>{reportCategory}</strong>
+                      </div>
+                      <div className="responder-report-fact">
+                        <span>Priority</span>
+                        <strong className={`responder-priority-badge ${priorityTone}`}>{priority.replace(/_/g, ' ')}</strong>
+                      </div>
                     </div>
+                    {address && <div className="responder-incident-meta"><span><MapPin size={14} />{address}</span></div>}
                   </div>
 
                   {cancelled ? (
@@ -351,13 +446,19 @@ export default function ResponderTrackerPage() {
                     <div className="responder-timeline" aria-label="Responder progress">
                       {stages.map((stage, index) => {
                         const Icon = stage.icon;
-                        const isComplete = index < currentStage || task.incident?.status === 'resolved';
-                        const isCurrent = index === currentStage && !taskIsResolved(task);
-                        const detail = stageDetail(task, index, isCurrent, responderLocation);
-                        const showArrivalEstimate = index === 1 && isCurrent;
+                        const isComplete = stageCompleted(task, index);
+                        const isCurrent = index === currentStage && !finished && !cancelled;
+                        const timeLabel = stageTimeLabel(task, index);
+                        const durationLabel = stageDurationLabel(task, index, clockNow);
+                        const showArrivalEstimate = index === 1 && isCurrent && task.status === 'accepted';
+                        const fallback = task.status === 'pending' && index === 0
+                          ? 'Waiting for acceptance'
+                          : task.status === 'completed' && index === 4 && !task.returned_at
+                            ? 'Return time not recorded'
+                            : '—';
 
                         return (
-                          <div className={`responder-timeline-stage ${isComplete ? 'complete' : ''} ${isCurrent ? 'current' : ''}`} key={stage.label}>
+                          <div className={`responder-timeline-stage ${isComplete ? 'complete' : ''} ${isCurrent ? 'current' : ''}`} key={stage.id}>
                             <div className="responder-timeline-rail">
                               <span className="responder-timeline-dot">
                                 {isComplete ? <Check size={13} strokeWidth={3} /> : <Icon size={13} />}
@@ -367,14 +468,15 @@ export default function ResponderTrackerPage() {
                             <div className="responder-timeline-copy">
                               <div className="responder-timeline-heading">
                                 <strong>{stage.label}</strong>
-                                {showArrivalEstimate && <span className="responder-stage-live"><span />Current stage</span>}
+                                {isCurrent && <span className="responder-stage-live"><span />Current</span>}
                               </div>
-                              <p>{detail}</p>
+                              <p className="responder-timeline-time">{timeLabel || fallback}</p>
+                              {durationLabel && <span className="responder-timeline-duration">{durationLabel}</span>}
                               {showArrivalEstimate && responderLocation && locationUpdated && (
                                 <span className="responder-gps-fresh"><Radio size={12} /> Live GPS update</span>
                               )}
-                              {showArrivalEstimate && detail.startsWith('About ') && (
-                                <span className="responder-eta-note"><Clock3 size={12} /> Approximate ETA; straight-line distance</span>
+                              {showArrivalEstimate && arrivalEstimate(task, responderLocation) && (
+                                <span className="responder-eta-note"><Clock3 size={12} /> {arrivalEstimate(task, responderLocation)}</span>
                               )}
                             </div>
                           </div>
@@ -384,7 +486,7 @@ export default function ResponderTrackerPage() {
                   )}
 
                   <div className="responder-card-footer">
-                    <span><Clock3 size={13} /> Dispatched {formatTime(task.created_at) || 'time unavailable'}</span>
+                    <span><Clock3 size={13} /> Dispatched {formatTime(dispatchedAt(task)) || 'time unavailable'}</span>
                     {responderLocation && locationUpdated
                       ? <span className="responder-gps-status"><Radio size={12} /> GPS connected</span>
                       : <span className="responder-gps-status muted"><Circle size={9} /> GPS unavailable</span>}

@@ -2,6 +2,7 @@ enum TaskStatus {
   pending,
   accepted,
   in_progress,
+  returning,
   completed,
   cancelled,
 }
@@ -23,6 +24,8 @@ class Task {
   final String? proofPhotoUrl;
   final DateTime createdAt;
   final DateTime? completedAt;
+  final DateTime? returningAt;
+  final DateTime? returnedAt;
   final DateTime? acceptedAt;
   final double? travelDistanceM;
   final double? travelDistanceAccuracyM;
@@ -52,6 +55,8 @@ class Task {
     this.proofPhotoUrl,
     required this.createdAt,
     this.completedAt,
+    this.returningAt,
+    this.returnedAt,
     this.acceptedAt,
     this.travelDistanceM,
     this.travelDistanceAccuracyM,
@@ -93,6 +98,8 @@ class Task {
       proofPhotoUrl: json['proof_photo_url'],
       createdAt: json['created_at'] != null ? DateTime.parse(json['created_at']) : DateTime.now(),
       completedAt: json['completed_at'] != null ? DateTime.parse(json['completed_at']) : null,
+      returningAt: json['returning_at'] != null ? DateTime.parse(json['returning_at']) : null,
+      returnedAt: json['returned_at'] != null ? DateTime.parse(json['returned_at']) : null,
       acceptedAt: json['accepted_at'] != null ? DateTime.parse(json['accepted_at']) : null,
       travelDistanceM: (json['travel_distance_m'] as num?)?.toDouble(),
       travelDistanceAccuracyM: (json['travel_distance_accuracy_m'] as num?)?.toDouble(),

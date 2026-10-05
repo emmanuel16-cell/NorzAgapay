@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:location/location.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../widgets/municipality_boundary_map_layer.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
@@ -39,6 +40,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
 
   Future<void> _updateStatus(
     TaskStatus status, {
+    String? proofUrl,
     String? arrivalMethod,
     LocationData? arrivalLocation,
   }) async {
@@ -52,6 +54,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
         widget.task.id,
         status.name,
         auth.token!,
+        proofUrl: proofUrl,
         arrivalMethod: status == TaskStatus.in_progress ? (arrivalMethod ?? 'manual') : null,
         latitude: arrivalLocation?.latitude,
         longitude: arrivalLocation?.longitude,
@@ -76,6 +79,64 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
             backgroundColor: const Color(AppColors.danger),
           ),
         );
+    } finally {
+      if (mounted) setState(() => _isUpdating = false);
+    }
+  }
+
+  Future<void> _resolveAndReturn(Task task) async {
+    if (_isUpdating) return;
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: Colors.white,
+      builder: (sheetContext) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt_outlined),
+              title: const Text('Take a response proof photo'),
+              onTap: () => Navigator.pop(sheetContext, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Choose a response proof photo'),
+              onTap: () => Navigator.pop(sheetContext, ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source == null || !mounted) return;
+
+    setState(() => _isUpdating = true);
+    try {
+      final file = await ImagePicker().pickImage(source: source, imageQuality: 85);
+      if (file == null || !mounted) return;
+
+      final auth = Provider.of<AuthProvider>(context, listen: false);
+      final proofUrl = await auth.uploadFile(
+        file: file,
+        category: 'proof_photo',
+        token: auth.token!,
+        taskId: task.id,
+      );
+      if (proofUrl == null) throw Exception('The proof photo could not be confirmed.');
+
+      await Provider.of<TaskProvider>(context, listen: false).updateTaskStatus(
+        task.id,
+        TaskStatus.returning.name,
+        auth.token!,
+        proofUrl: proofUrl,
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(error.toString()),
+            backgroundColor: const Color(AppColors.danger),
+          ),
+        );
+      }
     } finally {
       if (mounted) setState(() => _isUpdating = false);
     }
@@ -722,7 +783,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            _buildStatusBadge(task.status),
+                            _buildStatusBadge(task),
                             const SizedBox(width: 12),
                             Expanded(
                               child: Column(
@@ -1120,7 +1181,8 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     );
   }
 
-  Widget _buildStatusBadge(TaskStatus status) {
+  Widget _buildStatusBadge(Task task) {
+    final status = task.status;
     Color color;
     String label;
     IconData icon;
@@ -1141,9 +1203,14 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
         label = 'ON SCENE';
         icon = Icons.local_fire_department_rounded;
         break;
+      case TaskStatus.returning:
+        color = Colors.deepPurpleAccent;
+        label = 'RETURNING TO BASE';
+        icon = Icons.keyboard_return_rounded;
+        break;
       case TaskStatus.completed:
         color = Colors.blue;
-        label = 'COMPLETED';
+        label = task.returnedAt != null ? 'RETURNED TO BASE' : 'COMPLETED';
         icon = Icons.check_circle_rounded;
         break;
       default:
@@ -1300,7 +1367,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
             const SizedBox(height: 12),
             Text(
               status == TaskStatus.completed
-                  ? 'RESPONSE COMPLETED'
+                  ? (task.returnedAt != null ? 'RETURNED TO BASE' : 'RESPONSE COMPLETED')
                   : 'RESPONSE CANCELLED',
               style: const TextStyle(
                 color: Colors.white,
@@ -1356,7 +1423,13 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
           );
         }
         return _buildBtn(
-          label: '✅ Complete Response',
+          label: '✅ Resolve & Return to Base',
+          color: const Color(AppColors.primary),
+          onTap: () => _resolveAndReturn(task),
+        );
+      } else if (status == TaskStatus.returning) {
+        return _buildBtn(
+          label: '✅ Mark Returned to Base',
           color: const Color(AppColors.primary),
           onTap: () => _updateStatus(TaskStatus.completed),
         );
@@ -1396,7 +1469,14 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
         );
       }
       return _buildBtn(
-        label: 'Mark as Complete',
+        label: 'Resolve & Return to Base',
+        color: const Color(AppColors.primary),
+        onTap: () => _resolveAndReturn(task),
+      );
+    }
+    if (status == TaskStatus.returning) {
+      return _buildBtn(
+        label: 'Mark Returned to Base',
         color: const Color(AppColors.primary),
         onTap: () => _updateStatus(TaskStatus.completed),
       );
@@ -1413,7 +1493,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     return SizedBox(
       width: double.infinity,
       child: ElevatedButton(
-        onPressed: onTap,
+        onPressed: _isUpdating ? null : onTap,
         style: ElevatedButton.styleFrom(
           backgroundColor: color,
           foregroundColor: Colors.white,
@@ -1424,10 +1504,9 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
           elevation: 4,
           shadowColor: color.withOpacity(0.4),
         ),
-        child: Text(
-          label,
-          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-        ),
+        child: _isUpdating
+            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+            : Text(label, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
       ),
     );
   }

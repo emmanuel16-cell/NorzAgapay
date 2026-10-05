@@ -68,7 +68,31 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response): Promise<v
       return;
     }
 
-    res.json({ tasks: data });
+    const tasks = data || [];
+    const incidentIds = [...new Set(tasks.map((task) => task.incident_id).filter(Boolean))];
+    const reportsByIncident = new Map<string, Record<string, unknown>>();
+
+    if (incidentIds.length > 0) {
+      const { data: reports, error: reportError } = await supabaseAdmin
+        .from('incident_reports')
+        .select('id, dispatch_incident_id, type, title, incident_type, severity, dispatched_at, resolved_at, created_at')
+        .in('dispatch_incident_id', incidentIds)
+        .order('created_at', { ascending: false });
+
+      if (reportError) throw reportError;
+      for (const report of reports || []) {
+        if (report.dispatch_incident_id && !reportsByIncident.has(report.dispatch_incident_id)) {
+          reportsByIncident.set(report.dispatch_incident_id, report);
+        }
+      }
+    }
+
+    res.json({
+      tasks: tasks.map((task) => ({
+        ...task,
+        report: reportsByIncident.get(task.incident_id) || null,
+      })),
+    });
   } catch (err) {
     console.error('Fetch tasks error:', err);
     res.status(500).json({ error: 'Internal server error.' });
@@ -155,7 +179,7 @@ router.post(
 );
 
 // ============================================
-// PATCH /api/tasks/:id/status — update task status through arrival, return, and completion
+// PATCH /api/tasks/:id/status — update task status through arrival, resolution, return, and completion
 // ============================================
 
 const updateTaskStatusSchema = z.object({
@@ -281,8 +305,8 @@ router.patch('/:id/status', authenticate, async (req: AuthRequest, res: Response
       }
     }
 
-    // If completing, require proof photo (only for production)
-    if (status === 'completed' && !proof_photo_url && process.env.NODE_ENV === 'production') {
+    // If marking the task returned, require proof photo (only for production).
+    if (status === 'completed' && !proof_photo_url && !existingTask.proof_photo_url && process.env.NODE_ENV === 'production') {
       res.status(400).json({ error: 'Proof photo is required to complete a task.' });
       return;
     }
@@ -367,7 +391,7 @@ router.patch('/:id/status', authenticate, async (req: AuthRequest, res: Response
         // Re-fetch updated task to return full state
         const { data: updatedTask } = await supabaseAdmin
           .from('tasks')
-          .select('*, responders:task_volunteers(responder_id:volunteer_id, status)')
+          .select('*, incident:incidents(*), responders:task_volunteers(responder_id:volunteer_id, status)')
           .eq('id', req.params.id)
           .single();
 
@@ -376,43 +400,91 @@ router.patch('/:id/status', authenticate, async (req: AuthRequest, res: Response
           task: updatedTask || { ...existingTask, status: mainTaskUpdate.status || existingTask.status }
         });
         return;
-      } else if (status === 'completed') {
+      } else if (status === 'returning' || (status === 'completed' && existingTask.status === 'in_progress')) {
         if (!existingTask.arrived_at) {
-          res.status(409).json({ error: 'Record arrival before completing the response.' });
+          res.status(409).json({ error: 'Record arrival before resolving the response.' });
           return;
         }
-        const { error: completeError } = await supabaseAdmin
+        if (!['in_progress', 'returning'].includes(existingTask.status)) {
+          res.status(409).json({ error: 'The response must be on scene before starting the return trip.' });
+          return;
+        }
+
+        const returningAt = existingTask.returning_at || stageTime.toISOString();
+        const { error: taskUpdateError } = await supabaseAdmin
+          .from('tasks')
+          .update({
+            status: 'returning',
+            returning_at: returningAt,
+            ...(proof_photo_url ? { proof_photo_url } : {}),
+          })
+          .eq('id', req.params.id);
+        if (taskUpdateError) throw taskUpdateError;
+
+        const { error: responderUpdateError } = await supabaseAdmin
           .from('task_volunteers')
-          .update({ status: 'completed' })
+          .update({ status: 'returning' })
           .eq('task_id', req.params.id)
-          .eq('volunteer_id', user.userId);
+          .neq('status', 'left');
 
-        if (completeError) {
-          console.error('Complete Task Error:', completeError);
-          res.status(500).json({ error: 'Failed to complete task.' });
-          return;
-        }
-
-        // Mark user as active again
-        await supabaseAdmin.from('users').update({ status: 'active' }).eq('id', user.userId);
-        
-        // Check whether all assigned responders have completed.
-        // For simplicity, we mark the main task as completed too
-        await supabaseAdmin.from('tasks').update({ 
-          status: 'completed',
-          completed_at: stageTime.toISOString(),
-          proof_photo_url: proof_photo_url || null
-        }).eq('id', req.params.id);
+        if (responderUpdateError) throw responderUpdateError;
         await updateLinkedIncidentReport(existingTask.incident_id, {
           status: 'resolved',
           mdrrmo_response_status: 'resolved',
           resolved_at: stageTime.toISOString(),
         }, 'resolved_at');
 
-        // Broadcast update
-          io.to('dashboard_staff').emit('task:statusChanged', { taskId: req.params.id, status: 'completed', userId: user.userId });
-        
-        res.json({ message: 'Task marked as completed.' });
+        const { data: returningTask, error: returningFetchError } = await supabaseAdmin
+          .from('tasks')
+          .select('*, incident:incidents(*), responders:task_volunteers(responder_id:volunteer_id, status)')
+          .eq('id', req.params.id)
+          .single();
+        if (returningFetchError) throw returningFetchError;
+
+        io.to('dashboard_staff').emit('task:statusChanged', { taskId: req.params.id, status: 'returning', userId: user.userId });
+        res.json({ message: 'Response resolved. Return to base and mark it returned.', task: returningTask });
+        return;
+      } else if (status === 'completed') {
+        if (existingTask.status !== 'returning' || !existingTask.arrived_at) {
+          res.status(409).json({ error: 'Start the return trip before marking the responder returned.' });
+          return;
+        }
+
+        const returnedAt = stageTime.toISOString();
+        const { error: responderUpdateError } = await supabaseAdmin
+          .from('task_volunteers')
+          .update({ status: 'completed' })
+          .eq('task_id', req.params.id)
+          .neq('status', 'left');
+        if (responderUpdateError) throw responderUpdateError;
+
+        const responderIds = [...new Set([
+          existingTask.assigned_to,
+          ...(existingTask.responders || []).map((responder: { responder_id?: string }) => responder.responder_id),
+        ].filter((id): id is string => Boolean(id)))];
+        if (responderIds.length > 0) {
+          const { error: userUpdateError } = await supabaseAdmin
+            .from('users')
+            .update({ status: 'active' })
+            .in('id', responderIds);
+          if (userUpdateError) throw userUpdateError;
+        }
+
+        const { data: completedTask, error: completeError } = await supabaseAdmin
+          .from('tasks')
+          .update({
+            status: 'completed',
+            completed_at: returnedAt,
+            returned_at: returnedAt,
+            ...(proof_photo_url ? { proof_photo_url } : {}),
+          })
+          .eq('id', req.params.id)
+          .select('*, incident:incidents(*), responders:task_volunteers(responder_id:volunteer_id, status)')
+          .single();
+        if (completeError) throw completeError;
+
+        io.to('dashboard_staff').emit('task:statusChanged', { taskId: req.params.id, status: 'completed', userId: user.userId });
+        res.json({ message: 'Responder marked returned to base.', task: completedTask });
         return;
       }
     }
@@ -424,14 +496,25 @@ router.patch('/:id/status', authenticate, async (req: AuthRequest, res: Response
       Object.assign(updateData, acceptanceTravelUpdate);
     }
     if (status === 'in_progress' && !existingTask.arrived_at) Object.assign(updateData, arrivalUpdate);
-    if (status === 'returning') updateData.returning_at = stageTime.toISOString();
+    if (status === 'returning') {
+      if (!existingTask.arrived_at) {
+        res.status(409).json({ error: 'Record arrival before starting the return trip.' });
+        return;
+      }
+      if (!['in_progress', 'returning'].includes(existingTask.status)) {
+        res.status(409).json({ error: 'The response must be on scene before starting the return trip.' });
+        return;
+      }
+      updateData.returning_at = existingTask.returning_at || stageTime.toISOString();
+    }
     if (proof_photo_url) updateData.proof_photo_url = proof_photo_url;
     if (status === 'completed') {
-      if (!existingTask.arrived_at) {
-        res.status(409).json({ error: 'Record arrival before completing the response.' });
+      if (existingTask.status !== 'returning' || !existingTask.arrived_at) {
+        res.status(409).json({ error: 'Start the return trip before marking the responder returned.' });
         return;
       }
       updateData.completed_at = stageTime.toISOString();
+      updateData.returned_at = stageTime.toISOString();
     }
 
     const { data: task, error } = await supabaseAdmin
@@ -478,12 +561,38 @@ router.patch('/:id/status', authenticate, async (req: AuthRequest, res: Response
         arrival_distance_m: existingTask.arrival_distance_m ?? null,
       } : arrivalUpdate;
       await updateLinkedIncidentReport(existingTask.incident_id, linkedArrivalUpdate, 'arrived_at');
-    } else if (status === 'completed') {
+    } else if (status === 'returning') {
+      const { error: responderUpdateError } = await supabaseAdmin
+        .from('task_volunteers')
+        .update({ status: 'returning' })
+        .eq('task_id', req.params.id)
+        .neq('status', 'left');
+      if (responderUpdateError) throw responderUpdateError;
+
       await updateLinkedIncidentReport(existingTask.incident_id, {
         status: 'resolved',
         mdrrmo_response_status: 'resolved',
         resolved_at: stageTime.toISOString(),
       }, 'resolved_at');
+    } else if (status === 'completed') {
+      const { error: responderUpdateError } = await supabaseAdmin
+        .from('task_volunteers')
+        .update({ status: 'completed' })
+        .eq('task_id', req.params.id)
+        .neq('status', 'left');
+      if (responderUpdateError) throw responderUpdateError;
+
+      const responderIds = [...new Set([
+        existingTask.assigned_to,
+        ...(existingTask.responders || []).map((responder: { responder_id?: string }) => responder.responder_id),
+      ].filter((id): id is string => Boolean(id)))];
+      if (responderIds.length > 0) {
+        const { error: usersUpdateError } = await supabaseAdmin
+          .from('users')
+          .update({ status: 'active' })
+          .in('id', responderIds);
+        if (usersUpdateError) throw usersUpdateError;
+      }
     }
 
     // Broadcast update

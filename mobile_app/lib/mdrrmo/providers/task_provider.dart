@@ -85,6 +85,8 @@ class TaskProvider with ChangeNotifier {
               proofPhotoUrl: oldTask.proofPhotoUrl,
               createdAt: oldTask.createdAt,
               completedAt: oldTask.completedAt,
+              returningAt: oldTask.returningAt,
+              returnedAt: oldTask.returnedAt,
               acceptedAt: oldTask.acceptedAt,
               travelDistanceM: oldTask.travelDistanceM,
               travelDistanceAccuracyM: oldTask.travelDistanceAccuracyM,

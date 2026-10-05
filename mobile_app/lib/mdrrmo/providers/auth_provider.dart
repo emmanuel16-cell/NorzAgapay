@@ -188,10 +188,11 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
-  Future<void> uploadFile({
+  Future<String?> uploadFile({
      required XFile file,
      required String category,
      required String token,
+     String? taskId,
      String? certType,
      String? certNumber,
    }) async {
@@ -234,6 +235,7 @@ class AuthProvider with ChangeNotifier {
          body: json.encode({
            'object_key': objectKey,
            'category': category,
+           if (taskId != null) 'task_id': taskId,
            'cert_type': certType,
            'cert_number': certNumber,
          }),
@@ -248,6 +250,8 @@ class AuthProvider with ChangeNotifier {
          final errorData = json.decode(confirmResponse.body);
          throw errorData['error'] ?? 'Failed to confirm upload';
        }
+       final confirmationData = json.decode(confirmResponse.body);
+       return confirmationData['file_url'] as String?;
      } finally {
        _isLoading = false;
        notifyListeners();

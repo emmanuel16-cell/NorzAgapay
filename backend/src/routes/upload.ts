@@ -145,7 +145,42 @@ router.post('/confirm', authenticate, async (req: AuthRequest, res: Response): P
       }
       res.json({ message: 'Certification uploaded.', certification: cert });
     } else if (category === 'proof_photo' && task_id) {
-      await supabaseAdmin.from('tasks').update({ proof_photo_url: publicUrl }).eq('id', task_id).eq('assigned_to', userId);
+      const { data: task, error: taskError } = await supabaseAdmin
+        .from('tasks')
+        .select('id, assigned_to')
+        .eq('id', task_id)
+        .maybeSingle();
+
+      if (taskError) throw taskError;
+      if (!task) {
+        res.status(404).json({ error: 'Task not found.' });
+        return;
+      }
+
+      let canUploadProof = task.assigned_to === userId;
+      if (!canUploadProof) {
+        const { data: membership, error: membershipError } = await supabaseAdmin
+          .from('task_volunteers')
+          .select('id, status')
+          .eq('task_id', task_id)
+          .eq('volunteer_id', userId)
+          .maybeSingle();
+
+        if (membershipError) throw membershipError;
+        canUploadProof = Boolean(membership && membership.status !== 'left');
+      }
+
+      if (!canUploadProof) {
+        res.status(403).json({ error: 'Only an assigned responder can upload task proof.' });
+        return;
+      }
+
+      const { error: proofUpdateError } = await supabaseAdmin
+        .from('tasks')
+        .update({ proof_photo_url: publicUrl })
+        .eq('id', task_id);
+      if (proofUpdateError) throw proofUpdateError;
+
       res.json({ message: 'Proof photo uploaded.', file_url: publicUrl });
     } else {
       res.json({ message: 'File uploaded.', file_url: publicUrl });
