@@ -363,19 +363,18 @@ class _MdrrmoHotlineScreenState extends State<MdrrmoHotlineScreen> {
     ),
   );
 
-  Widget _sectionHeader(String title, String badge, Color color) => Row(
+  Widget _sectionHeader(String title, String badge, Color color) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Expanded(
-        child: Text(
-          title,
-          style: const TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFF0F172A),
-          ),
+      Text(
+        title,
+        style: const TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.bold,
+          color: Color(0xFF0F172A),
         ),
       ),
-      const SizedBox(width: 6),
+      const SizedBox(height: 3),
       Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(

@@ -478,10 +478,18 @@ class _BarangayHotlineScreenState extends State<BarangayHotlineScreen> {
         ]),
       );
 
-  Widget _sectionHeader(String title, String badge, Color color) => Row(children: [
-        Expanded(child: Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)))),
-        Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: color.withValues(alpha: .1), borderRadius: BorderRadius.circular(6)), child: Text(badge, style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: color))),
-      ]);
+  Widget _sectionHeader(String title, String badge, Color color) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+          const SizedBox(height: 3),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(color: color.withValues(alpha: .1), borderRadius: BorderRadius.circular(6)),
+            child: Text(badge, style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: color)),
+          ),
+        ],
+      );
 
   Widget _actionChip(IconData icon, String label, Color background, Color foreground, VoidCallback onPressed) => ElevatedButton.icon(
         onPressed: onPressed,
