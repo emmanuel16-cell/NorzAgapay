@@ -62,6 +62,7 @@ interface IncidentItem {
   mdrrmo_response_notes?: string;
   mdrrmo_dispatch_notes?: string;
   mdrrmo_coordination_notes?: string;
+  mdrrmo_dispatched?: boolean;
   barangay_responded_by?: string | null;
   mdrrmo_responded_by?: string | null;
   arrived_at?: string | null;
@@ -551,9 +552,8 @@ export default function CommandCenter() {
           const barangayStatus = String(r.barangay_response_status || '').toLowerCase();
           const mdrrmoStatus = String(r.mdrrmo_response_status || '').toLowerCase();
           const isEscalated = Boolean(
-            r.is_escalated || r.beyond_barangay_capability || r.severity === 'critical' ||
-            reportStatus === 'escalated' || ['responding', 'resolved'].includes(mdrrmoStatus) ||
-            r.mdrrmo_responder_name || r.mdrrmo_responded_at || r.mdrrmo_dispatch_notes || r.mdrrmo_coordination_notes,
+            r.is_escalated || r.beyond_barangay_capability || reportStatus === 'escalated' ||
+            r.mdrrmo_coordination_notes || String(r.barangay_response_notes || '').toLowerCase().includes('escalated'),
           );
           const isResolved = ['resolved', 'closed'].includes(reportStatus) ||
             barangayStatus === 'resolved' || mdrrmoStatus === 'resolved';
@@ -607,6 +607,7 @@ export default function CommandCenter() {
             mdrrmo_response_notes: r.mdrrmo_response_notes || '',
             mdrrmo_dispatch_notes: r.mdrrmo_dispatch_notes || '',
             mdrrmo_coordination_notes: r.mdrrmo_coordination_notes || '',
+            mdrrmo_dispatched: Boolean(r.dispatched_at || r.mdrrmo_responded_at || r.mdrrmo_responder_name),
             barangay_responded_by: r.barangay_responded_by || null,
             mdrrmo_responded_by: r.mdrrmo_responded_by || null,
             arrived_at: r.arrived_at || null,
@@ -767,9 +768,7 @@ export default function CommandCenter() {
   const selectedResponderUnit = selectedIncident?.status === 'responding'
     ? dispatchUnits.find((unit) => unit.target_incident_id === selectedIncident.id || unit.id === selectedIncident.assigned_unit_id) || null
     : null;
-  const selectedResponderId = selectedIncident?.report_kind === 'escalated'
-    ? selectedIncident.mdrrmo_responded_by || selectedIncident.barangay_responded_by
-    : selectedIncident?.barangay_responded_by;
+  const selectedResponderId = selectedIncident?.mdrrmo_responded_by || selectedIncident?.barangay_responded_by;
   const selectedResponderGps = selectedResponderId ? responderLocations[selectedResponderId] : null;
   const selectedResponderPosition: [number, number] | null = selectedIncident?.status === 'responding'
     ? selectedResponderGps && Date.now() - selectedResponderGps.timestamp < 30 * 60 * 1000
@@ -1394,9 +1393,11 @@ export default function CommandCenter() {
                 </div>
                 {selectedIncident.status === 'pending' && <div className="selection-actions">
                   <button className="selection-invalid-btn" onClick={() => setInvalidReviewStep('choice')}>Invalid Report</button>
-                  <button className="selection-dispatch-btn" onClick={() => handleDispatch()} disabled={dispatching}>
-                    {dispatching ? 'Dispatching…' : 'Dispatch'}
-                  </button>
+                  {!selectedIncident.mdrrmo_dispatched && (
+                    <button className="selection-dispatch-btn" onClick={() => handleDispatch()} disabled={dispatching}>
+                      {dispatching ? 'Dispatching…' : 'Dispatch'}
+                    </button>
+                  )}
                 </div>}
               </div>
 
@@ -1643,7 +1644,7 @@ export default function CommandCenter() {
                   </div>
                 )}
 
-                {selectedIncident.status === 'pending' && (
+                {selectedIncident.status === 'pending' && !selectedIncident.mdrrmo_dispatched && (
                   <div className="selection-actions escalated-selection-actions">
                     <button className="selection-dispatch-btn" onClick={() => handleDispatch()} disabled={dispatching}>
                       {dispatching ? 'Dispatching…' : 'Dispatch'}
