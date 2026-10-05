@@ -743,7 +743,6 @@ router.post('/dam-levels', async (req, res) => {
 // ============================================
 
 export { 
-    fetchPAGASAWeather, 
     fetchOpenMeteoWeather, 
     fetchEarthquakesFromPHIVOLCS,
     fetchPAGASAAdvisories,

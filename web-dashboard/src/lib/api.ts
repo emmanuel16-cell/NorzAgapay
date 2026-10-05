@@ -170,7 +170,9 @@ export const blockedRouteAPI = {
 export const reportAPI = {
   list: (params?: any) => api.get('/incident-reports', { params }),
   get: (id: string) => api.get(`/incident-reports/${id}`),
-  verify: (id: string, data: { incident_type: string; severity: string; address?: string }) => api.post(`/incident-reports/${id}/verify`, data),
+  mdrrmoQueue: () => api.get('/mdrrmo/reports/queue'),
+  mdrrmoResponders: () => api.get<{ responders: Array<{ id: string; full_name: string; phone?: string | null; unit_type?: string | null }> }>('/mdrrmo/reports/responders'),
+  dispatchToMdrrmo: (id: string, data: { responder_ids: string[]; incident_type: string; severity: string; notes?: string }) => api.patch(`/mdrrmo/reports/${id}/dispatch`, data),
   review: (id: string, data: { outcome: 'inconclusive' | 'false_report'; reason?: string }) => api.patch(`/incident-reports/${id}/review`, data),
 };
 

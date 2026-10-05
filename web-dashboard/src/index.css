@@ -3541,6 +3541,127 @@ tbody tr:last-child td { border-bottom: none; }
   background: #091633;
 }
 
+.mdrrmo-dispatch-overlay {
+  position: fixed;
+  z-index: 10050;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  background: rgba(2, 8, 23, 0.78);
+}
+.mdrrmo-dispatch-dialog {
+  box-sizing: border-box;
+  display: flex;
+  width: min(560px, 100%);
+  max-height: min(88vh, 760px);
+  flex-direction: column;
+  gap: 14px;
+  overflow: auto;
+  padding: 18px;
+  border: 1px solid #3d5f96;
+  border-radius: 15px;
+  background: #101f3d;
+  color: #e2e8f0;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
+}
+.mdrrmo-dispatch-header,
+.mdrrmo-dispatch-team-heading,
+.mdrrmo-dispatch-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.mdrrmo-dispatch-header h2 { margin: 0; color: #f8fafc; font-size: 19px; }
+.mdrrmo-dispatch-header p { margin: 5px 0 0; color: #9aacc8; font-size: 12px; }
+.mdrrmo-dispatch-header .selection-close-btn { width: 32px; height: 32px; }
+.mdrrmo-dispatch-summary {
+  display: grid;
+  gap: 4px;
+  padding: 11px 13px;
+  border: 1px solid #355383;
+  border-radius: 9px;
+  background: #1d3767;
+}
+.mdrrmo-dispatch-summary strong { color: #f8fafc; font-size: 14px; }
+.mdrrmo-dispatch-summary span { color: #8bdcf0; font-size: 12px; }
+.mdrrmo-dispatch-classification { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.mdrrmo-dispatch-classification label,
+.mdrrmo-dispatch-notes {
+  display: grid;
+  gap: 6px;
+  color: #cbd5e1;
+  font-size: 12px;
+  font-weight: 700;
+}
+.mdrrmo-dispatch-classification select,
+.mdrrmo-dispatch-notes textarea {
+  box-sizing: border-box;
+  width: 100%;
+  border: 1px solid #405a87;
+  border-radius: 8px;
+  outline: none;
+  background: #0b1730;
+  color: #f1f5f9;
+  font: inherit;
+}
+.mdrrmo-dispatch-classification select { min-height: 40px; padding: 0 10px; }
+.mdrrmo-dispatch-notes span { color: #8295b4; font-weight: 500; }
+.mdrrmo-dispatch-notes textarea { min-height: 68px; padding: 9px 10px; resize: vertical; }
+.mdrrmo-dispatch-classification select:focus,
+.mdrrmo-dispatch-notes textarea:focus { border-color: #38bdf8; }
+.mdrrmo-dispatch-team { display: grid; min-height: 72px; gap: 8px; }
+.mdrrmo-dispatch-team-heading h3 { margin: 0; color: #f8fafc; font-size: 14px; }
+.mdrrmo-dispatch-team-heading button { border: 0; background: transparent; color: #38bdf8; font-size: 12px; font-weight: 700; cursor: pointer; }
+.mdrrmo-dispatch-team-heading button:disabled { opacity: 0.5; cursor: default; }
+.mdrrmo-dispatch-responder-list {
+  display: grid;
+  max-height: 220px;
+  gap: 7px;
+  overflow: auto;
+}
+.mdrrmo-dispatch-responder {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border: 1px solid #344968;
+  border-radius: 8px;
+  background: #0b1730;
+  cursor: pointer;
+}
+.mdrrmo-dispatch-responder.selected { border-color: #38bdf8; background: rgba(2, 132, 199, 0.16); }
+.mdrrmo-dispatch-responder input { width: 16px; height: 16px; accent-color: #38bdf8; }
+.mdrrmo-dispatch-responder > span { display: grid; gap: 2px; }
+.mdrrmo-dispatch-responder strong { color: #f1f5f9; font-size: 13px; }
+.mdrrmo-dispatch-responder small { color: #94a3b8; font-size: 11px; }
+.mdrrmo-dispatch-empty,
+.mdrrmo-dispatch-error {
+  padding: 14px;
+  border: 1px solid #354967;
+  border-radius: 8px;
+  background: #0b1730;
+  color: #9aacc8;
+  font-size: 12px;
+  text-align: center;
+}
+.mdrrmo-dispatch-error { border-color: rgba(248, 113, 113, 0.45); color: #fca5a5; }
+.mdrrmo-dispatch-actions { justify-content: flex-end; padding-top: 4px; }
+.mdrrmo-dispatch-actions button { min-height: 40px; padding: 0 16px; border-radius: 8px; font-size: 13px; font-weight: 800; cursor: pointer; }
+.mdrrmo-dispatch-cancel { border: 1px solid #526684; background: transparent; color: #cbd5e1; }
+.mdrrmo-dispatch-submit { border: 1px solid #36c5df; background: #35c5df; color: #06213a; }
+.mdrrmo-dispatch-actions button:disabled { opacity: 0.55; cursor: not-allowed; }
+
+@media (max-width: 520px) {
+  .mdrrmo-dispatch-overlay { padding: 10px; }
+  .mdrrmo-dispatch-dialog { max-height: 94vh; padding: 14px; gap: 12px; }
+  .mdrrmo-dispatch-header h2 { font-size: 16px; }
+  .mdrrmo-dispatch-classification { grid-template-columns: 1fr; gap: 9px; }
+}
+
 @media (max-width: 900px) {
   .report-selection-overlay .panel-resident,
   .report-selection-overlay .panel-field-assessment { width: min(58vw, 460px); }

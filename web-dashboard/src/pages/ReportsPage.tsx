@@ -40,6 +40,8 @@ interface IncidentReport {
   created_at: string;
   dispatcher_reviewed_at?: string;
   dispatched_at?: string;
+  mdrrmo_dispatch_notes?: string;
+  mdrrmo_assignments?: Array<{ responder_id: string; status: string; responder?: { full_name?: string } | null }>;
   accepted_at?: string;
   travel_distance_m?: number;
   travel_distance_accuracy_m?: number;
@@ -84,6 +86,11 @@ export default function ReportsPage() {
   const [classifyingReport, setClassifyingReport] = useState<IncidentReport | null>(null);
   const [classificationType, setClassificationType] = useState('');
   const [classificationSeverity, setClassificationSeverity] = useState('');
+  const [activeResponders, setActiveResponders] = useState<Array<{ id: string; full_name: string; phone?: string | null; unit_type?: string | null }>>([]);
+  const [selectedResponderIds, setSelectedResponderIds] = useState<string[]>([]);
+  const [dispatchNotes, setDispatchNotes] = useState('');
+  const [loadingResponders, setLoadingResponders] = useState(false);
+  const [responderLoadError, setResponderLoadError] = useState('');
   const [previewMedia, setPreviewMedia] = useState<{ url: string; isVideo: boolean } | null>(null);
 
   const formatTimestamp = (value?: string) => {
@@ -138,21 +145,10 @@ export default function ReportsPage() {
   const fetchReports = async () => {
     try {
       setLoading(true);
-      const res = await reportAPI.list();
+      const res = await reportAPI.mdrrmoQueue();
       let data: IncidentReport[] = [];
       if (Array.isArray(res.data)) {
-        // This is the MDRRMO report queue: hide reports routed only to a
-        // barangay unless that barangay has escalated them for coordination.
-        data = res.data.filter((report: IncidentReport) => {
-          const specifics = report.specifics || '';
-          const routedTo = report.send_to || specifics.match(/\[SEND_TO:([^\]]+)\]/)?.[1];
-          if (routedTo === 'barangay') {
-            return report.status === 'escalated' ||
-              report.mdrrmo_response_status === 'responding' ||
-              Boolean(report.barangay_response_notes?.toLowerCase().includes('escalated'));
-          }
-          return routedTo === 'mdrrmo';
-        });
+        data = res.data;
       }
       setReports(data);
     } catch (err) {
@@ -165,14 +161,16 @@ export default function ReportsPage() {
 
   const filteredReports = reports.filter(r => {
     const status = (r.status || 'pending').toLowerCase();
+    const responseStatus = (r.mdrrmo_response_status || 'pending').toLowerCase();
+    const hasDispatch = Boolean(r.dispatched_at || r.mdrrmo_assignments?.length);
     if (activeTab === 'incidents') {
-      return status === 'pending' || status === 'open' || status === 'unverified';
+      return !hasDispatch && responseStatus !== 'responding' && status !== 'escalated' && status !== 'resolved' && status !== 'closed';
     }
     if (activeTab === 'escalated') {
-      return status === 'escalated';
+      return status === 'escalated' && !hasDispatch;
     }
     if (activeTab === 'responding') {
-      return status === 'responding' || status === 'in_progress' || status === 'verified';
+      return responseStatus === 'responding' || hasDispatch && status !== 'resolved' && status !== 'closed';
     }
     if (activeTab === 'resolved') {
       return status === 'resolved' || status === 'closed';
@@ -180,31 +178,48 @@ export default function ReportsPage() {
     return true;
   });
 
-  const openDispatchDialog = (report: IncidentReport) => {
+  const openDispatchDialog = async (report: IncidentReport) => {
     setClassificationType(report.incident_type || '');
     setClassificationSeverity(report.severity || '');
+    setDispatchNotes(report.mdrrmo_dispatch_notes || '');
+    setSelectedResponderIds((report.mdrrmo_assignments || []).filter((assignment) => assignment.status !== 'removed').map((assignment) => assignment.responder_id));
+    setResponderLoadError('');
     setClassifyingReport(report);
+    try {
+      setLoadingResponders(true);
+      const response = await reportAPI.mdrrmoResponders();
+      const available = response.data.responders || [];
+      setActiveResponders(available);
+      setSelectedResponderIds((current) => current.filter((id) => available.some((responder) => responder.id === id)));
+    } catch (error) {
+      setResponderLoadError('Could not load active MDRRMO responders.');
+      setActiveResponders([]);
+    } finally {
+      setLoadingResponders(false);
+    }
   };
 
   const handleVerify = async () => {
-    if (!classifyingReport || !classificationType || !classificationSeverity) {
-      toast.error('Choose the incident type and severity before dispatching');
+    if (!classifyingReport || !classificationType || !classificationSeverity || selectedResponderIds.length === 0) {
+      toast.error('Choose the incident type, severity, and at least one active responder');
       return;
     }
     try {
       setVerifying(true);
-      await reportAPI.verify(classifyingReport.id, {
+      await reportAPI.dispatchToMdrrmo(classifyingReport.id, {
         incident_type: classificationType,
         severity: classificationSeverity,
+        responder_ids: selectedResponderIds,
+        notes: dispatchNotes.trim(),
       });
-      toast.success('Incident classified and responders dispatched.');
+      toast.success('Incident classified and assigned to MDRRMO responders.');
       setClassifyingReport(null);
       setSelectedReport(null);
       setActiveTab('responding');
       fetchReports();
     } catch (err) {
       console.error('Verification failed', err);
-      toast.error('Failed to verify report');
+      toast.error('Failed to dispatch report to MDRRMO responders');
     } finally {
       setVerifying(false);
     }
@@ -964,10 +979,25 @@ export default function ReportsPage() {
               <option value="">Select assessed severity</option>
               {INCIDENT_SEVERITY_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
+            <label className="form-label" htmlFor="mdrrmo-dispatch-notes" style={{ marginTop: 12 }}>Dispatcher notes <span style={{ color: '#94a3b8' }}>(optional)</span></label>
+            <textarea id="mdrrmo-dispatch-notes" className="form-control" rows={3} maxLength={1000} value={dispatchNotes} onChange={(event) => setDispatchNotes(event.target.value)} placeholder="Add instructions or response details…" />
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 16, marginBottom: 8 }}>
+              <label className="form-label" style={{ margin: 0 }}>Active MDRRMO responders</label>
+              {activeResponders.length > 0 && <button type="button" className="btn btn-outline btn-sm" onClick={() => setSelectedResponderIds(selectedResponderIds.length === activeResponders.length ? [] : activeResponders.map((responder) => responder.id))}>{selectedResponderIds.length === activeResponders.length ? 'Deselect all' : 'Select all'}</button>}
+            </div>
+            <div style={{ maxHeight: 190, overflowY: 'auto', padding: 6, border: '1px solid #334155', borderRadius: 10, background: '#081023' }}>
+              {loadingResponders ? <div style={{ padding: 12, color: '#94a3b8' }}>Loading active responders…</div>
+                : responderLoadError ? <div style={{ padding: 12, color: '#fca5a5' }}>{responderLoadError}</div>
+                  : activeResponders.length === 0 ? <div style={{ padding: 12, color: '#94a3b8' }}>No active MDRRMO responders are available.</div>
+                    : activeResponders.map((responder) => <label key={responder.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8, color: '#e2e8f0', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={selectedResponderIds.includes(responder.id)} onChange={(event) => setSelectedResponderIds((current) => event.target.checked ? [...current, responder.id] : current.filter((id) => id !== responder.id))} />
+                      <span style={{ display: 'flex', flexDirection: 'column' }}><strong>{responder.full_name}</strong><small style={{ color: '#94a3b8' }}>{[responder.unit_type, responder.phone].filter(Boolean).join(' · ') || 'MDRRMO responder'}</small></span>
+                    </label>)}
+            </div>
             <p className="field-help" style={{ marginTop: 10 }}>This classification is sent with the dispatch and will be visible to responders. Barangay escalations arrive with the barangay dispatcher’s values preselected so you can confirm or adjust them.</p>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
               <button className="btn btn-outline" onClick={() => setClassifyingReport(null)}>Cancel</button>
-              <button className="btn btn-primary" disabled={verifying || !classificationType || !classificationSeverity} onClick={() => void handleVerify()}>
+              <button className="btn btn-primary" disabled={verifying || loadingResponders || !classificationType || !classificationSeverity || selectedResponderIds.length === 0} onClick={() => void handleVerify()}>
                 {verifying ? 'Dispatching…' : 'Send responders'}
               </button>
             </div>

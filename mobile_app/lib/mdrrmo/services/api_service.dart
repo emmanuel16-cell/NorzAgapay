@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../core/constants.dart';
 import '../models/evacuation_center.dart';
+import '../models/mdrrmo_report.dart';
+import 'package:image_picker/image_picker.dart';
 
 class ApiService {
   static const String baseUrl = AppConstants.apiBaseUrl;
@@ -15,6 +17,116 @@ class ApiService {
       headers['Authorization'] = 'Bearer $token';
     }
     return headers;
+  }
+
+  static Future<List<MdrrmoReport>> getMdrrmoReports(String token) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/mdrrmo/reports/queue'),
+      headers: _headers(token),
+    );
+    final body = response.body.isEmpty ? const [] : jsonDecode(response.body);
+    if (response.statusCode == 200 && body is List) {
+      return body.map((item) => MdrrmoReport.fromJson(Map<String, dynamic>.from(item as Map))).toList();
+    }
+    final message = body is Map ? body['error'] : null;
+    throw Exception(message ?? 'Failed to fetch MDRRMO reports');
+  }
+
+  static Future<List<Map<String, dynamic>>> getActiveMdrrmoResponders(String token) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/mdrrmo/reports/responders'),
+      headers: _headers(token),
+    );
+    final body = response.body.isEmpty ? <String, dynamic>{} : jsonDecode(response.body);
+    if (response.statusCode == 200 && body is Map) {
+      return (body['responders'] as List? ?? const [])
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList();
+    }
+    throw Exception(body is Map ? body['error'] ?? 'Failed to fetch responders' : 'Failed to fetch responders');
+  }
+
+  static Future<MdrrmoReport> dispatchMdrrmoReport(
+    String token,
+    String reportId, {
+    required String incidentType,
+    required String severity,
+    required List<String> responderIds,
+    String? notes,
+  }) async {
+    final response = await http.patch(
+      Uri.parse('$baseUrl/mdrrmo/reports/$reportId/dispatch'),
+      headers: _headers(token),
+      body: jsonEncode({
+        'incident_type': incidentType,
+        'severity': severity,
+        'responder_ids': responderIds,
+        'notes': notes?.trim() ?? '',
+      }),
+    );
+    final body = response.body.isEmpty ? <String, dynamic>{} : jsonDecode(response.body);
+    if (response.statusCode == 200 && body is Map) return MdrrmoReport.fromJson(Map<String, dynamic>.from(body));
+    throw Exception(body is Map ? body['error'] ?? 'Failed to dispatch report' : 'Failed to dispatch report');
+  }
+
+  static Future<MdrrmoReport> respondToMdrrmoReport(String token, String reportId) async {
+    return _mdrrmoMutation(token, reportId, 'respond', method: 'PATCH');
+  }
+
+  static Future<MdrrmoReport> markMdrrmoReportArrived(
+    String token,
+    String reportId, {
+    String method = 'manual',
+    double? latitude,
+    double? longitude,
+    double? accuracyM,
+    DateTime? fixAt,
+  }) async {
+    final response = await http.patch(
+      Uri.parse('$baseUrl/mdrrmo/reports/$reportId/arrive'),
+      headers: _headers(token),
+      body: jsonEncode({
+        'method': method,
+        if (latitude != null) 'latitude': latitude,
+        if (longitude != null) 'longitude': longitude,
+        if (accuracyM != null) 'accuracy_m': accuracyM,
+        if (fixAt != null) 'fix_at': fixAt.toUtc().toIso8601String(),
+      }),
+    );
+    return _mdrrmoReportFromResponse(response, 'Failed to record arrival');
+  }
+
+  static Future<MdrrmoReport> closeMdrrmoReport(String token, String reportId, String resolvedNotes) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/mdrrmo/reports/$reportId/close'),
+      headers: _headers(token),
+      body: jsonEncode({'resolved_notes': resolvedNotes}),
+    );
+    return _mdrrmoReportFromResponse(response, 'Failed to close report');
+  }
+
+  static Future<MdrrmoReport> uploadMdrrmoFieldMedia(String token, String reportId, XFile file) async {
+    final request = http.MultipartRequest('POST', Uri.parse('$baseUrl/mdrrmo/reports/$reportId/field-media'));
+    request.headers['Authorization'] = 'Bearer $token';
+    request.headers['ngrok-skip-browser-warning'] = 'true';
+    request.files.add(await http.MultipartFile.fromPath('media', file.path));
+    final streamed = await request.send().timeout(const Duration(seconds: 40));
+    return _mdrrmoReportFromResponse(await http.Response.fromStream(streamed), 'Failed to upload field media');
+  }
+
+  static Future<MdrrmoReport> _mdrrmoMutation(String token, String reportId, String action, {required String method}) async {
+    final uri = Uri.parse('$baseUrl/mdrrmo/reports/$reportId/$action');
+    final response = method == 'POST'
+        ? await http.post(uri, headers: _headers(token), body: jsonEncode({}))
+        : await http.patch(uri, headers: _headers(token), body: jsonEncode({}));
+    return _mdrrmoReportFromResponse(response, 'Failed to update report');
+  }
+
+  static MdrrmoReport _mdrrmoReportFromResponse(http.Response response, String fallback) {
+    final body = response.body.isEmpty ? <String, dynamic>{} : jsonDecode(response.body);
+    if (response.statusCode == 200 && body is Map) return MdrrmoReport.fromJson(Map<String, dynamic>.from(body));
+    throw Exception(body is Map ? body['error'] ?? fallback : fallback);
   }
 
   // ── Respond Unit & Team ──────────────────────────────────────────────────

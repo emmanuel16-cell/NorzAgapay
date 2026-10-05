@@ -7,7 +7,7 @@ import '../providers/task_provider.dart';
 import '../core/constants.dart';
 import '../models/task.dart';
 import 'task_detail_screen.dart';
-import 'profile_screen.dart';
+import 'mdrrmo_reports_screen.dart';
 import '../services/socket_service.dart';
 import '../services/gps_service.dart';
 import 'dart:async';
@@ -42,7 +42,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
       if (auth.user != null) {
         gpsService.startTracking(auth.user!.id, auth.token!);
-        SocketService.connect(auth.user!.id, auth.user!.role.name);
+        SocketService.connect(auth.user!.id, auth.user!.role.name, auth.token!);
       }
 
       // Real-time dispatch notification
@@ -65,7 +65,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               action: SnackBarAction(
                 label: 'View',
                 textColor: Colors.white,
-                onPressed: () => setState(() => _currentIndex = 0),
+                onPressed: () => setState(() => _currentIndex = 1),
               ),
             ),
           );
@@ -349,6 +349,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       body: IndexedStack(
         index: _currentIndex,
         children: [
+          const MdrrmoReportsScreen(),
           _buildDispatchesTab(),
           _buildMyUnitTab(),
           _buildAccountTab(),
@@ -366,9 +367,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                _buildNavItem(0, Icons.assignment_rounded, 'Dispatches'),
-                _buildNavItem(1, Icons.groups_rounded, 'My Unit'),
-                _buildNavItem(2, Icons.person_rounded, 'Account'),
+                _buildNavItem(0, Icons.assignment_rounded, 'Reports'),
+                _buildNavItem(1, Icons.task_alt_rounded, 'Tasks'),
+                _buildNavItem(2, Icons.groups_rounded, 'My Unit'),
+                _buildNavItem(3, Icons.person_rounded, 'Account'),
               ],
             ),
           ),

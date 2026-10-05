@@ -17,6 +17,7 @@ interface IncidentItem {
   id: string;
   title: string;
   type: string;
+  incident_type?: string;
   status: 'pending' | 'responding' | 'escalated' | 'resolved';
   severity?: string;
   latitude: number;
@@ -67,6 +68,28 @@ interface DispatchUnitItem {
   target_incident_id?: string;
   target_location?: string;
 }
+
+interface MdrrmoDispatchResponder {
+  id: string;
+  full_name: string;
+  phone?: string | null;
+}
+
+const MDRRMO_DISPATCH_INCIDENT_TYPES = [
+  { value: 'flash_flood', label: 'Flood / Flash Flood' },
+  { value: 'fire', label: 'Fire' },
+  { value: 'earthquake', label: 'Earthquake' },
+  { value: 'medical_emergency', label: 'Medical Emergency' },
+  { value: 'typhoon', label: 'Typhoon / Severe Weather' },
+  { value: 'other', label: 'Other Emergency' },
+] as const;
+
+const MDRRMO_DISPATCH_SEVERITIES = [
+  { value: 'low', label: 'Low' },
+  { value: 'moderate', label: 'Moderate' },
+  { value: 'high', label: 'High' },
+  { value: 'critical', label: 'Critical' },
+] as const;
 
 interface ResponderGpsLocation {
   userId: string;
@@ -306,6 +329,15 @@ export default function CommandCenter() {
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
   const [dispatching, setDispatching] = useState(false);
   const [mdrrmoNotes, setMdrrmoNotes] = useState('');
+  const [mdrrmoDispatchIncident, setMdrrmoDispatchIncident] = useState<IncidentItem | null>(null);
+  const [mdrrmoDispatchResponders, setMdrrmoDispatchResponders] = useState<MdrrmoDispatchResponder[]>([]);
+  const [mdrrmoDispatchLoading, setMdrrmoDispatchLoading] = useState(false);
+  const [mdrrmoDispatchError, setMdrrmoDispatchError] = useState('');
+  const [selectedMdrrmoResponderIds, setSelectedMdrrmoResponderIds] = useState<string[]>([]);
+  const [mdrrmoDispatchIncidentType, setMdrrmoDispatchIncidentType] = useState('');
+  const [mdrrmoDispatchSeverity, setMdrrmoDispatchSeverity] = useState('');
+  const [mdrrmoDispatchNotes, setMdrrmoDispatchNotes] = useState('');
+  const mdrrmoDispatchRequestId = useRef(0);
   const previewMediaRef = useRef<HTMLImageElement | HTMLVideoElement>(null);
 
   // Fetch data
@@ -348,8 +380,9 @@ export default function CommandCenter() {
             id: r.id,
             title: r.title || 'Emergency Incident',
             type: r.type || 'emergency',
+            incident_type: r.incident_type || r.type || '',
             status: st,
-            severity: r.severity || 'high',
+            severity: r.severity || '',
             latitude: lat,
             longitude: lng,
             description: r.description || '',
@@ -613,6 +646,66 @@ export default function CommandCenter() {
     toast.success(`Copied: ${text}`);
   };
 
+  const openMdrrmoDispatch = async (incident: IncidentItem) => {
+    const requestId = ++mdrrmoDispatchRequestId.current;
+    setMdrrmoDispatchIncident(incident);
+    setMdrrmoDispatchResponders([]);
+    setSelectedMdrrmoResponderIds([]);
+    setMdrrmoDispatchError('');
+    setMdrrmoDispatchNotes(mdrrmoNotes.trim());
+    const incidentType = incident.incident_type || '';
+    setMdrrmoDispatchIncidentType(MDRRMO_DISPATCH_INCIDENT_TYPES.some((option) => option.value === incidentType) ? incidentType : '');
+    setMdrrmoDispatchSeverity(MDRRMO_DISPATCH_SEVERITIES.some((option) => option.value === incident.severity) ? incident.severity || '' : '');
+    setMdrrmoDispatchLoading(true);
+    try {
+      const response = await reportAPI.mdrrmoResponders();
+      if (requestId !== mdrrmoDispatchRequestId.current) return;
+      setMdrrmoDispatchResponders(response.data?.responders || []);
+    } catch (error: any) {
+      if (requestId !== mdrrmoDispatchRequestId.current) return;
+      setMdrrmoDispatchError(error?.response?.data?.error || 'Could not load active MDRRMO responders.');
+    } finally {
+      if (requestId === mdrrmoDispatchRequestId.current) setMdrrmoDispatchLoading(false);
+    }
+  };
+
+  const closeMdrrmoDispatch = () => {
+    if (dispatching) return;
+    mdrrmoDispatchRequestId.current += 1;
+    setMdrrmoDispatchIncident(null);
+    setMdrrmoDispatchLoading(false);
+  };
+
+  const submitMdrrmoDispatch = async () => {
+    const incident = mdrrmoDispatchIncident;
+    if (!incident || dispatching || selectedMdrrmoResponderIds.length === 0 || !mdrrmoDispatchIncidentType || !mdrrmoDispatchSeverity) return;
+
+    setDispatching(true);
+    try {
+      await reportAPI.dispatchToMdrrmo(incident.id, {
+        responder_ids: selectedMdrrmoResponderIds,
+        incident_type: mdrrmoDispatchIncidentType,
+        severity: mdrrmoDispatchSeverity,
+        notes: mdrrmoDispatchNotes.trim(),
+      });
+      const assignedNames = mdrrmoDispatchResponders
+        .filter((responder) => selectedMdrrmoResponderIds.includes(responder.id))
+        .map((responder) => responder.full_name)
+        .join(', ');
+      toast.success(selectedMdrrmoResponderIds.length === 1
+        ? `Dispatched to ${assignedNames}. The report is in their pending queue.`
+        : `Dispatched to ${assignedNames} (${selectedMdrrmoResponderIds.length} responders).`);
+      setMdrrmoDispatchIncident(null);
+      setMdrrmoNotes('');
+      closeModal();
+      await fetchData();
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error || 'Could not dispatch the report to MDRRMO responders.');
+    } finally {
+      setDispatching(false);
+    }
+  };
+
   const openVisualFullscreen = () => {
     const media = previewMediaRef.current;
     if (media?.requestFullscreen) {
@@ -629,33 +722,8 @@ export default function CommandCenter() {
   } | null>(null);
 
   const executeMdrrmoDispatch = async (incident: IncidentItem) => {
-    if (dispatching) return;
-    setDispatching(true);
-    try {
-      const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
-      const token = localStorage.getItem('token');
-      const response = await fetch(`${baseUrl}/incident-reports/${incident.id}/mdrrmo-respond`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify({
-          responder_name: user?.full_name || user?.email || 'MDRRMO Command Unit',
-          notes: mdrrmoNotes.trim() || 'MDRRMO responding from Command Center dispatch'
-        })
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload?.error || 'Could not initiate MDRRMO response.');
-      toast.success('Dispatch action initiated! MDRRMO responders alerted.');
-      setCoResponseConfirmModal(null);
-      closeModal();
-      fetchData();
-    } catch (e: any) {
-      toast.error(e?.message || 'Could not initiate MDRRMO response.');
-    } finally {
-      setDispatching(false);
-    }
+    setCoResponseConfirmModal(null);
+    await openMdrrmoDispatch(incident);
   };
 
   const handleDispatch = (overrideConfirm = false) => {
@@ -665,6 +733,11 @@ export default function CommandCenter() {
     const isBarangayResponding =
       selectedIncident.barangay_response_status === 'responding' ||
       Boolean(selectedIncident.responder_name && selectedIncident.responder_name !== 'MDRRMO');
+
+    if (activeModalType === 'incident' && !isBarangayResponding && !overrideConfirm) {
+      void openMdrrmoDispatch(selectedIncident);
+      return;
+    }
 
     if (isBarangayResponding && !overrideConfirm) {
       // Show confirmation prompt
@@ -1611,6 +1684,118 @@ export default function CommandCenter() {
                 <span className="unit-location-val">{selectedUnit.target_location || 'Location'}</span>
               </div>
             </div>
+          </div>
+        )}
+
+        {mdrrmoDispatchIncident && (
+          <div className="mdrrmo-dispatch-overlay" onClick={closeMdrrmoDispatch}>
+            <section
+              className="mdrrmo-dispatch-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="mdrrmo-dispatch-title"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <header className="mdrrmo-dispatch-header">
+                <div>
+                  <h2 id="mdrrmo-dispatch-title">Dispatch MDRRMO Responders</h2>
+                  <p>Classify the incident and assign active responders to the report.</p>
+                </div>
+                <button type="button" className="selection-close-btn" aria-label="Close dispatch" onClick={closeMdrrmoDispatch} disabled={dispatching}>
+                  <X size={18} />
+                </button>
+              </header>
+
+              <div className="mdrrmo-dispatch-summary">
+                <strong>{mdrrmoDispatchIncident.title}</strong>
+                <span>{mdrrmoDispatchIncident.barangay_name || 'Barangay not listed'}</span>
+              </div>
+
+              <div className="mdrrmo-dispatch-classification">
+                <label>
+                  Incident type
+                  <select value={mdrrmoDispatchIncidentType} onChange={(event) => setMdrrmoDispatchIncidentType(event.target.value)}>
+                    <option value="">Select incident type</option>
+                    {MDRRMO_DISPATCH_INCIDENT_TYPES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                </label>
+                <label>
+                  Severity
+                  <select value={mdrrmoDispatchSeverity} onChange={(event) => setMdrrmoDispatchSeverity(event.target.value)}>
+                    <option value="">Select severity</option>
+                    {MDRRMO_DISPATCH_SEVERITIES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                </label>
+              </div>
+
+              <label className="mdrrmo-dispatch-notes">
+                Dispatcher notes <span>(optional)</span>
+                <textarea
+                  value={mdrrmoDispatchNotes}
+                  onChange={(event) => setMdrrmoDispatchNotes(event.target.value)}
+                  maxLength={1000}
+                  placeholder="Add instructions or response details…"
+                />
+              </label>
+
+              <section className="mdrrmo-dispatch-team">
+                <div className="mdrrmo-dispatch-team-heading">
+                  <h3>Active responders</h3>
+                  {mdrrmoDispatchResponders.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedMdrrmoResponderIds(
+                        selectedMdrrmoResponderIds.length === mdrrmoDispatchResponders.length
+                          ? []
+                          : mdrrmoDispatchResponders.map((responder) => responder.id),
+                      )}
+                      disabled={mdrrmoDispatchLoading || dispatching}
+                    >
+                      {selectedMdrrmoResponderIds.length === mdrrmoDispatchResponders.length ? 'Deselect all' : 'Select all'}
+                    </button>
+                  )}
+                </div>
+
+                {mdrrmoDispatchLoading ? (
+                  <div className="mdrrmo-dispatch-empty">Loading responder team…</div>
+                ) : mdrrmoDispatchError ? (
+                  <div className="mdrrmo-dispatch-error">{mdrrmoDispatchError}</div>
+                ) : mdrrmoDispatchResponders.length === 0 ? (
+                  <div className="mdrrmo-dispatch-empty">No active MDRRMO responders are available.</div>
+                ) : (
+                  <div className="mdrrmo-dispatch-responder-list">
+                    {mdrrmoDispatchResponders.map((responder) => (
+                      <label key={responder.id} className={`mdrrmo-dispatch-responder ${selectedMdrrmoResponderIds.includes(responder.id) ? 'selected' : ''}`}>
+                        <input
+                          type="checkbox"
+                          checked={selectedMdrrmoResponderIds.includes(responder.id)}
+                          onChange={(event) => setSelectedMdrrmoResponderIds((current) => event.target.checked
+                            ? [...current, responder.id]
+                            : current.filter((id) => id !== responder.id))}
+                          disabled={dispatching}
+                        />
+                        <span>
+                          <strong>{responder.full_name}</strong>
+                          {responder.phone && <small>{responder.phone}</small>}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </section>
+
+              <footer className="mdrrmo-dispatch-actions">
+                <button type="button" className="mdrrmo-dispatch-cancel" onClick={closeMdrrmoDispatch} disabled={dispatching}>Cancel</button>
+                <button
+                  type="button"
+                  className="mdrrmo-dispatch-submit"
+                  onClick={() => void submitMdrrmoDispatch()}
+                  disabled={dispatching || mdrrmoDispatchLoading || mdrrmoDispatchResponders.length === 0 || selectedMdrrmoResponderIds.length === 0 || !mdrrmoDispatchIncidentType || !mdrrmoDispatchSeverity}
+                >
+                  {dispatching ? 'Dispatching…' : `Dispatch${selectedMdrrmoResponderIds.length ? ` · ${selectedMdrrmoResponderIds.length}` : ''}`}
+                </button>
+              </footer>
+            </section>
           </div>
         )}
 
