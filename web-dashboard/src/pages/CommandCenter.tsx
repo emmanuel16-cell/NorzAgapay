@@ -28,6 +28,7 @@ interface IncidentItem {
   proof_urls?: string[];
   proof_types?: string[];
   responder_media?: Array<{
+    id?: string;
     url: string;
     type?: string;
     uploader_name?: string;
@@ -329,6 +330,7 @@ export default function CommandCenter() {
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
   const [dispatching, setDispatching] = useState(false);
   const [mdrrmoNotes, setMdrrmoNotes] = useState('');
+  const [fieldAssessmentTab, setFieldAssessmentTab] = useState<'barangay' | 'mdrrmo'>('barangay');
   const [mdrrmoDispatchIncident, setMdrrmoDispatchIncident] = useState<IncidentItem | null>(null);
   const [mdrrmoDispatchResponders, setMdrrmoDispatchResponders] = useState<MdrrmoDispatchResponder[]>([]);
   const [mdrrmoDispatchLoading, setMdrrmoDispatchLoading] = useState(false);
@@ -574,6 +576,7 @@ export default function CommandCenter() {
     setInvalidReviewStep(null);
     setInvalidReason('');
     setMdrrmoNotes(item.mdrrmo_response_notes || '');
+    setFieldAssessmentTab('barangay');
     setProofPreviewOpen(false);
     const firstVisual = (item.proof_urls && item.proof_urls.length > 0)
       ? item.proof_urls[0]
@@ -1269,11 +1272,13 @@ export default function CommandCenter() {
           <div className="pin-modal-backdrop report-selection-overlay escalated-selection-overlay" onClick={closeModal}>
             <div className="pin-modal-container" onClick={(e) => e.stopPropagation()}>
               {/* Left Card: Resident Details & Visual Proofs */}
-              <div className="panel-resident">
+              <div className="panel-resident escalated-report-panel">
                 <div className="selection-panel-heading">
                   <div><span>Escalated Incident</span><strong>Escalated Report</strong></div>
                   <button className="selection-close-btn" onClick={closeModal} aria-label="Close report"><X size={20} /></button>
                 </div>
+                <section className="reporter-detail-card">
+                  <h2>Reporter Detail</h2>
                 <div className="panel-header-user">
                   <div className="user-identity">
                     <div className="user-avatar-circle">
@@ -1287,6 +1292,10 @@ export default function CommandCenter() {
                       <span className="user-phone">{selectedIncident.reporter_phone || '09510173028'}</span>
                     </div>
                   </div>
+                  <div className="reporter-phone-row">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2A19.8 19.8 0 0 1 11.19 18a19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.09 3.18 2 2 0 0 1 4.08 1h3a2 2 0 0 1 2 1.72c.12.9.34 1.78.65 2.62a2 2 0 0 1-.45 2.11L8 8.73a16 16 0 0 0 6 6l1.28-1.28a2 2 0 0 1 2.11-.45c.84.31 1.72.53 2.62.65A2 2 0 0 1 22 16.92z" /></svg>
+                    <span>{selectedIncident.reporter_phone || 'Phone number unavailable'}</span>
+                  </div>
                   <button
                     className="copy-btn"
                     title="Copy phone number"
@@ -1298,13 +1307,24 @@ export default function CommandCenter() {
                     </svg>
                   </button>
                 </div>
+                </section>
 
-                <div className="section-label-row">
+                <div className="panel-details-box reporter-notes">
+                  <div className="reporter-note-content">
+                    <strong>Details about the report..</strong>
+                    {selectedIncident.description?.trim()
+                      ? <p>{selectedIncident.description}</p>
+                      : <div className="reporter-note-empty"><strong>No Details Provided</strong><span>Review the attached media</span></div>}
+                  </div>
+                </div>
+
+                <div className="section-label-row resident-proof-heading">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" strokeWidth="2.5">
                     <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
                     <circle cx="12" cy="13" r="4"></circle>
                   </svg>
-                  <span>From the reporter</span>
+                  <span>Proof</span>
+                  <strong>{(selectedIncident.proof_urls?.length || (selectedIncident.proof_url ? 1 : 0))} Attachment{(selectedIncident.proof_urls?.length || (selectedIncident.proof_url ? 1 : 0)) === 1 ? '' : 's'}</strong>
                 </div>
 
                 {/* Proof thumbnail grid */}
@@ -1315,14 +1335,14 @@ export default function CommandCenter() {
 
                   if (proofs.length === 0) {
                     return (
-                      <div style={{ padding: '12px 0', color: '#64748b', fontSize: '12px', textAlign: 'center' }}>
+                      <div className="resident-proof-grid resident-proof-empty">
                         No visual proof submitted
                       </div>
                     );
                   }
 
                   return (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '8px' }}>
+                    <div className="resident-proof-grid">
                       {proofs.map((url, idx) => {
                         const isVid = isVideoProof(url, selectedIncident.proof_types?.[idx] || selectedIncident.proof_type);
                         const isActive = selectedVisualUrl === url;
@@ -1412,18 +1432,6 @@ export default function CommandCenter() {
                   </div>
                 )}
 
-                <div className="panel-details-box reporter-notes">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" strokeWidth="2" style={{ flexShrink: 0 }}>
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                    <polyline points="14 2 14 8 20 8"></polyline>
-                    <line x1="16" y1="13" x2="8" y2="13"></line>
-                    <line x1="16" y1="17" x2="8" y2="17"></line>
-                    <polyline points="10 9 9 9 8 9"></polyline>
-                  </svg>
-                  <div>
-                    {selectedIncident.description || 'No description provided.'}
-                  </div>
-                </div>
               </div>
 
               {/* Center Card: Visual Preview Viewport */}
@@ -1543,15 +1551,39 @@ export default function CommandCenter() {
                 </div>
               </div>
               <div className="panel-field-assessment">
+                <div className="field-assessment-tabs" role="tablist" aria-label="Assessment source">
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={fieldAssessmentTab === 'barangay'}
+                    className={fieldAssessmentTab === 'barangay' ? 'active' : ''}
+                    onClick={() => setFieldAssessmentTab('barangay')}
+                  >
+                    {selectedIncident.barangay_name || 'Barangay'}
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={fieldAssessmentTab === 'mdrrmo'}
+                    className={fieldAssessmentTab === 'mdrrmo' ? 'active' : ''}
+                    onClick={() => setFieldAssessmentTab('mdrrmo')}
+                  >
+                    MDRRMO
+                  </button>
+                </div>
                 <div className="field-assessment-heading">
                   <div>
-                    <span>Barangay {selectedIncident.barangay_name || 'Barangay'} Field Assessment</span>
-                    <small>Submitted by {selectedIncident.responder_name || selectedIncident.barangay_responder_name || 'barangay responder'}</small>
+                    <span>Field Assessment</span>
+                    <small>Submitted by {fieldAssessmentTab === 'barangay'
+                      ? selectedIncident.barangay_responder_name || selectedIncident.responder_name || 'barangay responder'
+                      : selectedIncident.mdrrmo_responder_name || 'MDRRMO responder'}</small>
                   </div>
-                  <button className="selection-close-btn" onClick={closeModal} aria-label="Close assessment"><X size={20} /></button>
                 </div>
                 {(() => {
-                  const assessment = parseFieldAssessment(selectedIncident.barangay_response_notes);
+                  const responseNotes = fieldAssessmentTab === 'barangay'
+                    ? selectedIncident.barangay_response_notes
+                    : selectedIncident.mdrrmo_response_notes;
+                  const assessment = parseFieldAssessment(responseNotes);
                   const sections = [
                     { label: 'Situation', value: assessment.situation },
                     { label: 'People Affected / Urgency', value: assessment.people },
@@ -1569,29 +1601,40 @@ export default function CommandCenter() {
                     </div>
                   );
                 })()}
-                <label className="mdrrmo-notes-label" htmlFor="mdrrmo-dispatch-notes">MDRRMO dispatch notes</label>
-                <textarea
-                  id="mdrrmo-dispatch-notes"
-                  className="mdrrmo-notes-input"
-                  placeholder="Add coordination notes for this escalation…"
-                  value={mdrrmoNotes}
-                  onChange={(event) => setMdrrmoNotes(event.target.value)}
-                />
-                {selectedIncident.responder_media && selectedIncident.responder_media.length > 0 && (
-                  <div className="assessment-field-photos">
-                    <strong>Field Photos · {selectedIncident.responder_media.length}</strong>
+                {(() => {
+                  const fieldPhotos = (selectedIncident.responder_media || []).filter((media) => {
+                    const role = `${media.role || ''} ${media.uploader_role || ''}`;
+                    const isMdrrmoMedia = media.id?.startsWith('mdrrmo_') || /mdrrmo/i.test(role);
+                    return fieldAssessmentTab === 'mdrrmo' ? isMdrrmoMedia : !isMdrrmoMedia;
+                  });
+                  return (
+                    <div className="assessment-field-photos">
+                    <strong>Field Photos · {fieldPhotos.length}</strong>
                     <div>
-                      {selectedIncident.responder_media.map((media, index) => (
+                      {fieldPhotos.length > 0 ? fieldPhotos.map((media, index) => (
                         <button key={`${media.url}-${index}`} onClick={() => { setSelectedVisualUrl(media.url); setProofPreviewOpen(true); }} title={media.uploader_name || 'Field photo'}>
-                          {isVideoProof(media.url, media.type) ? <span>▶ Video</span> : <img src={media.url} alt="Barangay field evidence" />}
+                          {isVideoProof(media.url, media.type) ? <span>▶ Video</span> : <img src={media.url} alt={`${fieldAssessmentTab === 'barangay' ? 'Barangay' : 'MDRRMO'} field evidence`} />}
                         </button>
-                      ))}
+                      )) : <span className="assessment-no-photos">No field photos submitted.</span>}
                     </div>
-                  </div>
+                    </div>
+                  );
+                })()}
+                {fieldAssessmentTab === 'mdrrmo' && (
+                  <>
+                    <label className="mdrrmo-notes-label" htmlFor="mdrrmo-dispatch-notes">MDRRMO dispatch notes</label>
+                    <textarea
+                      id="mdrrmo-dispatch-notes"
+                      className="mdrrmo-notes-input"
+                      placeholder="Add coordination notes for this escalation…"
+                      value={mdrrmoNotes}
+                      onChange={(event) => setMdrrmoNotes(event.target.value)}
+                    />
+                    <button className="selection-dispatch-btn field-dispatch-btn" onClick={() => handleDispatch()} disabled={dispatching}>
+                      {dispatching ? 'Dispatching…' : 'Dispatch MDRRMO'}
+                    </button>
+                  </>
                 )}
-                <button className="selection-dispatch-btn field-dispatch-btn" onClick={() => handleDispatch()} disabled={dispatching}>
-                  {dispatching ? 'Dispatching…' : 'Dispatch MDRRMO'}
-                </button>
               </div>
             </div>
           </div>
