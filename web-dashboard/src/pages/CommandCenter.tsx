@@ -13,16 +13,21 @@ import { isCoordinateInsideBoundary } from '../lib/municipalityBoundary';
 import toast from 'react-hot-toast';
 import { AlertTriangle, Siren, Users, CheckCircle2, X } from 'lucide-react';
 
+type ReportKind = 'resident' | 'escalated';
+type ReportStage = 'pending' | 'responding' | 'arrived' | 'resolved';
+
 interface IncidentItem {
   id: string;
   title: string;
   type: string;
   incident_type?: string;
-  status: 'pending' | 'responding' | 'escalated' | 'resolved';
+  report_kind: ReportKind;
+  status: ReportStage;
   severity?: string;
   latitude: number;
   longitude: number;
   description?: string;
+  specifics?: string;
   proof_url?: string;
   proof_type?: string;
   proof_urls?: string[];
@@ -55,6 +60,12 @@ interface IncidentItem {
   mdrrmo_response_status?: string;
   mdrrmo_responder_name?: string;
   mdrrmo_response_notes?: string;
+  mdrrmo_dispatch_notes?: string;
+  mdrrmo_coordination_notes?: string;
+  barangay_responded_by?: string | null;
+  mdrrmo_responded_by?: string | null;
+  arrived_at?: string | null;
+  resolved_notes?: string | null;
 }
 
 interface DispatchUnitItem {
@@ -145,7 +156,7 @@ function parseFieldAssessment(notes?: string) {
     .replace(/\[RESPONDER_MEDIA:[\s\S]*?\]/gi, '')
     .trim();
   const marker = content.indexOf('FIELD ASSESSMENT');
-  const assessment = marker >= 0 ? content.slice(marker + 'FIELD ASSESSMENT'.length) : '';
+  const assessment = marker >= 0 ? content.slice(marker + 'FIELD ASSESSMENT'.length) : content;
   const fields: Record<string, string> = {};
   assessment.split(/\r?\n/).forEach((line) => {
     const splitAt = line.indexOf(':');
@@ -155,9 +166,180 @@ function parseFieldAssessment(notes?: string) {
   return {
     situation: fields.situation || '',
     people: fields['people affected / urgency'] || '',
-    actions: fields['actions taken'] || '',
-    risks: fields['risks / resources'] || '',
+    actions: fields['action taken'] || fields['actions taken'] || '',
+    risks: fields['risk / resource'] || fields['risks / resources'] || '',
   };
+}
+
+function isMdrrmoMedia(media: NonNullable<IncidentItem['responder_media']>[number]): boolean {
+  return Boolean(media.id?.startsWith('mdrrmo_') || /mdrrmo/i.test(`${media.role || ''} ${media.uploader_role || ''}`));
+}
+
+function AssessmentSections({ notes }: { notes?: string }) {
+  const assessment = parseFieldAssessment(notes);
+  const sections = [
+    { label: 'Situation', value: assessment.situation },
+    { label: 'People Affected / Urgency', value: assessment.people },
+    { label: 'Action Taken', value: assessment.actions },
+    { label: 'Risk / Resource', value: assessment.risks },
+  ];
+
+  return (
+    <div className="assessment-sections">
+      {sections.map(({ label, value }) => (
+        <section key={label}>
+          <h3>{label}</h3>
+          <p>{value || 'No details provided.'}</p>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function FieldPhotosGallery({
+  incident,
+  source,
+  onPreview,
+}: {
+  incident: IncidentItem;
+  source: 'barangay' | 'mdrrmo' | 'all';
+  onPreview: (url: string) => void;
+}) {
+  const fieldPhotos = (incident.responder_media || []).filter((media) => {
+    if (source === 'all') return true;
+    return source === 'mdrrmo' ? isMdrrmoMedia(media) : !isMdrrmoMedia(media);
+  });
+
+  return (
+    <section className="field-photos-section">
+      <div className="field-photos-heading">
+        <span>Field Photos/Videos</span>
+        <strong>{fieldPhotos.length} Attachment{fieldPhotos.length === 1 ? '' : 's'}</strong>
+      </div>
+      <div className="assessment-field-photos">
+        {fieldPhotos.length > 0 ? (
+          <div>
+            {fieldPhotos.map((media, index) => (
+              <button
+                type="button"
+                key={`${media.url}-${index}`}
+                onClick={() => onPreview(media.url)}
+                title={media.uploader_name || 'Field photo'}
+              >
+                {isVideoProof(media.url, media.type)
+                  ? <span>▶ Video</span>
+                  : <img src={media.url} alt={`${source === 'mdrrmo' ? 'MDRRMO' : source === 'barangay' ? 'Barangay' : 'Responder'} field evidence ${index + 1}`} />}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <span className="assessment-no-photos">No field photos submitted.</span>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function ResponderAssessmentPanel({
+  incident,
+  notes,
+  mediaSource,
+  view,
+  onViewChange,
+  onPreview,
+  showTitle = true,
+}: {
+  incident: IncidentItem;
+  notes?: string;
+  mediaSource: 'barangay' | 'mdrrmo' | 'all';
+  view: 'assessment' | 'assistance';
+  onViewChange: (view: 'assessment' | 'assistance') => void;
+  onPreview: (url: string) => void;
+  showTitle?: boolean;
+}) {
+  return (
+    <div className="responder-detail-panel">
+      {showTitle && <div className="responder-panel-title">RESPONDER</div>}
+      <div className="responder-panel-tabs" role="tablist" aria-label="Responder information">
+        <button type="button" role="tab" aria-selected={view === 'assessment'} className={view === 'assessment' ? 'active' : ''} onClick={() => onViewChange('assessment')}>
+          Field Assessment
+        </button>
+        <button type="button" role="tab" aria-selected={view === 'assistance'} className={view === 'assistance' ? 'active' : ''} onClick={() => onViewChange('assistance')}>
+          Assistance Request
+        </button>
+      </div>
+      {view === 'assessment' ? (
+        <div className="responder-panel-content">
+          <AssessmentSections notes={notes} />
+          <FieldPhotosGallery incident={incident} source={mediaSource} onPreview={onPreview} />
+          {incident.status === 'resolved' && (
+            <>
+              <section className="resolve-notes-card">
+                <strong>Resolve notes</strong>
+                <p>{incident.resolved_notes?.trim() || 'No resolve notes provided.'}</p>
+              </section>
+              <button type="button" className="resolved-view-details">View Details</button>
+            </>
+          )}
+        </div>
+      ) : (
+        <div className="assistance-request-empty">
+          <strong>Assistance Request</strong>
+          <span>No assistance request details provided.</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EscalatedResponsePanel({
+  incident,
+  tab,
+  onTabChange,
+  responderView,
+  onResponderViewChange,
+  onPreview,
+}: {
+  incident: IncidentItem;
+  tab: 'barangay' | 'responder';
+  onTabChange: (tab: 'barangay' | 'responder') => void;
+  responderView: 'assessment' | 'assistance';
+  onResponderViewChange: (view: 'assessment' | 'assistance') => void;
+  onPreview: (url: string) => void;
+}) {
+  const coordinationNotes = incident.mdrrmo_coordination_notes || incident.mdrrmo_dispatch_notes || incident.mdrrmo_response_notes;
+  return (
+    <div className="escalated-response-panel">
+      <div className={`escalated-response-tabs ${incident.status === 'pending' ? 'single-tab' : ''}`} role="tablist" aria-label="Escalated report response">
+        <button type="button" role="tab" aria-selected={tab === 'barangay'} className={tab === 'barangay' ? 'active' : ''} onClick={() => onTabChange('barangay')}>
+          {incident.barangay_name || 'Barangay name'}
+        </button>
+        {incident.status !== 'pending' && <button type="button" role="tab" aria-selected={tab === 'responder'} className={tab === 'responder' ? 'active' : ''} onClick={() => onTabChange('responder')}>
+          RESPONDER
+        </button>}
+      </div>
+      {tab === 'responder' ? (
+        <ResponderAssessmentPanel
+          incident={incident}
+          notes={incident.mdrrmo_response_notes}
+          mediaSource="mdrrmo"
+          view={responderView}
+          onViewChange={onResponderViewChange}
+          onPreview={onPreview}
+          showTitle={false}
+        />
+      ) : (
+        <div className="barangay-response-content">
+          <h2>Field Assessment</h2>
+          <div className="escalation-notes-card">
+            {coordinationNotes?.trim() || 'No escalation notes provided.'}
+          </div>
+          <AssessmentSections notes={incident.barangay_response_notes} />
+          <FieldPhotosGallery incident={incident} source="barangay" onPreview={onPreview} />
+        </div>
+      )}
+    </div>
+  );
 }
 
 function mapDistanceKm(from: [number, number], to: [number, number]): number {
@@ -170,7 +352,7 @@ function mapDistanceKm(from: [number, number], to: [number, number]): number {
 }
 
 function createResponderMapIcon(selected: boolean) {
-  const size = selected ? 50 : 42;
+  const size = 64;
   return L.divIcon({
     html: `<div class="command-map-dot ${selected ? 'selected' : ''}" style="width:${size}px;height:${size}px;background:#064ee8"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="7" r="4"/><path d="M5 21v-2a7 7 0 0 1 14 0v2"/></svg></div>`,
     className: 'command-responder-location-marker',
@@ -188,15 +370,26 @@ const isVideoProof = (url?: string | null, proof_type?: string | null): boolean 
     lower.endsWith('.3gp') || lower.endsWith('.mkv') || lower.endsWith('.avi');
 };
 
-// Circular incident badges use the white normal ring and yellow selected ring
-// shown in the map legend reference.
-const createTeardropPin = (color: string, symbol: string, isUnread = false, selected = false) => {
-  const size = selected ? 50 : 42;
+// Circular report markers use the white normal ring and yellow selected ring
+// shown in the Command Center reference.
+const createTeardropPin = (reportKind: ReportKind, status: ReportStage, selected = false) => {
+  const size = 64;
+  const color = status === 'resolved'
+    ? '#5CE76B'
+    : reportKind === 'escalated'
+      ? '#FF3C43'
+      : '#FF7838';
+  const symbol = status === 'pending'
+    ? reportKind === 'escalated' ? '‼' : '!'
+    : status === 'responding'
+      ? '⟳'
+      : status === 'arrived'
+        ? '<svg class="command-map-pin-symbol" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></svg>'
+        : '✓';
   return L.divIcon({
     html: `
       <div class="command-map-dot ${selected ? 'selected' : ''}" style="width:${size}px;height:${size}px;background:${color}">
-        <span>${symbol}</span>
-        ${isUnread ? '<i class="command-map-dot-unread"></i>' : ''}
+        ${symbol.startsWith('<svg') ? symbol : `<span class="command-map-symbol command-map-symbol-${status}">${symbol}</span>`}
       </div>
     `,
     className: 'command-map-dot-icon',
@@ -207,7 +400,7 @@ const createTeardropPin = (color: string, symbol: string, isUnread = false, sele
 };
 
 const createResponderUnitBadge = (selected = false) => {
-  const size = selected ? 50 : 42;
+  const size = 64;
   return L.divIcon({
     html: `
       <div class="command-map-dot ${selected ? 'selected' : ''}" style="width:${size}px;height:${size}px;background:#06b6d4">
@@ -297,8 +490,8 @@ export default function CommandCenter() {
   const [filters, setFilters] = useState({
     incidents: true,
     escalated: true,
-    dispatchUnits: true,
-    unitsLine: true,
+    arrived: true,
+    responding: true,
     resolved: true,
   });
 
@@ -308,16 +501,6 @@ export default function CommandCenter() {
   const [responseTasks, setResponseTasks] = useState<MapResponseTask[]>([]);
   const [responderLocations, setResponderLocations] = useState<Record<string, ResponderGpsLocation>>({});
   const [loading, setLoading] = useState(true);
-
-  // Track which incident IDs the user has already clicked/viewed
-  const [viewedIds, setViewedIds] = useState<Set<string>>(() => {
-    try {
-      const stored = localStorage.getItem('cc_viewed_incident_ids');
-      return stored ? new Set(JSON.parse(stored)) : new Set();
-    } catch {
-      return new Set();
-    }
-  });
 
   // Interactive Modal State
   const [activeModalType, setActiveModalType] = useState<'incident' | 'escalated' | 'unit' | null>(null);
@@ -330,7 +513,8 @@ export default function CommandCenter() {
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
   const [dispatching, setDispatching] = useState(false);
   const [mdrrmoNotes, setMdrrmoNotes] = useState('');
-  const [fieldAssessmentTab, setFieldAssessmentTab] = useState<'barangay' | 'mdrrmo'>('barangay');
+  const [escalatedResponseTab, setEscalatedResponseTab] = useState<'barangay' | 'responder'>('barangay');
+  const [responderInfoTab, setResponderInfoTab] = useState<'assessment' | 'assistance'>('assessment');
   const [mdrrmoDispatchIncident, setMdrrmoDispatchIncident] = useState<IncidentItem | null>(null);
   const [mdrrmoDispatchResponders, setMdrrmoDispatchResponders] = useState<MdrrmoDispatchResponder[]>([]);
   const [mdrrmoDispatchLoading, setMdrrmoDispatchLoading] = useState(false);
@@ -363,31 +547,40 @@ export default function CommandCenter() {
           const lat = parseFloat(r.latitude);
           const lng = parseFloat(r.longitude);
           if (!lat || !lng) return; // skip if no valid coordinates
-          const isEscalated = r.beyond_barangay_capability || r.severity === 'critical' || r.status === 'escalated';
-          const isBarangayResponding = r.barangay_response_status === 'responding';
-
-          // Remove incident from Command Center if a barangay is already responding to it (unless escalated)
-          if (isBarangayResponding && !isEscalated) {
-            return;
-          }
-
-          let st: 'pending' | 'responding' | 'escalated' | 'resolved' = 'pending';
-          if (r.status === 'resolved' || r.status === 'closed') {
-            st = 'resolved';
-          } else if (isEscalated) {
-            st = 'escalated';
-          }
+          const reportStatus = String(r.status || '').toLowerCase();
+          const barangayStatus = String(r.barangay_response_status || '').toLowerCase();
+          const mdrrmoStatus = String(r.mdrrmo_response_status || '').toLowerCase();
+          const isEscalated = Boolean(
+            r.is_escalated || r.beyond_barangay_capability || r.severity === 'critical' ||
+            reportStatus === 'escalated' || ['responding', 'resolved'].includes(mdrrmoStatus) ||
+            r.mdrrmo_responder_name || r.mdrrmo_responded_at || r.mdrrmo_dispatch_notes || r.mdrrmo_coordination_notes,
+          );
+          const isResolved = ['resolved', 'closed'].includes(reportStatus) ||
+            barangayStatus === 'resolved' || mdrrmoStatus === 'resolved';
+          const isResponding = reportStatus === 'responding' ||
+            barangayStatus === 'responding' || mdrrmoStatus === 'responding';
+          const isArrived = reportStatus === 'arrived' || barangayStatus === 'arrived' ||
+            mdrrmoStatus === 'arrived' || Boolean(r.arrived_at);
+          const stage: ReportStage = isResolved
+            ? 'resolved'
+            : isArrived
+              ? 'arrived'
+              : isResponding
+                ? 'responding'
+                : 'pending';
 
           items.push({
             id: r.id,
             title: r.title || 'Emergency Incident',
             type: r.type || 'emergency',
             incident_type: r.incident_type || r.type || '',
-            status: st,
+            report_kind: isEscalated ? 'escalated' : 'resident',
+            status: stage,
             severity: r.severity || '',
             latitude: lat,
             longitude: lng,
             description: r.description || '',
+            specifics: r.specifics || '',
             proof_url: r.proof_url || null,
             proof_type: r.proof_type || 'image',
             proof_urls: Array.isArray(r.proof_urls) && r.proof_urls.length > 0 ? r.proof_urls : (r.proof_url ? [r.proof_url] : []),
@@ -412,6 +605,12 @@ export default function CommandCenter() {
             mdrrmo_response_status: r.mdrrmo_response_status || 'pending',
             mdrrmo_responder_name: r.mdrrmo_responder_name,
             mdrrmo_response_notes: r.mdrrmo_response_notes || '',
+            mdrrmo_dispatch_notes: r.mdrrmo_dispatch_notes || '',
+            mdrrmo_coordination_notes: r.mdrrmo_coordination_notes || '',
+            barangay_responded_by: r.barangay_responded_by || null,
+            mdrrmo_responded_by: r.mdrrmo_responded_by || null,
+            arrived_at: r.arrived_at || null,
+            resolved_notes: r.resolved_notes || null,
           });
         });
       }
@@ -478,8 +677,8 @@ export default function CommandCenter() {
 
   // Stats calculation — real counts, no demo padding
   const stats = useMemo(() => {
-    const incCount = incidents.filter(i => i.status === 'pending').length;
-    const escCount = incidents.filter(i => i.status === 'escalated').length;
+    const incCount = incidents.filter(i => i.report_kind === 'resident' && i.status === 'pending').length;
+    const escCount = incidents.filter(i => i.report_kind === 'escalated' && i.status === 'pending').length;
     const unitCount = dispatchUnits.length;
     const resCount = incidents.filter(i => i.status === 'resolved').length;
     return {
@@ -547,13 +746,15 @@ export default function CommandCenter() {
   const visiblePinPoints = useMemo((): [number, number][] => {
     const pts: [number, number][] = [];
     incidents.forEach((inc) => {
-      if (inc.status === 'pending' && !filters.incidents) return;
-      if (inc.status === 'escalated' && !filters.escalated) return;
+      if (inc.report_kind === 'resident' && !filters.incidents) return;
+      if (inc.report_kind === 'escalated' && !filters.escalated) return;
+      if (inc.status === 'arrived' && !filters.arrived) return;
+      if (inc.status === 'responding' && !filters.responding) return;
       if (inc.status === 'resolved' && !filters.resolved) return;
       if (boundary.enabled && !isCoordinateInsideBoundary(inc.latitude, inc.longitude, boundary.geometry)) return;
       pts.push([inc.latitude, inc.longitude]);
     });
-    if (filters.dispatchUnits) {
+    if (filters.responding) {
       dispatchUnits.forEach((u) => {
         if (!boundary.enabled || isCoordinateInsideBoundary(u.latitude, u.longitude, boundary.geometry)) {
           pts.push([u.latitude, u.longitude]);
@@ -563,30 +764,35 @@ export default function CommandCenter() {
     return pts;
   }, [incidents, dispatchUnits, filters, boundary]);
 
+  const selectedResponderUnit = selectedIncident?.status === 'responding'
+    ? dispatchUnits.find((unit) => unit.target_incident_id === selectedIncident.id || unit.id === selectedIncident.assigned_unit_id) || null
+    : null;
+  const selectedResponderId = selectedIncident?.report_kind === 'escalated'
+    ? selectedIncident.mdrrmo_responded_by || selectedIncident.barangay_responded_by
+    : selectedIncident?.barangay_responded_by;
+  const selectedResponderGps = selectedResponderId ? responderLocations[selectedResponderId] : null;
+  const selectedResponderPosition: [number, number] | null = selectedIncident?.status === 'responding'
+    ? selectedResponderGps && Date.now() - selectedResponderGps.timestamp < 30 * 60 * 1000
+      ? [selectedResponderGps.latitude, selectedResponderGps.longitude]
+      : selectedResponderUnit
+        ? [selectedResponderUnit.latitude, selectedResponderUnit.longitude]
+        : null
+    : null;
+
   // Click Handlers
   const handleOpenIncidentPin = (item: IncidentItem) => {
-    // Mark as viewed
-    setViewedIds(prev => {
-      const next = new Set(prev);
-      next.add(item.id);
-      try { localStorage.setItem('cc_viewed_incident_ids', JSON.stringify([...next])); } catch {}
-      return next;
-    });
     setSelectedIncident(item);
     setInvalidReviewStep(null);
     setInvalidReason('');
-    setMdrrmoNotes(item.mdrrmo_response_notes || '');
-    setFieldAssessmentTab('barangay');
+    setMdrrmoNotes(item.mdrrmo_dispatch_notes || item.mdrrmo_coordination_notes || item.mdrrmo_response_notes || '');
+    setEscalatedResponseTab('barangay');
+    setResponderInfoTab('assessment');
     setProofPreviewOpen(false);
     const firstVisual = (item.proof_urls && item.proof_urls.length > 0)
       ? item.proof_urls[0]
       : (item.proof_url || (item.responder_media && item.responder_media.length > 0 ? item.responder_media[0].url : null));
     setSelectedVisualUrl(firstVisual);
-    if (item.status === 'escalated' || item.status === 'responding') {
-      setActiveModalType('escalated');
-    } else {
-      setActiveModalType('incident');
-    }
+    setActiveModalType(item.report_kind === 'escalated' ? 'escalated' : 'incident');
   };
 
   const handleOpenUnitPin = (unit: DispatchUnitItem) => {
@@ -825,21 +1031,21 @@ export default function CommandCenter() {
               Escalated Report
             </label>
 
-            <label className="hud-checkbox-label" style={{ color: filters.dispatchUnits ? '#06b6d4' : '#64748b' }}>
+            <label className="hud-checkbox-label" style={{ color: filters.arrived ? '#06b6d4' : '#64748b' }}>
               <input
                 type="checkbox"
-                checked={filters.dispatchUnits}
-                onChange={(e) => setFilters({ ...filters, dispatchUnits: e.target.checked })}
+                checked={filters.arrived}
+                onChange={(e) => setFilters({ ...filters, arrived: e.target.checked })}
                 style={{ accentColor: '#06b6d4' }}
               />
               Rescuer Arrived
             </label>
 
-            <label className="hud-checkbox-label" style={{ color: filters.unitsLine ? '#818cf8' : '#64748b' }}>
+            <label className="hud-checkbox-label" style={{ color: filters.responding ? '#818cf8' : '#64748b' }}>
               <input
                 type="checkbox"
-                checked={filters.unitsLine}
-                onChange={(e) => setFilters({ ...filters, unitsLine: e.target.checked })}
+                checked={filters.responding}
+                onChange={(e) => setFilters({ ...filters, responding: e.target.checked })}
                 style={{ accentColor: '#818cf8' }}
               />
               Responding
@@ -926,54 +1132,48 @@ export default function CommandCenter() {
             </Marker>
           )}
 
+          {filters.responding && selectedResponderPosition && selectedIncident &&
+            (!boundary.enabled || isCoordinateInsideBoundary(selectedResponderPosition[0], selectedResponderPosition[1], boundary.geometry)) && (
+            <>
+              <Polyline
+                positions={[
+                  selectedResponderPosition,
+                  [selectedIncident.latitude, selectedIncident.longitude],
+                ]}
+                pathOptions={{ color: '#635bff', weight: 3, dashArray: '8, 8', opacity: 0.95 }}
+              />
+              <Marker
+                key={`selected-responder-${selectedIncident.id}-${selectedResponderId || selectedResponderUnit?.id || 'unit'}`}
+                position={selectedResponderPosition}
+                icon={createResponderMapIcon(false)}
+                zIndexOffset={1450}
+              >
+                <Tooltip>{selectedIncident.responder_name || selectedIncident.mdrrmo_responder_name || selectedIncident.barangay_responder_name || selectedResponderUnit?.leader_name || 'Responder'}</Tooltip>
+              </Marker>
+            </>
+          )}
+
           {/* Incident Markers */}
           {incidents.map((inc) => {
             if (boundary.enabled && !isCoordinateInsideBoundary(inc.latitude, inc.longitude, boundary.geometry)) return null;
-            const isUnread = !viewedIds.has(inc.id);
-            if (inc.status === 'pending') {
-              if (!filters.incidents) return null;
-              return (
-                <Marker
-                  key={inc.id}
-                  position={[inc.latitude, inc.longitude]}
-                  icon={createTeardropPin('#F97316', '!', isUnread, selectedIncident?.id === inc.id)}
-                  zIndexOffset={selectedIncident?.id === inc.id ? 1600 : 0}
-                  eventHandlers={{ click: () => handleOpenIncidentPin(inc) }}
-                />
-              );
-            }
-
-            if (inc.status === 'escalated') {
-              if (!filters.escalated) return null;
-              return (
-                <Marker
-                  key={inc.id}
-                  position={[inc.latitude, inc.longitude]}
-                  icon={createTeardropPin('#EF4444', '‼', isUnread, selectedIncident?.id === inc.id)}
-                  zIndexOffset={selectedIncident?.id === inc.id ? 1600 : 0}
-                  eventHandlers={{ click: () => handleOpenIncidentPin(inc) }}
-                />
-              );
-            }
-
-            if (inc.status === 'resolved') {
-              if (!filters.resolved) return null;
-              return (
-                <Marker
-                  key={inc.id}
-                  position={[inc.latitude, inc.longitude]}
-                  icon={createTeardropPin('#10B981', '✓', isUnread, selectedIncident?.id === inc.id)}
-                  zIndexOffset={selectedIncident?.id === inc.id ? 1600 : 0}
-                  eventHandlers={{ click: () => handleOpenIncidentPin(inc) }}
-                />
-              );
-            }
-
-            return null;
+            if (inc.report_kind === 'resident' && !filters.incidents) return null;
+            if (inc.report_kind === 'escalated' && !filters.escalated) return null;
+            if (inc.status === 'arrived' && !filters.arrived) return null;
+            if (inc.status === 'responding' && !filters.responding) return null;
+            if (inc.status === 'resolved' && !filters.resolved) return null;
+            return (
+              <Marker
+                key={inc.id}
+                position={[inc.latitude, inc.longitude]}
+                icon={createTeardropPin(inc.report_kind, inc.status, selectedIncident?.id === inc.id)}
+                zIndexOffset={selectedIncident?.id === inc.id ? 1600 : 0}
+                eventHandlers={{ click: () => handleOpenIncidentPin(inc) }}
+              />
+            );
           })}
 
           {/* Dispatch Units Markers */}
-          {filters.dispatchUnits &&
+          {filters.responding &&
             dispatchUnits.map((u) => (
               (!boundary.enabled || isCoordinateInsideBoundary(u.latitude, u.longitude, boundary.geometry)) &&
               <Marker
@@ -986,7 +1186,7 @@ export default function CommandCenter() {
             ))}
 
           {/* Units Line (Dashed Polyline connecting Unit to Target Incident) */}
-          {filters.unitsLine &&
+          {filters.responding &&
             dispatchUnits.map((u) => {
               if (!u.target_incident_id) return null;
               if (boundary.enabled && !isCoordinateInsideBoundary(u.latitude, u.longitude, boundary.geometry)) return null;
@@ -1013,7 +1213,7 @@ export default function CommandCenter() {
           <MunicipalityBoundaryMapLayer boundary={boundary} />
         </MapContainer>
 
-        {activeModalType !== 'escalated' && <CurrentWeatherPanel />}
+        {!(activeModalType === 'escalated' || (activeModalType === 'incident' && selectedIncident?.status !== 'pending')) && <CurrentWeatherPanel />}
 
         {/* ── MODALS (Image 5, 1, 2) ── */}
 
@@ -1024,8 +1224,8 @@ export default function CommandCenter() {
               {/* Left Card: Resident Details & Visual Proofs */}
               <div className="panel-resident">
                 <div className="selection-panel-heading">
-                  <span>Emergency Incident</span>
-                  <strong>Resident Report</strong>
+                  <span>Resident Report</span>
+                  <strong className={`report-status-badge status-${selectedIncident.status}`}>{selectedIncident.status === 'arrived' ? 'Arrived' : selectedIncident.status === 'responding' ? 'Responding' : selectedIncident.status === 'resolved' ? 'Resolved' : 'Pending'}</strong>
                   <button className="selection-close-btn" onClick={closeModal} aria-label="Close report"><X size={20} /></button>
                 </div>
                 <section className="reporter-detail-card">
@@ -1041,23 +1241,23 @@ export default function CommandCenter() {
                     </div>
                     <div className="user-details-text">
                       <span className="user-title">{selectedIncident.reporter_name || 'Resident'}</span>
-                      <span className="user-phone">{selectedIncident.reporter_phone || '09510173028'}</span>
+                      {selectedIncident.reporter_phone && <span className="user-phone">{selectedIncident.reporter_phone}</span>}
                     </div>
                   </div>
                   <div className="reporter-phone-row">
                     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2A19.8 19.8 0 0 1 11.19 18a19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.09 3.18 2 2 0 0 1 4.08 1h3a2 2 0 0 1 2 1.72c.12.9.34 1.78.65 2.62a2 2 0 0 1-.45 2.11L8 8.73a16 16 0 0 0 6 6l1.28-1.28a2 2 0 0 1 2.11-.45c.84.31 1.72.53 2.62.65A2 2 0 0 1 22 16.92z" /></svg>
                     <span>{selectedIncident.reporter_phone || 'Phone number unavailable'}</span>
                   </div>
-                  <button
+                  {selectedIncident.reporter_phone && <button
                     className="copy-btn"
                     title="Copy phone number"
-                    onClick={() => copyToClipboard(selectedIncident.reporter_phone || '09510173028')}
+                    onClick={() => copyToClipboard(selectedIncident.reporter_phone)}
                   >
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                       <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
                     </svg>
-                  </button>
+                  </button>}
                 </div>
                 </section>
 
@@ -1192,12 +1392,12 @@ export default function CommandCenter() {
                       : <div className="reporter-note-empty"><strong>No Details Provided</strong><span>Review the attached media</span></div>}
                   </div>
                 </div>
-                <div className="selection-actions">
+                {selectedIncident.status === 'pending' && <div className="selection-actions">
                   <button className="selection-invalid-btn" onClick={() => setInvalidReviewStep('choice')}>Invalid Report</button>
                   <button className="selection-dispatch-btn" onClick={() => handleDispatch()} disabled={dispatching}>
                     {dispatching ? 'Dispatching…' : 'Dispatch'}
                   </button>
-                </div>
+                </div>}
               </div>
 
               {/* Right Card: Visual Preview Viewport */}
@@ -1263,6 +1463,16 @@ export default function CommandCenter() {
                   </button>
                 </div>
               </div>
+              {selectedIncident.status !== 'pending' && (
+                <ResponderAssessmentPanel
+                  incident={selectedIncident}
+                  notes={selectedIncident.barangay_response_notes || selectedIncident.mdrrmo_response_notes}
+                  mediaSource="all"
+                  view={responderInfoTab}
+                  onViewChange={setResponderInfoTab}
+                  onPreview={(url) => { setSelectedVisualUrl(url); setProofPreviewOpen(true); }}
+                />
+              )}
             </div>
           </div>
         )}
@@ -1274,7 +1484,8 @@ export default function CommandCenter() {
               {/* Left Card: Resident Details & Visual Proofs */}
               <div className="panel-resident escalated-report-panel">
                 <div className="selection-panel-heading">
-                  <div><span>Escalated Incident</span><strong>Escalated Report</strong></div>
+                  <span>Escalated Report</span>
+                  <strong className={`report-status-badge status-${selectedIncident.status}`}>{selectedIncident.status === 'arrived' ? 'Arrived' : selectedIncident.status === 'responding' ? 'Responding' : selectedIncident.status === 'resolved' ? 'Resolved' : 'Pending'}</strong>
                   <button className="selection-close-btn" onClick={closeModal} aria-label="Close report"><X size={20} /></button>
                 </div>
                 <section className="reporter-detail-card">
@@ -1289,23 +1500,23 @@ export default function CommandCenter() {
                     </div>
                     <div className="user-details-text">
                       <span className="user-title">{selectedIncident.reporter_name || 'Resident'}</span>
-                      <span className="user-phone">{selectedIncident.reporter_phone || '09510173028'}</span>
+                      {selectedIncident.reporter_phone && <span className="user-phone">{selectedIncident.reporter_phone}</span>}
                     </div>
                   </div>
                   <div className="reporter-phone-row">
                     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2A19.8 19.8 0 0 1 11.19 18a19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.09 3.18 2 2 0 0 1 4.08 1h3a2 2 0 0 1 2 1.72c.12.9.34 1.78.65 2.62a2 2 0 0 1-.45 2.11L8 8.73a16 16 0 0 0 6 6l1.28-1.28a2 2 0 0 1 2.11-.45c.84.31 1.72.53 2.62.65A2 2 0 0 1 22 16.92z" /></svg>
                     <span>{selectedIncident.reporter_phone || 'Phone number unavailable'}</span>
                   </div>
-                  <button
+                  {selectedIncident.reporter_phone && <button
                     className="copy-btn"
                     title="Copy phone number"
-                    onClick={() => copyToClipboard(selectedIncident.reporter_phone || '09510173028')}
+                    onClick={() => copyToClipboard(selectedIncident.reporter_phone)}
                   >
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                       <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
                     </svg>
-                  </button>
+                  </button>}
                 </div>
                 </section>
 
@@ -1432,6 +1643,14 @@ export default function CommandCenter() {
                   </div>
                 )}
 
+                {selectedIncident.status === 'pending' && (
+                  <div className="selection-actions escalated-selection-actions">
+                    <button className="selection-dispatch-btn" onClick={() => handleDispatch()} disabled={dispatching}>
+                      {dispatching ? 'Dispatching…' : 'Dispatch'}
+                    </button>
+                  </div>
+                )}
+
               </div>
 
               {/* Center Card: Visual Preview Viewport */}
@@ -1517,16 +1736,16 @@ export default function CommandCenter() {
                       )}
                     </div>
                   </div>
-                  <button
+                  {selectedIncident.responder_phone && <button
                     className="copy-btn"
                     title="Copy phone number"
-                    onClick={() => copyToClipboard(selectedIncident.responder_phone || '09510173028')}
+                    onClick={() => copyToClipboard(selectedIncident.responder_phone)}
                   >
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                       <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
                     </svg>
-                  </button>
+                  </button>}
                 </div>
 
                 <div className="section-label-row purple">
@@ -1550,92 +1769,14 @@ export default function CommandCenter() {
                   </div>
                 </div>
               </div>
-              <div className="panel-field-assessment">
-                <div className="field-assessment-tabs" role="tablist" aria-label="Assessment source">
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={fieldAssessmentTab === 'barangay'}
-                    className={fieldAssessmentTab === 'barangay' ? 'active' : ''}
-                    onClick={() => setFieldAssessmentTab('barangay')}
-                  >
-                    {selectedIncident.barangay_name || 'Barangay'}
-                  </button>
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={fieldAssessmentTab === 'mdrrmo'}
-                    className={fieldAssessmentTab === 'mdrrmo' ? 'active' : ''}
-                    onClick={() => setFieldAssessmentTab('mdrrmo')}
-                  >
-                    MDRRMO
-                  </button>
-                </div>
-                <div className="field-assessment-heading">
-                  <div>
-                    <span>Field Assessment</span>
-                    <small>Submitted by {fieldAssessmentTab === 'barangay'
-                      ? selectedIncident.barangay_responder_name || selectedIncident.responder_name || 'barangay responder'
-                      : selectedIncident.mdrrmo_responder_name || 'MDRRMO responder'}</small>
-                  </div>
-                </div>
-                {(() => {
-                  const responseNotes = fieldAssessmentTab === 'barangay'
-                    ? selectedIncident.barangay_response_notes
-                    : selectedIncident.mdrrmo_response_notes;
-                  const assessment = parseFieldAssessment(responseNotes);
-                  const sections = [
-                    { label: 'Situation', value: assessment.situation },
-                    { label: 'People Affected / Urgency', value: assessment.people },
-                    { label: 'Action Taken', value: assessment.actions },
-                    { label: 'Risk / Resource', value: assessment.risks },
-                  ];
-                  return (
-                    <div className="assessment-sections">
-                      {sections.map(({ label, value }) => (
-                        <section key={label}>
-                          <h3>{label}</h3>
-                          <p>{value || 'No details provided.'}</p>
-                        </section>
-                      ))}
-                    </div>
-                  );
-                })()}
-                {(() => {
-                  const fieldPhotos = (selectedIncident.responder_media || []).filter((media) => {
-                    const role = `${media.role || ''} ${media.uploader_role || ''}`;
-                    const isMdrrmoMedia = media.id?.startsWith('mdrrmo_') || /mdrrmo/i.test(role);
-                    return fieldAssessmentTab === 'mdrrmo' ? isMdrrmoMedia : !isMdrrmoMedia;
-                  });
-                  return (
-                    <div className="assessment-field-photos">
-                    <strong>Field Photos · {fieldPhotos.length}</strong>
-                    <div>
-                      {fieldPhotos.length > 0 ? fieldPhotos.map((media, index) => (
-                        <button key={`${media.url}-${index}`} onClick={() => { setSelectedVisualUrl(media.url); setProofPreviewOpen(true); }} title={media.uploader_name || 'Field photo'}>
-                          {isVideoProof(media.url, media.type) ? <span>▶ Video</span> : <img src={media.url} alt={`${fieldAssessmentTab === 'barangay' ? 'Barangay' : 'MDRRMO'} field evidence`} />}
-                        </button>
-                      )) : <span className="assessment-no-photos">No field photos submitted.</span>}
-                    </div>
-                    </div>
-                  );
-                })()}
-                {fieldAssessmentTab === 'mdrrmo' && (
-                  <>
-                    <label className="mdrrmo-notes-label" htmlFor="mdrrmo-dispatch-notes">MDRRMO dispatch notes</label>
-                    <textarea
-                      id="mdrrmo-dispatch-notes"
-                      className="mdrrmo-notes-input"
-                      placeholder="Add coordination notes for this escalation…"
-                      value={mdrrmoNotes}
-                      onChange={(event) => setMdrrmoNotes(event.target.value)}
-                    />
-                    <button className="selection-dispatch-btn field-dispatch-btn" onClick={() => handleDispatch()} disabled={dispatching}>
-                      {dispatching ? 'Dispatching…' : 'Dispatch MDRRMO'}
-                    </button>
-                  </>
-                )}
-              </div>
+              <EscalatedResponsePanel
+                incident={selectedIncident}
+                tab={escalatedResponseTab}
+                onTabChange={setEscalatedResponseTab}
+                responderView={responderInfoTab}
+                onResponderViewChange={setResponderInfoTab}
+                onPreview={(url) => { setSelectedVisualUrl(url); setProofPreviewOpen(true); }}
+              />
             </div>
           </div>
         )}
