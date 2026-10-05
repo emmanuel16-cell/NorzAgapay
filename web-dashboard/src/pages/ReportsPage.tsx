@@ -70,7 +70,7 @@ const parseAssessment = (notes?: string | null): FieldAssessment => {
 
 export default function ReportsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [currentTime, setCurrentTime] = useState(() => new Date());
+  const [currentTime, setCurrentTime] = useState(() => new Date().toLocaleTimeString());
   const [reports, setReports] = useState<IncidentReport[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [group, setGroup] = useState<ReportGroup>('resident');
@@ -99,7 +99,7 @@ export default function ReportsPage() {
   };
   useEffect(() => { void fetchReports(); }, []);
   useEffect(() => {
-    const timer = window.setInterval(() => setCurrentTime(new Date()), 30_000);
+    const timer = window.setInterval(() => setCurrentTime(new Date().toLocaleTimeString()), 1000);
     return () => window.clearInterval(timer);
   }, []);
   useEffect(() => {
@@ -195,7 +195,7 @@ export default function ReportsPage() {
     <main className="reports-workspace-v2">
       <header className="reports-page-header-v2">
         <div><h1>Incidents Reports</h1><span>Dispatcher workspace</span></div>
-        <div className="reports-live-indicator"><i /> Live <span>·</span> {format(currentTime, 'h:mm a')}</div>
+        <div className="reports-live-indicator"><i /> Live <span>·</span> {currentTime}</div>
       </header>
       <nav className="reports-group-tabs-v2" aria-label="Report type">
         <button type="button" className={group === 'resident' ? 'active' : ''} onClick={() => selectGroup('resident')}>Resident Reports <span>{residentCount}</span></button>
