@@ -1083,9 +1083,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _showDebugAccounts() async {
     try {
       final response = await http.get(
-        Uri.parse('${AppConstants.apiBaseUrl}/debug/accounts?audience=standard'),
+        Uri.parse('${AppConstants.apiBaseUrl}/debug/accounts?audience=resident'),
         headers: {'ngrok-skip-browser-warning': 'true'},
-      );
+      ).timeout(const Duration(seconds: 15));
       final data = jsonDecode(response.body);
       if (response.statusCode != 200) throw data['error'] ?? 'Debug quick login unavailable';
       final accounts = (data['accounts'] as List)
@@ -1121,17 +1121,42 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         title: Text(acc['full_name'] ?? 'Resident'),
                         subtitle: Text('${acc['email']} • ${acc['phone'] ?? "No phone"}'),
                         onTap: () async {
-                          final phone = (acc['phone'] as String?)?.trim() ?? '09123456789';
-                          await OfflineService.saveProfile({
-                            'full_name': acc['full_name'] ?? 'Test Resident',
-                            'contact_number': phone,
-                            'email': acc['email'] ?? 'test@norzagaray.gov.ph',
-                            'barangay_name': 'Poblacion',
-                            'is_logged_in': true,
-                          });
-                          if (!sheetContext.mounted) return;
-                          Navigator.pop(sheetContext);
-                          _onLoginSuccess('Logged in as ${acc["full_name"]}');
+                          try {
+                            final loginResponse = await http.post(
+                              Uri.parse('${AppConstants.apiBaseUrl}/debug/quick-login'),
+                              headers: {
+                                'Content-Type': 'application/json',
+                                'ngrok-skip-browser-warning': 'true',
+                              },
+                              body: jsonEncode({
+                                'accountId': acc['id'],
+                                'audience': 'resident',
+                              }),
+                            ).timeout(const Duration(seconds: 15));
+                            final loginData = jsonDecode(loginResponse.body);
+                            if (loginResponse.statusCode != 200) {
+                              throw loginData['error'] ?? 'Quick login failed';
+                            }
+
+                            final user = Map<String, dynamic>.from(loginData['user'] ?? acc);
+                            await OfflineService.saveProfile({
+                              'user_id': user['id'] ?? acc['id'],
+                              'full_name': user['full_name'] ?? 'Resident',
+                              'contact_number': user['phone'] ?? '',
+                              'email': user['email'] ?? acc['email'] ?? '',
+                              'barangay_name': user['barangay_name'] ?? 'Poblacion',
+                              'token': loginData['token'],
+                              'is_logged_in': true,
+                            });
+                            if (!sheetContext.mounted) return;
+                            Navigator.pop(sheetContext);
+                            _onLoginSuccess('Logged in as ${user['full_name'] ?? 'Resident'}');
+                          } catch (error) {
+                            if (!sheetContext.mounted) return;
+                            ScaffoldMessenger.of(sheetContext).showSnackBar(
+                              SnackBar(content: Text('Quick login failed: $error')),
+                            );
+                          }
                         },
                       );
                     },
@@ -1144,15 +1169,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
       );
     } catch (e) {
       if (mounted) {
-        // Quick fallback mock account
-        await OfflineService.saveProfile({
-          'full_name': 'Juan Dela Cruz',
-          'contact_number': '09171234567',
-          'email': 'juan.delacruz@norzagaray.gov.ph',
-          'barangay_name': 'Poblacion',
-          'is_logged_in': true,
-        });
-        _onLoginSuccess('Logged in as Demo Resident (Juan Dela Cruz)');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Debug quick login unavailable: $e')),
+        );
       }
     }
   }

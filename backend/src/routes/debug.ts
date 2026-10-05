@@ -16,8 +16,22 @@ const debugOnly = (_req: Request, res: Response, next: () => void) => {
 // Development-only account picker. It never exposes passwords; selecting an
 // account issues a temporary development session instead.
 router.get('/accounts', debugOnly, async (req: Request, res: Response) => {
-  const audience = req.query.audience === 'barangay' ? 'barangay' : 'standard';
+  const requestedAudience = req.query.audience;
+  const audience: 'standard' | 'barangay' | 'resident' =
+    requestedAudience === 'barangay' || requestedAudience === 'resident'
+      ? requestedAudience
+      : 'standard';
   try {
+    if (audience === 'resident') {
+      const { data, error } = await supabaseAdmin
+        .from('resident_user')
+        .select('id, full_name, email, phone, barangay_name, role, status, verified')
+        .eq('status', 'active')
+        .order('full_name');
+      if (error) throw error;
+      res.json({ accounts: data.map((user) => ({ ...user, audience })) });
+      return;
+    }
     if (audience === 'barangay') {
       const { data, error } = await supabaseAdmin
         .from('barangay_users')
@@ -68,11 +82,35 @@ router.get('/accounts', debugOnly, async (req: Request, res: Response) => {
 
 router.post('/quick-login', debugOnly, async (req: Request, res: Response) => {
   const { accountId, audience } = req.body as { accountId?: string; audience?: string };
-  if (!accountId || !['standard', 'barangay'].includes(audience || '')) {
+  if (!accountId || !['standard', 'barangay', 'resident'].includes(audience || '')) {
     res.status(400).json({ error: 'Valid account and audience are required' });
     return;
   }
   try {
+    if (audience === 'resident') {
+      const { data: user, error } = await supabaseAdmin
+        .from('resident_user')
+        .select('id, full_name, email, phone, barangay_name, role, status, verified')
+        .eq('id', accountId)
+        .eq('status', 'active')
+        .single();
+      if (error || !user) {
+        res.status(404).json({ error: 'Active resident account not found' });
+        return;
+      }
+
+      const token = jwt.sign(
+        { userId: user.id, email: user.email, role: 'resident', debug: true },
+        config.jwtSecret,
+        { expiresIn: '1h' },
+      );
+      await supabaseAdmin
+        .from('resident_user')
+        .update({ last_seen: new Date().toISOString() })
+        .eq('id', user.id);
+      res.json({ token, user: { ...user, role: 'resident' } });
+      return;
+    }
     if (audience === 'barangay') {
       const { data: user, error } = await supabaseAdmin
         .from('barangay_users')
