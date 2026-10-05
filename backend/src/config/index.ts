@@ -31,4 +31,9 @@ export const config = {
   gmailUser: process.env.GMAILUSER || '',
   sendGridApiKey: process.env.SENDGRID_API_KEY || '',
   emailFrom: process.env.EMAIL_FROM || '',
+
+  // SMS API PH
+  smsApiKey: process.env.SMS_API_KEY || '',
+  smsApiBaseUrl: (process.env.SMS_API_BASE_URL || 'https://smsapiph.onrender.com/api/v1')
+    .replace(/\/$/, ''),
 };

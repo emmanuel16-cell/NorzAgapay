@@ -6,6 +6,7 @@ import { config } from '../config';
 import { supabaseAdmin } from '../config/supabase';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth';
 import { emailService } from '../services/emailService';
+import { smsService } from '../services/smsService';
 import { setOtp, getOtp, deleteOtp } from '../config/redis';
 import { randomInt } from 'crypto';
 
@@ -528,12 +529,13 @@ router.get('/resident/register-otp', (_req: Request, res: Response): void => {
     status: 'online',
     endpoint: '/api/auth/resident/register-otp',
     method: 'POST',
-    description: 'Generates and emails a 6-digit verification OTP code to the resident.',
+    description: 'Generates and delivers a 6-digit resident registration OTP by email or SMS.',
     expectedBody: {
       full_name: 'Juan Dela Cruz',
       email: 'user@example.com',
       contact_number: '09123456789',
       barangay_name: 'Poblacion',
+      delivery_method: 'email or sms (defaults to email)',
     },
   });
 });
@@ -542,6 +544,12 @@ router.get('/resident/register-otp', (_req: Request, res: Response): void => {
 router.post('/resident/register-otp', async (req: Request, res: Response): Promise<void> => {
   try {
     const { full_name, email, contact_number, barangay_name, barangay_id } = req.body;
+    const deliveryMethod = String(req.body.delivery_method || 'email').toLowerCase();
+
+    if (deliveryMethod !== 'email' && deliveryMethod !== 'sms') {
+      res.status(400).json({ error: 'Choose email or SMS for verification.' });
+      return;
+    }
 
     if (!email || !email.includes('@')) {
       res.status(400).json({ error: 'Valid email address is required.' });
@@ -550,6 +558,16 @@ router.post('/resident/register-otp', async (req: Request, res: Response): Promi
 
     if (!full_name || full_name.trim().length < 2) {
       res.status(400).json({ error: 'Full name is required.' });
+      return;
+    }
+
+    if (deliveryMethod === 'sms' && !/^09\d{9}$/.test(String(contact_number || '').replace(/\D/g, ''))) {
+      res.status(400).json({ error: 'Enter a valid 11-digit Philippine mobile number to receive an SMS code.' });
+      return;
+    }
+
+    if (deliveryMethod === 'sms' && !config.smsApiKey) {
+      res.status(503).json({ error: 'SMS verification is not configured yet. Please choose email or contact the administrator.' });
       return;
     }
 
@@ -575,19 +593,29 @@ router.post('/resident/register-otp', async (req: Request, res: Response): Promi
       contactNumber: contact_number?.trim() || '',
       barangayName: barangay_name?.trim() || 'Poblacion',
       barangayId: barangay_id || undefined,
+      deliveryMethod,
       purpose: 'registration',
     });
 
-    const sent = await emailService.sendOtpEmail(key, otp, 'registration');
+    const sent = deliveryMethod === 'sms'
+      ? await smsService.sendRegistrationOtp(contact_number, otp)
+      : await emailService.sendOtpEmail(key, otp, 'registration');
     if (!sent) {
       await deleteOtp(key);
-      res.status(503).json({ error: 'We could not send the verification email. Please try again later.' });
+      res.status(503).json({
+        error: deliveryMethod === 'sms'
+          ? 'We could not send the verification SMS. Check the mobile number or try email instead.'
+          : 'We could not send the verification email. Please try again later.',
+      });
       return;
     }
 
     res.json({
       success: true,
-      message: `Verification code sent to ${key}.`,
+      message: deliveryMethod === 'sms'
+        ? `Verification code sent to ${contact_number}.`
+        : `Verification code sent to ${key}.`,
+      deliveryMethod,
       expiresInMinutes: 10,
     });
   } catch (err: any) {
@@ -629,7 +657,7 @@ router.post('/resident/verify-register-otp', async (req: Request, res: Response)
 
     // Expiry is enforced by Redis TTL — no manual Date.now() check needed
     if (record.otp !== otp.toString().trim()) {
-      res.status(400).json({ error: 'Invalid verification code. Please check your email and enter the correct 6-digit code.' });
+      res.status(400).json({ error: 'Invalid verification code. Check the message you received and enter the correct 6-digit code.' });
       return;
     }
 

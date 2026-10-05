@@ -1205,11 +1205,11 @@ class _BroadcastCard extends StatelessWidget {
                           ),
                         ),
                         PopupMenuButton<bool>(
-                          tooltip: 'More options',
+                          tooltip: 'Post options',
                           padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints.tightFor(
-                            width: 36,
-                            height: 36,
+                          icon: const Icon(
+                            Icons.more_vert_rounded,
+                            color: Color(0xFF64748B),
                           ),
                           onSelected: onResidentPinChanged,
                           itemBuilder: (_) => [
@@ -1233,14 +1233,6 @@ class _BroadcastCard extends StatelessWidget {
                               ),
                             ),
                           ],
-                          child: const SizedBox(
-                            width: 36,
-                            height: 36,
-                            child: Icon(
-                              Icons.more_vert_rounded,
-                              color: Color(0xFF64748B),
-                            ),
-                          ),
                         ),
                       ],
                     ),

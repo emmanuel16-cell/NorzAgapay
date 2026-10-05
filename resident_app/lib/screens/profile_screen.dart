@@ -32,6 +32,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _isSubmitting = false;
   int _registrationCooldownSeconds = 0;
   Timer? _registrationCooldownTimer;
+  String _registrationOtpChannel = 'email';
 
   // Form Controllers
   final _signInFormKey = GlobalKey<FormState>();
@@ -284,6 +285,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           'email': email,
           'barangay_name': barangayName,
           'barangay_id': _selectedBarangayId,
+          'delivery_method': _registrationOtpChannel,
         }),
       ).timeout(const Duration(seconds: 30));
 
@@ -298,12 +300,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
         fullName: fullName,
         contact: contact,
         barangayName: barangayName,
+        deliveryMethod: _registrationOtpChannel,
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Could not send the verification email: $e'),
+          content: Text('Could not send the verification code: $e'),
           backgroundColor: const Color(0xFFDC2626),
         ),
       );
@@ -317,7 +320,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     required String fullName,
     required String contact,
     required String barangayName,
+    required String deliveryMethod,
   }) async {
+    final isSms = deliveryMethod == 'sms';
+    final destination = isSms ? contact : email;
     final otpController = TextEditingController();
     bool isVerifying = false;
     bool isResending = false;
@@ -360,12 +366,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     color: const Color(0xFFF5F8FC),
                     borderRadius: BorderRadius.circular(14),
                   ),
-                  child: const Icon(Icons.mark_email_read_rounded, color: Color(0xFF1B4F72), size: 27),
+                  child: Icon(
+                    isSms ? Icons.sms_rounded : Icons.mark_email_read_rounded,
+                    color: const Color(0xFF1B4F72),
+                    size: 27,
+                  ),
                 ),
                 const SizedBox(width: 12),
-                const Expanded(
+                Expanded(
                   child: Text(
-                    'Email Verification',
+                    isSms ? 'SMS Verification' : 'Email Verification',
                     style: TextStyle(fontWeight: FontWeight.w700, fontSize: 21, color: Color(0xFF171B20)),
                   ),
                 ),
@@ -377,12 +387,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'We sent a 6-digit verification code to:',
+                    'We sent a 6-digit verification code to your ${isSms ? 'mobile number' : 'email address'}:',
                     style: TextStyle(fontSize: 15, color: Color(0xFF70757C)),
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    email,
+                    destination,
                     style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF1B4F72)),
                   ),
                   const SizedBox(height: 18),
@@ -444,6 +454,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                       'contact_number': contact,
                                       'email': email,
                                       'barangay_name': barangayName,
+                                      'barangay_id': _selectedBarangayId,
+                                      'delivery_method': deliveryMethod,
                                     }),
                                   ).timeout(const Duration(seconds: 30));
                                   final data = jsonDecode(response.body);
@@ -453,7 +465,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   setDialogState(() {
                                     isResending = false;
                                     resendCooldownSeconds = 60;
-                                    errorMessage = 'A new code has been sent to your email.';
+                                    errorMessage = 'A new code has been sent to your ${isSms ? 'mobile number' : 'email'}.';
                                   });
                                   resendTimer?.cancel();
                                   resendTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
@@ -497,7 +509,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     builder: (confirmCtx) => AlertDialog(
                                       title: const Text('Cancel account creation?'),
                                       content: const Text(
-                                        'If you close email verification, you’ll need to wait 60 seconds before requesting another code.',
+                                        'If you close verification, you’ll need to wait 60 seconds before requesting another code.',
                                       ),
                                       actions: [
                                         TextButton(
@@ -1737,6 +1749,42 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             validator: (v) => v == null || !v.contains('@') ? 'Valid email address is required' : null,
           ),
+          const SizedBox(height: 16),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'Send verification code by',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.grey.shade700),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: _buildOtpChannelOption(
+                  channel: 'email',
+                  label: 'Email',
+                  icon: Icons.email_outlined,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _buildOtpChannelOption(
+                  channel: 'sms',
+                  label: 'SMS',
+                  icon: Icons.sms_outlined,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 7),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'Your email is still used for your account and temporary password.',
+              style: TextStyle(fontSize: 11.5, color: Colors.grey.shade600),
+            ),
+          ),
           const SizedBox(height: 20),
           SizedBox(
             width: double.infinity,
@@ -1764,6 +1812,44 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildOtpChannelOption({
+    required String channel,
+    required String label,
+    required IconData icon,
+  }) {
+    final selected = _registrationOtpChannel == channel;
+    return InkWell(
+      onTap: _isSubmitting ? null : () => setState(() => _registrationOtpChannel = channel),
+      borderRadius: BorderRadius.circular(12),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFFEAF3F8) : Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: selected ? const Color(0xFF1B4F72) : const Color(0xFFD1D5DB),
+            width: selected ? 1.6 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 18, color: const Color(0xFF1B4F72)),
+            const SizedBox(width: 8),
+            Text(label, style: const TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF1B4F72))),
+            const SizedBox(width: 7),
+            Icon(
+              selected ? Icons.radio_button_checked_rounded : Icons.radio_button_unchecked_rounded,
+              size: 17,
+              color: selected ? const Color(0xFF1B4F72) : Colors.grey,
+            ),
+          ],
+        ),
       ),
     );
   }
