@@ -8,13 +8,11 @@ import 'screens/my_reports_screen.dart';
 import 'screens/evacuation_map_screen.dart';
 import 'screens/hotlines_screen.dart';
 import 'services/offline_service.dart';
-import 'services/report_updates_service.dart';
 import 'services/norzagaray_boundary.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await OfflineService.init();
-  ResidentReportUpdates.showDemoData.value = OfflineService.getShowDemoData();
   await NorzagarayBoundary.load();
   unawaited(NorzagarayBoundary.refresh());
 

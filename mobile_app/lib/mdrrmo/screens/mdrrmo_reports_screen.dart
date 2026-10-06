@@ -1,12 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/mdrrmo_report.dart';
-import '../data/demo_data.dart';
 import '../providers/auth_provider.dart';
-import '../providers/demo_mode_provider.dart';
 import '../services/api_service.dart';
 import '../services/socket_service.dart';
-import '../../widgets/demo_data_switch_card.dart';
 import 'mdrrmo_report_detail_screen.dart';
 
 const _mdNavy = Color(0xFF0C243B);
@@ -78,34 +75,21 @@ class _MdrrmoReportsScreenState extends State<MdrrmoReportsScreen>
           _error = null;
         });
     } catch (error) {
-      if (mounted && loadSequence == _loadSequence)
-        setState(() => _error = error.toString());
+      if (mounted && loadSequence == _loadSequence) setState(() => _error = error.toString());
     } finally {
-      if (mounted && loadSequence == _loadSequence && !silent)
-        setState(() => _loading = false);
+      if (mounted && loadSequence == _loadSequence && !silent) setState(() => _loading = false);
     }
   }
 
-  List<MdrrmoReport> _forTab(int index) {
-    final user = context.read<AuthProvider>().user;
-    final reports = context.read<DemoModeProvider>().showDemoData
-        ? [
-            ..._reports,
-            ...buildDemoMdrrmoReports(
-              responderId: user?.role.name == 'responder' ? user?.id : null,
-            ),
-          ]
-        : _reports;
-    return reports
-        .where(
-          (report) => index == 0
-              ? report.isPending
-              : index == 1
-              ? report.isResponding
-              : report.isResolved,
-        )
-        .toList();
-  }
+  List<MdrrmoReport> _forTab(int index) => _reports
+      .where(
+        (report) => index == 0
+            ? report.isPending
+            : index == 1
+            ? report.isResponding
+            : report.isResolved,
+      )
+      .toList();
 
   Future<void> _open(MdrrmoReport report) async {
     await Navigator.of(context).push(
@@ -240,28 +224,6 @@ class _MdrrmoReportsScreenState extends State<MdrrmoReportsScreen>
                       ),
                     ),
                   ),
-                  if (report.isDemoData) ...[
-                    const SizedBox(width: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 5,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFFF7E6),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: const Color(0xFFF3D28B)),
-                      ),
-                      child: const Text(
-                        'DEMO',
-                        style: TextStyle(
-                          color: Color(0xFF7A5100),
-                          fontSize: 10,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                  ],
                   const Spacer(),
                   const Icon(Icons.schedule_rounded, size: 13, color: _mdMuted),
                   const SizedBox(width: 4),
@@ -284,8 +246,7 @@ class _MdrrmoReportsScreenState extends State<MdrrmoReportsScreen>
                   const SizedBox(width: 4),
                   Expanded(
                     child: Text(
-                      occurredAt == null ||
-                              report.incidentTimePrecision == 'unknown'
+                      occurredAt == null || report.incidentTimePrecision == 'unknown'
                           ? 'Incident time unknown'
                           : 'Incident occurred ${occurredAt.day}/${occurredAt.month}/${occurredAt.year} · ${occurredAt.hour.toString().padLeft(2, '0')}:${occurredAt.minute.toString().padLeft(2, '0')} (${report.incidentTimePrecision})',
                       style: const TextStyle(color: _mdMuted, fontSize: 11),
@@ -303,9 +264,7 @@ class _MdrrmoReportsScreenState extends State<MdrrmoReportsScreen>
   Widget _list(int index) {
     if (_loading)
       return const Center(child: CircularProgressIndicator(color: _mdTeal));
-    if (_error != null &&
-        _reports.isEmpty &&
-        !context.read<DemoModeProvider>().showDemoData)
+    if (_error != null && _reports.isEmpty)
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -361,85 +320,51 @@ class _MdrrmoReportsScreenState extends State<MdrrmoReportsScreen>
   @override
   Widget build(BuildContext context) {
     final user = context.watch<AuthProvider>().user;
-    context.watch<DemoModeProvider>();
     final statusTabs = TabBar(
       controller: _tabs,
       indicatorColor: const Color(0xFF64D2B4),
       labelColor: Colors.white,
       unselectedLabelColor: Colors.white70,
       tabs: [
-        Tab(
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Text('Pending'),
-              _badge(_forTab(0).length, const Color(0xFFEF4444)),
-            ],
-          ),
-        ),
-        Tab(
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Text('Responding'),
-              _badge(_forTab(1).length, const Color(0xFFF59E0B)),
-            ],
-          ),
-        ),
-        Tab(
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Text('Resolved'),
-              _badge(_forTab(2).length, const Color(0xFF10B981)),
-            ],
-          ),
-        ),
+        Tab(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [const Text('Pending'), _badge(_forTab(0).length, const Color(0xFFEF4444))])),
+        Tab(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [const Text('Responding'), _badge(_forTab(1).length, const Color(0xFFF59E0B))])),
+        Tab(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [const Text('Resolved'), _badge(_forTab(2).length, const Color(0xFF10B981))])),
       ],
     );
-    final reportTabs = TabBarView(
-      controller: _tabs,
-      children: [_list(0), _list(1), _list(2)],
-    );
+    final reportTabs = TabBarView(controller: _tabs, children: [_list(0), _list(1), _list(2)]);
     return Scaffold(
       backgroundColor: _mdPage,
-      appBar: widget.embedded
-          ? null
-          : AppBar(
-              backgroundColor: _mdNavy,
-              foregroundColor: Colors.white,
-              surfaceTintColor: Colors.transparent,
-              title: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Incident Reports',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-                  ),
-                  Text(
-                    user?.role.name == 'dispatcher'
-                        ? 'MDRRMO Dispatcher'
-                        : 'MDRRMO Responder',
-                    style: const TextStyle(fontSize: 11, color: Colors.white70),
-                  ),
-                ],
-              ),
-              actions: [
-                IconButton(
-                  onPressed: _load,
-                  tooltip: 'Refresh',
-                  icon: const Icon(Icons.refresh_rounded),
-                ),
-              ],
-              bottom: statusTabs,
+      appBar: widget.embedded ? null : AppBar(
+        backgroundColor: _mdNavy,
+        foregroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Incident Reports',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
             ),
-      body: Column(
-        children: [
-          if (widget.embedded) Material(color: _mdNavy, child: statusTabs),
-          const DemoDataSwitchCard(margin: EdgeInsets.fromLTRB(12, 12, 12, 0)),
-          Expanded(child: reportTabs),
+            Text(
+              user?.role.name == 'dispatcher'
+                  ? 'MDRRMO Dispatcher'
+                  : 'MDRRMO Responder',
+              style: const TextStyle(fontSize: 11, color: Colors.white70),
+            ),
+          ],
+        ),
+        actions: [
+          IconButton(
+            onPressed: _load,
+            tooltip: 'Refresh',
+            icon: const Icon(Icons.refresh_rounded),
+          ),
         ],
+        bottom: statusTabs,
       ),
+      body: widget.embedded
+          ? Column(children: [Material(color: _mdNavy, child: statusTabs), Expanded(child: reportTabs)])
+          : reportTabs,
     );
   }
 }

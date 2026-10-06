@@ -29,14 +29,6 @@ class OfflineService {
     return box.get('onboarding_completed', defaultValue: false) == true;
   }
 
-  static bool getShowDemoData() =>
-      Hive.box(profileBoxName).get('show_demo_data', defaultValue: false) ==
-      true;
-
-  static Future<void> setShowDemoData(bool enabled) async {
-    await Hive.box(profileBoxName).put('show_demo_data', enabled);
-  }
-
   static Future<void> setOnboardingCompleted(bool completed) async {
     final box = Hive.box(profileBoxName);
     await box.put('onboarding_completed', completed);
@@ -72,23 +64,18 @@ class OfflineService {
 
   static Future<void> savePinnedBroadcastIds(Iterable<String> ids) async {
     final normalized = ids.where((id) => id.isNotEmpty).toSet().toList();
-    await Hive.box(
-      profileBoxName,
-    ).put(_residentPinnedBroadcastsKey, normalized);
+    await Hive.box(profileBoxName).put(_residentPinnedBroadcastsKey, normalized);
   }
 
   static bool hasSeenReviewNotice(String reportId) {
     final seen = Hive.box(profileBoxName).get('seen_review_notice_ids');
-    return seen is List &&
-        seen.map((value) => value.toString()).contains(reportId);
+    return seen is List && seen.map((value) => value.toString()).contains(reportId);
   }
 
   static Future<void> markReviewNoticeSeen(String reportId) async {
     final box = Hive.box(profileBoxName);
     final seen = box.get('seen_review_notice_ids');
-    final ids = seen is List
-        ? seen.map((value) => value.toString()).toSet()
-        : <String>{};
+    final ids = seen is List ? seen.map((value) => value.toString()).toSet() : <String>{};
     ids.add(reportId);
     await box.put('seen_review_notice_ids', ids.toList());
   }
@@ -147,9 +134,7 @@ class OfflineService {
     required String contactNumber,
   }) async {
     final documents = await getApplicationDocumentsDirectory();
-    final evidenceDirectory = Directory(
-      '${documents.path}/incident_evidence/$reportId',
-    );
+    final evidenceDirectory = Directory('${documents.path}/incident_evidence/$reportId');
     await evidenceDirectory.create(recursive: true);
     final persistentPaths = <String>[];
     for (var index = 0; index < sourcePaths.length; index++) {
@@ -163,8 +148,7 @@ class OfflineService {
           : 'proof_$index';
       final safeName = originalName.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
       final destination = File('${evidenceDirectory.path}/${index}_$safeName');
-      if (source.absolute.path != destination.absolute.path &&
-          !await destination.exists()) {
+      if (source.absolute.path != destination.absolute.path && !await destination.exists()) {
         await source.copy(destination.path);
       }
       if (await destination.exists()) persistentPaths.add(destination.path);
@@ -199,8 +183,7 @@ class OfflineService {
       evidenceDirectory ??= file.parent;
       if (await file.exists()) await file.delete();
     }
-    if (evidenceDirectory != null &&
-        await evidenceDirectory.exists() &&
+    if (evidenceDirectory != null && await evidenceDirectory.exists() &&
         await evidenceDirectory.list().isEmpty) {
       await evidenceDirectory.delete();
     }

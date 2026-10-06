@@ -13,7 +13,6 @@ import 'barangay_hotline_screen.dart';
 import 'analytics_screen.dart';
 import 'resolved_reports_screen.dart';
 import '../widgets/legal_dialogs.dart';
-import '../widgets/demo_data_switch_card.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -70,67 +69,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
 
     final items = <_HomeTab>[];
-    items.add(
-      _HomeTab(
-        0,
-        'Home',
-        Icons.home_outlined,
-        Icons.home_rounded,
-        const PublicAlertsScreen(),
-      ),
-    );
-    items.add(
-      _HomeTab(
-        1,
-        'Evac Station',
-        Icons.location_on_outlined,
-        Icons.location_on_rounded,
-        const EvacCentersScreen(),
-      ),
-    );
+    items.add(_HomeTab(0, 'Home', Icons.home_outlined, Icons.home_rounded, const PublicAlertsScreen()));
+    items.add(_HomeTab(1, 'Evac Station', Icons.location_on_outlined, Icons.location_on_rounded, const EvacCentersScreen()));
     if (user?.canViewReports == true) {
-      items.add(
-        _HomeTab(
-          2,
-          'Reports',
-          Icons.assignment_outlined,
-          Icons.assignment_rounded,
-          const ReportsScreen(),
-        ),
-      );
+      items.add(_HomeTab(2, 'Reports', Icons.assignment_outlined, Icons.assignment_rounded, const ReportsScreen()));
     }
-    items.add(
-      _HomeTab(
-        3,
-        'Hotline',
-        Icons.phone_in_talk_outlined,
-        Icons.phone_in_talk_rounded,
-        const BarangayHotlineScreen(),
-      ),
-    );
+    items.add(_HomeTab(3, 'Hotline', Icons.phone_in_talk_outlined, Icons.phone_in_talk_rounded, const BarangayHotlineScreen()));
     if (user?.isBarangayAdmin == true) {
-      items.add(
-        _HomeTab(
-          5,
-          'Analytics',
-          Icons.analytics_outlined,
-          Icons.analytics_rounded,
-          const AnalyticsScreen(),
-        ),
-      );
+      items.add(_HomeTab(5, 'Analytics', Icons.analytics_outlined, Icons.analytics_rounded, const AnalyticsScreen()));
     }
-    items.add(
-      _HomeTab(
-        4,
-        'Profile',
-        Icons.person_outline_rounded,
-        Icons.person_rounded,
-        _buildAccountScreen(user, auth),
-      ),
-    );
-    final selectedPosition = items.indexWhere(
-      (item) => item.index == _currentIndex,
-    );
+    items.add(_HomeTab(4, 'Profile', Icons.person_outline_rounded, Icons.person_rounded, _buildAccountScreen(user, auth)));
+    final selectedPosition = items.indexWhere((item) => item.index == _currentIndex);
     final safePosition = selectedPosition < 0 ? 0 : selectedPosition;
 
     return Scaffold(
@@ -143,13 +92,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         decoration: const BoxDecoration(
           color: Colors.white,
           border: Border(top: BorderSide(color: Color(0xFF64D2B4), width: 1.5)),
-          boxShadow: [
-            BoxShadow(
-              color: Color(0x0D000000),
-              blurRadius: 10,
-              offset: Offset(0, -3),
-            ),
-          ],
+          boxShadow: [BoxShadow(color: Color(0x0D000000), blurRadius: 10, offset: Offset(0, -3))],
         ),
         child: SafeArea(
           top: false,
@@ -217,24 +160,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     ? user.fullName[0].toUpperCase()
                     : 'B',
                 style: TextStyle(
-                  color: roleColor,
-                  fontSize: 36,
-                  fontWeight: FontWeight.bold,
-                ),
+                    color: roleColor,
+                    fontSize: 36,
+                    fontWeight: FontWeight.bold),
               ),
             ),
             const SizedBox(height: 16),
             Text(
               user?.fullName ?? 'Barangay Officer',
               style: const TextStyle(
-                color: Color(0xFF0F172A),
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
+                  color: Color(0xFF0F172A),
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 4),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
               decoration: BoxDecoration(
                 color: roleColor.withValues(alpha: 0.2),
                 borderRadius: BorderRadius.circular(12),
@@ -243,10 +185,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               child: Text(
                 roleLabel,
                 style: TextStyle(
-                  color: roleColor,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12,
-                ),
+                    color: roleColor,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12),
               ),
             ),
             const SizedBox(height: 28),
@@ -260,21 +201,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ),
               child: Column(
                 children: [
-                  _tile(
-                    Icons.location_city,
-                    'Barangay',
-                    user?.barangayName ?? 'Norzagaray',
-                  ),
+                  _tile(Icons.location_city, 'Barangay',
+                      user?.barangayName ?? 'Norzagaray'),
                   const Divider(color: Color(0xFFE2E8F0), height: 1),
                   _tile(Icons.email, 'Email Address', user?.email ?? '-'),
                   const Divider(color: Color(0xFFE2E8F0), height: 1),
-                  _tile(
-                    Icons.phone,
-                    'Contact Number',
-                    user?.phone == null
-                        ? 'Not set'
-                        : PhoneNumberUtils.formatForDisplay(user!.phone),
-                  ),
+                  _tile(Icons.phone, 'Contact Number',
+                      user?.phone == null
+                          ? 'Not set'
+                          : PhoneNumberUtils.formatForDisplay(user!.phone)),
                   const Divider(color: Color(0xFFE2E8F0), height: 1),
                   _tile(Icons.map, 'Municipality', 'Norzagaray, Bulacan'),
                 ],
@@ -284,31 +219,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
             const Align(
               alignment: Alignment.centerLeft,
-              child: Text(
-                'Settings & Policies',
-                style: TextStyle(
-                  color: Color(0xFF0F172A),
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+              child: Text('Settings & Policies', style: TextStyle(color: Color(0xFF0F172A), fontSize: 16, fontWeight: FontWeight.bold)),
             ),
             const SizedBox(height: 10),
-            const DemoDataSwitchCard(margin: EdgeInsets.zero),
-            const SizedBox(height: 12),
 
             if (user?.isBarangayAdmin == true || user?.isStaff == true) ...[
               _actionTile(
                 icon: Icons.task_alt_rounded,
                 iconColor: const Color(0xFF0F9D83),
                 label: 'Resolved Reports',
-                subtitle:
-                    'Review resolved reports originating in this barangay',
+                subtitle: 'Review resolved reports originating in this barangay',
                 onTap: () => Navigator.push(
                   context,
-                  MaterialPageRoute(
-                    builder: (_) => const ResolvedReportsScreen(),
-                  ),
+                  MaterialPageRoute(builder: (_) => const ResolvedReportsScreen()),
                 ),
               ),
               const SizedBox(height: 12),
@@ -355,12 +278,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 iconColor: const Color(0xFF0284C7),
                 label: 'Barangay Account Request',
                 subtitle: 'View your barangay request and activation status',
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const BarangayAccountRequestScreen(),
-                  ),
-                ),
+                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const BarangayAccountRequestScreen())),
               ),
               const SizedBox(height: 12),
             ],
@@ -396,16 +314,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 label: const Text(
                   'Sign Out',
                   style: TextStyle(
-                    color: Color(0xFFEF4444),
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
+                      color: Color(0xFFEF4444),
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold),
                 ),
                 style: OutlinedButton.styleFrom(
                   side: const BorderSide(color: Color(0xFFEF4444)),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+                      borderRadius: BorderRadius.circular(12)),
                 ),
               ),
             ),
@@ -420,20 +336,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       context: context,
       builder: (dialogContext) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text(
-          'Sign Out',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        content: const Text(
-          'Are you sure you want to sign out of your barangay account?',
-        ),
+        title: const Text('Sign Out', style: TextStyle(fontWeight: FontWeight.bold)),
+        content: const Text('Are you sure you want to sign out of your barangay account?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text(
-              'Cancel',
-              style: TextStyle(color: Color(0xFF64748B)),
-            ),
+            child: const Text('Cancel', style: TextStyle(color: Color(0xFF64748B))),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(dialogContext, true),
@@ -568,10 +476,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       } catch (error) {
                         if (dialogContext.mounted) {
                           setDialogState(() {
-                            errorMessage = error.toString().replaceFirst(
-                              'Exception: ',
-                              '',
-                            );
+                            errorMessage = error
+                                .toString()
+                                .replaceFirst('Exception: ', '');
                           });
                         }
                       } finally {
@@ -618,181 +525,75 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Account: $email',
-                  style: const TextStyle(
-                    color: Color(0xFF1B4F72),
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+                Text('Account: $email', style: const TextStyle(color: Color(0xFF1B4F72), fontWeight: FontWeight.w600)),
                 const SizedBox(height: 8),
-                const Text(
-                  'Verify your email and current password to set a new password.',
-                ),
+                const Text('Verify your email and current password to set a new password.'),
                 const SizedBox(height: 14),
                 if (!otpSent)
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
-                      onPressed: sendingOtp
-                          ? null
-                          : () async {
-                              setDialogState(() {
-                                sendingOtp = true;
-                                error = null;
-                              });
-                              try {
-                                await ApiService.sendBarangayPasswordOtp(email);
-                                setDialogState(() {
-                                  otpSent = true;
-                                  success = 'Verification code sent to $email.';
-                                });
-                              } catch (e) {
-                                setDialogState(() => error = e.toString());
-                              } finally {
-                                setDialogState(() => sendingOtp = false);
-                              }
-                            },
+                      onPressed: sendingOtp ? null : () async {
+                        setDialogState(() { sendingOtp = true; error = null; });
+                        try {
+                          await ApiService.sendBarangayPasswordOtp(email);
+                          setDialogState(() { otpSent = true; success = 'Verification code sent to $email.'; });
+                        } catch (e) {
+                          setDialogState(() => error = e.toString());
+                        } finally {
+                          setDialogState(() => sendingOtp = false);
+                        }
+                      },
                       icon: sendingOtp
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
+                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
                           : const Icon(Icons.mark_email_read_outlined),
-                      label: Text(
-                        sendingOtp
-                            ? 'Sending code…'
-                            : 'Send Email Verification Code',
-                      ),
+                      label: Text(sendingOtp ? 'Sending code…' : 'Send Email Verification Code'),
                     ),
                   ),
                 if (otpSent) ...[
                   if (success != null) ...[
-                    Text(
-                      success!,
-                      style: const TextStyle(
-                        color: Color(0xFF15803D),
-                        fontSize: 12,
-                      ),
-                    ),
+                    Text(success!, style: const TextStyle(color: Color(0xFF15803D), fontSize: 12)),
                     const SizedBox(height: 10),
                   ],
-                  TextField(
-                    controller: otp,
-                    keyboardType: TextInputType.number,
-                    maxLength: 6,
-                    decoration: const InputDecoration(
-                      labelText: '6-digit email code',
-                    ),
-                  ),
+                  TextField(controller: otp, keyboardType: TextInputType.number, maxLength: 6, decoration: const InputDecoration(labelText: '6-digit email code')),
                   const SizedBox(height: 8),
-                  TextField(
-                    controller: currentPassword,
-                    obscureText: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Current password',
-                    ),
-                  ),
+                  TextField(controller: currentPassword, obscureText: true, decoration: const InputDecoration(labelText: 'Current password')),
                   const SizedBox(height: 8),
-                  TextField(
-                    controller: newPassword,
-                    obscureText: true,
-                    decoration: const InputDecoration(
-                      labelText: 'New password (6+ characters)',
-                    ),
-                  ),
+                  TextField(controller: newPassword, obscureText: true, decoration: const InputDecoration(labelText: 'New password (6+ characters)')),
                   const SizedBox(height: 8),
-                  TextField(
-                    controller: confirmPassword,
-                    obscureText: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Confirm new password',
-                    ),
-                  ),
+                  TextField(controller: confirmPassword, obscureText: true, decoration: const InputDecoration(labelText: 'Confirm new password')),
                 ],
                 if (error != null) ...[
                   const SizedBox(height: 10),
-                  Text(
-                    error!,
-                    style: const TextStyle(
-                      color: Color(0xFFDC2626),
-                      fontSize: 12,
-                    ),
-                  ),
+                  Text(error!, style: const TextStyle(color: Color(0xFFDC2626), fontSize: 12)),
                 ],
               ],
             ),
           ),
           actions: [
-            TextButton(
-              onPressed: updating ? null : () => Navigator.pop(dialogContext),
-              child: const Text('Cancel'),
-            ),
+            TextButton(onPressed: updating ? null : () => Navigator.pop(dialogContext), child: const Text('Cancel')),
             if (otpSent)
               ElevatedButton(
-                onPressed: updating
-                    ? null
-                    : () async {
-                        if (otp.text.trim().length != 6) {
-                          setDialogState(
-                            () => error = 'Enter the 6-digit email code.',
-                          );
-                          return;
-                        }
-                        if (newPassword.text.length < 6) {
-                          setDialogState(
-                            () => error =
-                                'New password must be at least 6 characters.',
-                          );
-                          return;
-                        }
-                        if (newPassword.text != confirmPassword.text) {
-                          setDialogState(
-                            () => error = 'New passwords do not match.',
-                          );
-                          return;
-                        }
-                        if (currentPassword.text.isEmpty) {
-                          setDialogState(
-                            () => error = 'Enter your current password.',
-                          );
-                          return;
-                        }
-                        setDialogState(() {
-                          updating = true;
-                          error = null;
-                        });
-                        try {
-                          await ApiService.changeBarangayPassword(
-                            email: email,
-                            otp: otp.text.trim(),
-                            currentPassword: currentPassword.text,
-                            newPassword: newPassword.text,
-                          );
-                          if (dialogContext.mounted)
-                            Navigator.pop(dialogContext);
-                          if (mounted)
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Password updated successfully.'),
-                                backgroundColor: Color(0xFF16A34A),
-                              ),
-                            );
-                        } catch (e) {
-                          setDialogState(() {
-                            updating = false;
-                            error = e.toString();
-                          });
-                        }
-                      },
-                child: updating
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('Update Password'),
+                onPressed: updating ? null : () async {
+                  if (otp.text.trim().length != 6) { setDialogState(() => error = 'Enter the 6-digit email code.'); return; }
+                  if (newPassword.text.length < 6) { setDialogState(() => error = 'New password must be at least 6 characters.'); return; }
+                  if (newPassword.text != confirmPassword.text) { setDialogState(() => error = 'New passwords do not match.'); return; }
+                  if (currentPassword.text.isEmpty) { setDialogState(() => error = 'Enter your current password.'); return; }
+                  setDialogState(() { updating = true; error = null; });
+                  try {
+                    await ApiService.changeBarangayPassword(
+                      email: email,
+                      otp: otp.text.trim(),
+                      currentPassword: currentPassword.text,
+                      newPassword: newPassword.text,
+                    );
+                    if (dialogContext.mounted) Navigator.pop(dialogContext);
+                    if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Password updated successfully.'), backgroundColor: Color(0xFF16A34A)));
+                  } catch (e) {
+                    setDialogState(() { updating = false; error = e.toString(); });
+                  }
+                },
+                child: updating ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Update Password'),
               ),
           ],
         ),
@@ -807,17 +608,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget _tile(IconData icon, String title, String subtitle) {
     return ListTile(
       leading: Icon(icon, color: const Color(0xFF0D9488)),
-      title: Text(
-        title,
-        style: const TextStyle(color: Color(0xFF64748B), fontSize: 12),
-      ),
-      subtitle: Text(
-        subtitle,
-        style: const TextStyle(
-          color: Color(0xFF0F172A),
-          fontWeight: FontWeight.w600,
-        ),
-      ),
+      title: Text(title,
+          style: const TextStyle(color: Color(0xFF64748B), fontSize: 12)),
+      subtitle: Text(subtitle,
+          style: const TextStyle(
+              color: Color(0xFF0F172A), fontWeight: FontWeight.w600)),
     );
   }
 
@@ -852,30 +647,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    label,
-                    style: const TextStyle(
-                      color: const Color(0xFF0F172A),
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                    ),
-                  ),
+                  Text(label,
+                      style: const TextStyle(
+                          color: const Color(0xFF0F172A),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14)),
                   const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    style: const TextStyle(
-                      color: Color(0xFF64748B),
-                      fontSize: 11,
-                    ),
-                  ),
+                  Text(subtitle,
+                      style: const TextStyle(
+                          color: Color(0xFF64748B), fontSize: 11)),
                 ],
               ),
             ),
-            const Icon(
-              Icons.chevron_right_rounded,
-              color: Color(0xFF94A3B8),
-              size: 22,
-            ),
+            const Icon(Icons.chevron_right_rounded,
+                color: Color(0xFF94A3B8), size: 22),
           ],
         ),
       ),
@@ -888,15 +673,15 @@ class _BarangayHeaderGradient extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-    width: double.infinity,
-    decoration: const BoxDecoration(
-      gradient: LinearGradient(
-        colors: [Color(0xFF0C243B), Color(0xFF133E68), Color(0xFF0F5B78)],
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-      ),
-    ),
-  );
+        width: double.infinity,
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFF0C243B), Color(0xFF133E68), Color(0xFF0F5B78)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+      );
 }
 
 class _HomeTab {
@@ -906,13 +691,7 @@ class _HomeTab {
   final IconData activeIcon;
   final Widget screen;
 
-  const _HomeTab(
-    this.index,
-    this.label,
-    this.icon,
-    this.activeIcon,
-    this.screen,
-  );
+  const _HomeTab(this.index, this.label, this.icon, this.activeIcon, this.screen);
 }
 
 class _BottomNavButton extends StatelessWidget {
@@ -923,14 +702,7 @@ class _BottomNavButton extends StatelessWidget {
   final int currentIndex;
   final ValueChanged<int> onTap;
 
-  const _BottomNavButton({
-    required this.index,
-    required this.label,
-    required this.icon,
-    required this.activeIcon,
-    required this.currentIndex,
-    required this.onTap,
-  });
+  const _BottomNavButton({required this.index, required this.label, required this.icon, required this.activeIcon, required this.currentIndex, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -943,16 +715,7 @@ class _BottomNavButton extends StatelessWidget {
         children: [
           Icon(selected ? activeIcon : icon, color: color, size: 24),
           const SizedBox(height: 3),
-          Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 10.5,
-              fontWeight: selected ? FontWeight.bold : FontWeight.w500,
-              color: color,
-            ),
-          ),
+          Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 10.5, fontWeight: selected ? FontWeight.bold : FontWeight.w500, color: color)),
         ],
       ),
     );

@@ -16,9 +16,7 @@ import {
   Sun,
   Megaphone,
   Map as MapIcon,
-  FlaskConical,
 } from 'lucide-react';
-import { useDemoData } from '../context/DemoDataContext';
 
 interface NavItem {
   path?: string;
@@ -47,7 +45,6 @@ const navItems: NavItem[] = [
 
 export default function DashboardLayout() {
   const { user, logout, isMasterAdmin } = useAuth();
-  const { showDemoData, toggleDemoData } = useDemoData();
   const navigate = useNavigate();
   const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
     return localStorage.getItem('sidebar_collapsed') === 'true';
@@ -163,19 +160,6 @@ export default function DashboardLayout() {
         </nav>
 
         <div className={`sidebar-footer ${isCollapsed ? 'collapsed' : ''}`}>
-          <button
-            type="button"
-            className={`demo-data-toggle ${showDemoData ? 'active' : ''} ${isCollapsed ? 'collapsed' : ''}`}
-            role="switch"
-            aria-checked={showDemoData}
-            aria-label="Show demo data"
-            title={isCollapsed ? 'Show demo data' : undefined}
-            onClick={toggleDemoData}
-          >
-            <FlaskConical size={18} aria-hidden="true" />
-            {!isCollapsed && <span className="demo-data-toggle-copy"><strong>Show demo data</strong><small>Sample reports and responses</small></span>}
-            <span className="demo-data-switch-track" aria-hidden="true"><span /></span>
-          </button>
           {!isCollapsed ? (
             <>
               <div className="user-badge">
@@ -235,7 +219,6 @@ export default function DashboardLayout() {
       </aside>
 
       <main className="main-content">
-        {showDemoData && <div className="demo-data-banner" role="status"><FlaskConical size={16} /><strong>Demo data is on</strong><span>Sample records are read-only and are not saved to the database.</span></div>}
         <Outlet />
       </main>
     </div>

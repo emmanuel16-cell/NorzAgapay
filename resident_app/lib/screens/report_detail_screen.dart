@@ -94,7 +94,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
       _report.displayStatus == 'false_report';
 
   void _openEditModal() {
-    if (_report.isDemoData || _isResolved || _isReviewClosed) return;
+    if (_isResolved || _isReviewClosed) return;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -132,40 +132,6 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (_report.isDemoData)
-                    Container(
-                      width: double.infinity,
-                      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 9,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFFF7E6),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: const Color(0xFFF3D28B)),
-                      ),
-                      child: const Row(
-                        children: [
-                          Icon(
-                            Icons.science_outlined,
-                            size: 17,
-                            color: Color(0xFF9A6700),
-                          ),
-                          SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'DEMO · Read-only sample incident',
-                              style: TextStyle(
-                                color: Color(0xFF7A5100),
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
                   _buildMapSection(),
                   Padding(
                     padding: const EdgeInsets.symmetric(
@@ -195,8 +161,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
               ),
             ),
           ),
-          if (!_report.isDemoData && !_isResolved && !_isReviewClosed)
-            _buildEditButton(),
+          if (!_isResolved && !_isReviewClosed) _buildEditButton(),
         ],
       ),
     );
@@ -794,8 +759,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
 
   Widget _buildIncidentTimeSummary() {
     final occurredAt = _report.incidentOccurredAt;
-    final incidentTime =
-        occurredAt == null || _report.incidentTimePrecision == 'unknown'
+    final incidentTime = occurredAt == null ||
+            _report.incidentTimePrecision == 'unknown'
         ? 'Incident time unknown'
         : '${_formatDate(occurredAt)} (${_report.incidentTimePrecision})';
     return Padding(
@@ -813,10 +778,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           children: [
             const Text(
               'Incident Time',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF1A1A2E),
-              ),
+              style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1A1A2E)),
             ),
             const SizedBox(height: 8),
             Text('Incident occurred: $incidentTime'),
