@@ -8,7 +8,6 @@ import CommandCenter from './pages/CommandCenter';
 import VerificationPage from './pages/VerificationPage';
 import ResourceRequestsPage from './pages/ResourceRequestsPage';
 import RespondUnitsPage from './pages/RespondUnitsPage';
-import ResponderTrackerPage from './pages/ResponderTrackerPage';
 import UsersPage from './pages/UsersPage';
 import AlertBroadcastsPage from './pages/AlertBroadcastsPage';
 import OfficersPage from './pages/OfficersPage';
@@ -55,7 +54,6 @@ function AppRoutes() {
         <Route path="verification/officers" element={<Navigate to="/verification/barangay" replace />} />
         <Route path="verification/barangay" element={<RoleAccess roles={['admin']}><VerificationPage category="barangay" /></RoleAccess>} />
         <Route path="respond-units" element={<RoleAccess roles={['logistics']}><RespondUnitsPage /></RoleAccess>} />
-        <Route path="responder-tracker" element={<RoleAccess roles={['logistics', 'dispatcher']}><ResponderTrackerPage /></RoleAccess>} />
         <Route path="users" element={<RoleAccess roles={['admin']}><UsersPage /></RoleAccess>} />
         <Route path="alert-broadcasts" element={<RoleAccess roles={['admin']}><AlertBroadcastsPage /></RoleAccess>} />
         <Route path="officers" element={<RoleAccess roles={['admin']}><OfficersPage /></RoleAccess>} />

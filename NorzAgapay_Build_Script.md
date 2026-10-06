@@ -40,8 +40,8 @@ The system replaces fragmented phone calls, radio-based coordination, and physic
 |---|---|---|
 | MDRRMO `master_admin` | Web + Mobile | All municipal operations, verification, accounts, dispatch, units, a searchable map of barangay-added evacuation stations, advisories, analytics, weather, and requests |
 | MDRRMO `admin` | Web + Mobile | Incident oversight, officer and barangay coordination verification, user management, advisories, analytics, weather, and a searchable map of barangay-added evacuation stations |
-| MDRRMO `dispatcher` | Web + Mobile | Incident review/dispatch, command map, responder tracking, and weather |
-| MDRRMO `logistics` | Web + Mobile | Resource requests, response units, responder tracking, and a searchable map of barangay-added evacuation stations |
+| MDRRMO `dispatcher` | Web + Mobile | Incident review/dispatch, command map with live responder locations, and weather |
+| MDRRMO `logistics` | Web + Mobile | Resource requests, response units, and a searchable map of barangay-added evacuation stations |
 | Barangay `admin` | Web + Mobile | Own-barangay command center and operations, team, coordination request, analytics, and station entry |
 | Barangay `dispatcher` | Web + Mobile | Own-barangay incident dispatch/escalation, assistance decisions, and response status |
 | Barangay `responder` | Web + Mobile | Own-barangay field response, status/media, assistance, GPS, and navigation |
@@ -73,7 +73,6 @@ React + Vite + TypeScript SPA. Communicates with backend via REST API and Socket
 | Officers | `OfficersPage.tsx` | MDRRMO officer accounts and barangay assignments |
 | Evacuation Centers | `EvacuationCentersPage.tsx` | MDRRMO views, searches, and filters barangay-added stations on a map; barangay accounts add their own station and map pin |
 | Resource Requests | `ResourceRequestsPage.tsx` | Field resource request review from units |
-| Responder Tracker | `ResponderTrackerPage.tsx` | Responder progress from dispatch through return, with map selection from the Command Center and barangay workspace |
 | Analytics | `AnalyticsPage.tsx` | Incident trends, response-time statistics, severity breakdown charts |
 | Weather Monitoring | `WeatherMonitoringV2.tsx` | Real-time weather conditions (Open-Meteo), river station water levels, hydromet alerts |
 | Users | `UsersPage.tsx` | MDRRMO user account management |
@@ -430,7 +429,7 @@ The following are **explicitly excluded** from NorzAgapay and must not be added:
 6. ✅ Supabase database migrations (`database/migrations/`) — schema, classification, RLS, indexes, and Realtime setup
 7. ✅ Authentication and RBAC — 5-role permission system with JWT, bcrypt, and Supabase RLS
 8. ✅ Real-time workflows — incident alerts, dispatch notifications, GPS broadcast, escalation events, evacuation center sync
-9. ✅ Maps and navigation — Leaflet/OpenStreetMap incident maps, severity heatmaps, OSRM routing, GPS responder tracking
+9. ✅ Maps and navigation — Leaflet/OpenStreetMap incident maps, severity heatmaps, OSRM routing, live responder locations on the command map
 10. ✅ PDF document service — Dispatcher authorization form generation via PDFKit
 11. ✅ Tunnel URL sync utility (`update-tunnel-url.js`) — one-command propagation of ngrok/tunnel URLs across all apps
 12. ⬜ API documentation and environment template — pending

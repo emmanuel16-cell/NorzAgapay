@@ -167,6 +167,17 @@ function completedCycles(report: any): ResolutionCycle[] {
   return cycles;
 }
 
+function hasMdrrmoResponseCycle(report: any): boolean {
+  const responseStatus = String(report.mdrrmo_response_status || '').toLowerCase();
+  return report.type === 'emergency' ||
+    String(report.send_to || '').toLowerCase() === 'mdrrmo' ||
+    String(report.status || '').toLowerCase() === 'escalated' ||
+    ['responding', 'resolved'].includes(responseStatus) ||
+    Boolean(report.mdrrmo_responded_by || report.mdrrmo_arrived_at || report.mdrrmo_resolved_at) ||
+    Boolean(cleanText(report.mdrrmo_coordination_notes)) ||
+    String(report.barangay_response_notes || '').toLowerCase().includes('escalated');
+}
+
 async function responderNames(report: any): Promise<{ barangay: string; mdrrmo: string }> {
   const barangayIds = new Set<string>();
   const assignedMatch = String(report.barangay_response_notes || '').match(/^\[ASSIGNED:([^\]]+)\]/);
@@ -315,7 +326,10 @@ async function toBuffer(report: any, resident: any, assistance: any[], names: { 
   row('Classification & severity', `${cleanText(report.incident_type) || 'Not classified'} | ${cleanText(report.severity) || 'Not recorded'}`);
 
   const cycles = completedCycles(report);
-  for (const cycle of (['barangay', 'mdrrmo'] as ResolutionCycle[])) {
+  const responseCycles: ResolutionCycle[] = hasMdrrmoResponseCycle(report)
+    ? ['barangay', 'mdrrmo']
+    : ['barangay'];
+  for (const cycle of responseCycles) {
     const status = cycle === 'barangay' ? report.barangay_response_status : report.mdrrmo_response_status;
     const title = cycle === 'barangay' ? 'Barangay' : 'MDRRMO';
     section(`${title} Response Cycle`);

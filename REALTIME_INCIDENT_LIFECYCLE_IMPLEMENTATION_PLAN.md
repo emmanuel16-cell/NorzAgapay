@@ -32,7 +32,7 @@ The server must route each event according to report jurisdiction, escalation/as
 - **Report submission has work before operational notification.** `resident_app/lib/screens/reporting_screen.dart` waits for location and sends a multipart request. In `backend/src/routes/incidentReports.ts`, evidence files are uploaded sequentially before the incident is inserted. After insertion, timing estimation and optional task creation are awaited before the main incident event is emitted. The resident only receives the HTTP acknowledgment after this work completes.
 - **Lifecycle delivery is scattered.** Backend routes in `incidentReports.ts`, `barangay.ts`, `mdrrmoReports.ts`, and `tasks.ts` emit several event names with inconsistent audiences. Some events are emitted globally with report payloads, while close/update paths do not consistently notify the reporter room.
 - **Socket delivery is not durable.** Events are emitted directly after database operations. If the process stops or the socket is disconnected between commit and emit, clients have no event replay path. No transactional outbox or lifecycle revision/cursor was found.
-- **Operations clients use sockets, but reconnect recovery is incomplete.** The barangay and MDRRMO Flutter clients subscribe to lifecycle events, but there is no consistent authoritative catch-up on every reconnect. MDRRMO report socket ownership is tied to the reports screen. The web Reports page handles updates but does not subscribe to the new-report event; responder tracking also has a 30-second refresh timer.
+- **Operations clients use sockets, but reconnect recovery is incomplete.** The barangay and MDRRMO Flutter clients subscribe to lifecycle events, but there is no consistent authoritative catch-up on every reconnect. MDRRMO report socket ownership is tied to the reports screen. The web Reports page handles updates but does not subscribe to the new-report event.
 - **Automated end-to-end coverage is missing.** There is no wired lifecycle E2E test or event-latency measurement suite covering resident-to-dispatch-to-resolution. Existing tests are mostly sample/widget or manual scripts.
 
 These findings are from static code inspection. No live incident was created or closed as part of this audit.
@@ -113,7 +113,7 @@ Track server commit-to-outbox, outbox-to-socket, socket-to-client-apply, and cli
 
 1. Move socket lifetime to the authenticated app session for barangay and MDRRMO clients rather than tying core delivery to a particular screen.
 2. Rejoin all authorized rooms on every connection and perform cursor catch-up before marking lifecycle data current.
-3. Update Flutter reports, assignments, responder views, and dashboard Reports/Command Center/Responder Tracker to consume the canonical event and revision. Ensure new-report events insert records into the Reports page without a page revisit.
+3. Update Flutter reports, assignments, responder views, and dashboard Reports/Command Center to consume the canonical event and revision. Ensure new-report events insert records into the Reports page without a page revisit.
 4. Remove recurring refresh timers that exist only to hide missed event delivery after the push path and recovery path pass acceptance; retain explicit user refresh controls.
 5. Show a visible stale/offline indicator when the device cannot meet the live delivery contract.
 
@@ -154,7 +154,7 @@ Track server commit-to-outbox, outbox-to-socket, socket-to-client-apply, and cli
 
 - Added the lifecycle revision, idempotent client request ID, evidence state, and transactional event outbox migration. The backend relay listens to Postgres Changes for immediate dispatch and keeps a 30-second recovery sweep for relay recovery.
 - Added authenticated and role-scoped socket rooms, validated responder status updates, and scoped lifecycle envelopes. Report creation acknowledges the durable report before optional evidence uploads and secondary work; evidence uploads use an idempotent retry queue in the resident app.
-- Replaced resident status polling with lifecycle socket updates and reconnect/foreground snapshots. Barangay, MDRRMO, dashboard reports, command center, and responder tracker consume lifecycle updates and refresh authoritative state on reconnect.
+- Replaced resident status polling with lifecycle socket updates and reconnect/foreground snapshots. Barangay, MDRRMO, dashboard reports and command center consume lifecycle updates and refresh authoritative state on reconnect.
 - Added lifecycle revisions to client models so stale responses do not overwrite newer socket updates. Existing incident/task socket handlers were retained and access-checked.
 
 ### Validation performed

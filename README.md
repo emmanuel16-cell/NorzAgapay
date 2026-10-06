@@ -266,8 +266,8 @@ flutter run
 |---|---|---|
 | MDRRMO `master_admin` | Web + Mobile | Full municipal administration, incident oversight, verification, user and unit management, dispatch monitoring, advisories, analytics, weather, resource requests, and a searchable map of barangay-added evacuation stations. |
 | MDRRMO `admin` | Web + Mobile | Municipal incidents, account and barangay coordination verification, users, advisories, analytics, weather, and a searchable map of barangay-added evacuation stations. |
-| MDRRMO `dispatcher` | Web + Mobile | Incident review and dispatch, command map, responder tracker, and weather monitoring. |
-| MDRRMO `logistics` | Web + Mobile | Resource requests, response units, responder tracker, and a searchable map of barangay-added evacuation stations. |
+| MDRRMO `dispatcher` | Web + Mobile | Incident review and dispatch, command map with live responder locations, and weather monitoring. |
+| MDRRMO `logistics` | Web + Mobile | Resource requests, response units, and a searchable map of barangay-added evacuation stations. |
 | Barangay `admin` | Web + Mobile | Own-barangay command center, reports, team, assistance, community updates, hotlines, analytics, coordination request, and station entry. |
 | Barangay `dispatcher` | Web + Mobile | Own-barangay reports, local dispatch/escalation, assistance decisions, and response status. |
 | Barangay `responder` | Web + Mobile | Own-barangay incident response, field updates/media, assistance requests, team functions allowed by the API, GPS, and navigation. |

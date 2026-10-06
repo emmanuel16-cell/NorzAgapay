@@ -6,9 +6,9 @@
 - MDRRMO and barangay sessions share role names such as `admin` and `dispatcher`, but have separate login routes, JWT claims, authorization middleware, and barangay coordination approval. The web dashboard currently authenticates only MDRRMO accounts.
 - The former barangay app covers barangay reports, field response, dispatch/escalation, team access, broadcasts, hotlines, analytics, coordination requests, and adding evacuation centers.
 - The former `mobile_app` was the separate Tanod responder client. Its assigned-task status updates, responder GPS, unit membership, and navigation have been copied under `lib/mdrrmo/` in the unified app.
-- The web dashboard has MDRRMO roles (Master Admin, Admin, Dispatcher, Logistics), incident reporting, a command map, a responder tracker, logistics pages, verification, broadcasts, officers, analytics, and weather. It has no barangay account login or barangay operations workspace.
+- The web dashboard has MDRRMO roles (Master Admin, Admin, Dispatcher, Logistics), incident reporting, a command map with live responder locations, logistics pages, verification, broadcasts, officers, analytics, and weather. It has no barangay account login or barangay operations workspace.
 - Barangay endpoints are already scoped to the authenticated barangay and gated by the shared coordination activation. MDRRMO endpoints use a separate middleware and cannot accept barangay tokens.
-- The `Missions` screen is a second presentation of incidents/tasks rather than a separate mission data model. The incident/task pipeline is still required for dispatch and responder tracking; removal should target the mission page and its standalone matching/mission actions, not incident reports or response tasks.
+- The `Missions` screen is a second presentation of incidents/tasks rather than a separate mission data model. The incident/task pipeline is still required for dispatch, responder mobile workflows, and live map locations; removal should target the mission page and its standalone matching/mission actions, not incident reports or response tasks.
 - Evacuation-center management is split by role: barangay users add their own stations, while MDRRMO views, searches, and filters barangay-added stations on a map. Residents see nearest-station distance and travel-time estimates.
 
 ## Role and capability matrix
@@ -17,8 +17,8 @@
 |---|---|---|
 | MDRRMO Master Admin | Cross-barangay incident overview, dispatch monitoring, account oversight, verification, broadcasts, analytics, weather, and responder/unit operations | Full municipal command center and all MDRRMO administration, operations, logistics, monitoring, and reporting |
 | MDRRMO Admin | Account/officer verification and management, broadcasts, analytics, weather, and cross-barangay overview | Full admin workspace: verification, users, officers, broadcasts, analytics, weather, and municipal overview |
-| MDRRMO Dispatcher | Incident review/verification, response dispatch, live responder tracking, and incident status monitoring | Command center, reports, dispatch, tracker, weather, and incident coordination |
-| MDRRMO Logistics | View/search/filter barangay-added evacuation stations on a map, manage resource requests and response units, view responder tracker and municipal situation | Full logistics workspace and all-barangay station/request/unit monitoring |
+| MDRRMO Dispatcher | Incident review/verification, response dispatch, live responder locations, and incident status monitoring | Command center, reports, dispatch, weather, and incident coordination |
+| MDRRMO Logistics | View/search/filter barangay-added evacuation stations on a map and manage resource requests and response units | Full logistics workspace and all-barangay station/request/unit monitoring |
 | Barangay Admin | Own-barangay command summary, reports, team, broadcasts, hotlines, analytics, coordination request, and add station | Own-barangay command center and full barangay operations/admin functions |
 | Barangay Dispatcher | Own-barangay command queue, assess/dispatch/escalate/close reports, decide assistance requests, monitor response | Own-barangay command center, incident queue, dispatch/escalation, assistance decisions, and response tracking |
 | Barangay Responder | Own-barangay assignments, status updates, GPS/navigation, field media/closure, assistance requests, and adding response team members where allowed | Own-barangay response queue, task/status/media, assistance requests, and team actions permitted by the backend |
@@ -33,7 +33,7 @@ Mobile layouts may simplify navigation and dense tables, but must retain each ro
 2. Barangay operations use `/api/barangay/login` and barangay endpoints. The server validates the barangay account, membership, and active coordination approval; every report/team operation remains restricted to that account's barangay.
 3. A barangay activation request is reviewed by MDRRMO verification. Until activated, all barangay roles stay gated in both mobile and web.
 4. A resident report is routed to the requested barangay/MDRRMO audience. The receiving dispatcher reviews the report and evidence, assigns incident type and severity, then dispatches responders. A barangay responder can submit a support/escalation request linked to that report; the barangay dispatcher escalates it with the existing classification. The MDRRMO dispatcher receives those values prefilled, may revise them, and dispatches municipal responders. The classification remains on the report and drives responder task details and analytics.
-5. Assigned responder tasks, GPS updates, and status events continue to feed the responder tracker and command maps. Removing the Mission screen must not remove these task/report endpoints.
+5. Assigned responder tasks, GPS updates, and status events continue to support responder mobile workflows and command maps. Removing the Mission screen must not remove these task/report endpoints.
 6. Evacuation stations are created with a name, address, and map pin. Operational clients do not edit/deactivate stations from this workflow. Residents receive the nearest active stations with straight-line distance and an estimated road travel time based on an average-speed assumption.
 
 ## Implementation sequence

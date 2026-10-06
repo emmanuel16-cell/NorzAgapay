@@ -46,7 +46,7 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response): Promise<v
       .order('created_at', { ascending: false });
 
     const canManageTasks = ['master_admin', 'dispatcher'].includes(user.role);
-    const canViewTasks = canManageTasks || ['logistics', 'responder'].includes(user.role);
+    const canViewTasks = canManageTasks || user.role === 'responder';
     if (!canViewTasks) {
       res.status(403).json({ error: 'Access denied.' });
       return;
@@ -68,31 +68,7 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response): Promise<v
       return;
     }
 
-    const tasks = data || [];
-    const incidentIds = [...new Set(tasks.map((task) => task.incident_id).filter(Boolean))];
-    const reportsByIncident = new Map<string, Record<string, unknown>>();
-
-    if (incidentIds.length > 0) {
-      const { data: reports, error: reportError } = await supabaseAdmin
-        .from('incident_reports')
-        .select('id, dispatch_incident_id, type, title, incident_type, severity, dispatched_at, resolved_at, created_at')
-        .in('dispatch_incident_id', incidentIds)
-        .order('created_at', { ascending: false });
-
-      if (reportError) throw reportError;
-      for (const report of reports || []) {
-        if (report.dispatch_incident_id && !reportsByIncident.has(report.dispatch_incident_id)) {
-          reportsByIncident.set(report.dispatch_incident_id, report);
-        }
-      }
-    }
-
-    res.json({
-      tasks: tasks.map((task) => ({
-        ...task,
-        report: reportsByIncident.get(task.incident_id) || null,
-      })),
-    });
+    res.json({ tasks: data || [] });
   } catch (err) {
     console.error('Fetch tasks error:', err);
     res.status(500).json({ error: 'Internal server error.' });
