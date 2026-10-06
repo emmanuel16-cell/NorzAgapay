@@ -34,11 +34,11 @@ const navItems: NavItem[] = [
   { path: '/evacuation-centers', icon: <Tent size={19} strokeWidth={1.8} />, label: 'Evacuation Centers' },
   { path: '/municipality-boundary', icon: <MapIcon size={19} strokeWidth={1.8} />, label: 'Municipality Boundary' },
   { path: '/respond-units', icon: <Ambulance size={19} strokeWidth={1.8} />, label: 'Respond Units' },
+  { path: '/officers', icon: <Award size={19} strokeWidth={1.8} />, label: 'Officers' },
   { label: 'Administration', section: true },
   { path: '/verification/barangay', icon: <CheckCircle2 size={19} strokeWidth={1.8} />, label: 'Barangay Verification' },
   { path: '/users', icon: <Users size={19} strokeWidth={1.8} />, label: 'User Management' },
   { path: '/alert-broadcasts', icon: <Megaphone size={19} strokeWidth={1.8} />, label: 'Alert Broadcasts' },
-  { path: '/officers', icon: <Award size={19} strokeWidth={1.8} />, label: 'Officers' },
   { path: '/analytics', icon: <BarChart3 size={19} strokeWidth={1.8} />, label: 'Analytics' },
 ];
 
@@ -90,9 +90,9 @@ export default function DashboardLayout() {
   const roleNav = isMasterAdmin
     ? navItems
     : user?.role === 'admin'
-      ? navItems.filter(item => ['Administration', '/verification/barangay', '/users', '/alert-broadcasts', '/officers', '/analytics'].includes(item.path || item.label))
+      ? navItems.filter(item => ['Logistics', '/officers', 'Administration', '/verification/barangay', '/users', '/alert-broadcasts', '/analytics'].includes(item.path || item.label))
       : user?.role === 'logistics'
-        ? navItems.filter(item => ['Logistics', '/evacuation-centers', '/municipality-boundary', '/respond-units'].includes(item.path || item.label))
+        ? navItems.filter(item => ['Logistics', '/evacuation-centers', '/municipality-boundary', '/respond-units', '/officers'].includes(item.path || item.label))
         : user?.role === 'dispatcher'
           ? navItems.filter(item => ['Operations', '/', '/reports', '/requests'].includes(item.path || item.label))
           : [];

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { officerAPI } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 
 interface Officer {
@@ -30,6 +31,8 @@ const SPECIALIZATIONS = [
 ];
 
 export default function OfficersPage() {
+  const { user, isMasterAdmin } = useAuth();
+  const canManageOfficers = isMasterAdmin || user?.role === 'admin';
   const [officers, setOfficers] = useState<Officer[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
@@ -126,7 +129,7 @@ export default function OfficersPage() {
               <option key={s.value} value={s.value}>{s.label}</option>
             ))}
           </select>
-          <button className="btn btn-primary" onClick={() => setShowAdd(true)}>+ Add Officer</button>
+          {canManageOfficers && <button className="btn btn-primary" onClick={() => setShowAdd(true)}>+ Add Officer</button>}
         </div>
       </div>
 
@@ -137,7 +140,7 @@ export default function OfficersPage() {
           <div className="empty-state">
             <div className="empty-state-icon">🎖️</div>
             <p>No officers found</p>
-            <button className="btn btn-primary" onClick={() => setShowAdd(true)} style={{ marginTop: '16px' }}>Add First Officer</button>
+            {canManageOfficers && <button className="btn btn-primary" onClick={() => setShowAdd(true)} style={{ marginTop: '16px' }}>Add First Officer</button>}
           </div>
         ) : (
           <div className="table-container">
@@ -150,7 +153,7 @@ export default function OfficersPage() {
                   <th>Specialization</th>
                   <th>Rank</th>
                   <th>Status</th>
-                  <th>Actions</th>
+                  {canManageOfficers && <th>Actions</th>}
                 </tr>
               </thead>
               <tbody>
@@ -170,12 +173,12 @@ export default function OfficersPage() {
                         {officer.status}
                       </span>
                     </td>
-                    <td>
+                    {canManageOfficers && <td>
                       <div style={{ display: 'flex', gap: '8px' }}>
                         <button className="btn btn-outline btn-sm" onClick={() => openEdit(officer)}>Edit</button>
                         <button className="btn btn-outline btn-sm" style={{ color: '#ff4d4f' }} onClick={() => handleDelete(officer.id)}>Delete</button>
                       </div>
-                    </td>
+                    </td>}
                   </tr>
                 ))}
               </tbody>
@@ -184,7 +187,7 @@ export default function OfficersPage() {
         )}
       </div>
 
-      {showAdd && (
+      {canManageOfficers && showAdd && (
         <div className="modal-backdrop" onClick={() => setShowAdd(false)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
@@ -258,7 +261,7 @@ export default function OfficersPage() {
         </div>
       )}
 
-      {editOfficer && (
+      {canManageOfficers && editOfficer && (
         <div className="modal-backdrop" onClick={() => setEditOfficer(null)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">

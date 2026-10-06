@@ -56,7 +56,7 @@ function AppRoutes() {
         <Route path="respond-units" element={<RoleAccess roles={['logistics']}><RespondUnitsPage /></RoleAccess>} />
         <Route path="users" element={<RoleAccess roles={['admin']}><UsersPage /></RoleAccess>} />
         <Route path="alert-broadcasts" element={<RoleAccess roles={['admin']}><AlertBroadcastsPage /></RoleAccess>} />
-        <Route path="officers" element={<RoleAccess roles={['admin']}><OfficersPage /></RoleAccess>} />
+        <Route path="officers" element={<RoleAccess roles={['admin', 'logistics']}><OfficersPage /></RoleAccess>} />
         <Route path="analytics" element={<RoleAccess roles={['admin']}><AnalyticsPage /></RoleAccess>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
