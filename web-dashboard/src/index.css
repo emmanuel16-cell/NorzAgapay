@@ -3977,12 +3977,12 @@ tbody tr:last-child td { border-bottom: none; }
   background: #08152e;
 }
 .reports-page-header-v2 {
-  flex: 0 0 90px;
+  flex: 0 0 var(--header-height);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-  padding: 18px 30px;
+  padding: 0 24px;
   border-bottom: 1px solid #243a61;
   background: #08152e;
 }
@@ -4154,7 +4154,7 @@ tbody tr:last-child td { border-bottom: none; }
 }
 @media (max-width: 760px) {
   .reports-workspace-v2 { height: auto; min-height: 100vh; overflow: visible; }
-  .reports-page-header-v2 { flex-basis: auto; min-height: 76px; padding: 15px 17px; }
+  .reports-page-header-v2 { flex-basis: auto; min-height: var(--header-height); padding: 8px 17px; }
   .reports-page-header-v2 > div:first-child { align-items: flex-start; flex-direction: column; gap: 3px; }
   .reports-page-header-v2 > div:first-child > span { font-size: 12px; }
   .reports-live-indicator { font-size: 12px; }
