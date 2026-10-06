@@ -9,6 +9,7 @@ class OfflineService {
   static const String barangayBoxName = 'barangay_cache';
   static const String evacuationBoxName = 'evac_center_cache';
   static const String hotlineBoxName = 'barangay_hotline_cache';
+  static const String evidenceUploadBoxName = 'pending_incident_evidence';
 
   static Future<void> init() async {
     await Hive.initFlutter();
@@ -18,6 +19,7 @@ class OfflineService {
     await Hive.openBox(barangayBoxName);
     await Hive.openBox(evacuationBoxName);
     await Hive.openBox(hotlineBoxName);
+    await Hive.openBox(evidenceUploadBoxName);
   }
 
   // ── Onboarding State ────────────────────────────────────────────────────────
@@ -123,6 +125,68 @@ class OfflineService {
   static Future<void> clearReport(String key) async {
     final box = Hive.box(reportBoxName);
     await box.delete(key);
+  }
+
+  static Future<void> savePendingEvidenceJob({
+    required String reportId,
+    required List<String> sourcePaths,
+    required List<String> proofTypes,
+    required String contactNumber,
+  }) async {
+    final documents = await getApplicationDocumentsDirectory();
+    final evidenceDirectory = Directory('${documents.path}/incident_evidence/$reportId');
+    await evidenceDirectory.create(recursive: true);
+    final persistentPaths = <String>[];
+    for (var index = 0; index < sourcePaths.length; index++) {
+      final source = File(sourcePaths[index]);
+      if (!await source.exists()) {
+        persistentPaths.add('');
+        continue;
+      }
+      final originalName = source.uri.pathSegments.isNotEmpty
+          ? source.uri.pathSegments.last
+          : 'proof_$index';
+      final safeName = originalName.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+      final destination = File('${evidenceDirectory.path}/${index}_$safeName');
+      if (source.absolute.path != destination.absolute.path && !await destination.exists()) {
+        await source.copy(destination.path);
+      }
+      if (await destination.exists()) persistentPaths.add(destination.path);
+    }
+    final box = Hive.box(evidenceUploadBoxName);
+    await box.put(reportId, {
+      'report_id': reportId,
+      'proof_paths': persistentPaths,
+      'proof_types': proofTypes,
+      'contact_number': contactNumber,
+      'saved_at': DateTime.now().toIso8601String(),
+    });
+  }
+
+  static List<Map<String, dynamic>> getPendingEvidenceJobs() {
+    return Hive.box(evidenceUploadBoxName).values
+        .whereType<Map>()
+        .map((job) => Map<String, dynamic>.from(job))
+        .toList();
+  }
+
+  static Future<void> clearPendingEvidenceJob(String reportId) async {
+    final box = Hive.box(evidenceUploadBoxName);
+    final value = box.get(reportId);
+    await box.delete(reportId);
+    if (value is! Map || value['proof_paths'] is! List) return;
+    Directory? evidenceDirectory;
+    for (final item in value['proof_paths'] as List) {
+      final path = item.toString();
+      if (path.isEmpty) continue;
+      final file = File(path);
+      evidenceDirectory ??= file.parent;
+      if (await file.exists()) await file.delete();
+    }
+    if (evidenceDirectory != null && await evidenceDirectory.exists() &&
+        await evidenceDirectory.list().isEmpty) {
+      await evidenceDirectory.delete();
+    }
   }
 
   // ── Report Drafts ─────────────────────────────────────────────────────────

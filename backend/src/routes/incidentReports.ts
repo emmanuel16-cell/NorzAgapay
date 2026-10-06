@@ -169,6 +169,45 @@ export function formatIncidentReport(r: any): any {
   };
 }
 
+async function persistIncidentEvidence(
+  reportId: string,
+  files: Express.Multer.File[],
+  providedTypes: string[],
+  fallbackType: string,
+): Promise<{ proofUrls: string[]; proofTypes: string[] }> {
+  const uploaded = await Promise.all(files.map(async (file, index) => {
+    const rawExtension = (file.originalname.split('.').pop() || 'jpg').toLowerCase();
+    const extension = rawExtension.replace(/[^a-z0-9]/g, '') || 'jpg';
+    const isVideo = (file.mimetype || '').startsWith('video/') ||
+      ['mp4', 'mov', 'webm', '3gp', 'mkv', 'avi'].includes(extension);
+    const proofType = providedTypes[index] || (isVideo || fallbackType === 'video' ? 'video' : 'image');
+    const objectPath = `reports/${reportId}/${index}.${extension}`;
+    const { error } = await supabaseAdmin.storage
+      .from(config.supabaseBucketName)
+      .upload(objectPath, file.buffer, { contentType: file.mimetype, upsert: true });
+    if (error) return { proofUrl: null, proofType, error: error.message };
+    const { data } = supabaseAdmin.storage.from(config.supabaseBucketName).getPublicUrl(objectPath);
+    return { proofUrl: data.publicUrl, proofType, error: null };
+  }));
+
+  const proofUrls = uploaded.map((item) => item.proofUrl).filter((value): value is string => Boolean(value));
+  const proofTypes = uploaded.filter((item) => item.proofUrl).map((item) => item.proofType);
+  const failed = uploaded.some((item) => item.error !== null);
+  const { error: updateError } = await supabaseAdmin
+    .from('incident_reports')
+    .update({
+      proof_url: proofUrls.length > 1 ? JSON.stringify(proofUrls) : proofUrls[0] || null,
+      proof_type: proofTypes[0] || fallbackType || 'image',
+      proof_urls: proofUrls,
+      proof_types: proofTypes,
+      evidence_status: failed ? 'failed' : 'ready',
+    })
+    .eq('id', reportId);
+  if (updateError) throw updateError;
+  if (failed) console.error(`One or more evidence objects failed for report ${reportId}.`);
+  return { proofUrls, proofTypes };
+}
+
 /**
  * POST /api/incident-reports
  * Handles report submission from mobile and resident apps.
@@ -224,6 +263,63 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
       ? residentProfile.phone.trim()
       : '';
     const reporterPhone = profilePhone || (submittedContact.includes('@') ? null : submittedContact || null);
+    const rawClientRequestId = typeof req.body.client_request_id === 'string'
+      ? req.body.client_request_id.trim()
+      : '';
+    const clientRequestId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(rawClientRequestId)
+      ? rawClientRequestId
+      : null;
+    const rawClientSubmittedAt = typeof req.body.client_submitted_at === 'string'
+      ? req.body.client_submitted_at.trim()
+      : '';
+    const parsedClientSubmittedAt = rawClientSubmittedAt ? new Date(rawClientSubmittedAt) : null;
+    const clientSubmittedAt = parsedClientSubmittedAt && Number.isFinite(parsedClientSubmittedAt.getTime())
+      ? parsedClientSubmittedAt.toISOString()
+      : null;
+    const rawIncidentPrecision = typeof req.body.incident_time_precision === 'string'
+      ? req.body.incident_time_precision.trim().toLowerCase()
+      : 'unknown';
+    let incidentTimePrecision: 'exact' | 'approximate' | 'unknown' =
+      rawIncidentPrecision === 'exact' || rawIncidentPrecision === 'approximate'
+        ? rawIncidentPrecision
+        : 'unknown';
+    const rawIncidentOccurredAt = typeof req.body.incident_occurred_at === 'string'
+      ? req.body.incident_occurred_at.trim()
+      : '';
+    const hasIsoTimestampShape = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})$/i
+      .test(rawIncidentOccurredAt);
+    const parsedIncidentOccurredAt = hasIsoTimestampShape && rawIncidentOccurredAt
+      ? new Date(rawIncidentOccurredAt)
+      : null;
+    let incidentOccurredAt = parsedIncidentOccurredAt &&
+        Number.isFinite(parsedIncidentOccurredAt.getTime())
+      ? parsedIncidentOccurredAt.toISOString()
+      : null;
+    if (!incidentOccurredAt || incidentTimePrecision === 'unknown' ||
+        parsedIncidentOccurredAt!.getTime() > Date.now() + 5 * 60 * 1000) {
+      incidentOccurredAt = null;
+      incidentTimePrecision = 'unknown';
+    }
+
+    if (clientRequestId) {
+      const { data: existing, error: existingError } = await supabaseAdmin
+        .from('incident_reports')
+        .select('*, barangays(name)')
+        .eq('client_request_id', clientRequestId)
+        .maybeSingle();
+      if (existingError) throw existingError;
+      if (existing) {
+        const isOwner = existing.reporter_id
+          ? req.user?.role === 'resident' && req.user.userId === existing.reporter_id
+          : String(existing.reporter_phone || '').replace(/\D/g, '') === submittedContact.replace(/\D/g, '');
+        if (!isOwner) {
+          res.status(409).json({ error: 'This request identifier is already in use.' });
+          return;
+        }
+        res.status(200).json({ message: 'Report was already received.', report: formatIncidentReport(existing) });
+        return;
+      }
+    }
 
     // Resolve barangay: use provided or nearest by lat/lng
     let resolvedBarangayId = barangay_id || null;
@@ -289,36 +385,9 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
       } catch (_) {}
     }
 
-    // Handle incident proof uploads
-    if (uploadedFiles.length > 0) {
-      const timestamp = Date.now();
-      for (let i = 0; i < uploadedFiles.length; i++) {
-        const f = uploadedFiles[i];
-        const ext = (f.originalname.split('.').pop() || 'jpg').toLowerCase();
-        const isVideo = (f.mimetype && f.mimetype.startsWith('video/')) || ['mp4', 'mov', 'webm', '3gp', 'mkv', 'avi'].includes(ext);
-        const pType = providedProofTypes[i] || (isVideo || proof_type === 'video' ? 'video' : 'image');
-        const filename = `reports/${reporter_type || 'anonymous'}/${timestamp}_${i}.${ext}`;
-
-        const { error: uploadError } = await supabaseAdmin
-          .storage
-          .from(config.supabaseBucketName)
-          .upload(filename, f.buffer, {
-            contentType: f.mimetype,
-            upsert: true
-          });
-
-        if (!uploadError) {
-          const { data: { publicUrl } } = supabaseAdmin
-            .storage
-            .from(config.supabaseBucketName)
-            .getPublicUrl(filename);
-          proofUrls.push(publicUrl);
-          proofTypes.push(pType);
-        } else {
-          console.error('Upload proof error:', uploadError);
-        }
-      }
-    }
+    // The incident is persisted before storage work. Uploads are attached to
+    // the report asynchronously so evidence transfer cannot hold dispatch
+    // notification behind a second remote service.
 
     const primaryProofUrl = proofUrls.length > 0 ? proofUrls[0] : null;
     const primaryProofType = proofTypes.length > 0 ? proofTypes[0] : (proof_type || 'image');
@@ -346,7 +415,13 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
       reporter_email: reporterEmail,
       barangay_id: resolvedBarangayId,
       status: 'pending',
-      send_to: targetSendTo
+      send_to: targetSendTo,
+      // Informational client-clock time; created_at remains server receipt time.
+      client_submitted_at: clientSubmittedAt,
+      incident_occurred_at: incidentOccurredAt,
+      incident_time_precision: incidentTimePrecision,
+      evidence_status: uploadedFiles.length > 0 || providedProofTypes.length > 0 ? 'pending' : 'ready',
+      client_request_id: clientRequestId,
     };
 
     let report: any = null;
@@ -354,7 +429,7 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
 
     try {
       // Attempt insert with proof_urls, proof_types, and send_to columns
-      const res = await supabaseAdmin
+      const insertResult = await supabaseAdmin
         .from('incident_reports')
         .insert({
           ...insertPayload,
@@ -364,20 +439,42 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
         .select('*, barangays(name)')
         .single();
 
-      if (res.error) throw res.error;
-      report = res.data;
-    } catch (colErr) {
+      if (insertResult.error) throw insertResult.error;
+      report = insertResult.data;
+    } catch (colErr: any) {
+      if (clientRequestId && colErr?.code === '23505') {
+        const { data: existing, error: existingError } = await supabaseAdmin
+          .from('incident_reports')
+          .select('*, barangays(name)')
+          .eq('client_request_id', clientRequestId)
+          .maybeSingle();
+        if (existingError) throw existingError;
+        if (existing) {
+          const isOwner = existing.reporter_id
+            ? req.user?.role === 'resident' && req.user.userId === existing.reporter_id
+            : String(existing.reporter_phone || '').replace(/\D/g, '') === submittedContact.replace(/\D/g, '');
+          if (!isOwner) {
+            res.status(409).json({ error: 'This request identifier is already in use.' });
+            return;
+          }
+          res.status(200).json({ message: 'Report was already received.', report: formatIncidentReport(existing) });
+          return;
+        }
+      }
       // Fallback for older schemas without proof_urls, send_to, or reporter_email.
       const safePayload = { ...insertPayload };
       delete safePayload.send_to;
       delete safePayload.reporter_email;
-      const res = await supabaseAdmin
+      delete safePayload.client_submitted_at;
+      delete safePayload.incident_occurred_at;
+      delete safePayload.incident_time_precision;
+      const fallbackResult = await supabaseAdmin
         .from('incident_reports')
         .insert(safePayload)
         .select('*, barangays(name)')
         .single();
-      report = res.data;
-      dbError = res.error;
+      report = fallbackResult.data;
+      dbError = fallbackResult.error;
     }
 
     if (dbError || !report) {
@@ -391,55 +488,45 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
       proof_urls: proofUrls.length > 0 ? proofUrls : ((report as any)?.proof_urls || []),
       proof_types: proofTypes.length > 0 ? proofTypes : ((report as any)?.proof_types || []),
     });
-    if (report.barangay_id) {
-      const { data: timingHistory, error: timingError } = await supabaseAdmin
-        .from('incident_reports')
-        .select('barangay_id, type, severity, created_at, accepted_at, arrived_at, resolved_at, travel_distance_m')
-        .eq('barangay_id', report.barangay_id)
-        .not('accepted_at', 'is', null)
-        .not('arrived_at', 'is', null)
-        .not('resolved_at', 'is', null)
-        .order('created_at', { ascending: false })
-        .limit(5000);
-      if (timingError) {
-        console.warn('Could not calculate initial resident timing estimates:', timingError);
-      } else {
-        formattedReport.expected_timings = estimateReportTimings(report, timingHistory || []);
-      }
-    }
 
-    // If sent to MDRRMO (or all):
-    if (targetSendTo !== 'barangay') {
-      try {
-        await supabaseAdmin
-          .from('tasks')
-          .insert({
-            title: `🚨 Emergency: ${formattedReport.title}`,
-            description: formattedReport.description || formattedReport.specifics || `Emergency reported at ${formattedReport.barangay_name || 'Norzagaray'}.`,
-            task_type: 'general_labor',
-            status: 'pending',
-            latitude: formattedReport.latitude,
-            longitude: formattedReport.longitude,
-            address: formattedReport.address || formattedReport.barangay_name || 'Norzagaray, Bulacan'
-          });
-        io.emit('task:new', formattedReport);
-      } catch (taskErr) {
-        console.warn('Could not auto-create initial task:', taskErr);
-      }
-
-      // Emit socket event for real-time dashboard notification.
+    // Preserve the immediate queue notification for installed clients. The
+    // transactional outbox separately provides durable lifecycle delivery.
+    if (targetSendTo !== 'barangay' || type === 'emergency') {
       io.to('dashboard_staff').emit('incident_report:new', formattedReport);
     }
-
-    // If sent to Barangay: notify specific barangay room ONLY
     if (targetSendTo !== 'mdrrmo' && resolvedBarangayId) {
       io.to(`barangay:${resolvedBarangayId}`).emit('barangay:report_received', formattedReport);
     }
-
+    if (formattedReport.reporter_type === 'resident' && formattedReport.reporter_id) {
+      io.to(`user:${formattedReport.reporter_id}`).emit('incident_report:updated', formattedReport);
+    }
     res.status(201).json({
       message: 'Report submitted successfully.',
       report: formattedReport
     });
+
+    // Legacy mobile builds still send files with the create request. Store
+    // those files in the background after acknowledging the durable report.
+    if (uploadedFiles.length > 0) {
+      void persistIncidentEvidence(report.id, uploadedFiles, providedProofTypes, proof_type || 'image')
+        .catch((uploadError) => console.error(`Evidence upload failed for report ${report.id}:`, uploadError));
+    }
+
+    // This is a secondary convenience task. The lifecycle outbox already
+    // notified the correctly scoped queue from the report insert transaction.
+    if (targetSendTo !== 'barangay') {
+      void supabaseAdmin.from('tasks').insert({
+        title: `🚨 Emergency: ${formattedReport.title}`,
+        description: formattedReport.description || formattedReport.specifics || `Emergency reported at ${formattedReport.barangay_name || 'Norzagaray'}.`,
+        task_type: 'general_labor',
+        status: 'pending',
+        latitude: formattedReport.latitude,
+        longitude: formattedReport.longitude,
+        address: formattedReport.address || formattedReport.barangay_name || 'Norzagaray, Bulacan',
+      }).then(({ error }) => {
+        if (error) console.warn('Could not create the optional initial task:', error.message);
+      });
+    }
   } catch (err) {
     console.error('Incident report submission error:', err);
     res.status(500).json({ error: 'Internal server error.' });
@@ -553,6 +640,130 @@ router.get('/resident', optionalAuthenticate, async (req: AuthRequest, res: Resp
   } catch (err) {
     console.error('Fetch resident reports error:', err);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.get('/resident/:id', optionalAuthenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { data: report, error } = await supabaseAdmin
+      .from('incident_reports')
+      .select('*, barangays(name)')
+      .eq('id', req.params.id)
+      .maybeSingle();
+    if (error) throw error;
+    if (!report || report.reporter_type !== 'resident') {
+      res.status(404).json({ error: 'Incident report not found.' });
+      return;
+    }
+
+    if (report.reporter_id) {
+      if (req.user?.role !== 'resident' || req.user.userId !== report.reporter_id) {
+        res.status(404).json({ error: 'Incident report not found.' });
+        return;
+      }
+    } else {
+      const requestedPhone = String(req.query.contact_number || '').replace(/\D/g, '');
+      const reportPhone = String(report.reporter_phone || '').replace(/\D/g, '');
+      if (!requestedPhone || requestedPhone !== reportPhone) {
+        res.status(404).json({ error: 'Incident report not found.' });
+        return;
+      }
+    }
+    res.json(formatIncidentReport(report));
+  } catch (error) {
+    console.error('Fetch resident incident report error:', error);
+    res.status(500).json({ error: 'Could not refresh incident status.' });
+  }
+});
+
+/**
+ * POST /api/incident-reports/:id/evidence
+ * Attach proof after the core incident has already been acknowledged and
+ * delivered to its operational queue.
+ */
+router.post('/:id/evidence', optionalAuthenticate, upload.any(), async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const files = (req.files as Express.Multer.File[]) || [];
+    if (files.length === 0) {
+      res.status(400).json({ error: 'Choose at least one evidence file.' });
+      return;
+    }
+
+    const { data: report, error } = await supabaseAdmin
+      .from('incident_reports')
+      .select('id, reporter_id, reporter_type, reporter_phone')
+      .eq('id', req.params.id)
+      .maybeSingle();
+    if (error) throw error;
+    if (!report || report.reporter_type !== 'resident') {
+      res.status(404).json({ error: 'Incident report not found.' });
+      return;
+    }
+
+    if (report.reporter_id) {
+      if (req.user?.role !== 'resident' || req.user.userId !== report.reporter_id) {
+        res.status(403).json({ error: 'You cannot attach evidence to this report.' });
+        return;
+      }
+    } else {
+      const submittedPhone = String(req.body.contact_number || '').replace(/\D/g, '');
+      const reportPhone = String(report.reporter_phone || '').replace(/\D/g, '');
+      if (!submittedPhone || submittedPhone !== reportPhone) {
+        res.status(403).json({ error: 'Report ownership could not be verified.' });
+        return;
+      }
+    }
+
+    let proofTypes: string[] = [];
+    try {
+      const raw = req.body.proof_types;
+      proofTypes = Array.isArray(raw) ? raw : typeof raw === 'string' ? JSON.parse(raw) : [];
+    } catch (_) {
+      proofTypes = [];
+    }
+    const result = await persistIncidentEvidence(req.params.id, files, proofTypes, req.body.proof_type || 'image');
+    const evidenceReady = result.proofUrls.length === files.length;
+    res.status(evidenceReady ? 200 : 207).json({
+      evidence_status: evidenceReady ? 'ready' : 'failed',
+      proof_urls: result.proofUrls,
+      proof_types: result.proofTypes,
+    });
+  } catch (err) {
+    console.error('Attach incident evidence error:', err);
+    res.status(500).json({ error: 'Evidence could not be attached. You can retry from your report.' });
+  }
+});
+
+router.patch('/:id/evidence-failed', optionalAuthenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { data: report, error: fetchError } = await supabaseAdmin
+      .from('incident_reports')
+      .select('id, reporter_id, reporter_type, reporter_phone')
+      .eq('id', req.params.id)
+      .maybeSingle();
+    if (fetchError) throw fetchError;
+    if (!report || report.reporter_type !== 'resident') {
+      res.status(404).json({ error: 'Incident report not found.' });
+      return;
+    }
+    const submittedPhone = String(req.body.contact_number || '').replace(/\D/g, '');
+    const reportPhone = String(report.reporter_phone || '').replace(/\D/g, '');
+    const isOwner = report.reporter_id
+      ? req.user?.role === 'resident' && req.user.userId === report.reporter_id
+      : Boolean(submittedPhone && submittedPhone === reportPhone);
+    if (!isOwner) {
+      res.status(404).json({ error: 'Incident report not found.' });
+      return;
+    }
+    const { error } = await supabaseAdmin
+      .from('incident_reports')
+      .update({ evidence_status: 'failed' })
+      .eq('id', report.id);
+    if (error) throw error;
+    res.json({ evidence_status: 'failed' });
+  } catch (error) {
+    console.error('Mark incident evidence upload failed:', error);
+    res.status(500).json({ error: 'Could not update evidence upload status.' });
   }
 });
 
@@ -719,7 +930,6 @@ router.patch('/:id', optionalAuthenticate, upload.any(), async (req: AuthRequest
       proof_urls: allUrls,
     });
 
-    io.emit('incident_report:updated', formatted);
     io.to('dashboard_staff').emit('incident_report:updated', formatted);
     if (formatted.barangay_id) {
       io.to(`barangay:${formatted.barangay_id}`).emit('incident_report:updated', formatted);
@@ -827,7 +1037,6 @@ router.post('/:id/field-media', optionalAuthenticate, upload.single('media'), as
 
     const formatted = formatIncidentReport(updatedReport);
 
-    io.emit('incident_report:updated', formatted);
     io.to('dashboard_staff').emit('incident_report:updated', formatted);
     if (formatted.barangay_id) {
       io.to(`barangay:${formatted.barangay_id}`).emit('incident_report:updated', formatted);
@@ -892,7 +1101,6 @@ router.patch('/:id/review', authenticate, authorize('admin', 'dispatcher'), asyn
         const formatted = formatIncidentReport(result.report);
         io.to('dashboard_staff').emit('incident_report:reviewed', formatted);
         io.to('dashboard_staff').emit('incident_report:updated', formatted);
-        io.emit('incident_report:updated', formatted);
         if (formatted.reporter_id) {
             io.to(`user:${formatted.reporter_id}`).emit('incident_report:reviewed', formatted);
         }

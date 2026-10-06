@@ -9,6 +9,8 @@ import '../models/incident_report.dart';
 import '../services/norzagaray_boundary.dart';
 import '../services/offline_service.dart';
 import '../services/report_updates_service.dart';
+import '../services/incident_socket_service.dart';
+import '../services/evidence_upload_service.dart';
 import '../services/resident_gps_service.dart';
 import 'evacuation_map_screen.dart';
 import 'feed_screen.dart';
@@ -33,9 +35,10 @@ class MainNavigationScreenState extends State<MainNavigationScreen>
   late _ResidentTab _currentTab;
   bool _isInsideNorzagaray = false;
   bool _isCheckingLocation = false;
-  Timer? _reportStatusTimer;
+  final IncidentSocketService _incidentSocket = IncidentSocketService();
   bool _hasLoadedReportSnapshot = false;
-  bool _isPollingReportStatus = false;
+  bool _isLoadingResidentReports = false;
+  bool _residentReportRefreshQueued = false;
   bool _showingReportUpdate = false;
   final Map<String, int> _reportMilestones = {};
   final Map<String, String> _reportHandlers = {};
@@ -52,15 +55,15 @@ class MainNavigationScreenState extends State<MainNavigationScreen>
     NorzagarayBoundary.changes.addListener(_onBoundaryChanged);
     if (_isLoggedIn) {
       unawaited(_refreshLocation(requestPermission: true));
-      unawaited(_pollResidentReportStatus());
-      _startReportStatusPolling();
+      unawaited(_loadResidentReportSnapshot());
+      _connectResidentRealtime();
     }
   }
 
   @override
   void dispose() {
     NorzagarayBoundary.changes.removeListener(_onBoundaryChanged);
-    _reportStatusTimer?.cancel();
+    _incidentSocket.disconnect();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -71,13 +74,9 @@ class MainNavigationScreenState extends State<MainNavigationScreen>
       unawaited(NorzagarayBoundary.refresh());
       if (_isLoggedIn) {
         unawaited(_refreshLocation(requestPermission: false));
-        unawaited(_pollResidentReportStatus());
-        _startReportStatusPolling();
+        unawaited(_loadResidentReportSnapshot());
+        _connectResidentRealtime();
       }
-    } else if (state == AppLifecycleState.paused ||
-        state == AppLifecycleState.detached) {
-      _reportStatusTimer?.cancel();
-      _reportStatusTimer = null;
     }
   }
 
@@ -114,11 +113,10 @@ class MainNavigationScreenState extends State<MainNavigationScreen>
       _hasLoadedReportSnapshot = false;
       _reportMilestones.clear();
       _reportHandlers.clear();
-      unawaited(_pollResidentReportStatus());
-      _startReportStatusPolling();
+      unawaited(_loadResidentReportSnapshot());
+      _connectResidentRealtime();
     } else {
-      _reportStatusTimer?.cancel();
-      _reportStatusTimer = null;
+      _incidentSocket.disconnect();
       _hasLoadedReportSnapshot = false;
       _reportMilestones.clear();
       _reportHandlers.clear();
@@ -126,15 +124,104 @@ class MainNavigationScreenState extends State<MainNavigationScreen>
     }
   }
 
-  void _startReportStatusPolling() {
-    _reportStatusTimer?.cancel();
-    _reportStatusTimer = Timer.periodic(const Duration(seconds: 5), (_) {
-      unawaited(_pollResidentReportStatus());
-    });
+  void _connectResidentRealtime() {
+    final profile = OfflineService.getProfile();
+    final token = profile?['token']?.toString();
+    final userId = profile?['user_id']?.toString();
+    if (token == null || token.isEmpty || userId == null || userId.isEmpty) {
+      return;
+    }
+    unawaited(EvidenceUploadService.retryPending());
+    _incidentSocket.connect(
+      url: AppConstants.socketUrl,
+      token: token,
+      userId: userId,
+      onConnected: _refreshResidentReportStatus,
+      onReportLifecycle: _refreshResidentReportById,
+    );
   }
 
-  Future<void> _pollResidentReportStatus() async {
-    if (!_isLoggedIn || _isPollingReportStatus) return;
+  Future<void> _refreshResidentReportById(String reportId) async {
+    final profile = OfflineService.getProfile();
+    final token = profile?['token']?.toString();
+    final contactNumber = profile?['contact_number']?.toString();
+    try {
+      final uri = Uri.parse(
+        '${AppConstants.apiBaseUrl}/incident-reports/resident/$reportId',
+      ).replace(
+        queryParameters: token == null || token.isEmpty
+            ? {'contact_number': contactNumber ?? ''}
+            : null,
+      );
+      final response = await http
+          .get(
+            uri,
+            headers: {
+              'ngrok-skip-browser-warning': 'true',
+              if (token != null && token.isNotEmpty)
+                'Authorization': 'Bearer $token',
+            },
+          )
+          .timeout(const Duration(seconds: 8));
+      if (response.statusCode != 200 || !mounted) return;
+      final report = IncidentReport.fromJson(
+        Map<String, dynamic>.from(jsonDecode(response.body) as Map),
+      );
+      final reports = List<IncidentReport>.from(ResidentReportUpdates.reports.value);
+      final index = reports.indexWhere((item) => item.id == report.id);
+      if (index >= 0 && reports[index].lifecycleRevision > report.lifecycleRevision) {
+        return;
+      }
+      if (index == -1) {
+        reports.insert(0, report);
+      } else {
+        reports[index] = report;
+      }
+      ResidentReportUpdates.publish(reports);
+
+      final id = report.id;
+      if (id == null) return;
+      if ((report.displayStatus == 'inconclusive' ||
+              report.displayStatus == 'false_report') &&
+          !OfflineService.hasSeenReviewNotice(id)) {
+        unawaited(_showReviewNotice(report));
+        return;
+      }
+      if (!_hasLoadedReportSnapshot) {
+        _reportMilestones[id] = _reportMilestone(report);
+        _reportHandlers[id] = _reportHandler(report);
+        return;
+      }
+      final milestone = _reportMilestone(report);
+      final previousMilestone = _reportMilestones[id] ?? 0;
+      final handler = _reportHandler(report);
+      final previousHandler = _reportHandlers[id];
+      final isHandoffToMdrrmo = previousHandler != null &&
+          previousHandler != handler && handler == 'mdrrmo';
+      _reportMilestones[id] = milestone;
+      _reportHandlers[id] = handler;
+      if (milestone > previousMilestone || isHandoffToMdrrmo) {
+        _showReportUpdatePopup(
+          report,
+          milestone,
+          handlerChanged: isHandoffToMdrrmo,
+        );
+      }
+    } catch (error) {
+      debugPrint('Resident lifecycle refresh failed for $reportId: $error');
+    }
+  }
+
+  void _refreshResidentReportStatus() {
+    if (_isLoadingResidentReports) {
+      _residentReportRefreshQueued = true;
+      return;
+    }
+    unawaited(_loadResidentReportSnapshot());
+  }
+
+  Future<void> _loadResidentReportSnapshot() async {
+    if (!_isLoggedIn || _isLoadingResidentReports) return;
     final profile = OfflineService.getProfile();
     final contactNumber = profile?['contact_number']?.toString();
     final token = profile?['token']?.toString();
@@ -142,7 +229,7 @@ class MainNavigationScreenState extends State<MainNavigationScreen>
     final hasToken = token != null && token.isNotEmpty;
     if (!hasContact && !hasToken) return;
 
-    _isPollingReportStatus = true;
+    _isLoadingResidentReports = true;
     try {
       final response = await http
           .get(
@@ -175,13 +262,31 @@ class MainNavigationScreenState extends State<MainNavigationScreen>
       }
       if (response.statusCode != 200 || !mounted) return;
 
-      final reports = (jsonDecode(response.body) as List)
+      final serverReports = (jsonDecode(response.body) as List)
           .map(
             (item) =>
                 IncidentReport.fromJson(Map<String, dynamic>.from(item as Map)),
           )
           .toList();
-      ResidentReportUpdates.publish(reports);
+      final existing = ResidentReportUpdates.reports.value;
+      final existingById = <String, IncidentReport>{
+        for (final report in existing)
+          if (report.id != null) report.id!: report,
+      };
+      final incomingIds = serverReports.map((report) => report.id).whereType<String>().toSet();
+      final mergedReports = serverReports.map((report) {
+        final previous = report.id == null ? null : existingById[report.id];
+        return previous != null && previous.lifecycleRevision > report.lifecycleRevision
+            ? previous
+            : report;
+      }).toList();
+      // Keep an event-fetched report that arrived after this full snapshot began.
+      mergedReports.insertAll(
+        0,
+        existing.where((report) => report.id != null && !incomingIds.contains(report.id)),
+      );
+      ResidentReportUpdates.publish(mergedReports);
+      final reports = mergedReports;
       IncidentReport? reviewNotice;
       for (final report in reports) {
         final id = report.id;
@@ -249,9 +354,13 @@ class MainNavigationScreenState extends State<MainNavigationScreen>
           handlerChanged: handlerChanged,
         );
     } catch (_) {
-      // A later polling cycle retries transient connectivity or server errors.
+      // Initial load, lifecycle events, and reconnect catch-up retry failures.
     } finally {
-      _isPollingReportStatus = false;
+      _isLoadingResidentReports = false;
+      if (_residentReportRefreshQueued) {
+        _residentReportRefreshQueued = false;
+        scheduleMicrotask(_refreshResidentReportStatus);
+      }
     }
   }
 

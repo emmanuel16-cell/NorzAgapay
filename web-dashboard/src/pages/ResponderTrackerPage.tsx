@@ -299,17 +299,19 @@ export default function ResponderTrackerPage() {
     };
     const refreshTasks = () => fetchTasks();
 
+    socket.on('connect', refreshTasks);
     socket.on('gps:location', handleLocation);
     socket.on('gps:allLocations', handleAllLocations);
     socket.on('task:statusChanged', refreshTasks);
+    socket.on('incident:lifecycle', refreshTasks);
     socket.emit('gps:requestAll');
-    const interval = window.setInterval(refreshTasks, 30000);
 
     return () => {
+      socket.off('connect', refreshTasks);
       socket.off('gps:location', handleLocation);
       socket.off('gps:allLocations', handleAllLocations);
       socket.off('task:statusChanged', refreshTasks);
-      window.clearInterval(interval);
+      socket.off('incident:lifecycle', refreshTasks);
     };
   }, [fetchTasks]);
 

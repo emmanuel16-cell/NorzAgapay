@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../core/constants.dart';
-import '../core/phone_number_utils.dart';
+import '../../core/phone_number_utils.dart';
 
 class MdrrmoHotlineScreen extends StatefulWidget {
   const MdrrmoHotlineScreen({super.key});

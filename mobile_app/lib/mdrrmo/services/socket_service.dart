@@ -53,6 +53,7 @@ class SocketService {
 
   static void onMdrrmoReportUpdated(void Function(dynamic) callback) {
     socket.on('mdrrmo:report_updated', callback);
+    socket.on('incident:lifecycle', callback);
   }
 
   static void disconnect() {

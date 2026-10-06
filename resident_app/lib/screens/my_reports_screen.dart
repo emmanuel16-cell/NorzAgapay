@@ -516,15 +516,30 @@ class _MyReportsScreenState extends State<MyReportsScreen> {
         final draft = drafts[index];
         final id = draft['draft_id'].toString();
         final proofCount = (draft['proof_paths'] as List?)?.length ?? 0;
+        final firstSubmitAttempt = DateTime.tryParse(
+          draft['client_submitted_at']?.toString() ?? '',
+        );
+        final firstSubmitText = firstSubmitAttempt == null
+            ? ''
+            : '\nFirst submit attempt: ${DateFormat('MMM d, y · h:mm a').format(firstSubmitAttempt.toLocal())}';
+        final occurredAt = DateTime.tryParse(
+          draft['incident_occurred_at']?.toString() ?? '',
+        );
+        final precision = draft['incident_time_precision']?.toString();
+        final incidentTimeText = occurredAt == null || precision == 'unknown'
+            ? 'Incident time unknown'
+            : 'Incident occurred: ${DateFormat('MMM d, y · h:mm a').format(occurredAt.toLocal())} (${precision == 'approximate' ? 'approximate' : 'exact'})';
         return Card(
           margin: const EdgeInsets.only(bottom: 12),
           child: ListTile(
             leading: const Icon(Icons.edit_note, color: Color(0xFF16496A)),
             title: Text((draft['title'] ?? 'Incident Report').toString()),
             subtitle: Text(
-              '${draft['type'] == 'community' ? 'Community' : 'Emergency'} · $proofCount proof file(s)${(draft['description'] ?? '').toString().isNotEmpty ? '\n${draft['description']}' : ''}',
+              '${draft['type'] == 'community' ? 'Community' : 'Emergency'} · $proofCount proof file(s)${(draft['description'] ?? '').toString().isNotEmpty ? '\n${draft['description']}' : ''}\n$incidentTimeText$firstSubmitText',
             ),
-            isThreeLine: (draft['description'] ?? '').toString().isNotEmpty,
+            isThreeLine:
+                (draft['description'] ?? '').toString().isNotEmpty ||
+                firstSubmitText.isNotEmpty || incidentTimeText.isNotEmpty,
             trailing: IconButton(
               tooltip: 'Delete draft',
               icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
@@ -590,12 +605,18 @@ class _MyReportsScreenState extends State<MyReportsScreen> {
 
     // ── Submitted date ────────────────────────────────────────────────────────
     String submittedText = '';
-    if (report.createdAt != null) {
-      final local = report.createdAt!.toLocal();
+    final submittedAt = report.createdAt;
+    if (submittedAt != null) {
+      final local = submittedAt.toLocal();
       final datePart = DateFormat('MMM - d, y').format(local);
       final timePart = DateFormat('hh:mm a').format(local);
       submittedText = '$datePart/ $timePart';
     }
+    final occurredAt = report.incidentOccurredAt;
+    final incidentTimeText = occurredAt == null ||
+            report.incidentTimePrecision == 'unknown'
+        ? 'Incident time unknown'
+        : 'Incident occurred: ${DateFormat('MMM d, y · h:mm a').format(occurredAt.toLocal())} (${report.incidentTimePrecision})';
 
     // ── Description preview ───────────────────────────────────────────────────
     final String? descPreview = report.description?.trim().isNotEmpty == true
@@ -647,6 +668,37 @@ class _MyReportsScreenState extends State<MyReportsScreen> {
                 ),
               ),
 
+              if (report.evidenceStatus == 'pending' ||
+                  report.evidenceStatus == 'failed') ...[
+                const SizedBox(height: 7),
+                Row(
+                  children: [
+                    Icon(
+                      report.evidenceStatus == 'pending'
+                          ? Icons.cloud_upload_outlined
+                          : Icons.warning_amber_rounded,
+                      size: 15,
+                      color: report.evidenceStatus == 'pending'
+                          ? const Color(0xFF2563EB)
+                          : const Color(0xFFDC2626),
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      report.evidenceStatus == 'pending'
+                          ? 'Proof upload in progress'
+                          : 'Proof upload failed',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: report.evidenceStatus == 'pending'
+                            ? const Color(0xFF2563EB)
+                            : const Color(0xFFDC2626),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+
               // ── Truncated description ─────────────────────────────────────
               if (descPreview != null && descPreview.isNotEmpty) ...[
                 const SizedBox(height: 6),
@@ -666,35 +718,34 @@ class _MyReportsScreenState extends State<MyReportsScreen> {
               const Divider(height: 1, color: Color(0xFFF0F0F0)),
               const SizedBox(height: 10),
 
-              // ── Bottom row: submitted date + View link ────────────────────
+              // ── Bottom row: receipt time, occurrence time, and View link ──
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   if (submittedText.isNotEmpty)
                     Expanded(
-                      child: RichText(
-                        text: TextSpan(
-                          children: [
-                            const TextSpan(
-                              text: 'Submitted:  ',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Color(0xFF9CA3AF),
-                                fontWeight: FontWeight.w400,
-                              ),
-                            ),
-                            TextSpan(
-                              text: submittedText,
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: Color(0xFF374151),
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Report received: $submittedText',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFF374151),
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
-                      ),
+                        const SizedBox(height: 3),
+                        Text(
+                          incidentTimeText,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Color(0xFF64748B),
+                          ),
+                        ),
+                      ],
+                    ),
                     ),
                   GestureDetector(
                     onTap: () => _openDetail(report),

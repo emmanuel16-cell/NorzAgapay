@@ -10,6 +10,7 @@ class IncidentReport {
   final double longitude;
   final String? proofUrl;
   final String proofType;
+  final int lifecycleRevision;
   final List<String> proofUrls;
   final List<String> proofTypes;
   final List<Map<String, dynamic>> responderMedia;
@@ -32,6 +33,8 @@ class IncidentReport {
   final DateTime? mdrrmoRespondedAt;
   final String? resolvedNotes;
   final DateTime? createdAt;
+  final DateTime? incidentOccurredAt;
+  final String incidentTimePrecision;
   final DateTime? dispatcherReviewedAt;
   final DateTime? dispatchedAt;
   final DateTime? acceptedAt;
@@ -57,6 +60,7 @@ class IncidentReport {
     required this.longitude,
     this.proofUrl,
     required this.proofType,
+    this.lifecycleRevision = 0,
     List<String>? proofUrls,
     List<String>? proofTypes,
     List<Map<String, dynamic>>? responderMedia,
@@ -79,6 +83,8 @@ class IncidentReport {
     this.mdrrmoRespondedAt,
     this.resolvedNotes,
     this.createdAt,
+    this.incidentOccurredAt,
+    this.incidentTimePrecision = 'unknown',
     this.dispatcherReviewedAt,
     this.dispatchedAt,
     this.acceptedAt,
@@ -199,6 +205,7 @@ class IncidentReport {
       longitude: (json['longitude'] as num?)?.toDouble() ?? 0.0,
       proofUrl: primaryProofUrl,
       proofType: primaryProofType,
+      lifecycleRevision: (json['lifecycle_revision'] as num?)?.toInt() ?? 0,
       proofUrls: proofUrls,
       proofTypes: proofTypes,
       responderMedia: responderMedia,
@@ -221,6 +228,10 @@ class IncidentReport {
       mdrrmoRespondedAt: json['mdrrmo_responded_at'] != null ? DateTime.tryParse(json['mdrrmo_responded_at']) : null,
       resolvedNotes: json['resolved_notes'],
       createdAt: json['created_at'] != null ? DateTime.tryParse(json['created_at']) : null,
+      incidentOccurredAt: json['incident_occurred_at'] != null ? DateTime.tryParse(json['incident_occurred_at'].toString()) : null,
+      incidentTimePrecision: const {'exact', 'approximate'}.contains(json['incident_time_precision']?.toString())
+          ? json['incident_time_precision'].toString()
+          : 'unknown',
       dispatcherReviewedAt: json['dispatcher_reviewed_at'] != null ? DateTime.tryParse(json['dispatcher_reviewed_at']) : null,
       dispatchedAt: json['dispatched_at'] != null ? DateTime.tryParse(json['dispatched_at']) : null,
       acceptedAt: json['accepted_at'] != null ? DateTime.tryParse(json['accepted_at']) : null,
@@ -268,6 +279,8 @@ class IncidentReport {
       'mdrrmo_responded_at': mdrrmoRespondedAt?.toIso8601String(),
       'resolved_notes': resolvedNotes,
       'created_at': createdAt?.toIso8601String(),
+      'incident_occurred_at': incidentOccurredAt?.toIso8601String(),
+      'incident_time_precision': incidentTimePrecision,
       'dispatcher_reviewed_at': dispatcherReviewedAt?.toIso8601String(),
       'dispatched_at': dispatchedAt?.toIso8601String(),
       'accepted_at': acceptedAt?.toIso8601String(),

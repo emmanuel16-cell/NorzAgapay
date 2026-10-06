@@ -1667,7 +1667,6 @@ router.post('/reports/:id/field-media', authenticateBarangay, requireRole(['disp
 
     const formatted = formatIncidentReport(updatedReport);
 
-    io.emit('incident_report:updated', formatted);
     io.to('dashboard_staff').emit('incident_report:updated', formatted);
     if (formatted.barangay_id) {
       io.to(`barangay:${formatted.barangay_id}`).emit('incident_report:updated', formatted);
@@ -1958,13 +1957,6 @@ router.patch('/reports/:id/respond', authenticateBarangay, requireRole(['dispatc
       barangayName: barangayName,
       responderName: responderName,
       notes: updatePayload.barangay_response_notes,
-    });
-
-    io.emit('incident_report:updated', {
-      ...data,
-      barangay_name: barangayName,
-      barangay_response_status: 'responding',
-      barangay_responder_name: responderName,
     });
 
     res.json({

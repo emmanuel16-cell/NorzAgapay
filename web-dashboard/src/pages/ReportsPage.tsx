@@ -22,6 +22,7 @@ interface IncidentReport {
   barangay_responder_name?: string | null; barangay_response_notes?: string | null; mdrrmo_coordination_notes?: string | null;
   mdrrmo_response_notes?: string | null; mdrrmo_dispatch_notes?: string | null; mdrrmo_responder_name?: string | null;
   resolved_notes?: string | null; created_at: string; dispatcher_reviewed_at?: string | null;
+  incident_occurred_at?: string | null; incident_time_precision?: 'exact' | 'approximate' | 'unknown' | null;
   dispatched_at?: string | null; accepted_at?: string | null; arrived_at?: string | null;
   arrival_recorded_at?: string | null; resolved_at?: string | null; mdrrmo_assignments?: Assignment[];
   reporter?: { id: string; full_name: string; role: string } | null;
@@ -52,6 +53,12 @@ const dateTime = (value?: string | null) => {
   if (!value) return 'Not recorded';
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? 'Not recorded' : format(date, 'MMM d, yyyy · h:mm a');
+};
+const incidentTimeLabel = (report: IncidentReport) => {
+  if (!report.incident_occurred_at || !['exact', 'approximate'].includes(report.incident_time_precision || '')) {
+    return 'Incident time unknown';
+  }
+  return `Incident occurred: ${dateTime(report.incident_occurred_at)} (${report.incident_time_precision})`;
 };
 const hasPin = (report: IncidentReport) => report.latitude != null && report.longitude != null && Number.isFinite(Number(report.latitude)) && Number.isFinite(Number(report.longitude));
 const parseAssessment = (notes?: string | null): FieldAssessment => {
@@ -110,7 +117,16 @@ export default function ReportsPage() {
         : [...current, updated]);
     };
     socket.on('incident_report:updated', handleUpdate);
-    return () => { socket.off('incident_report:updated', handleUpdate); };
+    const handleLifecycle = () => { void fetchReports(); };
+    socket.on('connect', handleLifecycle);
+    socket.on('incident:lifecycle', handleLifecycle);
+    socket.on('incident_report:new', handleLifecycle);
+    return () => {
+      socket.off('connect', handleLifecycle);
+      socket.off('incident_report:updated', handleUpdate);
+      socket.off('incident:lifecycle', handleLifecycle);
+      socket.off('incident_report:new', handleLifecycle);
+    };
   }, []);
   useEffect(() => {
     const id = searchParams.get('id');
@@ -217,7 +233,8 @@ export default function ReportsPage() {
                 const active = selected?.id === report.id;
                 return <button key={report.id} type="button" className={'reports-queue-item-v2 ' + stage + (active ? ' selected' : '')} onClick={() => selectReport(report)}>
                   <span className="reports-queue-item-top"><strong>{report.description?.trim() || 'No report details provided.'}</strong><span className={'report-status-chip-v2 ' + stage}>{stage === 'responding' ? 'Responding' : stage === 'resolved' ? 'Resolved' : 'Pending'}</span></span>
-                  <span className="reports-queue-time">{stage === 'pending' ? timeAgo(report.created_at) : stage === 'responding' ? 'Accepted ' + timeAgo(report.accepted_at || report.dispatched_at) : 'Resolved ' + timeAgo(report.resolved_at)}</span>
+                  <span className="reports-queue-time">Report received {timeAgo(report.created_at)}</span>
+                  <span className="reports-queue-time">{incidentTimeLabel(report)}</span>
                   <span className="reports-queue-meta"><span><MapPin size={14} /> {report.barangay_name || 'Location not provided'}</span><span><Paperclip size={13} /> {reportProofs.length} attachment{reportProofs.length === 1 ? '' : 's'}</span></span>
                   {stage !== 'pending' && (report.incident_type || report.severity) && <span className="reports-classification-tags">
                     {report.incident_type && <small>{INCIDENT_TYPE_OPTIONS.find((item) => item.value === report.incident_type)?.label || report.incident_type.replaceAll('_', ' ')}</small>}
@@ -231,7 +248,7 @@ export default function ReportsPage() {
           {!selected ? <div className="reports-detail-empty-v2"><div><ImageIcon size={28} /></div><strong>Select a report</strong><p>Choose an item from the {stage} queue to see its details.</p></div> : <>
             <div className="reports-detail-scroll-v2">
               <header className="reports-detail-heading-v2">
-                <div><span className="reports-eyebrow-v2">Selected report</span><h2>Report details</h2><p>{stage === 'pending' ? 'Submitted ' : stage === 'responding' ? 'Received ' : 'Resolved '}{timeAgo(stage === 'resolved' ? selected.resolved_at : stage === 'responding' ? selected.accepted_at || selected.dispatched_at : selected.created_at)} · {selected.barangay_name || 'Norzagaray'}</p></div>
+                <div><span className="reports-eyebrow-v2">Selected report</span><h2>Report details</h2><p>{stage === 'pending' ? 'Report received ' : stage === 'responding' ? 'Accepted ' : 'Resolved '}{timeAgo(stage === 'resolved' ? selected.resolved_at : stage === 'responding' ? selected.accepted_at || selected.dispatched_at : selected.created_at)} · {selected.barangay_name || 'Norzagaray'}</p></div>
                 <span className={'report-status-chip-v2 detail ' + stage}>{stage === 'responding' ? 'Responding' : stage === 'resolved' ? 'Resolved' : 'Pending'}</span>
               </header>
 
@@ -241,6 +258,11 @@ export default function ReportsPage() {
               </div></section>
 
               <section className="reports-detail-section-v2"><h3>Resident’s report</h3><div className="reports-text-card-v2">{selected.description?.trim() || 'No details provided.'}</div></section>
+
+              <section className="reports-detail-section-v2"><h3>Incident time</h3><div className="reports-info-grid-v2">
+                <div className="reports-info-card-v2"><span>Incident occurred</span><strong>{incidentTimeLabel(selected)}</strong></div>
+                <div className="reports-info-card-v2"><span>Report received</span><strong>{dateTime(selected.created_at)}</strong></div>
+              </div></section>
 
               {stage !== 'pending' && (category || priority) && <section className="reports-detail-section-v2"><h3>Incident classification</h3><div className="reports-info-grid-v2">
                 <div className="reports-info-card-v2"><span>Incident category</span><strong>{category || 'Not classified'}</strong></div>

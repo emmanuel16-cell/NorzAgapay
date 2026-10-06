@@ -42,6 +42,8 @@ interface IncidentItem {
     created_at?: string;
   }>;
   created_at?: string;
+  incident_occurred_at?: string | null;
+  incident_time_precision?: 'exact' | 'approximate' | 'unknown' | null;
   reporter_name?: string;
   reporter_phone?: string;
   reporter_id?: string | null;
@@ -68,6 +70,23 @@ interface IncidentItem {
   arrived_at?: string | null;
   resolved_notes?: string | null;
 }
+
+const incidentTimeText = (occurredAt?: string | null, precision?: string | null) => {
+  if (!occurredAt || (precision !== 'exact' && precision !== 'approximate')) {
+    return 'Incident time unknown';
+  }
+  const date = new Date(occurredAt);
+  if (Number.isNaN(date.getTime())) return 'Incident time unknown';
+  return `Incident occurred: ${date.toLocaleString()} (${precision})`;
+};
+
+const reportReceivedText = (createdAt?: string) => {
+  if (!createdAt) return 'Report received: Not recorded';
+  const date = new Date(createdAt);
+  return Number.isNaN(date.getTime())
+    ? 'Report received: Not recorded'
+    : `Report received: ${date.toLocaleString()}`;
+};
 
 interface DispatchUnitItem {
   id: string;
@@ -595,6 +614,8 @@ export default function CommandCenter() {
             proof_types: Array.isArray(r.proof_types) ? r.proof_types : (r.proof_type ? [r.proof_type] : []),
             responder_media: Array.isArray(r.responder_media) ? r.responder_media : [],
             created_at: r.created_at,
+            incident_occurred_at: r.incident_occurred_at || null,
+            incident_time_precision: r.incident_time_precision || 'unknown',
             reporter_name: r.reporter_name || r.reporter?.full_name || 'Resident',
             reporter_phone: r.reporter_phone || r.contact_number || '',
             responder_name: r.barangay_responder_name || r.mdrrmo_responder_name || '',
@@ -665,19 +686,23 @@ export default function CommandCenter() {
     const handleAllLocations = (locations: ResponderGpsLocation[]) => {
       setResponderLocations(Object.fromEntries((locations || []).map((location) => [location.userId, location])));
     };
+    socket.on('connect', handleRefresh);
     socket.on('barangay:responding', handleRefresh);
     socket.on('incident_report:new', handleRefresh);
     socket.on('incident_report:mdrrmo_responding', handleRefresh);
     socket.on('incident_report:updated', handleRefresh);
+    socket.on('incident:lifecycle', handleRefresh);
     socket.on('task:statusChanged', handleRefresh);
     socket.on('gps:location', handleLocation);
     socket.on('gps:allLocations', handleAllLocations);
     socket.emit('gps:requestAll');
     return () => {
+      socket.off('connect', handleRefresh);
       socket.off('barangay:responding', handleRefresh);
       socket.off('incident_report:new', handleRefresh);
       socket.off('incident_report:mdrrmo_responding', handleRefresh);
       socket.off('incident_report:updated', handleRefresh);
+      socket.off('incident:lifecycle', handleRefresh);
       socket.off('task:statusChanged', handleRefresh);
       socket.off('gps:location', handleLocation);
       socket.off('gps:allLocations', handleAllLocations);
@@ -1268,6 +1293,14 @@ export default function CommandCenter() {
                 </div>
                 </section>
 
+                <div className="panel-details-box reporter-notes">
+                  <div className="reporter-note-content">
+                    <strong>Incident time</strong>
+                    <p>{incidentTimeText(selectedIncident.incident_occurred_at, selectedIncident.incident_time_precision)}</p>
+                    <p>{reportReceivedText(selectedIncident.created_at)}</p>
+                  </div>
+                </div>
+
                 {/* Section Title */}
                 <div className="section-label-row resident-proof-heading">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" strokeWidth="2.5">
@@ -1528,6 +1561,14 @@ export default function CommandCenter() {
                   </button>}
                 </div>
                 </section>
+
+                <div className="panel-details-box reporter-notes">
+                  <div className="reporter-note-content">
+                    <strong>Incident time</strong>
+                    <p>{incidentTimeText(selectedIncident.incident_occurred_at, selectedIncident.incident_time_precision)}</p>
+                    <p>{reportReceivedText(selectedIncident.created_at)}</p>
+                  </div>
+                </div>
 
                 <div className="panel-details-box reporter-notes">
                   <div className="reporter-note-content">

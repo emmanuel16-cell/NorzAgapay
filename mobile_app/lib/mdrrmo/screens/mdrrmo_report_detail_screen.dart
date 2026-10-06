@@ -585,6 +585,28 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
           ),
         ),
         _section(
+          'Incident Time',
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _report.incidentOccurredAt == null ||
+                        _report.incidentTimePrecision == 'unknown'
+                    ? 'Incident time unknown'
+                    : 'Incident occurred: ${_report.incidentOccurredAt!.toLocal().toString().split('.').first} (${_report.incidentTimePrecision})',
+                style: const TextStyle(color: _detailInk),
+              ),
+              const SizedBox(height: 5),
+              Text(
+                _report.createdAt == null
+                    ? 'Report received: Not recorded'
+                    : 'Report received: ${_report.createdAt!.toLocal().toString().split('.').first}',
+                style: const TextStyle(color: _detailMuted),
+              ),
+            ],
+          ),
+        ),
+        _section(
           'Details about the report',
           Text(
             description.isEmpty ? 'No details provided.' : description,

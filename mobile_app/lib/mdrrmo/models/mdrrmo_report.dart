@@ -13,6 +13,8 @@ class MdrrmoReport {
   final String? reporterName;
   final String? reporterPhone;
   final DateTime? createdAt;
+  final DateTime? incidentOccurredAt;
+  final String incidentTimePrecision;
   final String status;
   final String responseStatus;
   final String? incidentType;
@@ -49,6 +51,8 @@ class MdrrmoReport {
     this.reporterName,
     this.reporterPhone,
     this.createdAt,
+    this.incidentOccurredAt,
+    this.incidentTimePrecision = 'unknown',
     this.incidentType,
     this.severity,
     this.dispatchNotes,
@@ -133,6 +137,12 @@ class MdrrmoReport {
       reporterName: json['reporter_name']?.toString(),
       reporterPhone: json['reporter_phone']?.toString(),
       createdAt: _date(json['created_at']),
+      incidentOccurredAt: _date(json['incident_occurred_at']),
+      incidentTimePrecision: const {'exact', 'approximate'}.contains(
+        json['incident_time_precision']?.toString(),
+      )
+          ? json['incident_time_precision'].toString()
+          : 'unknown',
       status: (json['status'] ?? 'pending').toString(),
       responseStatus: (json['mdrrmo_response_status'] ?? 'pending').toString(),
       incidentType: json['incident_type']?.toString(),

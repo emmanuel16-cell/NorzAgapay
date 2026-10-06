@@ -48,6 +48,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           updated.displayStatus != _report.displayStatus ||
           updated.reviewOutcome != _report.reviewOutcome ||
           updated.reviewReason != _report.reviewReason ||
+          updated.incidentOccurredAt != _report.incidentOccurredAt ||
+          updated.incidentTimePrecision != _report.incidentTimePrecision ||
           updated.acceptedAt != _report.acceptedAt ||
           updated.arrivedAt != _report.arrivedAt ||
           updated.resolvedAt != _report.resolvedAt ||
@@ -140,6 +142,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                   ),
                   const SizedBox(height: 16),
                   _buildDetailsSection(),
+                  const SizedBox(height: 12),
+                  _buildIncidentTimeSummary(),
                   if (!_isReviewClosed) ...[
                     const SizedBox(height: 16),
                     _buildResponseProgress(),
@@ -264,9 +268,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                     ),
                   ],
                 ),
-                const MunicipalityBoundaryMapLayer(
-                  outsideColor: Colors.white,
-                ),
+                const MunicipalityBoundaryMapLayer(outsideColor: Colors.white),
               ],
             ),
           ),
@@ -372,11 +374,20 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                     _report.displayStatus == 'inconclusive'
                         ? 'This report is inconclusive'
                         : 'This report was marked false',
-                    style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1F2937)),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF1F2937),
+                    ),
                   ),
                   if (_report.reviewReason?.trim().isNotEmpty == true) ...[
                     const SizedBox(height: 5),
-                    Text(_report.reviewReason!, style: const TextStyle(height: 1.4, color: Color(0xFF475569))),
+                    Text(
+                      _report.reviewReason!,
+                      style: const TextStyle(
+                        height: 1.4,
+                        color: Color(0xFF475569),
+                      ),
+                    ),
                   ],
                 ],
               ),
@@ -639,6 +650,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
 
   Widget _buildResponseTimeline() {
     final rows = <(String, DateTime?, String)>[
+      if (_report.clientSubmittedAt != null)
+        ('First submit attempt (device time)', _report.clientSubmittedAt, ''),
       ('Report received', _report.createdAt, ''),
       ('Dispatcher reviewed', _report.dispatcherReviewedAt, ''),
       ('Responder dispatched', _report.dispatchedAt, ''),
@@ -738,6 +751,39 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                 'Arrival recorded ${_report.arrivalMethod == 'gps' ? 'by GPS' : 'manually'}${_report.arrivalDistanceM == null ? '' : ' · ${_report.arrivalDistanceM!.round()} m from incident'}',
                 style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
               ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildIncidentTimeSummary() {
+    final occurredAt = _report.incidentOccurredAt;
+    final incidentTime = occurredAt == null ||
+            _report.incidentTimePrecision == 'unknown'
+        ? 'Incident time unknown'
+        : '${_formatDate(occurredAt)} (${_report.incidentTimePrecision})';
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Incident Time',
+              style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1A1A2E)),
+            ),
+            const SizedBox(height: 8),
+            Text('Incident occurred: $incidentTime'),
+            const SizedBox(height: 4),
+            Text('Report received: ${_formatDate(_report.createdAt)}'),
           ],
         ),
       ),

@@ -38,6 +38,10 @@ class SocketService extends ChangeNotifier {
       debugPrint('Barangay socket disconnected');
       notifyListeners();
     });
+
+    _socket!.onConnectError((error) {
+      debugPrint('Barangay socket connection error: $error');
+    });
   }
 
   void onNewReport(Function(IncidentReport report) callback) {
@@ -118,6 +122,9 @@ class SocketService extends ChangeNotifier {
   }
 
   void onReportUpdated(Function(dynamic data) callback) {
+    _socket?.on('incident:lifecycle', (data) {
+      callback(data);
+    });
     _socket?.on('barangay:report_updated', (data) {
       callback(data);
     });

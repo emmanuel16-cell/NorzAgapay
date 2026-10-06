@@ -25,6 +25,12 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
   Map<String, Map<String, dynamic>> _assistanceMap = {};
   // Track which cards are expanded for assistance details
   final Set<String> _expandedAssistance = {};
+  SocketService? _socketService;
+  int _reportFetchSequence = 0;
+
+  void _onSocketStateChanged() {
+    if (mounted && _socketService?.isConnected == true) _fetchReports();
+  }
 
   @override
   void initState() {
@@ -35,6 +41,8 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
     // Listen to real-time incident report notifications & assistance requests
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final socket = Provider.of<SocketService>(context, listen: false);
+      _socketService = socket;
+      socket.addListener(_onSocketStateChanged);
       final auth = Provider.of<AuthService>(context, listen: false);
 
       socket.onNewReport((newReport) {
@@ -82,6 +90,7 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
   }
 
   Future<void> _fetchReports() async {
+    final requestSequence = ++_reportFetchSequence;
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -92,16 +101,16 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
 
     try {
       final reports = await ApiService.getReports(auth.token!);
-      if (mounted) {
+      if (mounted && requestSequence == _reportFetchSequence) {
         setState(() => _reports = reports);
         if (auth.currentUser?.isDispatcher == true || auth.currentUser?.isResponder == true) {
           _fetchAssistanceRequests(auth.token!);
         }
       }
     } catch (e) {
-      if (mounted) setState(() => _errorMessage = e.toString());
+      if (mounted && requestSequence == _reportFetchSequence) setState(() => _errorMessage = e.toString());
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted && requestSequence == _reportFetchSequence) setState(() => _isLoading = false);
     }
   }
 
@@ -508,11 +517,30 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
                       if (report.createdAt != null) ...[
                         const Icon(Icons.access_time, size: 14, color: Color(0xFF64748B)),
                         const SizedBox(width: 4),
-                        Text(
-                          DateFormat('MMMM d, y h:mm a').format(report.createdAt!.toLocal()),
-                          style: const TextStyle(color: Color(0xFF64748B), fontSize: 11),
+                        Flexible(
+                          child: Text(
+                            'Report received: ${DateFormat('MMMM d, y h:mm a').format(report.createdAt!.toLocal())}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: Color(0xFF64748B), fontSize: 11),
+                          ),
                         ),
                       ],
+                    ],
+                  ),
+                  const SizedBox(height: 5),
+                  Row(
+                    children: [
+                      const Icon(Icons.history_rounded, size: 14, color: Color(0xFF64748B)),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          report.incidentOccurredAt == null || report.incidentTimePrecision == 'unknown'
+                              ? 'Incident time unknown'
+                              : 'Incident occurred: ${DateFormat('MMMM d, y h:mm a').format(report.incidentOccurredAt!.toLocal())} (${report.incidentTimePrecision})',
+                          style: const TextStyle(color: Color(0xFF64748B), fontSize: 11),
+                        ),
+                      ),
                     ],
                   ),
                 ],
@@ -1307,6 +1335,7 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
 
   @override
   void dispose() {
+    _socketService?.removeListener(_onSocketStateChanged);
     _tabController.dispose();
     super.dispose();
   }

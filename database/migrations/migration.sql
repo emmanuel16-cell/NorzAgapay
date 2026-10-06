@@ -450,6 +450,11 @@ CREATE TABLE IF NOT EXISTS incident_reports (
   severity TEXT,
   dispatch_incident_id UUID REFERENCES incidents(id) ON DELETE SET NULL,
   status report_status NOT NULL DEFAULT 'pending',
+  client_submitted_at TIMESTAMPTZ,
+  incident_occurred_at TIMESTAMPTZ,
+  incident_time_precision TEXT NOT NULL DEFAULT 'unknown'
+    CONSTRAINT incident_reports_time_precision_check
+    CHECK (incident_time_precision IN ('exact', 'approximate', 'unknown')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

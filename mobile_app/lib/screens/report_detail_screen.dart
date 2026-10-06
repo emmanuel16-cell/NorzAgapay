@@ -52,6 +52,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
   String? _locationMessage;
   List<Map<String, dynamic>> _assistanceRequests = [];
   final Set<String> _expandedAssistanceRequests = {};
+  SocketService? _socketService;
   // Track responder field media (local session, shown in Responder Images)
   final List<XFile> _teamLeaderMedia = [];
   bool _isUploadingMedia = false;
@@ -65,6 +66,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final socket = Provider.of<SocketService>(context, listen: false);
+      _socketService = socket;
       socket.onMdrrmoResponding((data) {
         if (mounted &&
             data != null &&
@@ -76,16 +78,49 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         }
       });
       socket.onReportUpdated((data) {
-        if (mounted &&
-            data != null &&
-            (data['id'] == _report.id || data['reportId'] == _report.id)) {
-          setState(() {
-            _report = IncidentReport.fromJson(Map<String, dynamic>.from(data));
-          });
-          _syncArrivalMonitoring();
+        if (!mounted || data is! Map) return;
+        final eventReportId = data['report_id'] ?? data['id'] ?? data['reportId'];
+        if (eventReportId == _report.id && data['report_id'] != null) {
+          _refreshReportFromServer();
+        } else if (eventReportId == _report.id) {
+          final updated = IncidentReport.fromJson(Map<String, dynamic>.from(data));
+          if (updated.lifecycleRevision >= _report.lifecycleRevision) {
+            setState(() => _report = updated);
+            _syncArrivalMonitoring();
+          }
         }
       });
+      socket.addListener(_onSocketConnectionChanged);
     });
+  }
+
+  void _onSocketConnectionChanged() {
+    final socket = Provider.of<SocketService>(context, listen: false);
+    if (mounted && socket.isConnected) _refreshReportFromServer();
+  }
+
+  Future<void> _refreshReportFromServer() async {
+    final auth = Provider.of<AuthService>(context, listen: false);
+    final token = auth.token;
+    if (token == null) return;
+    try {
+      final reports = await ApiService.getReports(token);
+      IncidentReport? refreshed;
+      for (final report in reports) {
+        if (report.id == _report.id) {
+          refreshed = report;
+          break;
+        }
+      }
+      final latest = refreshed;
+      if (mounted && latest != null &&
+          latest.lifecycleRevision >= _report.lifecycleRevision) {
+        setState(() => _report = latest);
+        _syncArrivalMonitoring();
+      }
+    } catch (error) {
+      debugPrint('Could not refresh report after realtime update: $error');
+    }
   }
 
   Future<void> _fetchAssistanceRequest() async {
@@ -405,8 +440,36 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     );
   }
 
+  Widget _buildIncidentTimeSummary() {
+    final occurredAt = _report.incidentOccurredAt;
+    final incidentTime = occurredAt == null || _report.incidentTimePrecision == 'unknown'
+        ? 'Incident time unknown'
+        : '${_formatTimestamp(occurredAt)} (${_report.incidentTimePrecision})';
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Incident Time', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+          const SizedBox(height: 8),
+          Text('Incident occurred: $incidentTime', style: const TextStyle(color: Color(0xFF334155), fontSize: 12)),
+          const SizedBox(height: 4),
+          Text('Report received: ${_formatTimestamp(_report.createdAt)}', style: const TextStyle(color: Color(0xFF334155), fontSize: 12)),
+        ],
+      ),
+    );
+  }
+
   @override
   void dispose() {
+    _socketService?.removeListener(_onSocketConnectionChanged);
     _arrivalLocationSubscription?.cancel();
     super.dispose();
   }
@@ -1941,6 +2004,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (_selectedTabIndex == 0) ...[
+                _buildIncidentTimeSummary(),
                 _buildResponseTimeline(),
                 if (_report.isMdrrmoResponding) ...[
                   Container(

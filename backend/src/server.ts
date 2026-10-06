@@ -9,6 +9,7 @@ import { config } from './config';
 import { setUserGPS, getAllActiveGPS } from './config/redis';
 import { supabaseAdmin } from './config/supabase';
 import { DispatcherVerificationService } from './services/dispatcherVerificationService';
+import { startIncidentEventRelay } from './services/incidentEventRelay';
 
 // Import routes
 import authRoutes from './routes/auth';
@@ -52,6 +53,7 @@ const io = new SocketIOServer(server, {
 });
 
 function getSocketTokenPayload(socket: any): any | null {
+  if (socket.data?.tokenPayload) return socket.data.tokenPayload;
   const token = socket.handshake.auth?.token;
   if (typeof token !== 'string' || !token) return null;
   try {
@@ -60,6 +62,21 @@ function getSocketTokenPayload(socket: any): any | null {
     return null;
   }
 }
+
+io.use((socket, next) => {
+  const token = socket.handshake.auth?.token;
+  if (typeof token !== 'string' || !token) {
+    next();
+    return;
+  }
+  const decoded = getSocketTokenPayload(socket);
+  if (!decoded) {
+    next(new Error('Unauthorized socket token.'));
+    return;
+  }
+  socket.data.tokenPayload = decoded;
+  next();
+});
 
 function normalizeSocketRole(role: string): string {
   const legacyRoleMap: Record<string, string> = {
@@ -145,10 +162,34 @@ app.get('/api/health', (_, res) => {
 io.on('connection', (socket) => {
   console.log(`Client connected: ${socket.id}`);
 
+  // Derive private rooms from the verified socket token so reconnecting clients
+  // cannot miss room membership while waiting for a screen-level join event.
+  void (async () => {
+    const decoded = getSocketTokenPayload(socket);
+    if (!decoded) return;
+    socket.data.userId = decoded.userId;
+    socket.join(`user:${decoded.userId}`);
+    const role = normalizeSocketRole(decoded.role || '');
+    if (!decoded.barangayId && ['master_admin', 'admin', 'logistics', 'dispatcher'].includes(role)) {
+      socket.join('dashboard_staff');
+    }
+    if (!decoded.barangayId && role) socket.join(`role:${role}`);
+    if (decoded.barangayId && await canUseBarangaySocket(socket)) {
+      socket.data.barangayId = decoded.barangayId;
+      socket.data.barangayRole = role;
+      socket.join(`barangay:${decoded.barangayId}`);
+      socket.join(`barangay:coordination:${decoded.barangayId}`);
+    }
+  })().catch((error) => console.error('Socket room initialization failed:', error));
+
   // GPS location broadcast
   socket.on('gps:update', async (data: { userId: string; latitude: number; longitude: number }) => {
     try {
-      if (!(await canUseBarangaySocket(socket))) return;
+      const decoded = getSocketTokenPayload(socket);
+      if (!decoded || normalizeSocketRole(decoded.role || '') !== 'responder' || data.userId !== decoded.userId) return;
+      if (decoded.barangayId && !(await canUseBarangaySocket(socket))) return;
+      if (!Number.isFinite(data.latitude) || !Number.isFinite(data.longitude) ||
+          data.latitude < -90 || data.latitude > 90 || data.longitude < -180 || data.longitude > 180) return;
       console.log(`GPS Update received for user ${data.userId}: ${data.latitude}, ${data.longitude}`);
       await setUserGPS(data.userId, data.latitude, data.longitude);
       // Broadcast responder GPS updates to dashboard staff.
@@ -227,23 +268,73 @@ io.on('connection', (socket) => {
   });
 
   // Task status updates
-  socket.on('task:statusUpdate', (data: { taskId: string; status: string; userId: string }) => {
-    void canUseBarangaySocket(socket).then((allowed) => {
-      if (allowed) io.to('dashboard_staff').emit('task:statusChanged', data);
+  socket.on('task:statusUpdate', async (data: { taskId: string; status: string; userId: string }) => {
+    const decoded = getSocketTokenPayload(socket);
+    if (!decoded || data.userId !== decoded.userId || !data.taskId ||
+        !['accepted', 'in_progress', 'returning', 'completed'].includes(data.status)) return;
+    const role = normalizeSocketRole(decoded.role || '');
+    if (!['responder', 'dispatcher', 'admin', 'master_admin'].includes(role)) return;
+    if (decoded.barangayId && !(await canUseBarangaySocket(socket))) return;
+
+    const { data: task, error } = await supabaseAdmin
+      .from('tasks')
+      .select('id, assigned_to')
+      .eq('id', data.taskId)
+      .maybeSingle();
+    if (error || !task) return;
+    if (role === 'responder') {
+      const { data: membership, error: membershipError } = await supabaseAdmin
+        .from('task_volunteers')
+        .select('id')
+        .eq('task_id', task.id)
+        .eq('volunteer_id', decoded.userId)
+        .neq('status', 'left')
+        .maybeSingle();
+      if (membershipError || (task.assigned_to !== decoded.userId && !membership)) return;
+    }
+    const room = decoded.barangayId ? `barangay:${decoded.barangayId}` : 'dashboard_staff';
+    io.to(room).emit('task:statusChanged', {
+      taskId: task.id,
+      status: data.status,
+      userId: decoded.userId,
     });
   });
 
   // New incident broadcast
   socket.on('incident:new', (incident: any) => {
-    void canUseBarangaySocket(socket).then((allowed) => {
-      if (!allowed) return;
-      io.to('responders').emit('incident:alert', incident);
-      io.to('dashboard_staff').emit('incident:new', incident);
-    });
+    const decoded = getSocketTokenPayload(socket);
+    if (!decoded || decoded.barangayId || !['master_admin', 'admin', 'dispatcher'].includes(normalizeSocketRole(decoded.role || ''))) return;
+    void (async () => {
+      if (!await canUseBarangaySocket(socket) || !incident || typeof incident !== 'object' || typeof incident.id !== 'string') return;
+      const { data: report, error } = await supabaseAdmin
+        .from('incident_reports')
+        .select('id, type, title, severity, status, barangay_id, barangay_responded_by, barangay_response_notes')
+        .eq('id', incident.id)
+        .maybeSingle();
+      if (error || !report) return;
+      const responderIds = new Set<string>();
+      if (typeof report.barangay_responded_by === 'string') responderIds.add(report.barangay_responded_by);
+      const assigned = String(report.barangay_response_notes || '').match(/^\[ASSIGNED:([^\]]+)\]/);
+      for (const id of assigned?.[1]?.split(',').map((value: string) => value.trim()) || []) {
+        if (id) responderIds.add(id);
+      }
+      const { data: mdrrmoAssignments, error: assignmentError } = await supabaseAdmin
+        .from('mdrrmo_report_assignments')
+        .select('responder_id')
+        .eq('report_id', report.id)
+        .neq('status', 'removed');
+      if (assignmentError && !/does not exist|schema cache/i.test(assignmentError.message)) return;
+      for (const assignment of mdrrmoAssignments || []) responderIds.add(assignment.responder_id);
+      for (const responderId of responderIds) io.to(`user:${responderId}`).emit('incident:alert', report);
+      io.to('dashboard_staff').emit('incident:new', report);
+      if (report.barangay_id) io.to(`barangay:${report.barangay_id}`).emit('incident:new', report);
+    })().catch((error) => console.error('Incident socket notification failed:', error));
   });
 
   // Resource request from professional unit
   socket.on('resource:request', (data: any) => {
+    const decoded = getSocketTokenPayload(socket);
+    if (!decoded || decoded.barangayId || !['master_admin', 'admin', 'logistics', 'dispatcher'].includes(normalizeSocketRole(decoded.role || ''))) return;
     void canUseBarangaySocket(socket).then((allowed) => {
       if (allowed) io.to('dashboard_staff').emit('resource:request', data);
     });
@@ -252,7 +343,8 @@ io.on('connection', (socket) => {
   // Request all GPS locations (dashboard staff)
   socket.on('gps:requestAll', async () => {
     try {
-      if (!(await canUseBarangaySocket(socket))) return;
+      const decoded = getSocketTokenPayload(socket);
+      if (!decoded || decoded.barangayId || !['master_admin', 'admin', 'logistics', 'dispatcher'].includes(normalizeSocketRole(decoded.role || ''))) return;
       const locations = await getAllActiveGPS();
       socket.emit('gps:allLocations', locations);
     } catch (err) {
@@ -349,6 +441,7 @@ setInterval(runScheduledUpdates, 300000);
 
 if (require.main === module) {
   server.listen(config.port, () => {
+    startIncidentEventRelay(io);
     console.log(`
     ╔══════════════════════════════════════════════╗
     ║         NorzAgapay Backend Server            ║

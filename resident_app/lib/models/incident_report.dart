@@ -11,6 +11,9 @@ class IncidentReport {
   final String? proofUrl;
   final String proofType;
   final DateTime? createdAt;
+  final DateTime? clientSubmittedAt;
+  final DateTime? incidentOccurredAt;
+  final String incidentTimePrecision;
   final DateTime? dispatcherReviewedAt;
   final DateTime? dispatchedAt;
   final DateTime? acceptedAt;
@@ -39,6 +42,8 @@ class IncidentReport {
   final String? resolvedNotes;
   final String? reviewOutcome;
   final String? reviewReason;
+  final String evidenceStatus;
+  final int lifecycleRevision;
   final double? expectedResponseSeconds;
   final double? expectedArrivalSeconds;
   final double? expectedResolutionSeconds;
@@ -66,6 +71,9 @@ class IncidentReport {
     this.proofUrl,
     required this.proofType,
     this.createdAt,
+    this.clientSubmittedAt,
+    this.incidentOccurredAt,
+    this.incidentTimePrecision = 'unknown',
     this.dispatcherReviewedAt,
     this.dispatchedAt,
     this.acceptedAt,
@@ -94,6 +102,8 @@ class IncidentReport {
     this.resolvedNotes,
     this.reviewOutcome,
     this.reviewReason,
+    this.evidenceStatus = 'ready',
+    this.lifecycleRevision = 0,
     this.expectedResponseSeconds,
     this.expectedArrivalSeconds,
     this.expectedResolutionSeconds,
@@ -160,6 +170,9 @@ class IncidentReport {
       'proof_url': proofUrl,
       'proof_type': proofType,
       'created_at': createdAt?.toIso8601String(),
+      'client_submitted_at': clientSubmittedAt?.toIso8601String(),
+      'incident_occurred_at': incidentOccurredAt?.toIso8601String(),
+      'incident_time_precision': incidentTimePrecision,
       'dispatcher_reviewed_at': dispatcherReviewedAt?.toIso8601String(),
       'dispatched_at': dispatchedAt?.toIso8601String(),
       'accepted_at': acceptedAt?.toIso8601String(),
@@ -170,6 +183,8 @@ class IncidentReport {
       'arrival_distance_m': arrivalDistanceM,
       'resolved_at': resolvedAt?.toIso8601String(),
       'status': status,
+      'lifecycle_revision': lifecycleRevision,
+      'evidence_status': evidenceStatus,
       'address': address,
       'reporter_id': reporterId,
       'reporter_name': reporterName,
@@ -265,6 +280,17 @@ class IncidentReport {
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'])
           : null,
+      clientSubmittedAt: json['client_submitted_at'] != null
+          ? DateTime.tryParse(json['client_submitted_at'])
+          : null,
+      incidentOccurredAt: json['incident_occurred_at'] != null
+          ? DateTime.tryParse(json['incident_occurred_at'].toString())
+          : null,
+      incidentTimePrecision: const {'exact', 'approximate'}.contains(
+        json['incident_time_precision']?.toString(),
+      )
+          ? json['incident_time_precision'].toString()
+          : 'unknown',
       dispatcherReviewedAt: json['dispatcher_reviewed_at'] != null
           ? DateTime.tryParse(json['dispatcher_reviewed_at'])
           : null,
@@ -304,6 +330,8 @@ class IncidentReport {
       resolvedNotes: json['resolved_notes'],
       reviewOutcome: json['review_outcome']?.toString(),
       reviewReason: json['review_reason']?.toString(),
+      evidenceStatus: json['evidence_status']?.toString() ?? 'ready',
+      lifecycleRevision: (json['lifecycle_revision'] as num?)?.toInt() ?? 0,
       expectedResponseSeconds: (expectedTimings['response_seconds'] as num?)
           ?.toDouble(),
       expectedArrivalSeconds: (expectedTimings['arrival_seconds'] as num?)
@@ -349,6 +377,9 @@ class IncidentReport {
           ? proofTypes.first
           : proofType,
       createdAt: createdAt,
+      clientSubmittedAt: clientSubmittedAt,
+      incidentOccurredAt: incidentOccurredAt,
+      incidentTimePrecision: incidentTimePrecision,
       dispatcherReviewedAt: dispatcherReviewedAt,
       dispatchedAt: dispatchedAt,
       acceptedAt: acceptedAt,
@@ -377,6 +408,8 @@ class IncidentReport {
       resolvedNotes: resolvedNotes,
       reviewOutcome: reviewOutcome,
       reviewReason: reviewReason,
+      evidenceStatus: evidenceStatus,
+      lifecycleRevision: lifecycleRevision,
       expectedResponseSeconds: expectedResponseSeconds,
       expectedArrivalSeconds: expectedArrivalSeconds,
       expectedResolutionSeconds: expectedResolutionSeconds,

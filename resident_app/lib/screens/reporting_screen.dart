@@ -4,9 +4,12 @@ import 'package:latlong2/latlong.dart';
 import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
+import 'package:intl/intl.dart';
 import '../services/offline_service.dart';
 import '../services/norzagaray_boundary.dart';
 import '../services/resident_gps_service.dart';
+import '../services/evidence_upload_service.dart';
 import '../core/constants.dart';
 import '../core/phone_number_utils.dart';
 import '../widgets/resident_gradient_app_bar.dart';
@@ -24,6 +27,16 @@ class _ProofItem {
     required this.type,
     this.durationSeconds,
   });
+}
+
+String _createClientRequestId() {
+  final bytes = List<int>.generate(16, (_) => Random.secure().nextInt(256));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  final hex = bytes
+      .map((value) => value.toRadixString(16).padLeft(2, '0'))
+      .join();
+  return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
 }
 
 class ReportingScreen extends StatefulWidget {
@@ -50,6 +63,12 @@ class _ReportingScreenState extends State<ReportingScreen> {
   bool _isConfirmingExit = false;
   bool _allowPop = false;
   String? _draftId;
+  String _clientRequestId = _createClientRequestId();
+  DateTime? _clientSubmittedAt;
+  String _incidentTimeChoice = 'just_now';
+  DateTime? _incidentOccurredAt = DateTime.now();
+  String _incidentTimePrecision = 'exact';
+  bool _keepCurrentLocationForSubmit = false;
   final TextEditingController _descController = TextEditingController();
 
   LatLng? _currentLocation;
@@ -96,20 +115,68 @@ class _ReportingScreenState extends State<ReportingScreen> {
     super.initState();
     _reportType = widget.reportType;
     _restoreDraft(widget.initialDraft);
-    _getLocation();
+    if (_currentLocation == null) _getLocation();
     _loadBarangays();
     _loadSavedBarangay();
   }
 
   void _restoreDraft(Map<String, dynamic>? draft) {
     if (draft == null) return;
+    _clientRequestId =
+        draft['client_request_id']?.toString() ?? _clientRequestId;
     _draftId = draft['draft_id']?.toString();
+    final submittedAt = draft['client_submitted_at']?.toString();
+    _clientSubmittedAt = submittedAt == null
+        ? null
+        : DateTime.tryParse(submittedAt)?.toUtc();
+    final savedTimeChoice = draft['incident_time_choice']?.toString();
+    if (const {'just_now', 'earlier', 'unknown'}.contains(savedTimeChoice)) {
+      _incidentTimeChoice = savedTimeChoice!;
+    }
+    final occurredAt = DateTime.tryParse(
+      draft['incident_occurred_at']?.toString() ?? '',
+    );
+    _incidentOccurredAt = occurredAt;
+    final savedPrecision = draft['incident_time_precision']?.toString();
+    _incidentTimePrecision = const {'exact', 'approximate'}.contains(
+      savedPrecision,
+    )
+        ? savedPrecision!
+        : 'exact';
+    if (_incidentTimeChoice == 'unknown') {
+      _incidentOccurredAt = null;
+      _incidentTimePrecision = 'unknown';
+    } else if (_incidentOccurredAt == null && savedTimeChoice == null) {
+      // Drafts created before incident-time support keep the selected default.
+      _incidentTimeChoice = 'just_now';
+      _incidentOccurredAt = DateTime.now();
+      _incidentTimePrecision = 'exact';
+    } else if (_incidentOccurredAt == null) {
+      _incidentTimeChoice = 'unknown';
+      _incidentTimePrecision = 'unknown';
+    }
     _selectedCategory = draft['category']?.toString();
     _selectedSpecific = draft['specifics']?.toString();
     _descController.text = draft['description']?.toString() ?? '';
     _sendTo = draft['send_to']?.toString() ?? 'barangay';
     _selectedBarangayId = draft['barangay_id']?.toString();
     _selectedBarangayName = draft['barangay_name']?.toString();
+    final latitude = double.tryParse(draft['latitude']?.toString() ?? '');
+    final longitude = double.tryParse(draft['longitude']?.toString() ?? '');
+    if (latitude != null &&
+        longitude != null &&
+        latitude.isFinite &&
+        longitude.isFinite &&
+        latitude >= -90 &&
+        latitude <= 90 &&
+        longitude >= -180 &&
+        longitude <= 180) {
+      final savedLocation = LatLng(latitude, longitude);
+      _currentLocation = savedLocation;
+      _keepCurrentLocationForSubmit = true;
+      _isInsideNorzagaray = NorzagarayBoundary.containsPoint(savedLocation);
+      _locationCheckComplete = true;
+    }
     final paths =
         (draft['proof_paths'] as List?)?.map((e) => e.toString()).toList() ??
         [];
@@ -139,6 +206,7 @@ class _ReportingScreenState extends State<ReportingScreen> {
       _proofs.isNotEmpty;
 
   Map<String, dynamic> _draftData() => {
+    'client_request_id': _clientRequestId,
     'type': _reportType,
     'category': _selectedCategory,
     'title': _reportType == 'emergency'
@@ -148,6 +216,10 @@ class _ReportingScreenState extends State<ReportingScreen> {
     'description': _descController.text,
     'latitude': _currentLocation?.latitude,
     'longitude': _currentLocation?.longitude,
+    'client_submitted_at': _clientSubmittedAt?.toUtc().toIso8601String(),
+    'incident_time_choice': _incidentTimeChoice,
+    'incident_occurred_at': _incidentOccurredAt?.toUtc().toIso8601String(),
+    'incident_time_precision': _incidentTimePrecision,
     'proof_paths': _proofs.map((proof) => proof.file.path).toList(),
     'proof_types': _proofs.map((proof) => proof.type).toList(),
     'proof_durations': _proofs.map((proof) => proof.durationSeconds).toList(),
@@ -270,6 +342,7 @@ class _ReportingScreenState extends State<ReportingScreen> {
       _isInsideNorzagaray = isInside;
       _locationCheckComplete = true;
       _isRefreshingLocation = false;
+      _keepCurrentLocationForSubmit = showResult && location != null;
     });
     if (showResult && !isInside) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -472,9 +545,155 @@ class _ReportingScreenState extends State<ReportingScreen> {
     return '${minutes.toString()}:${seconds.toString().padLeft(2, '0')}';
   }
 
+  Future<void> _chooseIncidentTime(String choice) async {
+    if (choice == 'unknown') {
+      setState(() {
+        _incidentTimeChoice = 'unknown';
+        _incidentOccurredAt = null;
+        _incidentTimePrecision = 'unknown';
+      });
+      return;
+    }
+    if (choice == 'just_now') {
+      setState(() {
+        _incidentTimeChoice = 'just_now';
+        _incidentOccurredAt = DateTime.now();
+        _incidentTimePrecision = 'exact';
+      });
+      return;
+    }
+    setState(() {
+      _incidentTimeChoice = 'earlier';
+      _incidentOccurredAt ??= DateTime.now();
+      if (_incidentTimePrecision == 'unknown') {
+        _incidentTimePrecision = 'exact';
+      }
+    });
+    await _pickIncidentOccurredAt();
+  }
+
+  Future<void> _pickIncidentOccurredAt() async {
+    final now = DateTime.now();
+    final initial = (_incidentOccurredAt ?? now).toLocal();
+    final pickedDate = await showDatePicker(
+      context: context,
+      initialDate: initial.isAfter(now) ? now : initial,
+      firstDate: DateTime(1900),
+      lastDate: now,
+      helpText: 'When did the incident happen?',
+    );
+    if (pickedDate == null || !mounted) return;
+    final pickedTime = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(initial),
+      helpText: 'Choose the incident time',
+    );
+    if (pickedTime == null || !mounted) return;
+    final selected = DateTime(
+      pickedDate.year,
+      pickedDate.month,
+      pickedDate.day,
+      pickedTime.hour,
+      pickedTime.minute,
+    );
+    if (selected.isAfter(DateTime.now())) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Incident time cannot be in the future.')),
+      );
+      return;
+    }
+    setState(() => _incidentOccurredAt = selected);
+  }
+
+  Widget _buildIncidentTimeInput() {
+    final occurredAt = _incidentOccurredAt;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'When did the incident happen?',
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF1E293B),
+          ),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'This is separate from when your report reaches dispatch.',
+          style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          children: [
+            ChoiceChip(
+              label: const Text('Just now'),
+              selected: _incidentTimeChoice == 'just_now',
+              onSelected: (_) => _chooseIncidentTime('just_now'),
+            ),
+            ChoiceChip(
+              label: const Text('Earlier'),
+              selected: _incidentTimeChoice == 'earlier',
+              onSelected: (_) => _chooseIncidentTime('earlier'),
+            ),
+            ChoiceChip(
+              label: const Text('Not sure'),
+              selected: _incidentTimeChoice == 'unknown',
+              onSelected: (_) => _chooseIncidentTime('unknown'),
+            ),
+          ],
+        ),
+        if (_incidentTimeChoice == 'just_now') ...[
+          const SizedBox(height: 2),
+          Text(
+            occurredAt == null
+                ? 'Current device time will be recorded.'
+                : 'Current device time: ${DateFormat('MMM d, yyyy · h:mm a').format(occurredAt.toLocal())}',
+            style: const TextStyle(fontSize: 12, color: Color(0xFF475569)),
+          ),
+        ] else if (_incidentTimeChoice == 'earlier') ...[
+          const SizedBox(height: 2),
+          OutlinedButton.icon(
+            onPressed: _pickIncidentOccurredAt,
+            icon: const Icon(Icons.edit_calendar_outlined, size: 18),
+            label: Text(
+              occurredAt == null
+                  ? 'Choose date and time'
+                  : DateFormat('MMM d, yyyy · h:mm a').format(occurredAt.toLocal()),
+            ),
+          ),
+          Wrap(
+            spacing: 8,
+            children: [
+              ChoiceChip(
+                label: const Text('Exact'),
+                selected: _incidentTimePrecision == 'exact',
+                onSelected: (_) => setState(() => _incidentTimePrecision = 'exact'),
+              ),
+              ChoiceChip(
+                label: const Text('Approximate'),
+                selected: _incidentTimePrecision == 'approximate',
+                onSelected: (_) => setState(() => _incidentTimePrecision = 'approximate'),
+              ),
+            ],
+          ),
+        ] else ...[
+          const SizedBox(height: 2),
+          const Text(
+            'The incident time will be recorded as unknown.',
+            style: TextStyle(fontSize: 12, color: Color(0xFF475569)),
+          ),
+        ],
+      ],
+    );
+  }
+
   Future<void> _submitReport() async {
     if (_isRefreshingLocation) return;
-    await _getLocation(requestPermission: false);
+    if (!_keepCurrentLocationForSubmit || _currentLocation == null) {
+      await _getLocation(requestPermission: false);
+    }
     if (!mounted) return;
     if (!_isInsideNorzagaray || _currentLocation == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -519,16 +738,7 @@ class _ReportingScreenState extends State<ReportingScreen> {
         );
       }
 
-      var request = http.MultipartRequest(
-        'POST',
-        Uri.parse('${AppConstants.apiBaseUrl}/incident-reports'),
-      );
-
-      request.headers.addAll({'ngrok-skip-browser-warning': 'true'});
       final token = profile['token']?.toString();
-      if (token != null && token.isNotEmpty) {
-        request.headers['Authorization'] = 'Bearer $token';
-      }
       final reporterName = (profile['full_name'] ?? '').toString().trim();
       final nameParts = reporterName
           .split(RegExp(r'\s+'))
@@ -536,59 +746,72 @@ class _ReportingScreenState extends State<ReportingScreen> {
           .toList();
       final email = (profile['email'] ?? '').toString().trim();
       final rawPhone = (profile['contact_number'] ?? '').toString().trim();
-      request.fields['type'] = _reportType;
-      request.fields['title'] = _reportType == 'emergency'
-          ? 'Emergency Incident'
-          : _selectedCategory!;
-      request.fields['specifics'] = _selectedSpecific ?? '';
-      request.fields['description'] = _descController.text;
-      request.fields['latitude'] = _currentLocation!.latitude.toString();
-      request.fields['longitude'] = _currentLocation!.longitude.toString();
-      request.fields['proof_type'] = _proofs.first.type;
-      request.fields['proof_types'] = jsonEncode(
-        _proofs.map((p) => p.type).toList(),
-      );
-      request.fields['reporter_type'] = 'resident';
-      request.fields['reporter_name'] = reporterName;
-      request.fields['reporter_email'] = email;
-      request.fields['first_name'] = nameParts.isNotEmpty
-          ? nameParts.first
-          : '';
-      request.fields['last_name'] = nameParts.length > 1
-          ? nameParts.skip(1).join(' ')
-          : '';
-      request.fields['contact_number'] = rawPhone.contains('@')
-          ? ''
-          : PhoneNumberUtils.digitsOnly(rawPhone);
-      request.fields['send_to'] = _sendTo;
+      _clientSubmittedAt ??= DateTime.now().toUtc();
+      final fields = <String, dynamic>{
+        'client_request_id': _clientRequestId,
+        'client_submitted_at': _clientSubmittedAt!.toIso8601String(),
+        'incident_occurred_at': _incidentOccurredAt?.toUtc().toIso8601String(),
+        'incident_time_precision': _incidentTimePrecision,
+        'type': _reportType,
+        'title': _reportType == 'emergency'
+            ? 'Emergency Incident'
+            : _selectedCategory!,
+        'specifics': _selectedSpecific ?? '',
+        'description': _descController.text,
+        'latitude': _currentLocation!.latitude.toString(),
+        'longitude': _currentLocation!.longitude.toString(),
+        'proof_type': _proofs.first.type,
+        'proof_types': jsonEncode(_proofs.map((p) => p.type).toList()),
+        'reporter_type': 'resident',
+        'reporter_name': reporterName,
+        'reporter_email': email,
+        'first_name': nameParts.isNotEmpty ? nameParts.first : '',
+        'last_name': nameParts.length > 1 ? nameParts.skip(1).join(' ') : '',
+        'contact_number': rawPhone.contains('@')
+            ? ''
+            : PhoneNumberUtils.digitsOnly(rawPhone),
+        'send_to': _sendTo,
+      };
 
       // Barangay routing
       if (_selectedBarangayId != null) {
-        request.fields['barangay_id'] = _selectedBarangayId!;
+        fields['barangay_id'] = _selectedBarangayId!;
       }
 
-      // Add all proof files
-      for (int i = 0; i < _proofs.length; i++) {
-        request.files.add(
-          await http.MultipartFile.fromPath('proofs', _proofs[i].file.path),
-        );
-      }
+      // Commit the incident before transferring large evidence files.
+      final response = await http
+          .post(
+            Uri.parse('${AppConstants.apiBaseUrl}/incident-reports'),
+            headers: {
+              'ngrok-skip-browser-warning': 'true',
+              'Content-Type': 'application/json',
+              if (token != null && token.isNotEmpty)
+                'Authorization': 'Bearer $token',
+            },
+            body: jsonEncode(fields),
+          )
+          .timeout(const Duration(seconds: 15));
 
-      final streamedResponse = await request.send().timeout(
-        const Duration(seconds: 15),
-      );
-      final response = await http.Response.fromStream(streamedResponse);
-
-      if (streamedResponse.statusCode == 201 ||
-          streamedResponse.statusCode == 200) {
+      if (response.statusCode == 201 || response.statusCode == 200) {
         if (_draftId != null) await OfflineService.deleteDraft(_draftId!);
-        if (mounted) {
-          final result = Map<String, dynamic>.from(
-            jsonDecode(response.body) as Map,
+        final result = Map<String, dynamic>.from(
+          jsonDecode(response.body) as Map,
+        );
+        final reportData = result['report'] is Map
+            ? Map<String, dynamic>.from(result['report'] as Map)
+            : <String, dynamic>{};
+        final reportId = reportData['id']?.toString();
+        if (reportId != null && reportId.isNotEmpty) {
+          unawaited(
+            EvidenceUploadService.queueAndUpload(
+              reportId: reportId,
+              filePaths: _proofs.map((proof) => proof.file.path).toList(),
+              proofTypes: _proofs.map((proof) => proof.type).toList(),
+              contactNumber: fields['contact_number'].toString(),
+            ),
           );
-          final reportData = result['report'] is Map
-              ? Map<String, dynamic>.from(result['report'] as Map)
-              : <String, dynamic>{};
+        }
+        if (mounted) {
           final recipient = _sendTo == 'barangay'
               ? (_selectedBarangayName == null
                     ? 'your barangay'
@@ -1002,6 +1225,9 @@ class _ReportingScreenState extends State<ReportingScreen> {
                       ],
                       const SizedBox(height: 14),
                     ],
+
+                    _buildIncidentTimeInput(),
+                    const SizedBox(height: 18),
 
                     // ── Proof of Incident ──────────────────────────────────
                     const Text(

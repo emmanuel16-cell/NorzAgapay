@@ -25,18 +25,23 @@ class _MdrrmoReportsScreenState extends State<MdrrmoReportsScreen>
   bool _loading = true;
   String? _error;
   late final void Function(dynamic) _reportListener;
+  late final void Function(dynamic) _connectListener;
+  int _loadSequence = 0;
 
   @override
   void initState() {
     super.initState();
     _tabs = TabController(length: 3, vsync: this);
     _reportListener = (_) => _load(silent: true);
+    _connectListener = (_) => _load(silent: true);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final auth = context.read<AuthProvider>();
       if (auth.token != null && auth.user != null) {
         SocketService.connect(auth.user!.id, auth.user!.role.name, auth.token!);
+        SocketService.socket.on('connect', _connectListener);
         SocketService.socket.on('mdrrmo:report_assigned', _reportListener);
         SocketService.socket.on('mdrrmo:report_updated', _reportListener);
+        SocketService.socket.on('incident:lifecycle', _reportListener);
       }
       _load();
     });
@@ -45,13 +50,16 @@ class _MdrrmoReportsScreenState extends State<MdrrmoReportsScreen>
   @override
   void dispose() {
     _tabs.dispose();
+    SocketService.socket.off('connect', _connectListener);
     SocketService.socket.off('mdrrmo:report_assigned', _reportListener);
     SocketService.socket.off('mdrrmo:report_updated', _reportListener);
+    SocketService.socket.off('incident:lifecycle', _reportListener);
     SocketService.disconnect();
     super.dispose();
   }
 
   Future<void> _load({bool silent = false}) async {
+    final loadSequence = ++_loadSequence;
     final token = context.read<AuthProvider>().token;
     if (token == null) return;
     if (!silent && mounted)
@@ -61,15 +69,15 @@ class _MdrrmoReportsScreenState extends State<MdrrmoReportsScreen>
       });
     try {
       final reports = await ApiService.getMdrrmoReports(token);
-      if (mounted)
+      if (mounted && loadSequence == _loadSequence)
         setState(() {
           _reports = reports;
           _error = null;
         });
     } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
+      if (mounted && loadSequence == _loadSequence) setState(() => _error = error.toString());
     } finally {
-      if (mounted && !silent) setState(() => _loading = false);
+      if (mounted && loadSequence == _loadSequence && !silent) setState(() => _loading = false);
     }
   }
 
@@ -129,6 +137,7 @@ class _MdrrmoReportsScreenState extends State<MdrrmoReportsScreen>
         .replaceAll(RegExp(r'\[SEND_TO:[^\]]+\]'), '')
         .trim();
     final date = report.createdAt?.toLocal();
+    final occurredAt = report.incidentOccurredAt?.toLocal();
     return Card(
       color: Colors.white,
       elevation: 0,
@@ -218,11 +227,30 @@ class _MdrrmoReportsScreenState extends State<MdrrmoReportsScreen>
                   const Spacer(),
                   const Icon(Icons.schedule_rounded, size: 13, color: _mdMuted),
                   const SizedBox(width: 4),
-                  Text(
-                    date == null
-                        ? ''
-                        : '${date.day}/${date.month}/${date.year} · ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}',
-                    style: const TextStyle(color: _mdMuted, fontSize: 11),
+                  Flexible(
+                    child: Text(
+                      date == null
+                          ? ''
+                          : 'Report received ${date.day}/${date.month}/${date.year} · ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: _mdMuted, fontSize: 11),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 5),
+              Row(
+                children: [
+                  const Icon(Icons.history_rounded, size: 13, color: _mdMuted),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      occurredAt == null || report.incidentTimePrecision == 'unknown'
+                          ? 'Incident time unknown'
+                          : 'Incident occurred ${occurredAt.day}/${occurredAt.month}/${occurredAt.year} · ${occurredAt.hour.toString().padLeft(2, '0')}:${occurredAt.minute.toString().padLeft(2, '0')} (${report.incidentTimePrecision})',
+                      style: const TextStyle(color: _mdMuted, fontSize: 11),
+                    ),
                   ),
                 ],
               ),
