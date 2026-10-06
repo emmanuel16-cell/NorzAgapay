@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:location/location.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -32,6 +35,12 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
   late MdrrmoReport _report;
   late final TabController _tabs;
   bool _busy = false;
+  bool _arrivalSubmitting = false;
+  bool _startingArrivalMonitoring = false;
+  bool _arrivalGpsErrorVisible = false;
+  final Location _locationService = Location();
+  StreamSubscription<LocationData>? _arrivalLocationSubscription;
+  Map<String, dynamic>? _acceptedAssignment;
   bool _incidentTimelineExpanded = false;
   int _assessmentAgencyIndex = 0;
   String _assistanceRequestType = 'goods';
@@ -43,10 +52,14 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
     super.initState();
     _report = widget.report;
     _tabs = TabController(length: 3, vsync: this);
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _syncArrivalMonitoring(),
+    );
   }
 
   @override
   void dispose() {
+    _arrivalLocationSubscription?.cancel();
     _tabs.dispose();
     _assistanceCategory.dispose();
     _assistanceDetails.dispose();
@@ -62,12 +75,139 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
           assignment['status'] != 'removed')
         return assignment;
     }
+    if (_acceptedAssignment?['responder_id']?.toString() == userId) {
+      return _acceptedAssignment;
+    }
     return null;
   }
 
   DateTime? _assignmentArrival(Map<String, dynamic>? assignment) {
     final value = assignment?['arrived_at'];
     return value == null ? null : DateTime.tryParse(value.toString());
+  }
+
+  bool _canMonitorArrival() {
+    final user = context.read<AuthProvider>().user;
+    final assignment = _myAssignment(user?.id);
+    return user?.role.name == 'responder' &&
+        assignment?['status'] == 'responding' &&
+        _assignmentArrival(assignment) == null &&
+        _report.arrivedAt == null &&
+        !_report.isResolved;
+  }
+
+  void _syncArrivalMonitoring() {
+    if (_canMonitorArrival()) {
+      unawaited(_startArrivalMonitoring());
+    } else {
+      _arrivalLocationSubscription?.cancel();
+      _arrivalLocationSubscription = null;
+    }
+  }
+
+  Future<void> _startArrivalMonitoring() async {
+    if (_arrivalLocationSubscription != null ||
+        _startingArrivalMonitoring ||
+        !_canMonitorArrival())
+      return;
+    _startingArrivalMonitoring = true;
+    try {
+      var serviceEnabled = await _locationService.serviceEnabled();
+      if (!serviceEnabled)
+        serviceEnabled = await _locationService.requestService();
+      if (!serviceEnabled) return;
+
+      var permission = await _locationService.hasPermission();
+      if (permission == PermissionStatus.denied) {
+        permission = await _locationService.requestPermission();
+      }
+      if (permission != PermissionStatus.granted &&
+          permission != PermissionStatus.grantedLimited)
+        return;
+      if (!mounted || !_canMonitorArrival()) return;
+
+      await _locationService.changeSettings(
+        accuracy: LocationAccuracy.high,
+        interval: 1000,
+        distanceFilter: 1,
+      );
+      _arrivalLocationSubscription = _locationService.onLocationChanged.listen(
+        (location) => unawaited(_handleArrivalLocation(location)),
+      );
+      final currentLocation = await _locationService.getLocation();
+      if (mounted && _canMonitorArrival()) {
+        await _handleArrivalLocation(currentLocation);
+      }
+    } catch (error) {
+      debugPrint('MDRRMO arrival location monitoring error: $error');
+    } finally {
+      _startingArrivalMonitoring = false;
+    }
+  }
+
+  Future<void> _handleArrivalLocation(LocationData location) async {
+    if (!mounted || !_canMonitorArrival() || _arrivalSubmitting) return;
+    final latitude = location.latitude;
+    final longitude = location.longitude;
+    final accuracy = location.accuracy;
+    if (latitude == null ||
+        longitude == null ||
+        accuracy == null ||
+        accuracy < 0 ||
+        accuracy > 50) {
+      _arrivalGpsErrorVisible = false;
+      return;
+    }
+
+    final distanceM = const Distance().as(
+      LengthUnit.Meter,
+      LatLng(latitude, longitude),
+      LatLng(_report.latitude, _report.longitude),
+    );
+    if (distanceM > 100) {
+      _arrivalGpsErrorVisible = false;
+      return;
+    }
+
+    final token = context.read<AuthProvider>().token;
+    if (token == null) return;
+    setState(() => _arrivalSubmitting = true);
+    try {
+      final updated = await ApiService.markMdrrmoReportArrived(
+        token,
+        _report.id,
+        method: 'gps',
+        latitude: latitude,
+        longitude: longitude,
+        accuracyM: accuracy,
+        fixAt: _locationFixTime(location),
+      );
+      if (mounted) {
+        setState(() => _report = updated);
+        _syncArrivalMonitoring();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Arrival confirmed by GPS.'),
+            backgroundColor: _detailTeal,
+          ),
+        );
+      }
+    } catch (error) {
+      if (!_arrivalGpsErrorVisible && mounted) {
+        _arrivalGpsErrorVisible = true;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not record GPS arrival: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _arrivalSubmitting = false);
+    }
+  }
+
+  DateTime _locationFixTime(LocationData location) {
+    final timestamp = location.time;
+    if (timestamp == null || timestamp <= 0) return DateTime.now().toUtc();
+    return DateTime.fromMillisecondsSinceEpoch(timestamp.round(), isUtc: true);
   }
 
   Future<void> _dispatch() async {
@@ -336,10 +476,24 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
   }
 
   Future<void> _accept() async {
-    final token = context.read<AuthProvider>().token;
-    if (token == null) return;
+    final auth = context.read<AuthProvider>();
+    final token = auth.token;
+    final userId = auth.user?.id;
+    if (token == null || userId == null) return;
     await _run(() async {
       _report = await ApiService.respondToMdrrmoReport(token, _report.id);
+      _acceptedAssignment = {
+        'responder_id': userId,
+        'status': 'responding',
+        'arrived_at': null,
+      };
+      try {
+        final reports = await ApiService.getMdrrmoReports(token);
+        _report = reports.firstWhere((report) => report.id == _report.id);
+        _acceptedAssignment = null;
+      } catch (error) {
+        debugPrint('Could not refresh accepted MDRRMO assignment: $error');
+      }
     }, 'Report accepted.');
   }
 
@@ -563,6 +717,7 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
     setState(() => _busy = true);
     try {
       await action();
+      _syncArrivalMonitoring();
       if (mounted)
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(success), backgroundColor: _detailTeal),
@@ -1289,7 +1444,7 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'Confirm your arrival after reaching the incident area.',
+                        'GPS checks arrival while this report is open and records it on the first accurate fix within 100 m. You can also mark arrival manually.',
                         style: TextStyle(
                           color: Color(0xFF075985),
                           fontSize: 11,
@@ -1299,7 +1454,9 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
                       SizedBox(
                         width: double.infinity,
                         child: OutlinedButton.icon(
-                          onPressed: _busy ? null : _arrive,
+                          onPressed: _busy || _arrivalSubmitting
+                              ? null
+                              : _arrive,
                           icon: const Icon(
                             Icons.location_on_outlined,
                             size: 16,

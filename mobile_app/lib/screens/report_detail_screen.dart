@@ -45,8 +45,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
   final Location _locationService = Location();
   StreamSubscription<LocationData>? _arrivalLocationSubscription;
   LocationData? _latestLocationData;
-  DateTime? _arrivalCandidateSince;
   bool _arrivalSubmitting = false;
+  bool _arrivalGpsErrorVisible = false;
   bool _startingArrivalMonitoring = false;
   final MapController _mapController = MapController();
   bool _incidentTimelineExpanded = false;
@@ -244,7 +244,6 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     } else {
       _arrivalLocationSubscription?.cancel();
       _arrivalLocationSubscription = null;
-      _arrivalCandidateSince = null;
     }
   }
 
@@ -267,12 +266,16 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
 
       await _locationService.changeSettings(
         accuracy: LocationAccuracy.high,
-        interval: 5000,
-        distanceFilter: 5,
+        interval: 1000,
+        distanceFilter: 1,
       );
       _arrivalLocationSubscription = _locationService.onLocationChanged.listen(
         (location) => unawaited(_handleArrivalLocation(location)),
       );
+      final currentLocation = await _locationService.getLocation();
+      if (mounted && _canMonitorArrival()) {
+        await _handleArrivalLocation(currentLocation);
+      }
     } catch (error) {
       debugPrint('Arrival location monitoring error: $error');
     } finally {
@@ -293,17 +296,10 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
       current,
       LatLng(_report.latitude, _report.longitude),
     );
-    if (accuracy == null ||
-        accuracy < 0 ||
-        accuracy > 50 ||
-        distanceM + accuracy > 100) {
-      _arrivalCandidateSince = null;
+    if (accuracy == null || accuracy < 0 || accuracy > 50 || distanceM > 100) {
+      _arrivalGpsErrorVisible = false;
       return;
     }
-
-    final now = DateTime.now().toUtc();
-    _arrivalCandidateSince ??= now;
-    if (now.difference(_arrivalCandidateSince!).inSeconds < 15) return;
     await _recordArrival(
       method: 'gps',
       latitude: location.latitude!,
@@ -342,6 +338,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
       );
       if (mounted) {
         setState(() => _report = updated);
+        _arrivalGpsErrorVisible = false;
         _syncArrivalMonitoring();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -355,8 +352,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         );
       }
     } catch (error) {
-      if (method == 'gps') _arrivalCandidateSince = null;
-      if (mounted) {
+      if (mounted && (method != 'gps' || !_arrivalGpsErrorVisible)) {
+        if (method == 'gps') _arrivalGpsErrorVisible = true;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Could not record arrival: $error')),
         );
@@ -2915,7 +2912,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text(
-                            'Arrival detection is active while this report is open. GPS confirms arrival inside the 100 m incident area.',
+                            'GPS checks arrival while this report is open and records it on the first accurate fix within 100 m.',
                             style: TextStyle(
                               color: Color(0xFF075985),
                               fontSize: 12,

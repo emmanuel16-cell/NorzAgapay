@@ -61,8 +61,8 @@ class GpsService extends ChangeNotifier {
       if (!kIsWeb) {
         await _location.changeSettings(
           accuracy: LocationAccuracy.high,
-          interval: 5000,
-          distanceFilter: 10,
+          interval: 1000,
+          distanceFilter: 1,
         );
 
         try {
@@ -84,14 +84,20 @@ class GpsService extends ChangeNotifier {
       }
 
       // Update location locally whenever it changes
-      _subscription = _location.onLocationChanged.listen((LocationData current) {
+      _subscription = _location.onLocationChanged.listen((
+        LocationData current,
+      ) {
         _lastLocation = current;
         notifyListeners();
         _emitLatestLocation();
       });
 
-      // Short socket heartbeat keeps the 30-second server-side location TTL fresh.
-      _syncTimer = Timer.periodic(const Duration(seconds: 15), (_) => _emitLatestLocation());
+      // Live GPS fixes are sent as they arrive; this heartbeat keeps the server
+      // location fresh if the platform pauses location callbacks temporarily.
+      _syncTimer = Timer.periodic(
+        const Duration(seconds: 15),
+        (_) => _emitLatestLocation(),
+      );
     } catch (globalError) {
       debugPrint('GpsService startTracking Global Error: $globalError');
     } finally {
@@ -99,7 +105,8 @@ class GpsService extends ChangeNotifier {
         _isStarting = false;
         if (_subscription == null) {
           _userId = null;
-          if (_connectListener != null) _trackingSocket?.off('connect', _connectListener);
+          if (_connectListener != null)
+            _trackingSocket?.off('connect', _connectListener);
           _connectListener = null;
           _trackingSocket = null;
         }

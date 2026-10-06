@@ -29,8 +29,8 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   final Location _locationService = Location();
   StreamSubscription<LocationData>? _arrivalLocationSubscription;
   LocationData? _lastArrivalLocation;
-  DateTime? _arrivalCandidateSince;
   bool _startingArrivalTracking = false;
+  bool _arrivalGpsErrorVisible = false;
 
   @override
   void dispose() {
@@ -63,22 +63,24 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
             ? _locationFixTime(arrivalLocation!)
             : null,
       );
-      if (status == TaskStatus.in_progress) _stopArrivalTracking();
+      if (status == TaskStatus.in_progress) {
+        _arrivalGpsErrorVisible = false;
+        _stopArrivalTracking();
+      }
       if (mounted &&
           (status == TaskStatus.completed || status == TaskStatus.cancelled)) {
         Navigator.pop(context);
       }
     } catch (e) {
-      if (status == TaskStatus.in_progress && arrivalMethod == 'gps') {
-        _arrivalCandidateSince = null;
-      }
-      if (mounted)
+      if (mounted && (arrivalMethod != 'gps' || !_arrivalGpsErrorVisible)) {
+        if (arrivalMethod == 'gps') _arrivalGpsErrorVisible = true;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(e.toString()),
             backgroundColor: const Color(AppColors.danger),
           ),
         );
+      }
     } finally {
       if (mounted) setState(() => _isUpdating = false);
     }
@@ -174,12 +176,14 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
 
       await _locationService.changeSettings(
         accuracy: LocationAccuracy.high,
-        interval: 5000,
-        distanceFilter: 5,
+        interval: 1000,
+        distanceFilter: 1,
       );
       _arrivalLocationSubscription = _locationService.onLocationChanged.listen(
         (location) => unawaited(_handleTaskArrivalLocation(location)),
       );
+      final currentLocation = await _locationService.getLocation();
+      if (mounted) await _handleTaskArrivalLocation(currentLocation);
     } catch (error) {
       debugPrint('Task arrival tracking error: $error');
     } finally {
@@ -199,7 +203,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     final accuracy = location.accuracy;
     if (incidentLatitude == null || incidentLongitude == null ||
         accuracy == null || accuracy < 0 || accuracy > 50) {
-      _arrivalCandidateSince = null;
+      _arrivalGpsErrorVisible = false;
       return;
     }
 
@@ -208,14 +212,10 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
       LatLng(location.latitude!, location.longitude!),
       LatLng(incidentLatitude, incidentLongitude),
     );
-    if (distanceM + accuracy > 100) {
-      _arrivalCandidateSince = null;
+    if (distanceM > 100) {
+      _arrivalGpsErrorVisible = false;
       return;
     }
-
-    final now = DateTime.now().toUtc();
-    _arrivalCandidateSince ??= now;
-    if (now.difference(_arrivalCandidateSince!).inSeconds < 15) return;
     await _updateStatus(
       TaskStatus.in_progress,
       arrivalMethod: 'gps',
@@ -252,7 +252,6 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   void _stopArrivalTracking() {
     _arrivalLocationSubscription?.cancel();
     _arrivalLocationSubscription = null;
-    _arrivalCandidateSince = null;
   }
 
   Future<void> _fetchOfficers() async {
@@ -820,10 +819,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                           const SizedBox(height: 14),
                           Container(
                             width: double.infinity,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 11,
-                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
                             decoration: BoxDecoration(
                               color: const Color(0xFF0D9488).withOpacity(0.12),
                               borderRadius: BorderRadius.circular(10),
@@ -848,7 +844,10 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                           const SizedBox(height: 14),
                           Container(
                             width: double.infinity,
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 11,
+                            ),
                             decoration: BoxDecoration(
                               color: const Color(0xFF0284C7).withOpacity(0.08),
                               borderRadius: BorderRadius.circular(10),
@@ -1394,7 +1393,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
             const Padding(
               padding: EdgeInsets.only(bottom: 10),
               child: Text(
-                'GPS will record arrival after two accurate fixes inside 100 m. You can also mark arrival manually.',
+                'GPS records arrival on the first accurate fix within 100 m. You can also mark arrival manually.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.white70, fontSize: 12),
               ),

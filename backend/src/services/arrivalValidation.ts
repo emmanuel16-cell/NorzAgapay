@@ -63,7 +63,7 @@ export function validateArrivalFix(
       error: `${recentFix.error} Refresh your location or mark arrival manually.`,
     };
   }
-  if (distanceM + fix.accuracyM > ARRIVAL_RADIUS_METERS) {
+  if (distanceM > ARRIVAL_RADIUS_METERS) {
     return { valid: false, distanceM, error: 'GPS does not confirm arrival within the 100-meter incident area. Refresh your location or mark arrival manually.' };
   }
   return { valid: true, distanceM };
