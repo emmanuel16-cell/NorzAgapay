@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { Building2, MapPin, RotateCcw, Search } from 'lucide-react';
+import { MapPin, RotateCcw } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { evacuationAPI } from '../lib/api';
 import { CARTO_DARK_MAP_URL, CARTO_ATTRIBUTION } from '../lib/mapConfig';
@@ -58,7 +58,6 @@ function MapViewport({ stations, selectedId }: { stations: EvacuationStation[]; 
 export default function EvacuationCentersPage() {
   const { boundary } = useMunicipalityBoundary();
   const [stations, setStations] = useState<EvacuationStation[]>([]);
-  const [search, setSearch] = useState('');
   const [barangayFilter, setBarangayFilter] = useState('all');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -85,15 +84,12 @@ export default function EvacuationCentersPage() {
   )).sort((a, b) => a.localeCompare(b)), [stations]);
 
   const filteredStations = useMemo(() => {
-    const query = search.trim().toLocaleLowerCase();
     return stations.filter((station) => {
       const barangayName = station.barangays?.name || '';
       const matchesBarangay = barangayFilter === 'all' || barangayName === barangayFilter;
-      const matchesSearch = !query || [station.name, station.address || '', barangayName]
-        .some((value) => value.toLocaleLowerCase().includes(query));
-      return matchesBarangay && matchesSearch;
+      return matchesBarangay;
     });
-  }, [barangayFilter, search, stations]);
+  }, [barangayFilter, stations]);
 
   const mapStations = useMemo(() => boundary.enabled
     ? filteredStations.filter((station) => {
@@ -103,50 +99,31 @@ export default function EvacuationCentersPage() {
     : filteredStations,
   [boundary, filteredStations]);
 
-  const clearFilters = () => {
-    setSearch('');
-    setBarangayFilter('all');
-    setSelectedId(null);
-  };
-
   return (
     <>
-      <div className="page-header">
-        <div>
-          <div className="eyebrow">Field infrastructure</div>
-          <h1 className="page-title">Evacuation Centers</h1>
-          <p className="page-subtitle">View and locate evacuation stations registered by barangays.</p>
-        </div>
+      <div className="page-header evacuation-page-header">
+        <h1 className="page-title">Evacuation Centers</h1>
         <button type="button" className="btn btn-outline" onClick={loadStations} disabled={loading}><RotateCcw size={16} /> Refresh</button>
       </div>
 
-      <div className="page-content">
+      <div className="page-content evacuation-page-content">
         <div className="card evacuation-center-browser">
-          <section>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 14 }}>
-              <div>
-                <div className="card-title">Stations</div>
-                <div className="field-help">{loading ? 'Loading locations…' : `${filteredStations.length} of ${stations.length} locations`}</div>
-              </div>
-              <Building2 size={22} color="var(--accent, #38bdf8)" />
-            </div>
-
-            <label className="form-label" htmlFor="station-search">Search stations</label>
-            <div style={{ position: 'relative', marginBottom: 12 }}>
-              <Search size={17} style={{ position: 'absolute', left: 12, top: 12, color: 'var(--text-muted)' }} />
-              <input id="station-search" className="form-input" value={search} onChange={(event) => { setSearch(event.target.value); setSelectedId(null); }} placeholder="Name, address, or barangay" style={{ paddingLeft: 38 }} />
+          <section className="evacuation-station-panel">
+            <div className="evacuation-station-summary">
+              <div className="card-title">Stations</div>
+              <div className="field-help">{loading ? 'Loading locations…' : `${filteredStations.length} of ${stations.length} locations`}</div>
             </div>
 
             <label className="form-label" htmlFor="station-barangay-filter">Filter by barangay</label>
-            <select id="station-barangay-filter" className="form-select" value={barangayFilter} onChange={(event) => { setBarangayFilter(event.target.value); setSelectedId(null); }}>
+            <select id="station-barangay-filter" className="form-select evacuation-barangay-select" value={barangayFilter} onChange={(event) => { setBarangayFilter(event.target.value); setSelectedId(null); }}>
               <option value="all">All barangays</option>
               {barangayOptions.map((name) => <option key={name} value={name}>{name}</option>)}
             </select>
 
-            <div style={{ maxHeight: 410, overflowY: 'auto', marginTop: 14, display: 'grid', gap: 8 }}>
-              {loading && <div className="field-help" style={{ padding: 18, textAlign: 'center' }}>Loading evacuation stations…</div>}
-              {!loading && loadError && <div className="field-help" style={{ padding: 18, textAlign: 'center' }}>Unable to load stations. Refresh to try again.</div>}
-              {!loading && !loadError && filteredStations.length === 0 && <div className="field-help" style={{ padding: 18, textAlign: 'center' }}>No stations match these filters.</div>}
+            <div className="evacuation-station-list">
+              {loading && <div className="field-help evacuation-station-empty">Loading evacuation stations…</div>}
+              {!loading && loadError && <div className="field-help evacuation-station-empty">Unable to load stations. Refresh to try again.</div>}
+              {!loading && !loadError && filteredStations.length === 0 && <div className="field-help evacuation-station-empty">No stations match this barangay.</div>}
               {!loading && filteredStations.map((station) => {
                 const selected = station.id === selectedId;
                 return (
@@ -155,21 +132,19 @@ export default function EvacuationCentersPage() {
                     key={station.id}
                     onClick={() => setSelectedId(station.id)}
                     aria-pressed={selected}
-                    style={{ textAlign: 'left', padding: 12, borderRadius: 10, border: `1px solid ${selected ? 'rgba(56,189,248,.65)' : 'var(--border-color, rgba(255,255,255,.1))'}`, background: selected ? 'rgba(14,165,233,.1)' : 'var(--surface-secondary, rgba(255,255,255,.025))', color: 'var(--text-primary)', cursor: 'pointer' }}
+                    className={`evacuation-station-card ${selected ? 'selected' : ''}`}
                   >
-                    <div style={{ display: 'flex', gap: 9, alignItems: 'flex-start' }}>
-                      <MapPin size={17} color="#38bdf8" style={{ flex: '0 0 auto', marginTop: 2 }} />
-                      <div>
-                        <strong style={{ display: 'block', fontSize: 13 }}>{station.name}</strong>
-                        <span className="field-help">{station.barangays?.name || 'Barangay not listed'}{station.address ? ` · ${station.address}` : ''}</span>
-                      </div>
+                    <MapPin size={17} aria-hidden="true" />
+                    <div className="evacuation-station-card-copy">
+                      <strong>{station.name}</strong>
+                      <span>{station.barangays?.name || 'Barangay not listed'}</span>
+                      {station.address && <small>{station.address}</small>}
                     </div>
                   </button>
                 );
               })}
             </div>
 
-            <button type="button" className="btn btn-outline" onClick={clearFilters} style={{ width: '100%', marginTop: 12 }}><RotateCcw size={15} /> Clear search and filter</button>
           </section>
 
           <div className="evacuation-center-map">

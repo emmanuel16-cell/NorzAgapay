@@ -2275,43 +2275,146 @@ tbody tr:last-child td { border-bottom: none; }
   background: #ffffff !important;
 }
 
+.evacuation-page-header,
+.municipality-boundary-page-header {
+  flex: 0 0 var(--header-height);
+}
+
+.evacuation-page-content {
+  flex: 1 1 auto;
+  height: calc(100dvh - var(--header-height));
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
 .evacuation-center-browser {
   display: grid;
-  grid-template-columns: minmax(280px, 0.8fr) minmax(0, 1.2fr);
-  gap: 16px;
-  padding: 16px;
-  align-items: start;
+  grid-template-columns: minmax(260px, 280px) minmax(0, 1fr);
+  gap: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  align-items: stretch;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.evacuation-center-browser:hover {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.evacuation-station-panel {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 10px 12px 12px;
+  border-right: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+}
+
+.evacuation-station-summary {
+  padding: 0 0 10px;
+  line-height: 1.5;
+}
+
+.evacuation-station-summary .field-help {
+  margin-top: 1px;
+}
+
+.evacuation-station-panel .form-label {
+  margin: 2px 0 6px;
+}
+
+.evacuation-barangay-select {
+  flex: 0 0 auto;
+  margin-bottom: 10px;
+}
+
+.evacuation-station-list {
+  display: grid;
+  flex: 1 1 auto;
+  min-height: 0;
+  align-content: start;
+  gap: 7px;
+  overflow-y: auto;
+  padding: 1px 2px 8px 0;
+}
+
+.evacuation-station-card {
+  display: flex;
+  width: 100%;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 9px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: background .16s ease, border-color .16s ease;
+}
+
+.evacuation-station-card > svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: #39c9e3;
+}
+
+.evacuation-station-card:hover,
+.evacuation-station-card.selected {
+  border-color: #29b9d8;
+  background: rgba(31, 111, 178, .2);
+}
+
+.evacuation-station-card-copy {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.evacuation-station-card-copy strong {
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+}
+
+.evacuation-station-card-copy span,
+.evacuation-station-card-copy small {
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.evacuation-station-empty {
+  padding: 18px 8px;
+  text-align: center;
 }
 
 .evacuation-center-map {
-  min-height: 560px;
-  height: 560px;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
   overflow: hidden;
-  border: 1px solid var(--border-color);
-  border-radius: 12px;
+  border: 0;
+  border-radius: 0;
 }
 
 .municipality-boundary-page {
-  display: grid;
-  gap: 14px;
-}
-
-.municipality-boundary-controls {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  padding: 18px;
-}
-
-.municipality-boundary-status p {
-  margin: 8px 0 4px;
-  color: var(--text-secondary);
-  max-width: 720px;
-}
-
-.municipality-boundary-status small {
-  color: var(--text-muted);
+  height: calc(100dvh - var(--header-height));
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
 }
 
 .boundary-status-pill {
@@ -2341,21 +2444,90 @@ tbody tr:last-child td { border-bottom: none; }
   background: currentColor;
 }
 
+.municipality-boundary-page-header {
+  flex: 0 0 var(--header-height);
+}
+
+.municipality-boundary-controls {
+  display: flex;
+  min-height: 104px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 12px 16px;
+  border: 0;
+  border-bottom: 1px solid var(--border-color);
+  border-radius: 0;
+  background: var(--bg-card);
+}
+
+.municipality-boundary-controls:hover,
+.municipality-boundary-toolbar:hover,
+.municipality-boundary-version-panel:hover,
+.municipality-boundary-map-card:hover {
+  border-color: var(--border-color);
+  box-shadow: none;
+}
+
+.municipality-boundary-status {
+  min-width: 0;
+}
+
+.municipality-boundary-status p {
+  max-width: 720px;
+  margin: 7px 0 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.municipality-boundary-summary {
+  flex: 0 0 auto;
+  color: #29c4e9;
+  font-size: 16px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.municipality-boundary-summary span {
+  padding: 0 4px;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.municipality-boundary-toolbar {
+  display: flex;
+  min-height: 58px;
+  flex: 0 0 auto;
+  align-items: center;
+  padding: 8px 12px;
+  overflow-x: auto;
+  border: 0;
+  border-bottom: 1px solid var(--border-color);
+  border-radius: 0;
+  background: var(--bg-secondary);
+}
+
 .municipality-boundary-actions {
   display: flex;
+  width: 100%;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
   flex-wrap: wrap;
   gap: 8px;
 }
 
 .municipality-boundary-edit-help {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 10px;
-  padding: 12px 16px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border-color);
   color: var(--text-secondary);
-  font-size: 13px;
+  background: var(--bg-card);
+  font-size: 12px;
 }
 
 .boundary-part-select {
@@ -2375,17 +2547,111 @@ tbody tr:last-child td { border-bottom: none; }
   color: var(--text-primary);
 }
 
+.municipality-boundary-workspace {
+  display: grid;
+  min-height: 0;
+  flex: 1 1 auto;
+  grid-template-columns: minmax(190px, 210px) minmax(0, 1fr);
+}
+
+.municipality-boundary-version-panel {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  padding: 12px;
+  border: 0;
+  border-right: 1px solid var(--border-color);
+  border-radius: 0;
+  background: var(--bg-secondary);
+}
+
+.municipality-boundary-version-heading {
+  padding: 2px 2px 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.municipality-boundary-version,
+.municipality-boundary-add-version {
+  display: flex;
+  min-height: 66px;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: #263f70;
+  color: #f4f7ff;
+  text-align: center;
+}
+
+.municipality-boundary-version {
+  width: 100%;
+  padding: 10px 8px;
+  cursor: pointer;
+}
+
+.municipality-boundary-version strong {
+  font-size: 14px;
+}
+
+.municipality-boundary-version span {
+  color: #bfd0ed;
+  font-size: 10px;
+}
+
+.municipality-boundary-version.active {
+  border: 2px solid #32c7eb;
+  background: #36598f;
+}
+
+.municipality-boundary-version:disabled:not(.active) {
+  opacity: .8;
+  cursor: default;
+}
+
+.municipality-boundary-add-version {
+  min-height: 72px;
+  border: 2px solid #a9b9d7;
+  background: #314d7b;
+  cursor: pointer;
+}
+
+.municipality-boundary-add-version:hover:enabled {
+  border-color: #35c4e5;
+  background: #3a5b8d;
+}
+
+.municipality-boundary-add-version:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
 .municipality-boundary-map-card {
   position: relative;
-  padding: 10px;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: #f4f1e9;
 }
 
 .municipality-boundary-map {
-  height: min(68vh, 760px);
-  min-height: 460px;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
   overflow: hidden;
-  border: 1px solid var(--border-color);
-  border-radius: 12px;
+  border: 0;
+  border-radius: 0;
 }
 
 .municipality-boundary-history {
@@ -2462,13 +2728,50 @@ tbody tr:last-child td { border-bottom: none; }
 }
 
 @media (max-width: 800px) {
+  .evacuation-center-browser {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(180px, 30vh) minmax(360px, 1fr);
+    height: auto;
+    min-height: calc(100dvh - var(--header-height));
+  }
+
+  .evacuation-page-content {
+    height: auto;
+    overflow: auto;
+  }
+
+  .evacuation-station-panel {
+    border-right: 0;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .evacuation-station-list {
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  }
+
+  .municipality-boundary-page {
+    height: auto;
+    min-height: calc(100dvh - var(--header-height));
+    overflow: visible;
+  }
+
   .municipality-boundary-controls {
-    align-items: stretch;
+    align-items: flex-start;
     flex-direction: column;
+    gap: 10px;
+  }
+
+  .municipality-boundary-summary {
+    font-size: 14px;
   }
 
   .municipality-boundary-actions {
     justify-content: flex-start;
+    flex-wrap: nowrap;
+  }
+
+  .municipality-boundary-toolbar {
+    min-height: 58px;
   }
 
   .municipality-boundary-edit-help {
@@ -2480,27 +2783,47 @@ tbody tr:last-child td { border-bottom: none; }
     margin-left: 27px;
   }
 
+  .municipality-boundary-workspace {
+    min-height: 620px;
+    flex: 0 0 auto;
+    grid-template-columns: 165px minmax(0, 1fr);
+  }
+
+  .municipality-boundary-version-panel {
+    padding: 8px;
+  }
+
   .municipality-boundary-map {
-    min-height: 400px;
-    height: 62vh;
+    height: 620px;
   }
 }
 
-@media (max-width: 900px) {
-  .evacuation-center-browser {
-    grid-template-columns: minmax(0, 1fr);
+@media (max-width: 520px) {
+  .municipality-boundary-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .municipality-boundary-version-panel {
+    max-height: 210px;
+    flex-direction: row;
+    align-items: stretch;
+    border-right: 0;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .municipality-boundary-version-heading {
+    display: none;
+  }
+
+  .municipality-boundary-version,
+  .municipality-boundary-add-version {
+    width: 140px;
+    min-width: 140px;
   }
 
   .evacuation-center-map {
-    min-height: 480px;
-    height: 480px;
-  }
-}
-
-@media (max-width: 600px) {
-  .evacuation-center-map {
-    min-height: 400px;
-    height: 400px;
+    min-height: 360px;
+    height: 56vh;
   }
 }
 

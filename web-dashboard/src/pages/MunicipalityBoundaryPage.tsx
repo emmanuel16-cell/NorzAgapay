@@ -220,12 +220,22 @@ export default function MunicipalityBoundaryPage() {
     );
   };
 
+  const startNewBoundary = () => {
+    setEditing(true);
+    setParts([[]]);
+    setActivePart(0);
+    setSelectedVertex(null);
+    setDirty(true);
+    setEditRevision(boundary.revision);
+  };
+
+  const displayedVersions = [...history]
+    .filter((version) => version.revision !== boundary.revision)
+    .sort((left, right) => right.revision - left.revision);
+
   return <>
-    <div className="page-header">
-      <div>
-        <h1 className="page-title">Municipality Boundary</h1>
-        <p className="page-subtitle">Set the shared map boundary for the web dashboard, mobile app, and resident app.</p>
-      </div>
+    <div className="page-header municipality-boundary-page-header">
+      <h1 className="page-title">Municipality Boundary</h1>
     </div>
     <div className="page-content municipality-boundary-page">
       <section className="card municipality-boundary-controls">
@@ -237,19 +247,24 @@ export default function MunicipalityBoundaryPage() {
           <p>{boundary.enabled
             ? 'Web dashboard maps show white outside this boundary. Location and resident report checks use this shape across apps.'
             : 'No boundary restriction is active. All app maps show the full map.'}</p>
-          {boundary.updated_at && <small>Last saved {new Date(boundary.updated_at).toLocaleString()}</small>}
         </div>
+        <div className="municipality-boundary-summary">Boundary {Math.max(1, boundary.revision)} <span>|</span> {boundary.enabled ? 'Enabled' : 'Disabled'}</div>
+      </section>
+
+      <section className="card municipality-boundary-toolbar" aria-label="Boundary editing actions">
         <div className="municipality-boundary-actions">
+          <button className="btn btn-outline" type="button" onClick={startNewBoundary} disabled={saving || loading}>
+            <Plus size={16} /> Start new boundary
+          </button>
           {!editing ? <>
             <button className="btn btn-outline" type="button" onClick={() => { setEditing(true); setDirty(false); setEditRevision(boundary.revision); }} disabled={loading || saving}>
-              <MapPin size={16} /> Edit boundary
+              <MapPin size={16} /> Edit selected boundary
             </button>
             <button className={`btn ${boundary.enabled ? 'btn-outline' : 'btn-primary'}`} type="button" onClick={() => changeEnabled(!boundary.enabled)} disabled={saving || loading}>
               {saving ? <LoaderCircle className="boundary-spinner" size={16} /> : boundary.enabled ? <Check size={16} /> : <MapPin size={16} />}
               {boundary.enabled ? 'Disable boundary' : 'Use boundary'}
             </button>
           </> : <>
-            <button className="btn btn-outline" type="button" onClick={() => { setParts([[]]); setActivePart(0); setSelectedVertex(null); setDirty(true); }} disabled={saving}><Plus size={16} /> Start new boundary</button>
             <button className="btn btn-outline" type="button" onClick={addPart} disabled={saving || parts.some((part) => part.length < 3)}><Plus size={16} /> Add polygon part</button>
             <button className="btn btn-outline" type="button" onClick={removeSelected} disabled={!selectedVertex || saving}><Trash2 size={16} /> Remove selected point</button>
             <button className="btn btn-outline" type="button" onClick={resetToSaved} disabled={!dirty || saving}><RotateCcw size={16} /> Reset</button>
@@ -262,9 +277,9 @@ export default function MunicipalityBoundaryPage() {
         </div>
       </section>
 
-      {editing && <section className="card municipality-boundary-edit-help">
-        <CircleHelp size={17} />
-        <span>Click to add a point. Drag a dot to move it; click a dot and use “Remove selected point” to delete it. Select a polygon part before adding more points. Every part needs at least 3 distinct points. To edit outside an active boundary, disable it before editing.</span>
+      {editing && <section className="municipality-boundary-edit-help">
+        <CircleHelp size={16} />
+        <span>Click to add a point; drag a dot to move it. Every polygon part needs at least 3 distinct points.</span>
         <label className="boundary-part-select">Editing part
           <select value={activePart} onChange={(event) => setActivePart(Number(event.target.value))}>
             {parts.map((part, index) => <option key={index} value={index}>Part {index + 1} ({part.length} points)</option>)}
@@ -272,68 +287,78 @@ export default function MunicipalityBoundaryPage() {
         </label>
       </section>}
 
-      <section className="card municipality-boundary-map-card">
-        {loading && <div className="boundary-loading"><LoaderCircle className="boundary-spinner" size={22} /> Loading saved boundary…</div>}
-        <div className="municipality-boundary-map">
-          <MapContainer center={DEFAULT_CENTER as LatLngExpression} zoom={10} scrollWheelZoom style={{ width: '100%', height: '100%', background: '#ffffff' }}>
-            <TileLayer attribution={CARTO_ATTRIBUTION} url={CARTO_DARK_MAP_URL} />
-            <FitDraft parts={parts} fitKey={fitKey} />
-            {editing && <DraftMapEvents editing={editing} onAdd={addPoint} />}
-            {parts.map((part, partIndex) => part.length >= 2 && (
-              <Polygon
-                key={`draft-part-${partIndex}`}
-                positions={part as LatLngExpression[]}
-                pathOptions={{ color: '#d6f5c8', weight: 3, fillColor: '#0d9488', fillOpacity: part.length >= 3 ? 0.12 : 0 }}
-              />
-            ))}
-            {parts.flatMap((part, partIndex) => part.map(([latitude, longitude], pointIndex) => (
-              <Marker
-                key={`boundary-point-${partIndex}-${pointIndex}`}
-                position={[latitude, longitude]}
-                icon={createVertexIcon(pointIndex, selectedVertex?.part === partIndex && selectedVertex.index === pointIndex)}
-                draggable={editing}
-                eventHandlers={{
-                  click: () => setSelectedVertex({ part: partIndex, index: pointIndex }),
-                  dragend: (event) => {
-                    const point = (event.target as L.Marker).getLatLng();
-                    movePoint(partIndex, pointIndex, [point.lat, point.lng]);
-                  },
-                }}
-              >
-                <Tooltip direction="top">Part {partIndex + 1} · Point {pointIndex + 1}</Tooltip>
-              </Marker>
-            )))}
-            <MunicipalityBoundaryMapLayer boundary={boundary} />
-          </MapContainer>
-        </div>
-      </section>
+      <section className="municipality-boundary-workspace">
+        <aside className="card municipality-boundary-version-panel" aria-label="Saved boundaries">
+          <div className="municipality-boundary-version-heading">Boundaries</div>
+          <button type="button" className="municipality-boundary-version active" aria-pressed="true" disabled>
+            <strong>Boundary {Math.max(1, boundary.revision)}</strong>
+            <span>Current · {boundary.enabled ? 'Enabled' : 'Disabled'}</span>
+          </button>
+          {displayedVersions.map((version) => (
+            <button
+              key={version.revision}
+              type="button"
+              className="municipality-boundary-version"
+              disabled={saving || editing || !version.geometry}
+              title={`Restore saved version ${version.revision}`}
+              onClick={() => save(
+                version.geometry!,
+                version.enabled,
+                `Restore boundary version ${version.revision}? This will create a new saved revision.`,
+              )}
+            >
+              <strong>Boundary {version.revision}</strong>
+              <span>Saved version · {version.enabled ? 'Enabled' : 'Disabled'}</span>
+            </button>
+          ))}
+          <button
+            type="button"
+            className="municipality-boundary-add-version"
+            onClick={editing ? addPart : startNewBoundary}
+            disabled={saving || loading || (editing && parts.some((part) => part.length < 3))}
+            aria-label={editing ? 'Add polygon part' : 'Start a new boundary'}
+            title={editing ? 'Add polygon part' : 'Start a new boundary'}
+          >
+            <Plus size={24} />
+          </button>
+        </aside>
 
-      {!editing && <section className="card municipality-boundary-history">
-        <div>
-          <h2>Saved versions</h2>
-          <p>Restore a previous boundary by saving that version as the current one.</p>
-        </div>
-        {history.length === 0
-          ? <span className="field-help">No saved versions yet.</span>
-          : <div className="boundary-history-list">
-            {history.map((version) => (
-              <button
-                key={version.revision}
-                type="button"
-                className="btn btn-outline"
-                disabled={saving || version.revision === boundary.revision}
-                onClick={() => save(
-                  version.geometry!,
-                  version.enabled,
-                  `Restore boundary version ${version.revision}? This will create a new saved revision.`,
-                )}
-              >
-                <RotateCcw size={15} />
-                <span>Restore v{version.revision} · {new Date(version.updated_at || '').toLocaleString()} · {version.enabled ? 'Enabled' : 'Disabled'}</span>
-              </button>
-            ))}
-          </div>}
-      </section>}
+        <section className="card municipality-boundary-map-card">
+          {loading && <div className="boundary-loading"><LoaderCircle className="boundary-spinner" size={22} /> Loading saved boundary…</div>}
+          <div className="municipality-boundary-map">
+            <MapContainer center={DEFAULT_CENTER as LatLngExpression} zoom={10} scrollWheelZoom style={{ width: '100%', height: '100%', background: '#ffffff' }}>
+              <TileLayer attribution={CARTO_ATTRIBUTION} url={CARTO_DARK_MAP_URL} />
+              <FitDraft parts={parts} fitKey={fitKey} />
+              {editing && <DraftMapEvents editing={editing} onAdd={addPoint} />}
+              {parts.map((part, partIndex) => part.length >= 2 && (
+                <Polygon
+                  key={`draft-part-${partIndex}`}
+                  positions={part as LatLngExpression[]}
+                  pathOptions={{ color: '#d6f5c8', weight: 3, fillColor: '#0d9488', fillOpacity: part.length >= 3 ? 0.12 : 0 }}
+                />
+              ))}
+              {parts.flatMap((part, partIndex) => part.map(([latitude, longitude], pointIndex) => (
+                <Marker
+                  key={`boundary-point-${partIndex}-${pointIndex}`}
+                  position={[latitude, longitude]}
+                  icon={createVertexIcon(pointIndex, selectedVertex?.part === partIndex && selectedVertex.index === pointIndex)}
+                  draggable={editing}
+                  eventHandlers={{
+                    click: () => setSelectedVertex({ part: partIndex, index: pointIndex }),
+                    dragend: (event) => {
+                      const point = (event.target as L.Marker).getLatLng();
+                      movePoint(partIndex, pointIndex, [point.lat, point.lng]);
+                    },
+                  }}
+                >
+                  <Tooltip direction="top">Part {partIndex + 1} · Point {pointIndex + 1}</Tooltip>
+                </Marker>
+              )))}
+              <MunicipalityBoundaryMapLayer boundary={boundary} />
+            </MapContainer>
+          </div>
+        </section>
+      </section>
     </div>
   </>;
 }
