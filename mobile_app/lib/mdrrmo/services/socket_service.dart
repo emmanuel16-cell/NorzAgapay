@@ -5,6 +5,9 @@ import 'package:flutter/foundation.dart';
 class SocketService {
   static IO.Socket? _socket;
   static String? _socketToken;
+  static String? _connectedUserId;
+  static String? _connectedRole;
+  static bool _roleJoinListenerBound = false;
 
   static IO.Socket get socket {
     if (_socket == null) {
@@ -34,17 +37,23 @@ class SocketService {
       _socket?.dispose();
       _socket = null;
       _socketToken = token;
+      _roleJoinListenerBound = false;
       _initSocket(token);
     }
-    
+    _connectedUserId = userId;
+    _connectedRole = role;
+    if (!_roleJoinListenerBound) {
+      _socket!.onConnect((_) {
+        final currentUserId = _connectedUserId;
+        final currentRole = _connectedRole;
+        if (currentUserId == null || currentRole == null) return;
+        _socket!.emit('join:role', currentRole);
+        _socket!.emit('join:user', currentUserId);
+        debugPrint('Socket connected and joined rooms for user: $currentUserId and role: $currentRole');
+      });
+      _roleJoinListenerBound = true;
+    }
     _socket!.connect();
-    
-    _socket!.onConnect((_) {
-      // Join the private room for this user
-      _socket!.emit('join:role', role); // Join the account's role room.
-      _socket!.emit('join:user', userId); // Private room
-      debugPrint('Socket connected and joined rooms for user: $userId and role: $role');
-    });
   }
 
   static void onMdrrmoReportAssigned(void Function(dynamic) callback) {
@@ -61,5 +70,8 @@ class SocketService {
     _socket?.dispose();
     _socket = null;
     _socketToken = null;
+    _connectedUserId = null;
+    _connectedRole = null;
+    _roleJoinListenerBound = false;
   }
 }

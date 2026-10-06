@@ -24,6 +24,7 @@ function disableRedis(reason: string) {
 
 // Fallback in-memory stores (used if Redis is offline, expired, or unconfigured)
 const memoryOtpStore = new Map<string, { data: ResidentOtpRecord; expiresAt: number }>();
+const memoryResponderGpsStore = new Map<string, { data: ResponderGpsLocation; expiresAt: number }>();
 
 export const redis = redisClient;
 
@@ -33,6 +34,62 @@ export const redis = redisClient;
 
 export const OTP_KEY_PREFIX = 'otp:';
 export const OTP_TTL_SECONDS = 600; // 10 minutes
+
+// Responder locations are short-lived operational telemetry, never persisted to users.
+export const RESPONDER_GPS_KEY_PREFIX = 'responder-live:';
+export const RESPONDER_GPS_TTL_SECONDS = 30;
+
+export interface ResponderGpsLocation {
+  latitude: number;
+  longitude: number;
+  timestamp: string;
+}
+
+export async function setResponderGpsLocation(userId: string, location: ResponderGpsLocation): Promise<void> {
+  const key = `${RESPONDER_GPS_KEY_PREFIX}${userId}`;
+  if (redisClient) {
+    try {
+      await redisClient.set(key, JSON.stringify(location), { ex: RESPONDER_GPS_TTL_SECONDS });
+    } catch (err: any) {
+      disableRedis(err.message);
+    }
+  }
+  memoryResponderGpsStore.set(key, {
+    data: location,
+    expiresAt: Date.now() + RESPONDER_GPS_TTL_SECONDS * 1000,
+  });
+}
+
+export async function getResponderGpsLocation(userId: string): Promise<ResponderGpsLocation | null> {
+  const key = `${RESPONDER_GPS_KEY_PREFIX}${userId}`;
+  if (redisClient) {
+    try {
+      const raw = await redisClient.get<string>(key);
+      if (raw) return typeof raw === 'string' ? JSON.parse(raw) : raw as unknown as ResponderGpsLocation;
+    } catch (err: any) {
+      disableRedis(err.message);
+    }
+  }
+  const entry = memoryResponderGpsStore.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    memoryResponderGpsStore.delete(key);
+    return null;
+  }
+  return entry.data;
+}
+
+export async function deleteResponderGpsLocation(userId: string): Promise<void> {
+  const key = `${RESPONDER_GPS_KEY_PREFIX}${userId}`;
+  if (redisClient) {
+    try {
+      await redisClient.del(key);
+    } catch (err: any) {
+      disableRedis(err.message);
+    }
+  }
+  memoryResponderGpsStore.delete(key);
+}
 
 export interface ResidentOtpRecord {
   otp: string;

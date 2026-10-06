@@ -1,8 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 
-import '../providers/auth_provider.dart';
-import '../services/gps_service.dart';
 import 'mdrrmo_evacuation_screen.dart';
 import 'mdrrmo_home_screen.dart';
 import 'mdrrmo_hotline_screen.dart';
@@ -18,30 +15,6 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
-  GpsService? _gpsService;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final auth = context.read<AuthProvider>();
-      final user = auth.user;
-      final token = auth.token;
-      if (user == null || token == null) return;
-      _gpsService = context.read<GpsService>();
-      _gpsService!.startTracking(user.id, token);
-    });
-  }
-
-  @override
-  void dispose() {
-    try {
-      _gpsService?.stopTracking();
-    } catch (error) {
-      debugPrint('Error stopping responder location tracking: $error');
-    }
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {

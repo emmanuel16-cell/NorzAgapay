@@ -108,6 +108,45 @@ interface MdrrmoDispatchResponder {
   phone?: string | null;
 }
 
+interface LiveResponderAssignment {
+  incidentId: string;
+  title: string;
+  latitude: number;
+  longitude: number;
+}
+
+interface LiveResponderLocation {
+  responderId: string;
+  responderName: string;
+  latitude: number;
+  longitude: number;
+  timestamp: string;
+  assignments: LiveResponderAssignment[];
+}
+
+const LIVE_LOCATION_MAX_AGE_MS = 30_000;
+
+function normalizeLiveResponderLocation(value: any): LiveResponderLocation | null {
+  if (!value || typeof value.responderId !== 'string' ||
+      !Number.isFinite(value.latitude) || !Number.isFinite(value.longitude) ||
+      value.latitude < -90 || value.latitude > 90 || value.longitude < -180 || value.longitude > 180 ||
+      typeof value.timestamp !== 'string') return null;
+  const timestamp = Date.parse(value.timestamp);
+  if (!Number.isFinite(timestamp) || Date.now() - timestamp > LIVE_LOCATION_MAX_AGE_MS) return null;
+  const assignments = Array.isArray(value.assignments) ? value.assignments.filter((assignment: any) =>
+    typeof assignment?.incidentId === 'string' && typeof assignment?.title === 'string' &&
+    Number.isFinite(assignment.latitude) && Number.isFinite(assignment.longitude)) : [];
+  if (!assignments.length) return null;
+  return {
+    responderId: value.responderId,
+    responderName: typeof value.responderName === 'string' ? value.responderName : 'Responder',
+    latitude: value.latitude,
+    longitude: value.longitude,
+    timestamp: value.timestamp,
+    assignments,
+  };
+}
+
 interface AssistanceRequestItem {
   id: string;
   incident_id: string;
@@ -414,6 +453,24 @@ const createResponderUnitBadge = (selected = false) => {
   });
 };
 
+const createLiveResponderBadge = (selected = false) => {
+  const size = 56;
+  return L.divIcon({
+    html: `
+      <div class="command-map-dot ${selected ? 'selected' : ''}" style="width:${size}px;height:${size}px;background:#818cf8">
+        <svg width="27" height="27" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+          <circle cx="12" cy="7" r="4"></circle>
+        </svg>
+      </div>
+    `,
+    className: 'command-map-dot-icon',
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+    popupAnchor: [0, -size / 2],
+  });
+};
+
 function MapResizer() {
   const map = useMap();
   useEffect(() => {
@@ -443,7 +500,7 @@ function FocusMapController({ position }: { position: [number, number] | null })
 }
 
 // Auto-fits the map to show all visible pins
-function FitBoundsController({ points }: { points: [number, number][] }) {
+function FitBoundsController({ points, fitKey }: { points: [number, number][]; fitKey?: string }) {
   const map = useMap();
   const prevHashRef = useRef<string>('');
 
@@ -453,7 +510,7 @@ function FitBoundsController({ points }: { points: [number, number][] }) {
     const validPoints = points.filter(([lat, lng]) => lat !== 0 && lng !== 0);
     if (validPoints.length === 0) return;
 
-    const currentHash = validPoints
+    const currentHash = fitKey || validPoints
       .map(([lat, lng]) => `${lat.toFixed(5)},${lng.toFixed(5)}`)
       .sort()
       .join(';');
@@ -466,7 +523,30 @@ function FitBoundsController({ points }: { points: [number, number][] }) {
       const bounds = L.latLngBounds(validPoints.map(([lat, lng]) => L.latLng(lat, lng)));
       map.flyToBounds(bounds, { padding: [60, 60], animate: true, duration: 1.2, maxZoom: 15 });
     }
-  }, [map, points]);
+  }, [fitKey, map, points]);
+
+  return null;
+}
+
+function FocusSelectedResponderController({
+  responderId,
+  position,
+}: {
+  responderId: string | null;
+  position: [number, number] | null;
+}) {
+  const map = useMap();
+  const lastResponderIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!responderId || !position) {
+      lastResponderIdRef.current = null;
+      return;
+    }
+    if (responderId === lastResponderIdRef.current) return;
+    lastResponderIdRef.current = responderId;
+    map.flyTo(position, Math.max(map.getZoom(), 15), { animate: true, duration: 1 });
+  }, [map, position, responderId]);
 
   return null;
 }
@@ -580,6 +660,58 @@ function ClusteredIncidentMarkers({
   </>;
 }
 
+function LiveResponderOverlays({
+  locations,
+  incidents,
+  selectedResponderId,
+  onSelectResponder,
+  onSelectIncident,
+}: {
+  locations: LiveResponderLocation[];
+  incidents: IncidentItem[];
+  selectedResponderId: string | null;
+  onSelectResponder: (responderId: string) => void;
+  onSelectIncident: (incident: IncidentItem) => void;
+}) {
+  return <>
+    {locations.flatMap((location) => {
+      const targets = location.assignments
+        .map((assignment) => incidents.find((incident) => incident.id === assignment.incidentId))
+        .filter((incident): incident is IncidentItem => Boolean(incident));
+      if (!targets.length) return [];
+
+      return [
+        ...targets.map((target) => (
+          <Polyline
+            key={`live-route-${location.responderId}-${target.id}`}
+            positions={[[location.latitude, location.longitude], [target.latitude, target.longitude]]}
+            pathOptions={{ color: '#818cf8', weight: 3, dashArray: '8, 8', opacity: 0.9 }}
+          />
+        )),
+        <Marker
+          key={`live-responder-${location.responderId}`}
+          position={[location.latitude, location.longitude]}
+          icon={createLiveResponderBadge(selectedResponderId === location.responderId)}
+          zIndexOffset={selectedResponderId === location.responderId ? 1800 : 1400}
+          eventHandlers={{ click: () => onSelectResponder(location.responderId) }}
+        >
+          <Popup className="command-map-cluster-popup" minWidth={220} maxWidth={320}>
+            <div className="command-map-cluster-list">
+              <strong>{location.responderName}<span>Live</span></strong>
+              {targets.map((target) => (
+                <button key={target.id} type="button" onClick={(event) => { event.stopPropagation(); onSelectIncident(target); }}>
+                  <i style={{ backgroundColor: target.report_kind === 'escalated' ? '#ff3c43' : '#ff7838' }} />
+                  <span>En route · {target.title}</span>
+                </button>
+              ))}
+            </div>
+          </Popup>
+        </Marker>,
+      ];
+    })}
+  </>;
+}
+
 export default function CommandCenter() {
   const { user } = useAuth();
   const { boundary } = useMunicipalityBoundary();
@@ -604,6 +736,8 @@ export default function CommandCenter() {
   // Data lists
   const [incidents, setIncidents] = useState<IncidentItem[]>([]);
   const [dispatchUnits, setDispatchUnits] = useState<DispatchUnitItem[]>([]);
+  const [liveResponderLocations, setLiveResponderLocations] = useState<LiveResponderLocation[]>([]);
+  const [selectedResponderId, setSelectedResponderId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Interactive Modal State
@@ -772,7 +906,40 @@ export default function CommandCenter() {
 
   useEffect(() => {
     fetchData();
-    const handleRefresh = () => fetchData();
+    const requestLiveLocations = () => socket.emit('mdrrmo:requestResponderLocations');
+    const handleRefresh = () => {
+      void fetchData();
+      requestLiveLocations();
+    };
+    const handleLiveLocation = (payload: any) => {
+      if (payload?.responderId && Array.isArray(payload.assignments) && payload.assignments.length === 0) {
+        setLiveResponderLocations((current) => current.filter((location) => location.responderId !== payload.responderId));
+        setSelectedResponderId((current) => current === payload.responderId ? null : current);
+        return;
+      }
+      const location = normalizeLiveResponderLocation(payload);
+      if (!location) return;
+      setLiveResponderLocations((current) => {
+        const previous = current.find((item) => item.responderId === location.responderId);
+        if (previous && Date.parse(previous.timestamp) > Date.parse(location.timestamp)) return current;
+        return [...current.filter((item) => item.responderId !== location.responderId), location];
+      });
+    };
+    const handleLiveLocations = (payload: any) => {
+      const locations = Array.isArray(payload?.locations)
+        ? payload.locations.map(normalizeLiveResponderLocation).filter((location: LiveResponderLocation | null): location is LiveResponderLocation => Boolean(location))
+        : [];
+      setLiveResponderLocations(locations);
+      setSelectedResponderId((current) => current && locations.some((location) => location.responderId === current) ? current : null);
+    };
+    const expireStaleLocations = () => {
+      setLiveResponderLocations((current) => {
+        const fresh = current.filter((location) => Date.now() - Date.parse(location.timestamp) <= LIVE_LOCATION_MAX_AGE_MS);
+        if (fresh.length === current.length) return current;
+        return fresh;
+      });
+    };
+
     socket.on('connect', handleRefresh);
     socket.on('barangay:responding', handleRefresh);
     socket.on('incident_report:new', handleRefresh);
@@ -780,7 +947,12 @@ export default function CommandCenter() {
     socket.on('incident_report:updated', handleRefresh);
     socket.on('incident:lifecycle', handleRefresh);
     socket.on('task:statusChanged', handleRefresh);
+    socket.on('mdrrmo:responder_location', handleLiveLocation);
+    socket.on('mdrrmo:responder_locations', handleLiveLocations);
+    requestLiveLocations();
+    const expiryTimer = setInterval(expireStaleLocations, 5_000);
     return () => {
+      clearInterval(expiryTimer);
       socket.off('connect', handleRefresh);
       socket.off('barangay:responding', handleRefresh);
       socket.off('incident_report:new', handleRefresh);
@@ -788,6 +960,8 @@ export default function CommandCenter() {
       socket.off('incident_report:updated', handleRefresh);
       socket.off('incident:lifecycle', handleRefresh);
       socket.off('task:statusChanged', handleRefresh);
+      socket.off('mdrrmo:responder_location', handleLiveLocation);
+      socket.off('mdrrmo:responder_locations', handleLiveLocations);
     };
   }, []);
 
@@ -814,6 +988,17 @@ export default function CommandCenter() {
     return !boundary.enabled || isCoordinateInsideBoundary(incident.latitude, incident.longitude, boundary.geometry);
   }), [incidents, filters, boundary]);
 
+  const visibleLiveResponders = useMemo(() => {
+    if (!filters.responding) return [];
+    const now = Date.now();
+    return liveResponderLocations.filter((location) => {
+      const age = now - Date.parse(location.timestamp);
+      if (!Number.isFinite(age) || age > LIVE_LOCATION_MAX_AGE_MS) return false;
+      if (boundary.enabled && !isCoordinateInsideBoundary(location.latitude, location.longitude, boundary.geometry)) return false;
+      return location.assignments.some((assignment) => visibleIncidents.some((incident) => incident.id === assignment.incidentId));
+    });
+  }, [liveResponderLocations, visibleIncidents, filters.responding, boundary]);
+
   // Fit the initial and filtered map view to every report and visible unit point.
   const visiblePinPoints = useMemo((): [number, number][] => {
     const points = visibleIncidents.map((incident) => [incident.latitude, incident.longitude] as [number, number]);
@@ -823,12 +1008,25 @@ export default function CommandCenter() {
           points.push([unit.latitude, unit.longitude]);
         }
       });
+      visibleLiveResponders.forEach((responder) => points.push([responder.latitude, responder.longitude]));
     }
     return points;
-  }, [visibleIncidents, dispatchUnits, filters.responding, boundary]);
+  }, [visibleIncidents, dispatchUnits, visibleLiveResponders, filters.responding, boundary]);
+
+  const selectedResponder = visibleLiveResponders.find((responder) => responder.responderId === selectedResponderId) || null;
+
+  const mapFitKey = useMemo(() => [
+    ...visibleIncidents.map((incident) => `report:${incident.id}:${incident.latitude}:${incident.longitude}`),
+    ...(filters.responding ? dispatchUnits
+      .filter((unit) => !boundary.enabled || isCoordinateInsideBoundary(unit.latitude, unit.longitude, boundary.geometry))
+      .map((unit) => `unit:${unit.id}:${unit.latitude}:${unit.longitude}`) : []),
+    ...visibleLiveResponders.map((responder) => `responder:${responder.responderId}`),
+  ].sort().join('|'), [visibleIncidents, dispatchUnits, filters.responding, boundary, visibleLiveResponders]);
 
   // Click Handlers
   const handleOpenIncidentPin = (item: IncidentItem) => {
+    setSelectedResponderId(null);
+    setSelectedUnit(null);
     setSelectedIncident(item);
     setInvalidReviewStep(null);
     setInvalidReason('');
@@ -844,11 +1042,18 @@ export default function CommandCenter() {
   };
 
   const handleOpenUnitPin = (unit: DispatchUnitItem) => {
+    setSelectedResponderId(null);
     setSelectedIncident(null);
     setSelectedVisualUrl(null);
     setProofPreviewOpen(false);
     setSelectedUnit(unit);
     setActiveModalType('unit');
+  };
+
+  const handleSelectResponderPin = (responderId: string) => {
+    setSelectedIncident(null);
+    setSelectedUnit(null);
+    setSelectedResponderId(responderId);
   };
 
   const closeModal = () => {
@@ -1123,8 +1328,14 @@ export default function CommandCenter() {
           <TileLayer url={CARTO_DARK_MAP_URL} attribution={CARTO_ATTRIBUTION} />
           <MunicipalityBoundaryViewport boundary={boundary} />
           <MapResizer />
-          <FitBoundsController points={visiblePinPoints} />
-          <FocusMapController position={selectedIncident ? [selectedIncident.latitude, selectedIncident.longitude] as [number, number] : null} />
+          <FitBoundsController points={visiblePinPoints} fitKey={mapFitKey} />
+          <FocusMapController position={selectedIncident
+            ? [selectedIncident.latitude, selectedIncident.longitude] as [number, number]
+            : selectedUnit ? [selectedUnit.latitude, selectedUnit.longitude] as [number, number] : null} />
+          <FocusSelectedResponderController
+            responderId={selectedResponder?.responderId || null}
+            position={selectedResponder ? [selectedResponder.latitude, selectedResponder.longitude] : null}
+          />
 
           <ClusteredIncidentMarkers incidents={visibleIncidents} selectedId={selectedIncident?.id} onSelect={handleOpenIncidentPin} />
 
@@ -1166,6 +1377,16 @@ export default function CommandCenter() {
                 />
               );
             })}
+
+          {filters.responding && (
+            <LiveResponderOverlays
+              locations={visibleLiveResponders}
+              incidents={visibleIncidents}
+              selectedResponderId={selectedResponderId}
+              onSelectResponder={handleSelectResponderPin}
+              onSelectIncident={handleOpenIncidentPin}
+            />
+          )}
           <MunicipalityBoundaryMapLayer boundary={boundary} />
         </MapContainer>
 

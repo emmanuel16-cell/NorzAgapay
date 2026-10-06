@@ -9,6 +9,8 @@ import { config } from './config';
 import { supabaseAdmin } from './config/supabase';
 import { DispatcherVerificationService } from './services/dispatcherVerificationService';
 import { startIncidentEventRelay } from './services/incidentEventRelay';
+import { deleteResponderGpsLocation, RESPONDER_GPS_TTL_SECONDS, setResponderGpsLocation } from './config/redis';
+import { getActiveResponderTargets, getCurrentResponderLiveLocations, ResponderIncidentTarget } from './services/responderLiveLocation';
 
 // Import routes
 import authRoutes from './routes/auth';
@@ -247,6 +249,64 @@ io.on('connection', (socket) => {
     const decoded = getSocketTokenPayload(socket);
     if (!decoded || decoded.userId !== userId) return;
     socket.join(`user:${userId}`);
+  });
+
+  // Only stream fresh GPS positions for active, eligible MDRRMO assignments.
+  // Locations stay in short-lived Redis memory and are never written to users.
+  socket.on('gps:update', (data: any) => {
+    void (async () => {
+      const decoded = getSocketTokenPayload(socket);
+      if (!decoded || decoded.barangayId || normalizeSocketRole(decoded.role || '') !== 'responder' ||
+          data?.userId !== decoded.userId) return;
+      const latitude = data?.latitude;
+      const longitude = data?.longitude;
+      if (typeof latitude !== 'number' || !Number.isFinite(latitude) || latitude < -90 || latitude > 90 ||
+          typeof longitude !== 'number' || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) return;
+
+      const { data: responder, error: responderError } = await supabaseAdmin
+        .from('users')
+        .select('id, full_name')
+        .eq('id', decoded.userId)
+        .eq('role', 'responder')
+        .eq('status', 'active')
+        .maybeSingle();
+      if (responderError) throw responderError;
+
+      const targetsByResponder: Map<string, ResponderIncidentTarget[]> = responder
+        ? await getActiveResponderTargets(decoded.userId)
+        : new Map<string, ResponderIncidentTarget[]>();
+      const assignments = targetsByResponder.get(decoded.userId) || [];
+      if (!responder || assignments.length === 0) {
+        await deleteResponderGpsLocation(decoded.userId);
+        io.to('role:dispatcher').to('role:master_admin').emit('mdrrmo:responder_location', {
+          responderId: decoded.userId,
+          assignments: [],
+        });
+        return;
+      }
+
+      const location = { latitude, longitude, timestamp: new Date().toISOString() };
+      await setResponderGpsLocation(decoded.userId, location);
+      io.to('role:dispatcher').to('role:master_admin').emit('mdrrmo:responder_location', {
+        responderId: decoded.userId,
+        responderName: responder.full_name || 'Responder',
+        ...location,
+        assignments,
+        expiresInSeconds: RESPONDER_GPS_TTL_SECONDS,
+      });
+    })().catch((error) => console.error('Responder live location update failed:', error));
+  });
+
+  // A dashboard dispatcher/master admin can request only currently dispatched,
+  // eligible responder locations for initial map state and reconnect recovery.
+  socket.on('mdrrmo:requestResponderLocations', () => {
+    void (async () => {
+      const decoded = getSocketTokenPayload(socket);
+      const role = decoded ? normalizeSocketRole(decoded.role || '') : '';
+      if (!decoded || decoded.barangayId || !['dispatcher', 'master_admin'].includes(role)) return;
+      const locations = await getCurrentResponderLiveLocations();
+      socket.emit('mdrrmo:responder_locations', { locations });
+    })().catch((error) => console.error('Responder live location snapshot failed:', error));
   });
 
   // Task status updates

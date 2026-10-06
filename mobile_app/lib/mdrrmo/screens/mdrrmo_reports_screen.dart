@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'dart:async';
 import '../../core/incident_time_format.dart';
 import '../../widgets/incident_header_gradient.dart';
 import '../../widgets/resolved_report_card.dart';
 import '../models/mdrrmo_report.dart';
 import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
+import '../services/gps_service.dart';
 import '../services/socket_service.dart';
 import 'mdrrmo_report_detail_screen.dart';
 
@@ -53,6 +55,7 @@ class _MdrrmoReportsScreenState extends State<MdrrmoReportsScreen>
   @override
   void dispose() {
     _tabs.dispose();
+    context.read<GpsService>().stopTracking();
     SocketService.socket.off('connect', _connectListener);
     SocketService.socket.off('mdrrmo:report_assigned', _reportListener);
     SocketService.socket.off('mdrrmo:report_updated', _reportListener);
@@ -72,17 +75,44 @@ class _MdrrmoReportsScreenState extends State<MdrrmoReportsScreen>
       });
     try {
       final reports = await ApiService.getMdrrmoReports(token);
-      if (mounted && loadSequence == _loadSequence)
+      if (mounted && loadSequence == _loadSequence) {
+        _syncResponderGpsTracking(reports);
         setState(() {
           _reports = reports;
           _error = null;
         });
+      }
     } catch (error) {
       if (mounted && loadSequence == _loadSequence)
         setState(() => _error = error.toString());
     } finally {
       if (mounted && loadSequence == _loadSequence && !silent)
         setState(() => _loading = false);
+    }
+  }
+
+  void _syncResponderGpsTracking(List<MdrrmoReport> reports) {
+    final auth = context.read<AuthProvider>();
+    final user = auth.user;
+    final token = auth.token;
+    final gps = context.read<GpsService>();
+    if (user == null || token == null || user.role.name != 'responder') {
+      gps.stopTracking();
+      return;
+    }
+
+    final hasActiveDispatch = reports.any((report) => report.assignments.any((assignment) {
+      final assignedResponderId = assignment['responder_id']?.toString();
+      final status = assignment['status']?.toString();
+      return assignedResponderId == user.id &&
+          (status == 'assigned' || status == 'responding') &&
+          assignment['arrived_at'] == null;
+    }));
+
+    if (hasActiveDispatch) {
+      unawaited(gps.startTracking(user.id, token));
+    } else {
+      gps.stopTracking();
     }
   }
 
