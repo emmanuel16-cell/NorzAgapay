@@ -116,9 +116,9 @@ export const verificationAPI = {
   setBarangayAccountActive: (id: string, is_active: boolean) => api.patch(`/verification/barangay-accounts/${id}/active`, { is_active }),
 };
 
-// Resource Requests
+// Assistance Requests
 export const requestAPI = {
-  list: () => api.get('/requests'),
+  list: (params?: { incident_id?: string }) => api.get('/requests', { params }),
   updateStatus: (id: string, status: 'pending' | 'approved' | 'rejected' | 'fulfilled') => 
     api.patch(`/requests/${id}/status`, { status }),
 };

@@ -7,9 +7,11 @@ import { AuthRequest, authenticate, authorize } from '../middleware/auth';
 import { io } from '../server';
 import { distanceMeters, validateArrivalFix, validateRecentGpsFix } from '../services/arrivalValidation';
 import { IncidentResolutionPdfService, IncompleteResolutionReportError } from '../services/incidentResolutionPdfService';
+import { isEscalatedForMdrrmo, isVisibleToMdrrmo } from '../services/mdrrmoReportVisibility';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
+const isMdrrmoReport = isVisibleToMdrrmo;
 
 function parseList(value: unknown): string[] {
   if (Array.isArray(value)) return value.filter((item) => typeof item === 'string');
@@ -20,13 +22,6 @@ function parseList(value: unknown): string[] {
   } catch {
     return value.includes('|||') ? value.split('|||').map((item) => item.trim()).filter(Boolean) : [value];
   }
-}
-
-function isMdrrmoReport(report: any): boolean {
-  const routedTo = report.send_to || report.specifics?.match(/\[SEND_TO:([^\]]+)\]/i)?.[1]?.toLowerCase();
-  const escalated = report.status === 'escalated' ||
-    Boolean(report.barangay_response_notes?.toLowerCase().includes('escalated'));
-  return report.type === 'emergency' || routedTo === 'mdrrmo' || escalated;
 }
 
 function isResolved(report: any): boolean {
@@ -47,7 +42,7 @@ function formatReport(report: any): any {
   return {
     ...report,
     barangay_name: report.barangays?.name || report.barangay_name || null,
-    is_escalated: report.status === 'escalated' || Boolean(report.barangay_response_notes?.toLowerCase().includes('escalated')),
+    is_escalated: isEscalatedForMdrrmo(report),
     proof_urls: proofUrls,
     proof_types: proofTypes,
     proof_url: proofUrls[0] || null,
@@ -100,7 +95,7 @@ router.get('/queue', authenticate, authorize('dispatcher', 'admin', 'responder')
       .order('created_at', { ascending: false });
     if (error) throw error;
 
-    let reports = (data || []).filter((report: any) => !report.review_outcome && isMdrrmoReport(report));
+    let reports = (data || []).filter((report: any) => !report.review_outcome && isVisibleToMdrrmo(report));
     const allAssignments = await getAssignments(reports.map((report: any) => report.id));
 
     if (req.user!.role === 'responder') {

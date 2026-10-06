@@ -5,6 +5,7 @@ import { AlertTriangle, CheckCircle2, Image as ImageIcon, MapPin, Paperclip, Pho
 import toast from 'react-hot-toast';
 import { reportAPI, socket } from '../lib/api';
 import { INCIDENT_SEVERITY_OPTIONS, INCIDENT_TYPE_OPTIONS } from '../lib/incidentClassification';
+import { getMdrrmoReportGroup, isVisibleToMdrrmo } from '../lib/mdrrmoReportVisibility';
 
 type ReportGroup = 'resident' | 'escalated';
 type ReportStage = 'pending' | 'responding' | 'resolved';
@@ -37,12 +38,7 @@ const getStage = (report: IncidentReport): ReportStage => {
   if (status === 'responding' || response === 'responding') return 'responding';
   return 'pending';
 };
-const getGroup = (report: IncidentReport): ReportGroup => {
-  const barangayNotes = String(report.barangay_response_notes || '').toLowerCase();
-  return report.is_escalated || report.beyond_barangay_capability ||
-    String(report.status || '').toLowerCase() === 'escalated' ||
-    Boolean(report.mdrrmo_coordination_notes?.trim()) || barangayNotes.includes('escalated') ? 'escalated' : 'resident';
-};
+const getGroup = (report: IncidentReport): ReportGroup => getMdrrmoReportGroup(report);
 const getProofs = (report: IncidentReport) => report.proof_urls?.length ? report.proof_urls : report.proof_url ? [report.proof_url] : [];
 const timeAgo = (value?: string | null, fallback = 'Time unavailable') => {
   if (!value) return fallback;
@@ -112,9 +108,12 @@ export default function ReportsPage() {
   useEffect(() => {
     const handleUpdate = (updated: IncidentReport) => {
       if (!updated?.id) return;
-      setReports((current) => current.some((item) => item.id === updated.id)
-        ? current.map((item) => item.id === updated.id ? { ...item, ...updated } : item)
-        : [...current, updated]);
+      setReports((current) => {
+        if (!isVisibleToMdrrmo(updated)) return current.filter((item) => item.id !== updated.id);
+        return current.some((item) => item.id === updated.id)
+          ? current.map((item) => item.id === updated.id ? { ...item, ...updated } : item)
+          : [...current, updated];
+      });
     };
     socket.on('incident_report:updated', handleUpdate);
     const handleLifecycle = () => { void fetchReports(); };

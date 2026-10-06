@@ -6,7 +6,6 @@ import jwt from 'jsonwebtoken';
 import { Server as SocketIOServer } from 'socket.io';
 import rateLimit from 'express-rate-limit';
 import { config } from './config';
-import { setUserGPS, getAllActiveGPS } from './config/redis';
 import { supabaseAdmin } from './config/supabase';
 import { DispatcherVerificationService } from './services/dispatcherVerificationService';
 import { startIncidentEventRelay } from './services/incidentEventRelay';
@@ -182,23 +181,6 @@ io.on('connection', (socket) => {
     }
   })().catch((error) => console.error('Socket room initialization failed:', error));
 
-  // GPS location broadcast
-  socket.on('gps:update', async (data: { userId: string; latitude: number; longitude: number }) => {
-    try {
-      const decoded = getSocketTokenPayload(socket);
-      if (!decoded || normalizeSocketRole(decoded.role || '') !== 'responder' || data.userId !== decoded.userId) return;
-      if (decoded.barangayId && !(await canUseBarangaySocket(socket))) return;
-      if (!Number.isFinite(data.latitude) || !Number.isFinite(data.longitude) ||
-          data.latitude < -90 || data.latitude > 90 || data.longitude < -180 || data.longitude > 180) return;
-      console.log(`GPS Update received for user ${data.userId}: ${data.latitude}, ${data.longitude}`);
-      await setUserGPS(data.userId, data.latitude, data.longitude);
-      // Broadcast responder GPS updates to dashboard staff.
-      io.to('dashboard_staff').emit('gps:location', data);
-    } catch (err) {
-      console.error('GPS update error:', err);
-    }
-  });
-
   // Only a signed command-center token may join dashboard role rooms. A
   // barangay dispatcher token must never gain dashboard-wide visibility.
   socket.on('join:role', (role: string) => {
@@ -336,20 +318,8 @@ io.on('connection', (socket) => {
     const decoded = getSocketTokenPayload(socket);
     if (!decoded || decoded.barangayId || !['master_admin', 'admin', 'logistics', 'dispatcher'].includes(normalizeSocketRole(decoded.role || ''))) return;
     void canUseBarangaySocket(socket).then((allowed) => {
-      if (allowed) io.to('dashboard_staff').emit('resource:request', data);
+      if (allowed) io.to('role:dispatcher').to('role:master_admin').emit('resource:request', data);
     });
-  });
-
-  // Request all GPS locations (dashboard staff)
-  socket.on('gps:requestAll', async () => {
-    try {
-      const decoded = getSocketTokenPayload(socket);
-      if (!decoded || decoded.barangayId || !['master_admin', 'admin', 'logistics', 'dispatcher'].includes(normalizeSocketRole(decoded.role || ''))) return;
-      const locations = await getAllActiveGPS();
-      socket.emit('gps:allLocations', locations);
-    } catch (err) {
-      console.error('Get all GPS error:', err);
-    }
   });
 
   socket.on('disconnect', () => {

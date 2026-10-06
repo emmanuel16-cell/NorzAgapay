@@ -1,181 +1,265 @@
-import { useEffect, useState } from 'react';
-import { requestAPI } from '../lib/api';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { format, formatDistanceToNowStrict } from 'date-fns';
+import { AlertTriangle, ClipboardList, MapPin, Phone, UserRound } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { requestAPI, socket } from '../lib/api';
+import { getMdrrmoReportGroup, type MdrrmoReportGroup } from '../lib/mdrrmoReportVisibility';
 
-interface ResourceRequest {
+type RequestStatus = 'pending' | 'approved' | 'rejected' | 'fulfilled';
+
+interface LinkedReport {
   id: string;
-  request_type: 'personnel' | 'goods' | string;
-  sub_type?: string;
+  type?: string;
+  title?: string;
+  description?: string;
+  status?: string;
+  address?: string | null;
+  reporter_type?: string;
+  barangay_name?: string | null;
+  created_at?: string;
+  mdrrmo_response_status?: string | null;
+  barangay_response_status?: string | null;
+  send_to?: string | null;
+  specifics?: string | null;
+  mdrrmo_coordination_notes?: string | null;
+  barangay_response_notes?: string | null;
+}
+
+interface AssistanceRequest {
+  id: string;
+  request_type: string;
+  sub_type?: string | null;
   details: string;
-  status: 'pending' | 'approved' | 'rejected' | 'fulfilled';
-  incident_id?: string;
+  status: RequestStatus;
+  incident_id: string;
   requested_by: string;
   created_at: string;
   requested_by_user?: {
-    full_name: string;
-    role: string;
-    unit_type?: string;
-  };
+    full_name?: string;
+    role?: string;
+    unit_type?: string | null;
+    phone?: string | null;
+  } | null;
+  incident_report?: LinkedReport | null;
+}
+
+function timeAgo(value?: string | null): string {
+  if (!value) return 'Time unavailable';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 'Time unavailable' : formatDistanceToNowStrict(date, { addSuffix: true });
+}
+
+function dateTime(value?: string | null): string {
+  if (!value) return 'Not recorded';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 'Not recorded' : format(date, 'MMM d, yyyy · h:mm a');
+}
+
+function statusLabel(status?: string): string {
+  return status ? status.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()) : 'Unknown';
+}
+
+function requestTypeLabel(type?: string, subType?: string | null): string {
+  const typeLabel = type === 'responders' ? 'Responders' : statusLabel(type);
+  return subType ? `${typeLabel} · ${statusLabel(subType)}` : typeLabel;
+}
+
+function requestReportGroup(request: AssistanceRequest): MdrrmoReportGroup {
+  return getMdrrmoReportGroup(request.incident_report || {});
 }
 
 export default function ResourceRequestsPage() {
-  const [requests, setRequests] = useState<ResourceRequest[]>([]);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const incidentId = searchParams.get('incident_id');
+  const requestedId = searchParams.get('request_id');
+  const [requests, setRequests] = useState<AssistanceRequest[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [group, setGroup] = useState<MdrrmoReportGroup>('resident');
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<'all' | 'pending' | 'approved' | 'fulfilled' | 'rejected'>('pending');
+  const [saving, setSaving] = useState(false);
+  const [currentTime, setCurrentTime] = useState(() => new Date().toLocaleTimeString());
 
-  const fetchRequests = async () => {
-    setLoading(true);
+  const fetchRequests = useCallback(async () => {
     try {
-      const response = await requestAPI.list();
-      setRequests(response.data.requests || []);
+      setLoading(true);
+      const response = await requestAPI.list(incidentId ? { incident_id: incidentId } : undefined);
+      setRequests(Array.isArray(response.data.requests) ? response.data.requests : []);
     } catch (error) {
-      toast.error('Failed to fetch resource requests');
+      console.error('Failed to fetch assistance requests', error);
+      toast.error('Failed to load assistance requests');
+      setRequests([]);
     } finally {
       setLoading(false);
     }
-  };
+  }, [incidentId]);
+
+  useEffect(() => { void fetchRequests(); }, [fetchRequests]);
 
   useEffect(() => {
-    fetchRequests();
+    const timer = window.setInterval(() => setCurrentTime(new Date().toLocaleTimeString()), 1000);
+    return () => window.clearInterval(timer);
   }, []);
 
-  const handleStatusUpdate = async (id: string, status: ResourceRequest['status']) => {
-    try {
-      await requestAPI.updateStatus(id, status);
-      toast.success(`Request marked as ${status}`);
-      fetchRequests();
-    } catch (error) {
-      toast.error('Failed to update request status');
-    }
+  useEffect(() => {
+    const refresh = () => { void fetchRequests(); };
+    socket.on('connect', refresh);
+    socket.on('resource:request', refresh);
+    socket.on('incident_report:updated', refresh);
+    return () => {
+      socket.off('connect', refresh);
+      socket.off('resource:request', refresh);
+      socket.off('incident_report:updated', refresh);
+    };
+  }, [fetchRequests]);
+
+  const residentCount = useMemo(() => requests.filter((request) => requestReportGroup(request) === 'resident').length, [requests]);
+  const escalatedCount = useMemo(() => requests.filter((request) => requestReportGroup(request) === 'escalated').length, [requests]);
+  const visibleRequests = useMemo(() => requests.filter((request) => requestReportGroup(request) === group), [requests, group]);
+  const selected = visibleRequests.find((request) => request.id === selectedId) || visibleRequests[0] || null;
+
+  useEffect(() => {
+    if (!requests.length) return;
+    const deepLinked = requestedId
+      ? requests.find((request) => request.id === requestedId)
+      : incidentId
+        ? requests.find((request) => request.incident_id === incidentId)
+        : null;
+    if (!deepLinked) return;
+    setSelectedId(deepLinked.id);
+    setGroup(requestReportGroup(deepLinked));
+  }, [incidentId, requestedId, requests]);
+
+  const selectGroup = (nextGroup: MdrrmoReportGroup) => {
+    setGroup(nextGroup);
+    setSelectedId(null);
+    setSearchParams({}, { replace: true });
   };
 
-  const filteredRequests = requests.filter(req => 
-    filter === 'all' ? true : req.status === filter
-  );
+  const selectRequest = (request: AssistanceRequest) => {
+    setSelectedId(request.id);
+    setSearchParams({ incident_id: request.incident_id, request_id: request.id }, { replace: true });
+  };
 
-  const getStatusBadgeClass = (status: string) => {
-    switch (status) {
-      case 'pending': return 'badge-pending';
-      case 'approved': return 'badge-low'; // Using low as info/success color
-      case 'fulfilled': return 'badge-success';
-      case 'rejected': return 'badge-critical';
-      default: return '';
+  const updateStatus = async (request: AssistanceRequest, status: RequestStatus) => {
+    try {
+      setSaving(true);
+      await requestAPI.updateStatus(request.id, status);
+      toast.success(`Assistance request marked ${status}.`);
+      await fetchRequests();
+    } catch (error) {
+      console.error('Failed to update assistance request', error);
+      toast.error('Could not update assistance request');
+    } finally {
+      setSaving(false);
     }
   };
 
   return (
-    <>
-      <div className="page-header">
-        <h1 className="page-title">Resource Requests</h1>
-        <div className="header-actions">
-          <select 
-            className="form-select" 
-            value={filter} 
-            onChange={(e) => setFilter(e.target.value as any)}
-            style={{ width: 'auto' }}
-          >
-            <option value="all">All Requests</option>
-            <option value="pending">Pending</option>
-            <option value="approved">Approved</option>
-            <option value="fulfilled">Fulfilled</option>
-            <option value="rejected">Rejected</option>
-          </select>
-        </div>
-      </div>
+    <main className="reports-workspace-v2 assistance-workspace">
+      <header className="reports-page-header-v2">
+        <div><h1>Assistance Requests</h1><span>Dispatcher workspace</span></div>
+        <div className="reports-live-indicator"><i /> Live <span>·</span> {currentTime}</div>
+      </header>
 
-      <div className="page-content">
-        {loading ? (
-          <div className="loading-overlay"><div className="spinner"/></div>
-        ) : filteredRequests.length === 0 ? (
-          <div className="empty-state">
-            <div className="empty-state-icon">📋</div>
-            <p>No {filter !== 'all' ? filter : ''} requests found</p>
+      <nav className="reports-group-tabs-v2" aria-label="Assistance request report group">
+        <button type="button" className={group === 'resident' ? 'active' : ''} onClick={() => selectGroup('resident')}>
+          Resident Reports <span>{residentCount}</span>
+        </button>
+        <button type="button" className={group === 'escalated' ? 'active' : ''} onClick={() => selectGroup('escalated')}>
+          Escalate Reports <span>{escalatedCount}</span>
+        </button>
+      </nav>
+
+      <section className="reports-split-view-v2">
+        <aside className="reports-queue-v2">
+          <div className="reports-queue-heading">
+            <h2>{group === 'resident' ? 'Resident assistance queue' : 'Escalated assistance queue'}</h2>
+            <span>{visibleRequests.length}</span>
           </div>
-        ) : (
-          <div className="table-container">
-            <table>
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Requested By</th>
-                  <th>Type</th>
-                  <th>Details</th>
-                  <th>Status</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredRequests.map((req) => (
-                  <tr key={req.id}>
-                    <td style={{ fontSize: '13px' }}>
-                      {new Date(req.created_at).toLocaleString()}
-                    </td>
-                    <td>
-                      <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-                        {req.requested_by_user?.full_name || 'Unknown'}
-                      </div>
-                      <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                        {req.requested_by_user?.unit_type?.toUpperCase() || req.requested_by_user?.role.replace(/_/g, ' ')}
-                      </div>
-                    </td>
-                    <td>
-                      <div style={{ textTransform: 'capitalize', fontWeight: 500 }}>
-                        {req.request_type === 'volunteers' || req.request_type === 'responders' ? 'Responders' : req.request_type}
-                      </div>
-                      {req.sub_type && (
-                        <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                          {req.sub_type.replace(/_/g, ' ')}
-                        </div>
-                      )}
-                    </td>
-                    <td style={{ maxWidth: '300px' }}>
-                      <div style={{ fontSize: '13px', whiteSpace: 'normal', wordBreak: 'break-word' }}>
-                        {req.details}
-                      </div>
-                    </td>
-                    <td>
-                      <span className={`badge ${getStatusBadgeClass(req.status)}`}>
-                        {req.status}
-                      </span>
-                    </td>
-                    <td>
-                      <div style={{ display: 'flex', gap: '8px' }}>
-                        {req.status === 'pending' && (
-                          <>
-                            <button 
-                              className="btn btn-success btn-sm"
-                              onClick={() => handleStatusUpdate(req.id, 'approved')}
-                            >
-                              Approve
-                            </button>
-                            <button 
-                              className="btn btn-danger btn-sm"
-                              onClick={() => handleStatusUpdate(req.id, 'rejected')}
-                            >
-                              Reject
-                            </button>
-                          </>
-                        )}
-                        {req.status === 'approved' && (
-                          <button 
-                            className="btn btn-primary btn-sm"
-                            onClick={() => handleStatusUpdate(req.id, 'fulfilled')}
-                          >
-                            Mark Fulfilled
-                          </button>
-                        )}
-                        {req.status !== 'pending' && req.status !== 'approved' && (
-                          <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>—</span>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-    </>
+          {loading ? (
+            <div className="reports-empty-v2"><span className="spinner" /><p>Loading assistance requests…</p></div>
+          ) : visibleRequests.length === 0 ? (
+            <div className="reports-empty-v2"><AlertTriangle size={22} /><strong>No assistance requests</strong><p>Requests attached to eligible reports will appear here.</p></div>
+          ) : (
+            <div className="reports-queue-list-v2">
+              {visibleRequests.map((request) => {
+                const active = selected?.id === request.id;
+                const report = request.incident_report;
+                return (
+                  <button key={request.id} type="button" className={`reports-queue-item-v2 assistance-request-item ${active ? 'selected' : ''}`} onClick={() => selectRequest(request)}>
+                    <span className="reports-queue-item-top">
+                      <strong>{report?.description?.trim() || report?.title || 'Assistance requested'}</strong>
+                      <span className={`assistance-status-chip ${request.status}`}>{statusLabel(request.status)}</span>
+                    </span>
+                    <span className="reports-queue-time">{request.requested_by_user?.full_name || 'Responder'} · {timeAgo(request.created_at)}</span>
+                    <span className="reports-queue-time">{requestTypeLabel(request.request_type, request.sub_type)}</span>
+                    <span className="reports-queue-meta"><span><MapPin size={14} /> {report?.barangay_name || report?.address || 'Location not provided'}</span></span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </aside>
+
+        <section className="reports-detail-v2">
+          {!selected ? (
+            <div className="reports-detail-empty-v2"><div><ClipboardList size={28} /></div><strong>Select an assistance request</strong><p>Choose a request from the queue to review its details.</p></div>
+          ) : (
+            <>
+              <div className="reports-detail-scroll-v2">
+                <header className="reports-detail-heading-v2">
+                  <div>
+                    <span className="reports-eyebrow-v2">Selected assistance request</span>
+                    <h2>{selected.incident_report?.title || 'Incident assistance'}</h2>
+                    <p>Request received {timeAgo(selected.created_at)} · {selected.incident_report?.barangay_name || 'Norzagaray'}</p>
+                  </div>
+                  <span className={`assistance-status-chip detail ${selected.status}`}>{statusLabel(selected.status)}</span>
+                </header>
+
+                <section className="reports-detail-section-v2">
+                  <h3>Requester details</h3>
+                  <div className="reports-info-grid-v2">
+                    <div className="reports-info-card-v2"><span>Responder</span><strong><UserRound size={17} /> {selected.requested_by_user?.full_name || 'Unknown responder'}</strong></div>
+                    <div className="reports-info-card-v2"><span>Contact number</span><strong><Phone size={17} /> {selected.requested_by_user?.phone || 'Not provided'}</strong></div>
+                  </div>
+                </section>
+
+                <section className="reports-detail-section-v2">
+                  <h3>Assistance requested</h3>
+                  <div className="reports-info-grid-v2">
+                    <div className="reports-info-card-v2"><span>Request type</span><strong>{requestTypeLabel(selected.request_type)}</strong></div>
+                    <div className="reports-info-card-v2"><span>Submitted</span><strong>{dateTime(selected.created_at)}</strong></div>
+                  </div>
+                  <div className="reports-text-card-v2 assistance-request-detail-text">{selected.details}</div>
+                </section>
+
+                {selected.incident_report && (
+                  <>
+                    <section className="reports-detail-section-v2"><h3>Linked report</h3><div className="reports-text-card-v2">{selected.incident_report.description?.trim() || selected.incident_report.title || 'No report details provided.'}</div></section>
+                    <section className="reports-detail-section-v2"><h3>Report details</h3><div className="reports-info-grid-v2">
+                      <div className="reports-info-card-v2"><span>Report type</span><strong>{statusLabel(selected.incident_report.type)}</strong></div>
+                      <div className="reports-info-card-v2"><span>Report received</span><strong>{dateTime(selected.incident_report.created_at)}</strong></div>
+                    </div></section>
+                    <section className="reports-detail-section-v2"><h3>Location</h3><div className="reports-location-card-v2"><MapPin size={20} /><div><strong>{selected.incident_report.barangay_name || selected.incident_report.address || 'Location not provided'}</strong><span>{selected.incident_report.address || selected.incident_report.title || 'Linked incident report'}</span></div></div></section>
+                  </>
+                )}
+              </div>
+
+              {(selected.status === 'pending' || selected.status === 'approved') && (
+                <footer className="reports-detail-actions-v2 assistance-request-actions">
+                  {selected.status === 'pending' ? <>
+                    <button type="button" className="reports-invalid-button-v2" disabled={saving} onClick={() => void updateStatus(selected, 'rejected')}>Reject</button>
+                    <button type="button" className="reports-dispatch-button-v2" disabled={saving} onClick={() => void updateStatus(selected, 'approved')}>Approve request</button>
+                  </> : (
+                    <button type="button" className="reports-dispatch-button-v2" disabled={saving} onClick={() => void updateStatus(selected, 'fulfilled')}>Mark fulfilled</button>
+                  )}
+                </footer>
+              )}
+            </>
+          )}
+        </section>
+      </section>
+    </main>
   );
 }

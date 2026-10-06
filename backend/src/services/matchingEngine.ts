@@ -16,7 +16,6 @@
 
 import { supabaseAdmin } from '../config/supabase';
 import { config } from '../config';
-import { getAllActiveGPS } from '../config/redis';
 import fs from 'fs';
 import path from 'path';
 
@@ -197,10 +196,6 @@ export async function matchRespondersToIncident(incidentId: string, unitId?: str
   const incidentLat = incident.latitude;
   const incidentLng = incident.longitude;
 
-  // 1c. Fetch latest GPS locations from Redis for real-time accuracy
-  const activeGpsLocations = await getAllActiveGPS();
-  const gpsMap = new Map(activeGpsLocations.map(loc => [loc.userId, loc]));
-
   // 1b. If unitId is provided, fetch personnel from that unit
   let preSelectedPersonnelIds: string[] = [];
   let unitName = 'Unit';
@@ -262,12 +257,11 @@ export async function matchRespondersToIncident(incidentId: string, unitId?: str
     }
 
     if (personnel && personnel.length > 0) {
-      // Calculate distance (prioritize Redis GPS data) and sort
+      // Calculate distance from the responder's saved service-area coordinates and sort.
       const unitsWithDistance = personnel
         .map((u) => {
-          const redisGps = gpsMap.get(u.id);
-          const lat = redisGps?.latitude ?? u.latitude;
-          const lng = redisGps?.longitude ?? u.longitude;
+          const lat = u.latitude;
+          const lng = u.longitude;
           
           if (lat === null || lng === null) return null;
           
@@ -342,9 +336,8 @@ export async function matchRespondersToIncident(incidentId: string, unitId?: str
       // Filter by distance (≤5km) and matching certifications
       const matchedSpecialists = specialists
         .map((s) => {
-          const redisGps = gpsMap.get(s.id);
-          const lat = redisGps?.latitude ?? s.latitude;
-          const lng = redisGps?.longitude ?? s.longitude;
+          const lat = s.latitude;
+          const lng = s.longitude;
           
           if (lat === null || lng === null) return null;
 
@@ -412,10 +405,9 @@ export async function matchRespondersToIncident(incidentId: string, unitId?: str
 
   if (generalResponders && generalResponders.length > 0) {
     const nearbyGeneralLabor = generalResponders
-      .map((v) => {
-        const redisGps = gpsMap.get(v.id);
-        const lat = redisGps?.latitude ?? v.latitude;
-        const lng = redisGps?.longitude ?? v.longitude;
+    .map((v) => {
+        const lat = v.latitude;
+        const lng = v.longitude;
         
         if (lat === null || lng === null) return null;
 

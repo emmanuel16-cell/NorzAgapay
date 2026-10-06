@@ -6,6 +6,7 @@ import { config } from '../config';
 import { supabaseAdmin } from '../config/supabase';
 import { AuthPayload, AuthRequest, authenticate, authorize } from '../middleware/auth';
 import { io } from '../server';
+import { isVisibleToMdrrmo } from '../services/mdrrmoReportVisibility';
 import { isBarangayVerified } from '../services/verifiedBarangayService';
 import { estimateReportTimings } from '../services/reportTiming';
 import {
@@ -856,18 +857,10 @@ router.get('/', optionalAuthenticate, async (req: AuthRequest, res: Response) =>
             }
           }
         }
-        // MDRRMO sees Emergency reports and barangay reports escalated for
-        // MDRRMO handling. Community reports stay with the barangay unless
-        // explicitly escalated. A report remains one row and one statistics sample.
-        const mdrrmoReports = formatted.filter(r => {
-          if (r.review_outcome) return false;
-          const isEscalated = r.status === 'escalated' ||
-                              r.mdrrmo_response_status === 'responding' ||
-                              r.mdrrmo_response_status === 'resolved' ||
-                              (r.barangay_response_notes && r.barangay_response_notes.toLowerCase().includes('escalated'));
-          if (r.type === 'community') return isEscalated;
-          return r.type === 'emergency' || r.send_to === 'mdrrmo' || isEscalated;
-        });
+        // Only resident reports explicitly routed to MDRRMO and reports
+        // escalated by a barangay are visible in the municipal dashboard.
+        const mdrrmoReports = formatted.filter((report) =>
+          !report.review_outcome && isVisibleToMdrrmo(report));
 
         res.json(mdrrmoReports);
     } catch (err) {

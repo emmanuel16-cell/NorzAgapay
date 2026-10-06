@@ -3,7 +3,6 @@ import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import { supabaseAdmin } from '../config/supabase';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth';
-import { setUserGPS } from '../config/redis';
 
 const router = Router();
 const responderSpecializations = [
@@ -482,45 +481,5 @@ router.patch(
     }
   }
 );
-
-// ============================================
-// POST /api/users/:id/update-location — update GPS location
-// ============================================
-
-router.post('/:id/update-location', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const user = req.user!;
-
-    // Users can only update their own location
-    if (user.userId !== req.params.id) {
-      res.status(403).json({ error: 'Access denied.' });
-      return;
-    }
-
-    const { latitude, longitude } = req.body;
-    if (typeof latitude !== 'number' || typeof longitude !== 'number') {
-      res.status(400).json({ error: 'Valid latitude and longitude are required.' });
-      return;
-    }
-
-    // Update in Supabase
-    await supabaseAdmin
-      .from('users')
-      .update({
-        latitude,
-        longitude,
-        last_seen: new Date().toISOString(),
-      })
-      .eq('id', req.params.id);
-
-    // Also update in Redis for real-time tracking accuracy
-    await setUserGPS(req.params.id, latitude, longitude);
-
-    res.json({ message: 'Location updated.' });
-  } catch (err) {
-    console.error('Update location error:', err);
-    res.status(500).json({ error: 'Internal server error.' });
-  }
-});
 
 export default router;

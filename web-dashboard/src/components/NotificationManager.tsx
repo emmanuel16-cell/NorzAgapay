@@ -3,6 +3,7 @@ import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 import { socket } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
+import { isVisibleToMdrrmo } from '../lib/mdrrmoReportVisibility';
 
 export default function NotificationManager() {
   const navigate = useNavigate();
@@ -38,17 +39,18 @@ export default function NotificationManager() {
 
     // Listen for new incident reports
     socket.on('incident_report:new', (report: any) => {
-      if (report.type === 'emergency') {
+      if (['dispatcher', 'master_admin'].includes(user.role) && isVisibleToMdrrmo(report)) {
         showIncidentNotification(report.id, report.title);
       }
     });
 
     socket.on('resource:request', (request: any) => {
+      if (!['dispatcher', 'master_admin'].includes(user.role)) return;
       toast((t) => (
         <div
           onClick={() => {
             toast.dismiss(t.id);
-            navigate(request.incident_id ? `/reports?id=${request.incident_id}` : '/requests');
+            navigate(request.incident_id ? `/requests?incident_id=${encodeURIComponent(request.incident_id)}` : '/requests');
           }}
           style={{ width: '100%', cursor: 'pointer', padding: '10px' }}
         >

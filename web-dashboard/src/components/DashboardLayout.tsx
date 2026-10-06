@@ -29,10 +29,10 @@ const navItems: NavItem[] = [
   { label: 'Operations', section: true },
   { path: '/', icon: <MapPin size={19} strokeWidth={1.8} />, label: 'Command Center' },
   { path: '/reports', icon: <AlertTriangle size={19} strokeWidth={1.8} />, label: 'Incidents' },
+  { path: '/requests', icon: <ClipboardList size={19} strokeWidth={1.8} />, label: 'Assistance Request' },
   { label: 'Logistics', section: true },
   { path: '/evacuation-centers', icon: <Tent size={19} strokeWidth={1.8} />, label: 'Evacuation Centers' },
   { path: '/municipality-boundary', icon: <MapIcon size={19} strokeWidth={1.8} />, label: 'Municipality Boundary' },
-  { path: '/requests', icon: <ClipboardList size={19} strokeWidth={1.8} />, label: 'Resource Requests' },
   { path: '/respond-units', icon: <Ambulance size={19} strokeWidth={1.8} />, label: 'Respond Units' },
   { label: 'Administration', section: true },
   { path: '/verification/barangay', icon: <CheckCircle2 size={19} strokeWidth={1.8} />, label: 'Barangay Verification' },
@@ -92,9 +92,9 @@ export default function DashboardLayout() {
     : user?.role === 'admin'
       ? navItems.filter(item => ['Administration', '/verification/barangay', '/users', '/alert-broadcasts', '/officers', '/analytics'].includes(item.path || item.label))
       : user?.role === 'logistics'
-        ? navItems.filter(item => ['Logistics', '/evacuation-centers', '/municipality-boundary', '/requests', '/respond-units'].includes(item.path || item.label))
+        ? navItems.filter(item => ['Logistics', '/evacuation-centers', '/municipality-boundary', '/respond-units'].includes(item.path || item.label))
         : user?.role === 'dispatcher'
-          ? navItems.filter(item => ['Operations', '/', '/reports'].includes(item.path || item.label))
+          ? navItems.filter(item => ['Operations', '/', '/reports', '/requests'].includes(item.path || item.label))
           : [];
 
   return (

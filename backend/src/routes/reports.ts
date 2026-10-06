@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth';
 import { supabaseAdmin } from '../config/supabase';
+import { isVisibleToMdrrmo } from '../services/mdrrmoReportVisibility';
 
 const router = Router();
 
@@ -44,12 +45,13 @@ router.get('/incidents', authenticate, authorize('admin', 'master_admin'), async
 
     const { data: incidents } = await supabaseAdmin
       .from('incident_reports')
-      .select('id, title, type, incident_type, severity, status, mdrrmo_response_status, barangay_response_status, barangay_id, barangays(name), created_at')
+      .select('id, title, type, incident_type, severity, status, send_to, reporter_type, specifics, description, mdrrmo_response_status, barangay_response_status, barangay_id, barangays(name), created_at, mdrrmo_coordination_notes, barangay_response_notes, review_outcome')
       .gte('created_at', since.toISOString())
       .order('created_at', { ascending: false })
       .limit(2000);
 
-    res.json({ incidents: incidents || [] });
+    res.json({ incidents: (incidents || []).filter((incident) =>
+      !incident.review_outcome && isVisibleToMdrrmo(incident)) });
   } catch (err) {
     console.error('Incident reports error:', err);
     res.status(500).json({ error: 'Internal server error.' });

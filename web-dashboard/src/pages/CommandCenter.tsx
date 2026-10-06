@@ -1,10 +1,11 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
-import { MapContainer, TileLayer, Marker, Polyline, Popup, Tooltip, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Polyline, Popup, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { CARTO_DARK_MAP_URL, CARTO_ATTRIBUTION } from '../lib/mapConfig';
 import 'leaflet/dist/leaflet.css';
-import { reportAPI, respondUnitAPI, socket, taskAPI } from '../lib/api';
+import { reportAPI, requestAPI, respondUnitAPI, socket } from '../lib/api';
+import { getMdrrmoReportGroup, isVisibleToMdrrmo } from '../lib/mdrrmoReportVisibility';
 import { useAuth } from '../context/AuthContext';
 import { useMunicipalityBoundary } from '../context/MunicipalityBoundaryContext';
 import MunicipalityBoundaryMapLayer, { MunicipalityBoundaryViewport } from '../components/MunicipalityBoundaryMapLayer';
@@ -107,6 +108,17 @@ interface MdrrmoDispatchResponder {
   phone?: string | null;
 }
 
+interface AssistanceRequestItem {
+  id: string;
+  incident_id: string;
+  request_type: string;
+  sub_type?: string | null;
+  details: string;
+  status: string;
+  created_at: string;
+  requested_by_user?: { full_name?: string; role?: string; unit_type?: string | null; phone?: string | null } | null;
+}
+
 const MDRRMO_DISPATCH_INCIDENT_TYPES = [
   { value: 'flash_flood', label: 'Flood / Flash Flood' },
   { value: 'fire', label: 'Fire' },
@@ -122,53 +134,6 @@ const MDRRMO_DISPATCH_SEVERITIES = [
   { value: 'high', label: 'High' },
   { value: 'critical', label: 'Critical' },
 ] as const;
-
-interface ResponderGpsLocation {
-  userId: string;
-  latitude: number;
-  longitude: number;
-  timestamp: number;
-}
-
-interface MapTaskResponder {
-  responder_id?: string;
-  status?: string;
-  responder?: { full_name?: string };
-}
-
-interface MapResponseTask {
-  id: string;
-  title?: string;
-  status: string;
-  assigned_to?: string | null;
-  assigned_user?: { full_name?: string } | null;
-  responders?: MapTaskResponder[];
-  latitude?: number | string;
-  longitude?: number | string;
-  incident?: {
-    title?: string;
-    status?: string;
-    latitude?: number | string;
-    longitude?: number | string;
-  } | null;
-}
-
-interface ResponderMapAssignment {
-  taskId: string;
-  responderId: string;
-  responderName: string;
-  incidentName: string;
-  status: string;
-  position: [number, number];
-  incidentPosition: [number, number] | null;
-  gpsLocation: ResponderGpsLocation | null;
-}
-
-function asMapCoordinate(value: number | string | null | undefined): number | null {
-  if (value === undefined || value === null || value === '') return null;
-  const coordinate = Number(value);
-  return Number.isFinite(coordinate) ? coordinate : null;
-}
 
 function parseFieldAssessment(notes?: string) {
   const content = (notes || '')
@@ -262,6 +227,8 @@ function FieldPhotosGallery({
 
 function ResponderAssessmentPanel({
   incident,
+  assistanceRequests,
+  assistanceRequestLoading,
   notes,
   mediaSource,
   view,
@@ -270,6 +237,8 @@ function ResponderAssessmentPanel({
   showTitle = true,
 }: {
   incident: IncidentItem;
+  assistanceRequests: AssistanceRequestItem[];
+  assistanceRequestLoading: boolean;
   notes?: string;
   mediaSource: 'barangay' | 'mdrrmo' | 'all';
   view: 'assessment' | 'assistance';
@@ -311,9 +280,23 @@ function ResponderAssessmentPanel({
           )}
         </div>
       ) : (
-        <div className="assistance-request-empty">
-          <strong>Assistance Request</strong>
-          <span>No assistance request details provided.</span>
+        <div className="assistance-request-list">
+          {assistanceRequestLoading ? <div className="assistance-request-card"><strong>Assistance Request</strong><span>Loading assistance requests…</span></div> : assistanceRequests.length ? assistanceRequests.map((request) => (
+            <div className="assistance-request-card" key={request.id}>
+              <strong>Assistance Request</strong>
+              <div className="assistance-request-card-facts">
+                <span><small>Type</small><b>{request.request_type === 'responders' ? 'Responders' : request.request_type.replaceAll('_', ' ')}</b></span>
+                {request.sub_type && <span><small>Category</small><b>{request.sub_type.replaceAll('_', ' ')}</b></span>}
+                <span><small>Status</small><b>{request.status.replaceAll('_', ' ')}</b></span>
+                <span><small>Requested</small><b>{new Date(request.created_at).toLocaleString()}</b></span>
+              </div>
+              <p>{request.details}</p>
+              {request.requested_by_user && <small>Requested by {request.requested_by_user.full_name || 'Responder'}{request.requested_by_user.phone ? ` · ${request.requested_by_user.phone}` : ''}</small>}
+            </div>
+          )) : <div className="assistance-request-card"><strong>Assistance Request</strong><span>No assistance request details provided.</span></div>}
+          <button type="button" className="assistance-request-view-all" onClick={() => navigate(`/requests?incident_id=${encodeURIComponent(incident.id)}`)}>
+            View all assistance requests
+          </button>
         </div>
       )}
     </div>
@@ -322,6 +305,8 @@ function ResponderAssessmentPanel({
 
 function EscalatedResponsePanel({
   incident,
+  assistanceRequests,
+  assistanceRequestLoading,
   tab,
   onTabChange,
   responderView,
@@ -329,6 +314,8 @@ function EscalatedResponsePanel({
   onPreview,
 }: {
   incident: IncidentItem;
+  assistanceRequests: AssistanceRequestItem[];
+  assistanceRequestLoading: boolean;
   tab: 'barangay' | 'responder';
   onTabChange: (tab: 'barangay' | 'responder') => void;
   responderView: 'assessment' | 'assistance';
@@ -349,6 +336,8 @@ function EscalatedResponsePanel({
       {tab === 'responder' ? (
         <ResponderAssessmentPanel
           incident={incident}
+          assistanceRequests={assistanceRequests}
+          assistanceRequestLoading={assistanceRequestLoading}
           notes={incident.mdrrmo_response_notes}
           mediaSource="mdrrmo"
           view={responderView}
@@ -368,25 +357,6 @@ function EscalatedResponsePanel({
       )}
     </div>
   );
-}
-
-function mapDistanceKm(from: [number, number], to: [number, number]): number {
-  const radians = (degrees: number) => degrees * Math.PI / 180;
-  const latitudeDelta = radians(to[0] - from[0]);
-  const longitudeDelta = radians(to[1] - from[1]);
-  const a = Math.sin(latitudeDelta / 2) ** 2
-    + Math.cos(radians(from[0])) * Math.cos(radians(to[0])) * Math.sin(longitudeDelta / 2) ** 2;
-  return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-function createResponderMapIcon(selected: boolean) {
-  const size = 64;
-  return L.divIcon({
-    html: `<div class="command-map-dot ${selected ? 'selected' : ''}" style="width:${size}px;height:${size}px;background:#064ee8"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="7" r="4"/><path d="M5 21v-2a7 7 0 0 1 14 0v2"/></svg></div>`,
-    className: 'command-responder-location-marker',
-    iconSize: [size, size],
-    iconAnchor: [size / 2, size / 2],
-  });
 }
 
 // Helper to detect video from URL or proof_type
@@ -459,7 +429,10 @@ function FocusMapController({ position }: { position: [number, number] | null })
   const lastPositionRef = useRef<string>('');
 
   useEffect(() => {
-    if (!position) return;
+    if (!position) {
+      lastPositionRef.current = '';
+      return;
+    }
     const positionKey = `${position[0].toFixed(5)},${position[1].toFixed(5)}`;
     if (positionKey === lastPositionRef.current) return;
     lastPositionRef.current = positionKey;
@@ -498,14 +471,119 @@ function FitBoundsController({ points }: { points: [number, number][] }) {
   return null;
 }
 
+function createIncidentClusterIcon(count: number) {
+  const size = 54;
+  return L.divIcon({
+    html: `<div class="command-map-cluster-badge" aria-label="${count} nearby reports"><svg viewBox="0 0 30 30" aria-hidden="true"><circle cx="6" cy="7" r="2.2"/><path d="M12 7h12M12 15h12M12 23h12"/><circle cx="6" cy="15" r="2.2"/><circle cx="6" cy="23" r="2.2"/></svg><span>${count}</span></div>`,
+    className: 'command-map-cluster-marker',
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
+}
+
+function incidentClusterLabel(incident: IncidentItem): string {
+  const group = incident.report_kind === 'escalated' ? 'Escalation report' : 'Resident report';
+  const stage = incident.status === 'pending'
+    ? 'Pending'
+    : incident.status.charAt(0).toUpperCase() + incident.status.slice(1);
+  return `${group} · ${stage}`;
+}
+
+function incidentClusterColor(incident: IncidentItem): string {
+  if (incident.status === 'resolved') return '#5ce76b';
+  if (incident.status === 'responding') return '#9b86ff';
+  if (incident.status === 'arrived') return '#f5c542';
+  return incident.report_kind === 'escalated' ? '#ff3c43' : '#ff7838';
+}
+
+function ClusteredIncidentMarkers({
+  incidents,
+  selectedId,
+  onSelect,
+}: {
+  incidents: IncidentItem[];
+  selectedId?: string;
+  onSelect: (incident: IncidentItem) => void;
+}) {
+  const map = useMap();
+  const [viewportRevision, setViewportRevision] = useState(0);
+
+  useMapEvents({
+    zoomend: () => setViewportRevision((revision) => revision + 1),
+    moveend: () => setViewportRevision((revision) => revision + 1),
+  });
+
+  const groups = useMemo(() => {
+    const projected = incidents.map((incident) => ({
+      incident,
+      point: map.latLngToContainerPoint([incident.latitude, incident.longitude]),
+    }));
+    const parents = projected.map((_entry, index) => index);
+    const findRoot = (index: number): number => {
+      if (parents[index] !== index) parents[index] = findRoot(parents[index]);
+      return parents[index];
+    };
+
+    for (let left = 0; left < projected.length; left += 1) {
+      for (let right = left + 1; right < projected.length; right += 1) {
+        if (projected[left].point.distanceTo(projected[right].point) > 72) continue;
+        const leftRoot = findRoot(left);
+        const rightRoot = findRoot(right);
+        if (leftRoot !== rightRoot) parents[rightRoot] = leftRoot;
+      }
+    }
+
+    const grouped = new Map<number, IncidentItem[]>();
+    projected.forEach(({ incident }, index) => {
+      const root = findRoot(index);
+      grouped.set(root, [...(grouped.get(root) || []), incident]);
+    });
+    return [...grouped.values()];
+  }, [incidents, map, viewportRevision]);
+
+  return <>
+    {groups.map((group) => {
+      if (group.length === 1) {
+        const incident = group[0];
+        return (
+          <Marker
+            key={incident.id}
+            position={[incident.latitude, incident.longitude]}
+            icon={createTeardropPin(incident.report_kind, incident.status, selectedId === incident.id)}
+            zIndexOffset={selectedId === incident.id ? 1600 : 0}
+            eventHandlers={{ click: () => onSelect(incident) }}
+          />
+        );
+      }
+
+      const groupKey = group.map((incident) => incident.id).sort().join(':');
+      const center: [number, number] = [
+        group.reduce((total, incident) => total + incident.latitude, 0) / group.length,
+        group.reduce((total, incident) => total + incident.longitude, 0) / group.length,
+      ];
+      return (
+        <Marker key={`cluster-${groupKey}`} position={center} icon={createIncidentClusterIcon(group.length)} zIndexOffset={1200}>
+          <Popup className="command-map-cluster-popup" minWidth={240} maxWidth={320}>
+            <div className="command-map-cluster-list">
+              <strong>Nearby reports <span>{group.length}</span></strong>
+              {group.map((incident) => (
+                <button key={incident.id} type="button" onClick={(event) => { event.stopPropagation(); onSelect(incident); }}>
+                  <i style={{ backgroundColor: incidentClusterColor(incident) }} />
+                  <span>{incidentClusterLabel(incident)}</span>
+                </button>
+              ))}
+            </div>
+          </Popup>
+        </Marker>
+      );
+    })}
+  </>;
+}
+
 export default function CommandCenter() {
   const { user } = useAuth();
   const { boundary } = useMunicipalityBoundary();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const focusedResponderId = searchParams.get('responder');
-  const focusedTaskId = searchParams.get('task');
-  const focusedResponderName = searchParams.get('name');
 
   // Clock
   const [currentTime, setCurrentTime] = useState(new Date().toLocaleTimeString());
@@ -526,13 +604,13 @@ export default function CommandCenter() {
   // Data lists
   const [incidents, setIncidents] = useState<IncidentItem[]>([]);
   const [dispatchUnits, setDispatchUnits] = useState<DispatchUnitItem[]>([]);
-  const [responseTasks, setResponseTasks] = useState<MapResponseTask[]>([]);
-  const [responderLocations, setResponderLocations] = useState<Record<string, ResponderGpsLocation>>({});
   const [loading, setLoading] = useState(true);
 
   // Interactive Modal State
   const [activeModalType, setActiveModalType] = useState<'incident' | 'escalated' | 'unit' | null>(null);
   const [selectedIncident, setSelectedIncident] = useState<IncidentItem | null>(null);
+  const [assistanceRequests, setAssistanceRequests] = useState<AssistanceRequestItem[]>([]);
+  const [assistanceRequestsLoading, setAssistanceRequestsLoading] = useState(false);
   const [selectedUnit, setSelectedUnit] = useState<DispatchUnitItem | null>(null);
   const [selectedVisualUrl, setSelectedVisualUrl] = useState<string | null>(null);
   const [proofPreviewOpen, setProofPreviewOpen] = useState(false);
@@ -553,35 +631,51 @@ export default function CommandCenter() {
   const [mdrrmoDispatchNotes, setMdrrmoDispatchNotes] = useState('');
   const mdrrmoDispatchRequestId = useRef(0);
   const previewMediaRef = useRef<HTMLImageElement | HTMLVideoElement>(null);
+  const selectedIncidentId = selectedIncident?.id;
+
+  useEffect(() => {
+    if (!selectedIncidentId || !['incident', 'escalated'].includes(activeModalType || '')) {
+      setAssistanceRequests([]);
+      setAssistanceRequestsLoading(false);
+      return;
+    }
+
+    let active = true;
+    setAssistanceRequestsLoading(true);
+    requestAPI.list({ incident_id: selectedIncidentId })
+      .then((response) => {
+        if (active) setAssistanceRequests(Array.isArray(response.data.requests) ? response.data.requests : []);
+      })
+      .catch((error) => {
+        console.error('Could not load the assistance request for this report:', error);
+        if (active) setAssistanceRequests([]);
+      })
+      .finally(() => { if (active) setAssistanceRequestsLoading(false); });
+
+    return () => { active = false; };
+  }, [activeModalType, selectedIncidentId]);
 
   // Fetch data
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [reportsRes, unitsRes, tasksRes] = await Promise.allSettled([
+      const [reportsRes, unitsRes] = await Promise.allSettled([
         reportAPI.list(),
         respondUnitAPI.list(),
-        taskAPI.list(),
       ]);
-
-      if (tasksRes.status === 'fulfilled') {
-        setResponseTasks(Array.isArray(tasksRes.value.data?.tasks) ? tasksRes.value.data.tasks : []);
-      }
 
       const items: IncidentItem[] = [];
 
       if (reportsRes.status === 'fulfilled' && Array.isArray(reportsRes.value.data)) {
         reportsRes.value.data.forEach((r: any) => {
+          if (!isVisibleToMdrrmo(r)) return;
           const lat = parseFloat(r.latitude);
           const lng = parseFloat(r.longitude);
           if (!lat || !lng) return; // skip if no valid coordinates
           const reportStatus = String(r.status || '').toLowerCase();
           const barangayStatus = String(r.barangay_response_status || '').toLowerCase();
           const mdrrmoStatus = String(r.mdrrmo_response_status || '').toLowerCase();
-          const isEscalated = Boolean(
-            r.is_escalated || r.beyond_barangay_capability || reportStatus === 'escalated' ||
-            r.mdrrmo_coordination_notes || String(r.barangay_response_notes || '').toLowerCase().includes('escalated'),
-          );
+          const reportGroup = getMdrrmoReportGroup(r);
           const isResolved = ['resolved', 'closed'].includes(reportStatus) ||
             barangayStatus === 'resolved' || mdrrmoStatus === 'resolved';
           const isResponding = reportStatus === 'responding' ||
@@ -601,7 +695,7 @@ export default function CommandCenter() {
             title: r.title || 'Emergency Incident',
             type: r.type || 'emergency',
             incident_type: r.incident_type || r.type || '',
-            report_kind: isEscalated ? 'escalated' : 'resident',
+            report_kind: reportGroup,
             status: stage,
             severity: r.severity || '',
             latitude: lat,
@@ -679,13 +773,6 @@ export default function CommandCenter() {
   useEffect(() => {
     fetchData();
     const handleRefresh = () => fetchData();
-    const handleLocation = (location: ResponderGpsLocation) => {
-      if (!location?.userId) return;
-      setResponderLocations((current) => ({ ...current, [location.userId]: location }));
-    };
-    const handleAllLocations = (locations: ResponderGpsLocation[]) => {
-      setResponderLocations(Object.fromEntries((locations || []).map((location) => [location.userId, location])));
-    };
     socket.on('connect', handleRefresh);
     socket.on('barangay:responding', handleRefresh);
     socket.on('incident_report:new', handleRefresh);
@@ -693,9 +780,6 @@ export default function CommandCenter() {
     socket.on('incident_report:updated', handleRefresh);
     socket.on('incident:lifecycle', handleRefresh);
     socket.on('task:statusChanged', handleRefresh);
-    socket.on('gps:location', handleLocation);
-    socket.on('gps:allLocations', handleAllLocations);
-    socket.emit('gps:requestAll');
     return () => {
       socket.off('connect', handleRefresh);
       socket.off('barangay:responding', handleRefresh);
@@ -704,8 +788,6 @@ export default function CommandCenter() {
       socket.off('incident_report:updated', handleRefresh);
       socket.off('incident:lifecycle', handleRefresh);
       socket.off('task:statusChanged', handleRefresh);
-      socket.off('gps:location', handleLocation);
-      socket.off('gps:allLocations', handleAllLocations);
     };
   }, []);
 
@@ -723,93 +805,27 @@ export default function CommandCenter() {
     };
   }, [incidents, dispatchUnits]);
 
-  const focusedResponder = useMemo((): ResponderMapAssignment | null => {
-    if (!focusedResponderId) return null;
+  const visibleIncidents = useMemo(() => incidents.filter((incident) => {
+    if (incident.report_kind === 'resident' && !filters.incidents) return false;
+    if (incident.report_kind === 'escalated' && !filters.escalated) return false;
+    if (incident.status === 'arrived' && !filters.arrived) return false;
+    if (incident.status === 'responding' && !filters.responding) return false;
+    if (incident.status === 'resolved' && !filters.resolved) return false;
+    return !boundary.enabled || isCoordinateInsideBoundary(incident.latitude, incident.longitude, boundary.geometry);
+  }), [incidents, filters, boundary]);
 
-    for (const task of responseTasks) {
-      if (focusedTaskId && task.id !== focusedTaskId) continue;
-      if (task.status === 'cancelled') continue;
-
-      const assignedResponders = task.assigned_to
-        ? [{ id: task.assigned_to, name: task.assigned_user?.full_name }]
-        : (task.responders || [])
-          .filter((responder) => responder.responder_id && responder.status !== 'left')
-          .map((responder) => ({ id: responder.responder_id!, name: responder.responder?.full_name }));
-      const responder = assignedResponders.find((item) => item.id === focusedResponderId);
-      if (!responder) continue;
-
-      const incidentLatitude = asMapCoordinate(task.latitude ?? task.incident?.latitude);
-      const incidentLongitude = asMapCoordinate(task.longitude ?? task.incident?.longitude);
-      const incidentPosition = incidentLatitude !== null && incidentLongitude !== null
-        ? [incidentLatitude, incidentLongitude] as [number, number]
-        : null;
-      const receivedLocation = responderLocations[focusedResponderId];
-      const gpsLocation = receivedLocation && Date.now() - receivedLocation.timestamp < 30 * 60 * 1000
-        && Number.isFinite(receivedLocation.latitude) && Number.isFinite(receivedLocation.longitude)
-        ? receivedLocation
-        : null;
-      const position: [number, number] | null = gpsLocation
-        ? [gpsLocation.latitude, gpsLocation.longitude]
-        : incidentPosition;
-      if (!position) return null;
-      if (boundary.enabled && !isCoordinateInsideBoundary(position[0], position[1], boundary.geometry)) return null;
-
-      const status = task.incident?.status === 'resolved'
-        ? 'resolved'
-        : task.status === 'in_progress' && gpsLocation && incidentPosition
-          && mapDistanceKm(position, incidentPosition) > 0.5
-          ? 'returning'
-          : task.status;
-
-      return {
-        taskId: task.id,
-        responderId: focusedResponderId,
-        responderName: responder.name || focusedResponderName || 'Responder',
-        incidentName: task.incident?.title || task.title || 'Incident response',
-        status,
-        position,
-        incidentPosition,
-        gpsLocation,
-      };
-    }
-
-    return null;
-  }, [focusedResponderId, focusedTaskId, focusedResponderName, responseTasks, responderLocations, boundary]);
-
-  // Compute all visible pin points for auto-fit bounds
+  // Fit the initial and filtered map view to every report and visible unit point.
   const visiblePinPoints = useMemo((): [number, number][] => {
-    const pts: [number, number][] = [];
-    incidents.forEach((inc) => {
-      if (inc.report_kind === 'resident' && !filters.incidents) return;
-      if (inc.report_kind === 'escalated' && !filters.escalated) return;
-      if (inc.status === 'arrived' && !filters.arrived) return;
-      if (inc.status === 'responding' && !filters.responding) return;
-      if (inc.status === 'resolved' && !filters.resolved) return;
-      if (boundary.enabled && !isCoordinateInsideBoundary(inc.latitude, inc.longitude, boundary.geometry)) return;
-      pts.push([inc.latitude, inc.longitude]);
-    });
+    const points = visibleIncidents.map((incident) => [incident.latitude, incident.longitude] as [number, number]);
     if (filters.responding) {
-      dispatchUnits.forEach((u) => {
-        if (!boundary.enabled || isCoordinateInsideBoundary(u.latitude, u.longitude, boundary.geometry)) {
-          pts.push([u.latitude, u.longitude]);
+      dispatchUnits.forEach((unit) => {
+        if (!boundary.enabled || isCoordinateInsideBoundary(unit.latitude, unit.longitude, boundary.geometry)) {
+          points.push([unit.latitude, unit.longitude]);
         }
       });
     }
-    return pts;
-  }, [incidents, dispatchUnits, filters, boundary]);
-
-  const selectedResponderUnit = selectedIncident?.status === 'responding'
-    ? dispatchUnits.find((unit) => unit.target_incident_id === selectedIncident.id || unit.id === selectedIncident.assigned_unit_id) || null
-    : null;
-  const selectedResponderId = selectedIncident?.mdrrmo_responded_by || selectedIncident?.barangay_responded_by;
-  const selectedResponderGps = selectedResponderId ? responderLocations[selectedResponderId] : null;
-  const selectedResponderPosition: [number, number] | null = selectedIncident?.status === 'responding'
-    ? selectedResponderGps && Date.now() - selectedResponderGps.timestamp < 30 * 60 * 1000
-      ? [selectedResponderGps.latitude, selectedResponderGps.longitude]
-      : selectedResponderUnit
-        ? [selectedResponderUnit.latitude, selectedResponderUnit.longitude]
-        : null
-    : null;
+    return points;
+  }, [visibleIncidents, dispatchUnits, filters.responding, boundary]);
 
   // Click Handlers
   const handleOpenIncidentPin = (item: IncidentItem) => {
@@ -1097,35 +1113,6 @@ export default function CommandCenter() {
 
       {/* Full-height operational map */}
       <div className="map-card-container">
-        {focusedResponderId && (
-          <div className="map-responder-focus-card">
-            <div className="map-responder-focus-heading">
-              <span className="map-responder-focus-icon"><Users size={17} /></span>
-              <div>
-                <strong>{focusedResponder?.responderName || focusedResponderName || 'Responder'}</strong>
-                <span>{focusedResponder?.incidentName || 'Responder assignment'}</span>
-              </div>
-            </div>
-            <div className="map-responder-focus-status">
-              <span className={focusedResponder?.gpsLocation && Date.now() - focusedResponder.gpsLocation.timestamp < 5 * 60 * 1000 ? 'live' : ''} />
-              {!focusedResponder
-                ? 'Loading responder location…'
-                : focusedResponder.status === 'accepted'
-                  ? 'Going to incident'
-                  : focusedResponder.status === 'in_progress'
-                    ? 'On scene'
-                    : focusedResponder.status === 'returning' || focusedResponder.status === 'completed'
-                      ? 'Returning to base'
-                      : focusedResponder.status === 'resolved'
-                        ? 'Incident resolved'
-                        : focusedResponder.gpsLocation
-                          ? `Last GPS update ${new Date(focusedResponder.gpsLocation.timestamp).toLocaleTimeString()}`
-                          : 'Waiting for live GPS; showing incident location'}
-            </div>
-            <button className="map-responder-clear" onClick={() => navigate('/', { replace: true })}>Clear selection</button>
-          </div>
-        )}
-
         {/* Leaflet Map */}
         <MapContainer
           center={[14.9055, 121.0450]}
@@ -1136,73 +1123,10 @@ export default function CommandCenter() {
           <TileLayer url={CARTO_DARK_MAP_URL} attribution={CARTO_ATTRIBUTION} />
           <MunicipalityBoundaryViewport boundary={boundary} />
           <MapResizer />
-          <FitBoundsController points={focusedResponder ? [] : visiblePinPoints} />
-          <FocusMapController position={focusedResponder?.position || null} />
+          <FitBoundsController points={visiblePinPoints} />
+          <FocusMapController position={selectedIncident ? [selectedIncident.latitude, selectedIncident.longitude] as [number, number] : null} />
 
-          {focusedResponder?.incidentPosition && focusedResponder.position && (
-            <Polyline
-              positions={focusedResponder.status === 'returning' || focusedResponder.status === 'completed'
-                ? [focusedResponder.incidentPosition, focusedResponder.position]
-                : [focusedResponder.position, focusedResponder.incidentPosition]}
-              pathOptions={{ color: '#f97316', weight: 4, dashArray: '9, 8', opacity: 0.9 }}
-            />
-          )}
-
-          {focusedResponder && (
-            <Marker
-              key={`responder-${focusedResponder.taskId}-${focusedResponder.responderId}`}
-              position={focusedResponder.position}
-              icon={createResponderMapIcon(true)}
-              zIndexOffset={1500}
-            >
-              <Tooltip permanent direction="top" offset={[0, -22]}>{focusedResponder.responderName}</Tooltip>
-              <Popup>
-                <strong>{focusedResponder.responderName}</strong><br />
-                {focusedResponder.incidentName}<br />
-                {focusedResponder.status === 'accepted' ? 'Going to incident' : focusedResponder.status === 'in_progress' ? 'On scene' : focusedResponder.status === 'returning' || focusedResponder.status === 'completed' ? 'Returning to base' : focusedResponder.status === 'resolved' ? 'Incident resolved' : focusedResponder.status}
-              </Popup>
-            </Marker>
-          )}
-
-          {filters.responding && selectedResponderPosition && selectedIncident &&
-            (!boundary.enabled || isCoordinateInsideBoundary(selectedResponderPosition[0], selectedResponderPosition[1], boundary.geometry)) && (
-            <>
-              <Polyline
-                positions={[
-                  selectedResponderPosition,
-                  [selectedIncident.latitude, selectedIncident.longitude],
-                ]}
-                pathOptions={{ color: '#635bff', weight: 3, dashArray: '8, 8', opacity: 0.95 }}
-              />
-              <Marker
-                key={`selected-responder-${selectedIncident.id}-${selectedResponderId || selectedResponderUnit?.id || 'unit'}`}
-                position={selectedResponderPosition}
-                icon={createResponderMapIcon(false)}
-                zIndexOffset={1450}
-              >
-                <Tooltip>{selectedIncident.responder_name || selectedIncident.mdrrmo_responder_name || selectedIncident.barangay_responder_name || selectedResponderUnit?.leader_name || 'Responder'}</Tooltip>
-              </Marker>
-            </>
-          )}
-
-          {/* Incident Markers */}
-          {incidents.map((inc) => {
-            if (boundary.enabled && !isCoordinateInsideBoundary(inc.latitude, inc.longitude, boundary.geometry)) return null;
-            if (inc.report_kind === 'resident' && !filters.incidents) return null;
-            if (inc.report_kind === 'escalated' && !filters.escalated) return null;
-            if (inc.status === 'arrived' && !filters.arrived) return null;
-            if (inc.status === 'responding' && !filters.responding) return null;
-            if (inc.status === 'resolved' && !filters.resolved) return null;
-            return (
-              <Marker
-                key={inc.id}
-                position={[inc.latitude, inc.longitude]}
-                icon={createTeardropPin(inc.report_kind, inc.status, selectedIncident?.id === inc.id)}
-                zIndexOffset={selectedIncident?.id === inc.id ? 1600 : 0}
-                eventHandlers={{ click: () => handleOpenIncidentPin(inc) }}
-              />
-            );
-          })}
+          <ClusteredIncidentMarkers incidents={visibleIncidents} selectedId={selectedIncident?.id} onSelect={handleOpenIncidentPin} />
 
           {/* Dispatch Units Markers */}
           {filters.responding &&
@@ -1508,6 +1432,8 @@ export default function CommandCenter() {
               {selectedIncident.status !== 'pending' && (
                 <ResponderAssessmentPanel
                   incident={selectedIncident}
+                  assistanceRequests={assistanceRequests}
+                  assistanceRequestLoading={assistanceRequestsLoading}
                   notes={selectedIncident.barangay_response_notes || selectedIncident.mdrrmo_response_notes}
                   mediaSource="all"
                   view={responderInfoTab}
@@ -1821,6 +1747,8 @@ export default function CommandCenter() {
               </div>
               <EscalatedResponsePanel
                 incident={selectedIncident}
+                assistanceRequests={assistanceRequests}
+                assistanceRequestLoading={assistanceRequestsLoading}
                 tab={escalatedResponseTab}
                 onTabChange={setEscalatedResponseTab}
                 responderView={responderInfoTab}

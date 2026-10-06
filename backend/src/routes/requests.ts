@@ -3,25 +3,51 @@ import { z } from 'zod';
 import { supabaseAdmin } from '../config/supabase';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth';
 import { io } from '../server';
+import { isVisibleToMdrrmo } from '../services/mdrrmoReportVisibility';
 
 const router = Router();
 
 // ============================================
-// GET /api/requests — list resource requests (Logistics and master admin)
+// GET /api/requests — list eligible responder assistance requests (Dispatcher and master admin)
 // ============================================
-router.get('/', authenticate, authorize('logistics'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.get('/', authenticate, authorize('dispatcher'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { data, error } = await supabaseAdmin
-      .from('resource_requests')
-      .select('*, requested_by_user:users!requested_by(full_name, role, unit_type)')
+    const incidentId = typeof req.query.incident_id === 'string' ? req.query.incident_id : null;
+    let reportQuery = supabaseAdmin
+      .from('incident_reports')
+      .select('id, type, title, description, specifics, status, send_to, reporter_type, reporter_name, reporter_phone, address, barangay_id, barangays(name), created_at, barangay_response_status, barangay_response_notes, mdrrmo_response_status, mdrrmo_coordination_notes, review_outcome')
       .order('created_at', { ascending: false });
+    if (incidentId) reportQuery = reportQuery.eq('id', incidentId);
 
-    if (error) {
-      res.status(500).json({ error: 'Failed to fetch resource requests.' });
+    const { data: reportRows, error: reportError } = await reportQuery;
+    if (reportError) throw reportError;
+    const eligibleReports = (reportRows || []).filter((report) =>
+      !report.review_outcome && isVisibleToMdrrmo(report));
+    const reportById = new Map(eligibleReports.map((report) => [report.id, {
+      ...report,
+      barangay_name: (report.barangays as { name?: string } | null)?.name || null,
+    }]));
+    const reportIds = [...reportById.keys()];
+    if (reportIds.length === 0) {
+      res.json({ requests: [] });
       return;
     }
 
-    res.json({ requests: data });
+    const { data, error } = await supabaseAdmin
+      .from('resource_requests')
+      .select('*, requested_by_user:users!requested_by(full_name, role, unit_type, phone)')
+      .in('incident_id', reportIds)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    const requests = (data || [])
+      .filter((request) => request.requested_by_user?.role === 'responder')
+      .map((request) => ({
+        ...request,
+        incident_report: reportById.get(request.incident_id) || null,
+      }));
+    res.json({ requests });
   } catch (err) {
     console.error('Fetch requests error:', err);
     res.status(500).json({ error: 'Internal server error.' });
@@ -91,7 +117,7 @@ router.post('/', authenticate, authorize('responder', 'logistics'), async (req: 
       return;
     }
 
-    io.to('dashboard_staff').emit('resource:request', request);
+    io.to('role:dispatcher').to('role:master_admin').emit('resource:request', request);
     res.status(201).json({ message: 'Resource request submitted successfully.', request });
   } catch (err) {
     console.error('Create request error:', err);
@@ -102,7 +128,7 @@ router.post('/', authenticate, authorize('responder', 'logistics'), async (req: 
 // ============================================
 // PATCH /api/requests/:id/status — update request status
 // ============================================
-router.patch('/:id/status', authenticate, authorize('logistics'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.patch('/:id/status', authenticate, authorize('dispatcher'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { status } = req.body;
     if (!['pending', 'approved', 'rejected', 'fulfilled'].includes(status)) {

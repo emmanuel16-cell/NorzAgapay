@@ -47,7 +47,7 @@ function AppRoutes() {
         <Route path="advisories" element={<Navigate to="/" replace />} />
         <Route path="earthquakes" element={<Navigate to="/" replace />} />
         <Route path="reports" element={<RoleAccess roles={['dispatcher']}><ReportsPage /></RoleAccess>} />
-        <Route path="requests" element={<RoleAccess roles={['logistics']}><ResourceRequestsPage /></RoleAccess>} />
+        <Route path="requests" element={<RoleAccess roles={['dispatcher']}><ResourceRequestsPage /></RoleAccess>} />
         <Route path="evacuation-centers" element={<RoleAccess roles={['admin', 'logistics']}><EvacuationCentersPage /></RoleAccess>} />
         <Route path="municipality-boundary" element={<RoleAccess roles={['logistics']}><MunicipalityBoundaryPage /></RoleAccess>} />
         <Route path="verification" element={<Navigate to="/verification/barangay" replace />} />
