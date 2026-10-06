@@ -93,7 +93,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     Expanded(
                       child: PageView(
                         controller: _pageController,
-                        physics: const ClampingScrollPhysics(),
+                        physics: const NeverScrollableScrollPhysics(),
                         onPageChanged: (idx) => setState(() => _currentPage = idx),
                         children: [
                           _buildSlide1(),

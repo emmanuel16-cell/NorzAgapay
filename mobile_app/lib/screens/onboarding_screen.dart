@@ -80,7 +80,7 @@ class _BarangayOnboardingScreenState extends State<BarangayOnboardingScreen> {
                     Expanded(
                       child: PageView.builder(
                         controller: _pageController,
-                        physics: const ClampingScrollPhysics(),
+                        physics: const NeverScrollableScrollPhysics(),
                         onPageChanged: (page) => setState(() => _page = page),
                         itemCount: 4,
                         itemBuilder: (context, index) => index < 3 ? _consentPage(index) : _loginPage(),
