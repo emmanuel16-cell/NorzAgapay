@@ -674,7 +674,7 @@ function LiveResponderOverlays({
   onSelectIncident: (incident: IncidentItem) => void;
 }) {
   return <>
-    {locations.flatMap((location) => {
+    {locations.flatMap((location: LiveResponderLocation) => {
       const targets = location.assignments
         .map((assignment) => incidents.find((incident) => incident.id === assignment.incidentId))
         .filter((incident): incident is IncidentItem => Boolean(incident));
@@ -930,7 +930,7 @@ export default function CommandCenter() {
         ? payload.locations.map(normalizeLiveResponderLocation).filter((location: LiveResponderLocation | null): location is LiveResponderLocation => Boolean(location))
         : [];
       setLiveResponderLocations(locations);
-      setSelectedResponderId((current) => current && locations.some((location) => location.responderId === current) ? current : null);
+      setSelectedResponderId((current) => current && locations.some((location: LiveResponderLocation) => location.responderId === current) ? current : null);
     };
     const expireStaleLocations = () => {
       setLiveResponderLocations((current) => {
@@ -991,7 +991,7 @@ export default function CommandCenter() {
   const visibleLiveResponders = useMemo(() => {
     if (!filters.responding) return [];
     const now = Date.now();
-    return liveResponderLocations.filter((location) => {
+    return liveResponderLocations.filter((location: LiveResponderLocation) => {
       const age = now - Date.parse(location.timestamp);
       if (!Number.isFinite(age) || age > LIVE_LOCATION_MAX_AGE_MS) return false;
       if (boundary.enabled && !isCoordinateInsideBoundary(location.latitude, location.longitude, boundary.geometry)) return false;
