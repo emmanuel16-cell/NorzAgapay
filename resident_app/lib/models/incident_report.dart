@@ -52,6 +52,7 @@ class IncidentReport {
   final int expectedResolutionSampleCount;
   final String? arrivalEstimateMethod;
   final List<Map<String, dynamic>> responderMedia;
+  final bool isDemoData;
 
   /// All proof URLs for this report. Falls back to [proofUrl] if the API
   /// doesn't yet return a list.
@@ -114,6 +115,7 @@ class IncidentReport {
     List<Map<String, dynamic>>? responderMedia,
     List<String>? proofUrls,
     List<String>? proofTypes,
+    this.isDemoData = false,
   }) : proofUrls = proofUrls ?? (proofUrl != null ? [proofUrl] : []),
        proofTypes = proofTypes ?? [proofType],
        responderMedia = responderMedia ?? const [];
@@ -215,6 +217,7 @@ class IncidentReport {
         'arrival_method': arrivalEstimateMethod,
       },
       'responder_media': responderMedia,
+      'is_demo_data': isDemoData,
     };
   }
 
@@ -286,9 +289,11 @@ class IncidentReport {
       incidentOccurredAt: json['incident_occurred_at'] != null
           ? DateTime.tryParse(json['incident_occurred_at'].toString())
           : null,
-      incidentTimePrecision: const {'exact', 'approximate'}.contains(
-        json['incident_time_precision']?.toString(),
-      )
+      incidentTimePrecision:
+          const {
+            'exact',
+            'approximate',
+          }.contains(json['incident_time_precision']?.toString())
           ? json['incident_time_precision'].toString()
           : 'unknown',
       dispatcherReviewedAt: json['dispatcher_reviewed_at'] != null
@@ -353,6 +358,7 @@ class IncidentReport {
           : const [],
       proofUrls: proofUrls,
       proofTypes: proofTypes,
+      isDemoData: json['is_demo_data'] == true,
     );
   }
 
@@ -420,6 +426,7 @@ class IncidentReport {
       responderMedia: responderMedia,
       proofUrls: proofUrls ?? this.proofUrls,
       proofTypes: proofTypes ?? this.proofTypes,
+      isDemoData: isDemoData,
     );
   }
 }

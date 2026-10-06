@@ -5,6 +5,9 @@ import '../services/auth_service.dart';
 import '../services/api_service.dart';
 import '../services/socket_service.dart';
 import '../models/incident_report.dart';
+import '../mdrrmo/data/demo_data.dart';
+import '../mdrrmo/providers/demo_mode_provider.dart';
+import '../widgets/demo_data_switch_card.dart';
 import 'report_detail_screen.dart';
 import 'barangay_report_incident_screen.dart';
 
@@ -15,7 +18,8 @@ class ReportsScreen extends StatefulWidget {
   State<ReportsScreen> createState() => _ReportsScreenState();
 }
 
-class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProviderStateMixin {
+class _ReportsScreenState extends State<ReportsScreen>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
   List<IncidentReport> _reports = [];
   bool _isLoading = true;
@@ -27,6 +31,14 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
   final Set<String> _expandedAssistance = {};
   SocketService? _socketService;
   int _reportFetchSequence = 0;
+
+  List<IncidentReport> _displayReports(AuthService auth) =>
+      context.read<DemoModeProvider>().showDemoData
+      ? [
+          ..._reports,
+          ...buildDemoBarangayReports(responderId: auth.currentUser?.id),
+        ]
+      : _reports;
 
   void _onSocketStateChanged() {
     if (mounted && _socketService?.isConnected == true) _fetchReports();
@@ -78,13 +90,16 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
 
       // Real-time socket events for assistance requests
       socket.onAssistanceRequest((_) {
-        if (mounted && auth.token != null) _fetchAssistanceRequests(auth.token!);
+        if (mounted && auth.token != null)
+          _fetchAssistanceRequests(auth.token!);
       });
       socket.onAssistanceDecision((_) {
-        if (mounted && auth.token != null) _fetchAssistanceRequests(auth.token!);
+        if (mounted && auth.token != null)
+          _fetchAssistanceRequests(auth.token!);
       });
       socket.onAssistanceTeamAction((_) {
-        if (mounted && auth.token != null) _fetchAssistanceRequests(auth.token!);
+        if (mounted && auth.token != null)
+          _fetchAssistanceRequests(auth.token!);
       });
     });
   }
@@ -103,14 +118,17 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
       final reports = await ApiService.getReports(auth.token!);
       if (mounted && requestSequence == _reportFetchSequence) {
         setState(() => _reports = reports);
-        if (auth.currentUser?.isDispatcher == true || auth.currentUser?.isResponder == true) {
+        if (auth.currentUser?.isDispatcher == true ||
+            auth.currentUser?.isResponder == true) {
           _fetchAssistanceRequests(auth.token!);
         }
       }
     } catch (e) {
-      if (mounted && requestSequence == _reportFetchSequence) setState(() => _errorMessage = e.toString());
+      if (mounted && requestSequence == _reportFetchSequence)
+        setState(() => _errorMessage = e.toString());
     } finally {
-      if (mounted && requestSequence == _reportFetchSequence) setState(() => _isLoading = false);
+      if (mounted && requestSequence == _reportFetchSequence)
+        setState(() => _isLoading = false);
     }
   }
 
@@ -128,8 +146,12 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
       }
 
       list.sort((a, b) {
-        final aCreated = DateTime.tryParse(a['created_at']?.toString() ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
-        final bCreated = DateTime.tryParse(b['created_at']?.toString() ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final aCreated =
+            DateTime.tryParse(a['created_at']?.toString() ?? '') ??
+            DateTime.fromMillisecondsSinceEpoch(0);
+        final bCreated =
+            DateTime.tryParse(b['created_at']?.toString() ?? '') ??
+            DateTime.fromMillisecondsSinceEpoch(0);
         return bCreated.compareTo(aCreated);
       });
 
@@ -147,25 +169,25 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
   void _openDetail(IncidentReport report) {
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => ReportDetailScreen(report: report),
-      ),
+      MaterialPageRoute(builder: (_) => ReportDetailScreen(report: report)),
     ).then((_) => _fetchReports());
   }
 
   List<IncidentReport> _filterByStatus(String tab, [AuthService? authService]) {
-    final auth = authService ?? Provider.of<AuthService>(context, listen: false);
+    final auth =
+        authService ?? Provider.of<AuthService>(context, listen: false);
     final user = auth.currentUser;
     final isDispatcher = user?.isDispatcher == true;
     final isResponder = user?.isResponder == true;
+    final reports = _displayReports(auth);
 
     if (tab == 'pending') {
       if (isDispatcher) {
         // Dispatcher sees all pending reports
-        return _reports.where((r) => r.isPending).toList();
+        return reports.where((r) => r.isPending).toList();
       } else if (isResponder) {
         // Responder only sees pending reports dispatched to them (single or multi-dispatch)
-        return _reports.where((r) {
+        return reports.where((r) {
           if (!r.isPending) return false;
           return r.isAssignedToUser(user!.id, userFullName: user.fullName);
         }).toList();
@@ -174,15 +196,16 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
         return [];
       }
     } else if (tab == 'responding') {
-      return _reports.where((r) => r.isResponding).toList();
+      return reports.where((r) => r.isResponding).toList();
     } else {
-      return _reports.where((r) => r.isResolved).toList();
+      return reports.where((r) => r.isResolved).toList();
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final auth = Provider.of<AuthService>(context);
+    final showDemoData = context.watch<DemoModeProvider>().showDemoData;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F6FA),
@@ -192,12 +215,12 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
         scrolledUnderElevation: 0,
         flexibleSpace: const _BarangayReportsGradient(),
         foregroundColor: Colors.white,
-        title: const Text('Incident Reports', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+        title: const Text(
+          'Incident Reports',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+        ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _fetchReports,
-          ),
+          IconButton(icon: const Icon(Icons.refresh), onPressed: _fetchReports),
         ],
         bottom: TabBar(
           controller: _tabController,
@@ -211,7 +234,10 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
                 children: [
                   const Text('Pending'),
                   const SizedBox(width: 6),
-                  _countBadge(_filterByStatus('pending', auth).length, Colors.red),
+                  _countBadge(
+                    _filterByStatus('pending', auth).length,
+                    Colors.red,
+                  ),
                 ],
               ),
             ),
@@ -221,7 +247,10 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
                 children: [
                   const Text('Responding'),
                   const SizedBox(width: 6),
-                  _countBadge(_filterByStatus('responding', auth).length, Colors.orange),
+                  _countBadge(
+                    _filterByStatus('responding', auth).length,
+                    Colors.orange,
+                  ),
                 ],
               ),
             ),
@@ -231,7 +260,10 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
                 children: [
                   const Text('Resolved'),
                   const SizedBox(width: 6),
-                  _countBadge(_filterByStatus('resolved', auth).length, Colors.green),
+                  _countBadge(
+                    _filterByStatus('resolved', auth).length,
+                    Colors.green,
+                  ),
                 ],
               ),
             ),
@@ -239,32 +271,55 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
         ),
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFF0D9488)))
-          : _errorMessage != null
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
+          ? const Center(
+              child: CircularProgressIndicator(color: Color(0xFF0D9488)),
+            )
+          : _errorMessage != null && !showDemoData
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    _errorMessage!,
+                    style: const TextStyle(color: Colors.red),
+                  ),
+                  const SizedBox(height: 12),
+                  ElevatedButton(
+                    onPressed: _fetchReports,
+                    child: const Text('Try Again'),
+                  ),
+                ],
+              ),
+            )
+          : Column(
+              children: [
+                const DemoDataSwitchCard(
+                  margin: EdgeInsets.fromLTRB(12, 12, 12, 0),
+                ),
+                Expanded(
+                  child: TabBarView(
+                    controller: _tabController,
                     children: [
-                      Text(
-                        _errorMessage!,
-                        style: const TextStyle(color: Colors.red),
+                      _buildReportList(
+                        _filterByStatus('pending', auth),
+                        auth,
+                        'pending',
                       ),
-                      const SizedBox(height: 12),
-                      ElevatedButton(
-                        onPressed: _fetchReports,
-                        child: const Text('Try Again'),
+                      _buildReportList(
+                        _filterByStatus('responding', auth),
+                        auth,
+                        'responding',
+                      ),
+                      _buildReportList(
+                        _filterByStatus('resolved', auth),
+                        auth,
+                        'resolved',
                       ),
                     ],
                   ),
-                )
-              : TabBarView(
-                  controller: _tabController,
-                  children: [
-                    _buildReportList(_filterByStatus('pending', auth), auth, 'pending'),
-                    _buildReportList(_filterByStatus('responding', auth), auth, 'responding'),
-                    _buildReportList(_filterByStatus('resolved', auth), auth, 'resolved'),
-                  ],
                 ),
+              ],
+            ),
       bottomNavigationBar: auth.currentUser?.isResponder == true
           ? SafeArea(
               top: false,
@@ -276,12 +331,17 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
                   onPressed: () async {
                     final created = await Navigator.push<bool>(
                       context,
-                      MaterialPageRoute(builder: (_) => const BarangayReportIncidentScreen()),
+                      MaterialPageRoute(
+                        builder: (_) => const BarangayReportIncidentScreen(),
+                      ),
                     );
                     if (created == true) _fetchReports();
                   },
                   icon: const Icon(Icons.add_a_photo_outlined),
-                  label: const Text('Report Incident', style: TextStyle(fontWeight: FontWeight.bold)),
+                  label: const Text(
+                    'Report Incident',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF0D9488),
                     foregroundColor: Colors.white,
@@ -306,12 +366,20 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
       ),
       child: Text(
         '$count',
-        style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold),
+        style: TextStyle(
+          color: color,
+          fontSize: 11,
+          fontWeight: FontWeight.bold,
+        ),
       ),
     );
   }
 
-  Widget _buildReportList(List<IncidentReport> list, AuthService auth, [String category = '']) {
+  Widget _buildReportList(
+    List<IncidentReport> list,
+    AuthService auth, [
+    String category = '',
+  ]) {
     if (list.isEmpty) {
       String emptyMessage = 'No reports in this category';
       if (category == 'pending') {
@@ -320,7 +388,8 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
         } else if (auth.currentUser?.isResponder == true) {
           emptyMessage = 'No pending incidents dispatched to you';
         } else {
-          emptyMessage = 'Only Dispatchers and assigned Responders can view pending reports';
+          emptyMessage =
+              'Only Dispatchers and assigned Responders can view pending reports';
         }
       } else if (category == 'responding') {
         emptyMessage = 'No active responding incidents';
@@ -359,7 +428,9 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
   Widget _buildReportCard(IncidentReport report, AuthService auth) {
     final isDispatcher = auth.currentUser?.isDispatcher == true;
     final isResponder = auth.currentUser?.isResponder == true;
-    final typeColor = report.isEmergency ? const Color(0xFFEF4444) : const Color(0xFFF59E0B);
+    final typeColor = report.isEmergency
+        ? const Color(0xFFEF4444)
+        : const Color(0xFFF59E0B);
     Color statusColor = const Color(0xFFEF4444);
     String statusLabel = 'PENDING DISPATCH';
 
@@ -372,7 +443,9 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
     }
 
     // Check if there's an assistance request for this report (Dispatcher or Responder)
-    final assistanceReq = (isDispatcher || isResponder) ? _assistanceMap[report.id] : null;
+    final assistanceReq = (isDispatcher || isResponder)
+        ? _assistanceMap[report.id]
+        : null;
     final hasAssistance = assistanceReq != null;
     final assistanceData = assistanceReq ?? <String, dynamic>{};
     final isExpanded = _expandedAssistance.contains(report.id);
@@ -390,9 +463,11 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
           color: hasAssistance && assistanceData['status'] == 'pending'
               ? const Color(0xFFF59E0B).withOpacity(0.6)
               : report.isEmergency && report.isPending
-                  ? Colors.red.withOpacity(0.5)
-                  : const Color(0xFFE2E8F0),
-          width: hasAssistance && assistanceData['status'] == 'pending' ? 1.5 : 1.0,
+              ? Colors.red.withOpacity(0.5)
+              : const Color(0xFFE2E8F0),
+          width: hasAssistance && assistanceData['status'] == 'pending'
+              ? 1.5
+              : 1.0,
         ),
       ),
       child: Column(
@@ -403,8 +478,12 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
             borderRadius: BorderRadius.only(
               topLeft: const Radius.circular(14),
               topRight: const Radius.circular(14),
-              bottomLeft: hasAssistance ? Radius.zero : const Radius.circular(14),
-              bottomRight: hasAssistance ? Radius.zero : const Radius.circular(14),
+              bottomLeft: hasAssistance
+                  ? Radius.zero
+                  : const Radius.circular(14),
+              bottomRight: hasAssistance
+                  ? Radius.zero
+                  : const Radius.circular(14),
             ),
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -415,7 +494,10 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
                         decoration: BoxDecoration(
                           color: typeColor.withOpacity(0.2),
                           borderRadius: BorderRadius.circular(6),
@@ -431,7 +513,10 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
                         ),
                       ),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
                         decoration: BoxDecoration(
                           color: statusColor.withOpacity(0.2),
                           borderRadius: BorderRadius.circular(6),
@@ -462,14 +547,21 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
                       'Reported by ${report.reporterName}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: Color(0xFF475569), fontSize: 12, fontWeight: FontWeight.w600),
+                      style: const TextStyle(
+                        color: Color(0xFF475569),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ],
                   if (specifics.isNotEmpty) ...[
                     const SizedBox(height: 3),
                     Text(
                       specifics,
-                      style: const TextStyle(color: Color(0xFF64748B), fontSize: 13),
+                      style: const TextStyle(
+                        color: Color(0xFF64748B),
+                        fontSize: 13,
+                      ),
                     ),
                   ],
                   if (description.isNotEmpty) ...[
@@ -478,21 +570,31 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
                       description,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: Color(0xFF64748B), fontSize: 12),
+                      style: const TextStyle(
+                        color: Color(0xFF64748B),
+                        fontSize: 12,
+                      ),
                     ),
                   ],
                   if ((report.address ?? '').trim().isNotEmpty) ...[
                     const SizedBox(height: 6),
                     Row(
                       children: [
-                        const Icon(Icons.location_on_outlined, size: 14, color: Color(0xFF64748B)),
+                        const Icon(
+                          Icons.location_on_outlined,
+                          size: 14,
+                          color: Color(0xFF64748B),
+                        ),
                         const SizedBox(width: 4),
                         Expanded(
                           child: Text(
                             report.address!.trim(),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: Color(0xFF64748B), fontSize: 12),
+                            style: const TextStyle(
+                              color: Color(0xFF64748B),
+                              fontSize: 12,
+                            ),
                           ),
                         ),
                       ],
@@ -502,27 +604,41 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
                   Row(
                     children: [
                       if ((report.reporterEmail ?? '').isNotEmpty) ...[
-                        const Icon(Icons.email_outlined, size: 14, color: Color(0xFF1B4F72)),
+                        const Icon(
+                          Icons.email_outlined,
+                          size: 14,
+                          color: Color(0xFF1B4F72),
+                        ),
                         const SizedBox(width: 4),
                         Expanded(
                           child: Text(
                             report.reporterEmail!,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: Color(0xFF1B4F72), fontSize: 12),
+                            style: const TextStyle(
+                              color: Color(0xFF1B4F72),
+                              fontSize: 12,
+                            ),
                           ),
                         ),
                         const SizedBox(width: 8),
                       ],
                       if (report.createdAt != null) ...[
-                        const Icon(Icons.access_time, size: 14, color: Color(0xFF64748B)),
+                        const Icon(
+                          Icons.access_time,
+                          size: 14,
+                          color: Color(0xFF64748B),
+                        ),
                         const SizedBox(width: 4),
                         Flexible(
                           child: Text(
                             'Report received: ${DateFormat('MMMM d, y h:mm a').format(report.createdAt!.toLocal())}',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: Color(0xFF64748B), fontSize: 11),
+                            style: const TextStyle(
+                              color: Color(0xFF64748B),
+                              fontSize: 11,
+                            ),
                           ),
                         ),
                       ],
@@ -531,16 +647,46 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
                   const SizedBox(height: 5),
                   Row(
                     children: [
-                      const Icon(Icons.history_rounded, size: 14, color: Color(0xFF64748B)),
+                      const Icon(
+                        Icons.history_rounded,
+                        size: 14,
+                        color: Color(0xFF64748B),
+                      ),
                       const SizedBox(width: 4),
                       Expanded(
                         child: Text(
-                          report.incidentOccurredAt == null || report.incidentTimePrecision == 'unknown'
+                          report.incidentOccurredAt == null ||
+                                  report.incidentTimePrecision == 'unknown'
                               ? 'Incident time unknown'
                               : 'Incident occurred: ${DateFormat('MMMM d, y h:mm a').format(report.incidentOccurredAt!.toLocal())} (${report.incidentTimePrecision})',
-                          style: const TextStyle(color: Color(0xFF64748B), fontSize: 11),
+                          style: const TextStyle(
+                            color: Color(0xFF64748B),
+                            fontSize: 11,
+                          ),
                         ),
                       ),
+                      if (report.isDemoData) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF7E6),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: const Color(0xFFF3D28B)),
+                          ),
+                          child: const Text(
+                            'DEMO',
+                            style: TextStyle(
+                              color: Color(0xFF7A5100),
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ],
@@ -550,7 +696,13 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
 
           // ── Assistance Request banner (Dispatcher or Responder) ──
           if (hasAssistance)
-            _buildAssistanceBanner(report.id, assistanceData, isExpanded, isDispatcher, isResponder),
+            _buildAssistanceBanner(
+              report.id,
+              assistanceData,
+              isExpanded,
+              isDispatcher,
+              isResponder,
+            ),
         ],
       ),
     );
@@ -640,7 +792,9 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
                   headerBadge,
                   const Spacer(),
                   Icon(
-                    isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                    isExpanded
+                        ? Icons.keyboard_arrow_up
+                        : Icons.keyboard_arrow_down,
                     color: const Color(0xFF94A3B8),
                     size: 20,
                   ),
@@ -663,7 +817,11 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
                       isResponder
                           ? 'From: You (Responder)'
                           : 'From: ${req['requested_by_user']?['full_name'] ?? 'Responder 1'}',
-                      style: const TextStyle(color: Color(0xFF1B4F72), fontSize: 13, fontWeight: FontWeight.bold),
+                      style: const TextStyle(
+                        color: Color(0xFF1B4F72),
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                     const SizedBox(height: 8),
 
@@ -673,13 +831,29 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
                       runSpacing: 6,
                       children: [
                         if (req['needs_more_manpower'] == true)
-                          _needTag(Icons.people, 'Manpower', const Color(0xFF0284C7)),
+                          _needTag(
+                            Icons.people,
+                            'Manpower',
+                            const Color(0xFF0284C7),
+                          ),
                         if (req['needs_resources'] == true)
-                          _needTag(Icons.inventory_2, 'Resources', const Color(0xFF7C3AED)),
+                          _needTag(
+                            Icons.inventory_2,
+                            'Resources',
+                            const Color(0xFF7C3AED),
+                          ),
                         if (req['needs_equipment'] == true)
-                          _needTag(Icons.construction, 'Equipment', const Color(0xFF059669)),
+                          _needTag(
+                            Icons.construction,
+                            'Equipment',
+                            const Color(0xFF059669),
+                          ),
                         if (req['beyond_barangay_capability'] == true)
-                          _needTag(Icons.escalator_warning, 'Needs MDRRMO', const Color(0xFFEF4444)),
+                          _needTag(
+                            Icons.escalator_warning,
+                            'Needs MDRRMO',
+                            const Color(0xFFEF4444),
+                          ),
                       ],
                     ),
                     const SizedBox(height: 8),
@@ -687,7 +861,10 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
                     // Explanation text
                     Text(
                       req['explanation'] ?? '',
-                      style: const TextStyle(color: Color(0xFF475569), fontSize: 13),
+                      style: const TextStyle(
+                        color: Color(0xFF475569),
+                        fontSize: 13,
+                      ),
                     ),
 
                     // ── DISPATCHER'S RESPONSE BLOCK (Shown if Dispatcher has responded) ──
@@ -699,18 +876,32 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
                         isDispatcher
                             ? 'From: You (Dispatcher)'
                             : 'From: ${req['decided_by_user']?['full_name'] ?? 'Dispatcher'}',
-                        style: const TextStyle(color: Color(0xFF1B4F72), fontSize: 13, fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                          color: Color(0xFF1B4F72),
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       const SizedBox(height: 6),
                       if (decision == 'provide_barangay_assistance')
-                        _decisionBadge('Provided Assistance', const Color(0xFF10B981))
+                        _decisionBadge(
+                          'Provided Assistance',
+                          const Color(0xFF10B981),
+                        )
                       else if (decision == 'coordinate_mdrrmo')
-                        _decisionBadge('MDRRMO Coordination', const Color(0xFFEF4444)),
-                      if (req['dispatcher_notes'] != null && (req['dispatcher_notes'] as String).isNotEmpty) ...[
+                        _decisionBadge(
+                          'MDRRMO Coordination',
+                          const Color(0xFFEF4444),
+                        ),
+                      if (req['dispatcher_notes'] != null &&
+                          (req['dispatcher_notes'] as String).isNotEmpty) ...[
                         const SizedBox(height: 6),
                         Text(
                           req['dispatcher_notes'],
-                          style: const TextStyle(color: Color(0xFF475569), fontSize: 13),
+                          style: const TextStyle(
+                            color: Color(0xFF475569),
+                            fontSize: 13,
+                          ),
                         ),
                       ],
                     ],
@@ -724,18 +915,28 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
                         child: ElevatedButton.icon(
                           onPressed: () => _handleDecide(req),
                           icon: const Icon(Icons.gavel, size: 18),
-                          label: const Text('Decide Now', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                          label: const Text(
+                            'Decide Now',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
+                          ),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFF0284C7),
                             foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
                           ),
                         ),
                       ),
                     ],
 
                     // ── TEAM LEADER ACTIONS (Change & Received) ──
-                    if (isResponder && status != 'cancelled' && !teamAcknowledged) ...[
+                    if (isResponder &&
+                        status != 'cancelled' &&
+                        !teamAcknowledged) ...[
                       const SizedBox(height: 12),
                       if (!hasDispatcherResponded) ...[
                         // Dispatcher has NOT decided yet: only show Change button
@@ -747,9 +948,17 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
                             style: OutlinedButton.styleFrom(
                               side: const BorderSide(color: Color(0xFFEF4444)),
                               foregroundColor: const Color(0xFFEF4444),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
                             ),
-                            child: const Text('Change', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                            child: const Text(
+                              'Change',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
+                            ),
                           ),
                         ),
                       ] else ...[
@@ -758,13 +967,25 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
                           width: double.infinity,
                           height: 42,
                           child: ElevatedButton.icon(
-                            onPressed: () => _handleTeamAction(req, 'acknowledge'),
-                            icon: const Icon(Icons.check_circle_outline, size: 18),
-                            label: const Text('Received', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                            onPressed: () =>
+                                _handleTeamAction(req, 'acknowledge'),
+                            icon: const Icon(
+                              Icons.check_circle_outline,
+                              size: 18,
+                            ),
+                            label: const Text(
+                              'Received',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
+                            ),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF10B981),
                               foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
                             ),
                           ),
                         ),
@@ -789,7 +1010,11 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
       ),
       child: Text(
         label,
-        style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.bold),
+        style: TextStyle(
+          color: color,
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+        ),
       ),
     );
   }
@@ -804,7 +1029,11 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
       ),
       child: Text(
         label,
-        style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold),
+        style: TextStyle(
+          color: color,
+          fontSize: 11,
+          fontWeight: FontWeight.bold,
+        ),
       ),
     );
   }
@@ -822,7 +1051,14 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
         children: [
           Icon(icon, color: color, size: 11),
           const SizedBox(width: 3),
-          Text(label, style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.bold)),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
         ],
       ),
     );
@@ -853,13 +1089,26 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
               const SizedBox(height: 12),
               const Text(
                 'Modify Request',
-                style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               const SizedBox(height: 8),
               ListTile(
                 leading: const Icon(Icons.edit, color: Color(0xFF38BDF8)),
-                title: const Text('Edit Request', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
-                subtitle: const Text('Update checkboxes or explanation details', style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12)),
+                title: const Text(
+                  'Edit Request',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                subtitle: const Text(
+                  'Update checkboxes or explanation details',
+                  style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
+                ),
                 onTap: () {
                   Navigator.pop(ctx);
                   _openEditRequestDialog(req);
@@ -868,8 +1117,17 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
               const Divider(color: Color(0xFF334155), height: 1),
               ListTile(
                 leading: const Icon(Icons.cancel, color: Color(0xFFEF4444)),
-                title: const Text('Cancel Request', style: TextStyle(color: Color(0xFFEF4444), fontWeight: FontWeight.w600)),
-                subtitle: const Text('Withdraw this assistance request completely', style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12)),
+                title: const Text(
+                  'Cancel Request',
+                  style: TextStyle(
+                    color: Color(0xFFEF4444),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                subtitle: const Text(
+                  'Withdraw this assistance request completely',
+                  style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
+                ),
                 onTap: () {
                   Navigator.pop(ctx);
                   _handleTeamAction(req, 'cancel');
@@ -888,21 +1146,33 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
     bool needsResources = req['needs_resources'] == true;
     bool needsEquipment = req['needs_equipment'] == true;
     bool beyondCapability = req['beyond_barangay_capability'] == true;
-    final explanationController = TextEditingController(text: req['explanation'] ?? '');
+    final explanationController = TextEditingController(
+      text: req['explanation'] ?? '',
+    );
 
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           backgroundColor: const Color(0xFF1E293B),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           title: const Row(
             children: [
-              Icon(Icons.warning_amber_rounded, color: Color(0xFFF59E0B), size: 22),
+              Icon(
+                Icons.warning_amber_rounded,
+                color: Color(0xFFF59E0B),
+                size: 22,
+              ),
               SizedBox(width: 8),
               Text(
                 'Request Assistance',
-                style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 17,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ],
           ),
@@ -918,7 +1188,11 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
                 const SizedBox(height: 14),
                 const Text(
                   'Quick Actions — What do you need?',
-                  style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 _checkboxTile(
@@ -945,7 +1219,8 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
                 _checkboxTile(
                   setDialogState: setDialogState,
                   icon: Icons.escalator_warning,
-                  label: 'May exceed barangay capability — request MDRRMO review',
+                  label:
+                      'May exceed barangay capability — request MDRRMO review',
                   value: beyondCapability,
                   onChanged: (v) => beyondCapability = v ?? false,
                 ),
@@ -957,8 +1232,12 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
                   decoration: const InputDecoration(
                     labelText: 'Explanation / Details *',
                     labelStyle: TextStyle(color: Color(0xFF94A3B8)),
-                    hintText: 'e.g., need 3-4 personnel, food for 8 people, digging equipment',
-                    hintStyle: TextStyle(color: Color(0xFF64748B), fontSize: 12),
+                    hintText:
+                        'e.g., need 3-4 personnel, food for 8 people, digging equipment',
+                    hintStyle: TextStyle(
+                      color: Color(0xFF64748B),
+                      fontSize: 12,
+                    ),
                     filled: true,
                     fillColor: Color(0xFF0F172A),
                     border: OutlineInputBorder(),
@@ -973,16 +1252,24 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel', style: TextStyle(color: Color(0xFF94A3B8))),
+              child: const Text(
+                'Cancel',
+                style: TextStyle(color: Color(0xFF94A3B8)),
+              ),
             ),
             ElevatedButton(
               onPressed: () => Navigator.pop(ctx, true),
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFFF59E0B),
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
               ),
-              child: const Text('Send Request', style: TextStyle(fontWeight: FontWeight.bold)),
+              child: const Text(
+                'Send Request',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
             ),
           ],
         ),
@@ -995,7 +1282,9 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Please provide an explanation of at least 10 characters.'),
+              content: Text(
+                'Please provide an explanation of at least 10 characters.',
+              ),
               backgroundColor: Colors.red,
             ),
           );
@@ -1052,14 +1341,22 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
         children: [
           Icon(icon, color: const Color(0xFF94A3B8), size: 16),
           const SizedBox(width: 6),
-          Expanded(child: Text(label, style: const TextStyle(color: Color(0xFFE2E8F0), fontSize: 13))),
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(color: Color(0xFFE2E8F0), fontSize: 13),
+            ),
+          ),
         ],
       ),
     );
   }
 
   // ── Responder Action Handler (Cancel or Acknowledge/Received) ────────────
-  Future<void> _handleTeamAction(Map<String, dynamic> request, String action) async {
+  Future<void> _handleTeamAction(
+    Map<String, dynamic> request,
+    String action,
+  ) async {
     final auth = Provider.of<AuthService>(context, listen: false);
     if (auth.token == null) return;
 
@@ -1068,8 +1365,13 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
         context: context,
         builder: (ctx) => AlertDialog(
           backgroundColor: const Color(0xFF1E293B),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: const Text('Cancel Request', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: const Text(
+            'Cancel Request',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          ),
           content: const Text(
             'Are you sure you want to cancel this assistance request?',
             style: TextStyle(color: Color(0xFFCBD5E1)),
@@ -1077,12 +1379,23 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('No, Keep It', style: TextStyle(color: Color(0xFF94A3B8))),
+              child: const Text(
+                'No, Keep It',
+                style: TextStyle(color: Color(0xFF94A3B8)),
+              ),
             ),
             ElevatedButton(
               onPressed: () => Navigator.pop(ctx, true),
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFEF4444)),
-              child: const Text('Yes, Cancel', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFEF4444),
+              ),
+              child: const Text(
+                'Yes, Cancel',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ),
           ],
         ),
@@ -1091,12 +1404,22 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
     }
 
     try {
-      await ApiService.teamLeaderRequestAction(auth.token!, request['id'], action: action);
+      await ApiService.teamLeaderRequestAction(
+        auth.token!,
+        request['id'],
+        action: action,
+      );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(action == 'cancel' ? 'Assistance request cancelled.' : 'Assistance marked as received.'),
-            backgroundColor: action == 'cancel' ? const Color(0xFFEF4444) : const Color(0xFF10B981),
+            content: Text(
+              action == 'cancel'
+                  ? 'Assistance request cancelled.'
+                  : 'Assistance marked as received.',
+            ),
+            backgroundColor: action == 'cancel'
+                ? const Color(0xFFEF4444)
+                : const Color(0xFF10B981),
           ),
         );
         _fetchAssistanceRequests(auth.token!);
@@ -1120,10 +1443,16 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           backgroundColor: const Color(0xFF1E293B),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           title: const Text(
             'Respond to Assistance Request',
-            style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold),
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 17,
+              fontWeight: FontWeight.bold,
+            ),
           ),
           content: SingleChildScrollView(
             child: Column(
@@ -1132,7 +1461,14 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
               children: [
                 _buildAssistanceRequestSummary(request),
                 const SizedBox(height: 14),
-                const Text('Your Decision:', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
+                const Text(
+                  'Your Decision:',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 const SizedBox(height: 10),
                 _decisionOption(
                   setDialogState: setDialogState,
@@ -1149,7 +1485,8 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
                   value: 'coordinate_mdrrmo',
                   groupValue: selectedDecision,
                   label: '🚨  Recommend MDRRMO coordination',
-                  subtitle: 'Records this request; the dispatcher must escalate separately',
+                  subtitle:
+                      'Records this request; the dispatcher must escalate separately',
                   color: const Color(0xFFEF4444),
                   onChanged: (v) => selectedDecision = v ?? selectedDecision,
                 ),
@@ -1162,8 +1499,12 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
                   decoration: const InputDecoration(
                     labelText: 'Dispatcher\'s Notes (optional)',
                     labelStyle: TextStyle(color: Color(0xFF94A3B8)),
-                    hintText: 'e.g., Dispatching 6 additional volunteers and rescue gear now.',
-                    hintStyle: TextStyle(color: Color(0xFF64748B), fontSize: 12),
+                    hintText:
+                        'e.g., Dispatching 6 additional volunteers and rescue gear now.',
+                    hintStyle: TextStyle(
+                      color: Color(0xFF64748B),
+                      fontSize: 12,
+                    ),
                     filled: true,
                     fillColor: Color(0xFF0F172A),
                     border: OutlineInputBorder(),
@@ -1178,12 +1519,23 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel', style: TextStyle(color: Color(0xFF94A3B8))),
+              child: const Text(
+                'Cancel',
+                style: TextStyle(color: Color(0xFF94A3B8)),
+              ),
             ),
             ElevatedButton(
               onPressed: () => Navigator.pop(ctx, true),
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0284C7)),
-              child: const Text('Confirm', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0284C7),
+              ),
+              child: const Text(
+                'Confirm',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ),
           ],
         ),
@@ -1197,7 +1549,9 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
           auth.token!,
           request['id'],
           decision: selectedDecision,
-          dispatcherNotes: notesController.text.trim().isEmpty ? null : notesController.text.trim(),
+          dispatcherNotes: notesController.text.trim().isEmpty
+              ? null
+              : notesController.text.trim(),
         );
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -1244,7 +1598,11 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
           const SizedBox(height: 6),
           Text(
             'From: ${request['requested_by_user']?['full_name'] ?? 'Responder'}',
-            style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 12, fontWeight: FontWeight.bold),
+            style: const TextStyle(
+              color: Color(0xFF38BDF8),
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+            ),
           ),
           if (request['incident_title'] != null) ...[
             const SizedBox(height: 3),
@@ -1261,18 +1619,34 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
               if (request['needs_more_manpower'] == true)
                 _needTag(Icons.people, 'Manpower', const Color(0xFF38BDF8)),
               if (request['needs_resources'] == true)
-                _needTag(Icons.inventory_2, 'Resources', const Color(0xFFA78BFA)),
+                _needTag(
+                  Icons.inventory_2,
+                  'Resources',
+                  const Color(0xFFA78BFA),
+                ),
               if (request['needs_equipment'] == true)
-                _needTag(Icons.construction, 'Equipment', const Color(0xFF34D399)),
+                _needTag(
+                  Icons.construction,
+                  'Equipment',
+                  const Color(0xFF34D399),
+                ),
               if (request['beyond_barangay_capability'] == true)
-                _needTag(Icons.escalator_warning, 'Needs MDRRMO', const Color(0xFFF87171)),
+                _needTag(
+                  Icons.escalator_warning,
+                  'Needs MDRRMO',
+                  const Color(0xFFF87171),
+                ),
             ],
           ),
           if (explanation.isNotEmpty) ...[
             const SizedBox(height: 8),
             Text(
               explanation,
-              style: const TextStyle(color: Color(0xFFCBD5E1), fontSize: 12, height: 1.35),
+              style: const TextStyle(
+                color: Color(0xFFCBD5E1),
+                fontSize: 12,
+                height: 1.35,
+              ),
             ),
           ],
         ],
@@ -1323,7 +1697,13 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
                     ),
                   ),
                   const SizedBox(height: 2),
-                  Text(subtitle, style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 11)),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      color: Color(0xFF94A3B8),
+                      fontSize: 11,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -1346,7 +1726,13 @@ class _BarangayReportsGradient extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        width: double.infinity,
-        decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF0C243B), Color(0xFF133E68), Color(0xFF0F5B78)], begin: Alignment.topLeft, end: Alignment.bottomRight)),
-      );
+    width: double.infinity,
+    decoration: const BoxDecoration(
+      gradient: LinearGradient(
+        colors: [Color(0xFF0C243B), Color(0xFF133E68), Color(0xFF0F5B78)],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      ),
+    ),
+  );
 }

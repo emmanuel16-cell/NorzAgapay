@@ -49,6 +49,7 @@ class IncidentReport {
   final double? arrivalAccuracyM;
   final double? arrivalDistanceM;
   final DateTime? resolvedAt;
+  final bool isDemoData;
 
   IncidentReport({
     required this.id,
@@ -99,21 +100,27 @@ class IncidentReport {
     this.arrivalAccuracyM,
     this.arrivalDistanceM,
     this.resolvedAt,
-  })  : proofUrls = proofUrls ?? (proofUrl != null ? [proofUrl] : []),
-        proofTypes = proofTypes ?? [proofType],
-        responderMedia = responderMedia ?? const [];
+    this.isDemoData = false,
+  }) : proofUrls = proofUrls ?? (proofUrl != null ? [proofUrl] : []),
+       proofTypes = proofTypes ?? [proofType],
+       responderMedia = responderMedia ?? const [];
 
   bool get isEmergency => type == 'emergency';
   bool get isResponding => barangayResponseStatus == 'responding';
-  bool get isResolved => barangayResponseStatus == 'resolved' || status == 'resolved';
+  bool get isResolved =>
+      barangayResponseStatus == 'resolved' || status == 'resolved';
   bool get isPending => !isResponding && !isResolved;
   bool get isMdrrmoResponding => mdrrmoResponseStatus == 'responding';
   bool get isArrived => arrivedAt != null;
 
   String? get cleanBarangayNotes {
     if (barangayResponseNotes == null) return null;
-    var clean = barangayResponseNotes!.replaceFirst(RegExp(r'^\[ASSIGNED:[^\]]+\]\s*'), '').trim();
-    clean = clean.replaceFirst(RegExp(r'\[RESPONDER_MEDIA:[^\]]+\]'), '').trim();
+    var clean = barangayResponseNotes!
+        .replaceFirst(RegExp(r'^\[ASSIGNED:[^\]]+\]\s*'), '')
+        .trim();
+    clean = clean
+        .replaceFirst(RegExp(r'\[RESPONDER_MEDIA:[^\]]+\]'), '')
+        .trim();
     return clean.isEmpty ? null : clean;
   }
 
@@ -122,7 +129,9 @@ class IncidentReport {
     if (assignedTeamLeaderIds.contains(userId)) return true;
     if (userFullName != null &&
         barangayResponderName != null &&
-        barangayResponderName!.toLowerCase().contains(userFullName.toLowerCase())) {
+        barangayResponderName!.toLowerCase().contains(
+          userFullName.toLowerCase(),
+        )) {
       return true;
     }
     return false;
@@ -139,17 +148,24 @@ class IncidentReport {
       final endIdx = rawNotes.indexOf(']');
       if (endIdx != -1) {
         final idsStr = rawNotes.substring('[ASSIGNED:'.length, endIdx);
-        assignedIds = idsStr.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+        assignedIds = idsStr
+            .split(',')
+            .map((s) => s.trim())
+            .where((s) => s.isNotEmpty)
+            .toList();
       }
     }
-    if (json['barangay_responded_by'] != null && !assignedIds.contains(json['barangay_responded_by'].toString())) {
+    if (json['barangay_responded_by'] != null &&
+        !assignedIds.contains(json['barangay_responded_by'].toString())) {
       assignedIds.add(json['barangay_responded_by'].toString());
     }
 
     List<String> proofUrls = [];
     List<String> proofTypes = [];
     if (json['proof_urls'] is List && (json['proof_urls'] as List).isNotEmpty) {
-      proofUrls = (json['proof_urls'] as List).map((e) => e.toString()).toList();
+      proofUrls = (json['proof_urls'] as List)
+          .map((e) => e.toString())
+          .toList();
       proofTypes = json['proof_types'] is List
           ? (json['proof_types'] as List).map((e) => e.toString()).toList()
           : List.filled(proofUrls.length, json['proof_type'] ?? 'image');
@@ -158,10 +174,15 @@ class IncidentReport {
       if (rawProof.startsWith('[') && rawProof.endsWith(']')) {
         try {
           final decoded = jsonDecode(rawProof);
-          if (decoded is List) proofUrls = decoded.map((e) => e.toString()).toList();
+          if (decoded is List)
+            proofUrls = decoded.map((e) => e.toString()).toList();
         } catch (_) {}
       } else if (rawProof.contains('|||')) {
-        proofUrls = rawProof.split('|||').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+        proofUrls = rawProof
+            .split('|||')
+            .map((s) => s.trim())
+            .where((s) => s.isNotEmpty)
+            .toList();
       }
       if (proofUrls.isEmpty && rawProof.isNotEmpty) {
         proofUrls = [rawProof];
@@ -178,7 +199,9 @@ class IncidentReport {
           .map((m) => Map<String, dynamic>.from(m))
           .toList();
     } else if (rawNotes != null && rawNotes.contains('[RESPONDER_MEDIA:')) {
-      final match = RegExp(r'\[RESPONDER_MEDIA:([\s\S]*?)\]').firstMatch(rawNotes);
+      final match = RegExp(
+        r'\[RESPONDER_MEDIA:([\s\S]*?)\]',
+      ).firstMatch(rawNotes);
       if (match != null && match.group(1) != null) {
         try {
           final decoded = jsonDecode(match.group(1)!);
@@ -192,8 +215,12 @@ class IncidentReport {
       }
     }
 
-    final primaryProofUrl = proofUrls.isNotEmpty ? proofUrls.first : json['proof_url'];
-    final primaryProofType = proofTypes.isNotEmpty ? proofTypes.first : (json['proof_type'] ?? 'image');
+    final primaryProofUrl = proofUrls.isNotEmpty
+        ? proofUrls.first
+        : json['proof_url'];
+    final primaryProofType = proofTypes.isNotEmpty
+        ? proofTypes.first
+        : (json['proof_type'] ?? 'image');
 
     return IncidentReport(
       id: json['id'] ?? '',
@@ -208,6 +235,7 @@ class IncidentReport {
       lifecycleRevision: (json['lifecycle_revision'] as num?)?.toInt() ?? 0,
       proofUrls: proofUrls,
       proofTypes: proofTypes,
+      isDemoData: json['is_demo_data'] == true,
       responderMedia: responderMedia,
       status: json['status'] ?? 'pending',
       incidentType: json['incident_type'],
@@ -225,27 +253,52 @@ class IncidentReport {
       mdrrmoCoordinationNotes: json['mdrrmo_coordination_notes'],
       mdrrmoResponseStatus: json['mdrrmo_response_status'] ?? 'pending',
       mdrrmoResponderName: json['mdrrmo_responder_name'],
-      mdrrmoRespondedAt: json['mdrrmo_responded_at'] != null ? DateTime.tryParse(json['mdrrmo_responded_at']) : null,
+      mdrrmoRespondedAt: json['mdrrmo_responded_at'] != null
+          ? DateTime.tryParse(json['mdrrmo_responded_at'])
+          : null,
       resolvedNotes: json['resolved_notes'],
-      createdAt: json['created_at'] != null ? DateTime.tryParse(json['created_at']) : null,
-      incidentOccurredAt: json['incident_occurred_at'] != null ? DateTime.tryParse(json['incident_occurred_at'].toString()) : null,
-      incidentTimePrecision: const {'exact', 'approximate'}.contains(json['incident_time_precision']?.toString())
+      createdAt: json['created_at'] != null
+          ? DateTime.tryParse(json['created_at'])
+          : null,
+      incidentOccurredAt: json['incident_occurred_at'] != null
+          ? DateTime.tryParse(json['incident_occurred_at'].toString())
+          : null,
+      incidentTimePrecision:
+          const {
+            'exact',
+            'approximate',
+          }.contains(json['incident_time_precision']?.toString())
           ? json['incident_time_precision'].toString()
           : 'unknown',
-      dispatcherReviewedAt: json['dispatcher_reviewed_at'] != null ? DateTime.tryParse(json['dispatcher_reviewed_at']) : null,
-      dispatchedAt: json['dispatched_at'] != null ? DateTime.tryParse(json['dispatched_at']) : null,
-      acceptedAt: json['accepted_at'] != null ? DateTime.tryParse(json['accepted_at']) : null,
+      dispatcherReviewedAt: json['dispatcher_reviewed_at'] != null
+          ? DateTime.tryParse(json['dispatcher_reviewed_at'])
+          : null,
+      dispatchedAt: json['dispatched_at'] != null
+          ? DateTime.tryParse(json['dispatched_at'])
+          : null,
+      acceptedAt: json['accepted_at'] != null
+          ? DateTime.tryParse(json['accepted_at'])
+          : null,
       travelDistanceM: (json['travel_distance_m'] as num?)?.toDouble(),
-      travelDistanceAccuracyM: (json['travel_distance_accuracy_m'] as num?)?.toDouble(),
-      travelDistanceFixAt: json['travel_distance_fix_at'] != null ? DateTime.tryParse(json['travel_distance_fix_at']) : null,
-      arrivedAt: json['arrived_at'] != null ? DateTime.tryParse(json['arrived_at']) : null,
-      arrivalRecordedAt: json['arrival_recorded_at'] != null ? DateTime.tryParse(json['arrival_recorded_at']) : null,
+      travelDistanceAccuracyM: (json['travel_distance_accuracy_m'] as num?)
+          ?.toDouble(),
+      travelDistanceFixAt: json['travel_distance_fix_at'] != null
+          ? DateTime.tryParse(json['travel_distance_fix_at'])
+          : null,
+      arrivedAt: json['arrived_at'] != null
+          ? DateTime.tryParse(json['arrived_at'])
+          : null,
+      arrivalRecordedAt: json['arrival_recorded_at'] != null
+          ? DateTime.tryParse(json['arrival_recorded_at'])
+          : null,
       arrivalMethod: json['arrival_method'],
       arrivalLatitude: (json['arrival_latitude'] as num?)?.toDouble(),
       arrivalLongitude: (json['arrival_longitude'] as num?)?.toDouble(),
       arrivalAccuracyM: (json['arrival_accuracy_m'] as num?)?.toDouble(),
       arrivalDistanceM: (json['arrival_distance_m'] as num?)?.toDouble(),
-      resolvedAt: json['resolved_at'] != null ? DateTime.tryParse(json['resolved_at']) : null,
+      resolvedAt: json['resolved_at'] != null
+          ? DateTime.tryParse(json['resolved_at'])
+          : null,
     );
   }
 

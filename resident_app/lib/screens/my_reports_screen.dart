@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:intl/intl.dart';
 import '../services/offline_service.dart';
 import '../services/report_updates_service.dart';
+import '../services/demo_data.dart';
 import '../models/incident_report.dart';
 import '../core/constants.dart';
 import '../widgets/resident_gradient_app_bar.dart';
@@ -24,23 +25,32 @@ class _MyReportsScreenState extends State<MyReportsScreen> {
   List<Map<String, dynamic>> _drafts = [];
   bool _showDrafts = false;
   String _reportFilter = 'All';
+  bool get _showDemoData => ResidentReportUpdates.showDemoData.value;
+  List<IncidentReport> get _allReports =>
+      _showDemoData ? [...residentDemoReports, ..._reports] : _reports;
 
   @override
   void initState() {
     super.initState();
     ResidentReportUpdates.reports.addListener(_applyLiveReportUpdates);
+    ResidentReportUpdates.showDemoData.addListener(_onDemoModeChanged);
     _fetchReports();
   }
 
   @override
   void dispose() {
     ResidentReportUpdates.reports.removeListener(_applyLiveReportUpdates);
+    ResidentReportUpdates.showDemoData.removeListener(_onDemoModeChanged);
     super.dispose();
   }
 
   void _applyLiveReportUpdates() {
     if (!mounted) return;
     setState(() => _reports = ResidentReportUpdates.reports.value);
+  }
+
+  void _onDemoModeChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _fetchReports() async {
@@ -95,7 +105,7 @@ class _MyReportsScreenState extends State<MyReportsScreen> {
     }
   }
 
-  List<IncidentReport> get _filteredReports => _reports.where((report) {
+  List<IncidentReport> get _filteredReports => _allReports.where((report) {
     switch (_reportFilter) {
       case 'Barangay':
         return report.type != 'community' &&
@@ -160,6 +170,37 @@ class _MyReportsScreenState extends State<MyReportsScreen> {
       ),
       body: Column(
         children: [
+          if (_showDemoData)
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF7E6),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFF3D28B)),
+              ),
+              child: const Row(
+                children: [
+                  Icon(
+                    Icons.science_outlined,
+                    size: 17,
+                    color: Color(0xFF9A6700),
+                  ),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Demo data is on · sample reports are read-only',
+                      style: TextStyle(
+                        color: Color(0xFF7A5100),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
             child: Row(
@@ -426,7 +467,7 @@ class _MyReportsScreenState extends State<MyReportsScreen> {
       return const Center(
         child: CircularProgressIndicator(color: Color(0xFF6366F1)),
       );
-    if (_errorMessage != null && _reports.isEmpty) {
+    if (_errorMessage != null && _allReports.isEmpty) {
       return ListView(
         children: [
           SizedBox(
@@ -539,7 +580,8 @@ class _MyReportsScreenState extends State<MyReportsScreen> {
             ),
             isThreeLine:
                 (draft['description'] ?? '').toString().isNotEmpty ||
-                firstSubmitText.isNotEmpty || incidentTimeText.isNotEmpty,
+                firstSubmitText.isNotEmpty ||
+                incidentTimeText.isNotEmpty,
             trailing: IconButton(
               tooltip: 'Delete draft',
               icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
@@ -613,8 +655,8 @@ class _MyReportsScreenState extends State<MyReportsScreen> {
       submittedText = '$datePart/ $timePart';
     }
     final occurredAt = report.incidentOccurredAt;
-    final incidentTimeText = occurredAt == null ||
-            report.incidentTimePrecision == 'unknown'
+    final incidentTimeText =
+        occurredAt == null || report.incidentTimePrecision == 'unknown'
         ? 'Incident time unknown'
         : 'Incident occurred: ${DateFormat('MMM d, y · h:mm a').format(occurredAt.toLocal())} (${report.incidentTimePrecision})';
 
@@ -647,9 +689,20 @@ class _MyReportsScreenState extends State<MyReportsScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  _PillBadge(
-                    label: report.type.toUpperCase(),
-                    color: typeColor,
+                  Row(
+                    children: [
+                      _PillBadge(
+                        label: report.type.toUpperCase(),
+                        color: typeColor,
+                      ),
+                      if (report.isDemoData) ...[
+                        const SizedBox(width: 6),
+                        const _PillBadge(
+                          label: 'DEMO',
+                          color: Color(0xFF9A6700),
+                        ),
+                      ],
+                    ],
                   ),
                   _PillBadge(label: statusLabel, color: statusColor),
                 ],
@@ -725,27 +778,27 @@ class _MyReportsScreenState extends State<MyReportsScreen> {
                 children: [
                   if (submittedText.isNotEmpty)
                     Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Report received: $submittedText',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Color(0xFF374151),
-                            fontWeight: FontWeight.w600,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Report received: $submittedText',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF374151),
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          incidentTimeText,
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: Color(0xFF64748B),
+                          const SizedBox(height: 3),
+                          Text(
+                            incidentTimeText,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: Color(0xFF64748B),
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
+                        ],
+                      ),
                     ),
                   GestureDetector(
                     onTap: () => _openDetail(report),

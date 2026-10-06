@@ -4,6 +4,8 @@ import { format, formatDistanceToNowStrict } from 'date-fns';
 import { AlertTriangle, CheckCircle2, Image as ImageIcon, MapPin, Paperclip, Phone, Send, UserRound, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { reportAPI, socket } from '../lib/api';
+import { DEMO_INCIDENT_REPORTS } from '../lib/demoData';
+import { useDemoData } from '../context/DemoDataContext';
 import { INCIDENT_SEVERITY_OPTIONS, INCIDENT_TYPE_OPTIONS } from '../lib/incidentClassification';
 
 type ReportGroup = 'resident' | 'escalated';
@@ -21,11 +23,12 @@ interface IncidentReport {
   reporter_type?: string; reporter_name?: string | null; reporter_phone?: string | null;
   barangay_responder_name?: string | null; barangay_response_notes?: string | null; mdrrmo_coordination_notes?: string | null;
   mdrrmo_response_notes?: string | null; mdrrmo_dispatch_notes?: string | null; mdrrmo_responder_name?: string | null;
-  resolved_notes?: string | null; created_at: string; dispatcher_reviewed_at?: string | null;
+  resolved_notes?: string | null; created_at: string; client_submitted_at?: string | null; dispatcher_reviewed_at?: string | null;
   incident_occurred_at?: string | null; incident_time_precision?: 'exact' | 'approximate' | 'unknown' | null;
   dispatched_at?: string | null; accepted_at?: string | null; arrived_at?: string | null;
   arrival_recorded_at?: string | null; resolved_at?: string | null; mdrrmo_assignments?: Assignment[];
   reporter?: { id: string; full_name: string; role: string } | null;
+  is_demo_data?: boolean;
 }
 type ResponderOption = { id: string; full_name: string; phone?: string | null; unit_type?: string | null };
 
@@ -76,6 +79,7 @@ const parseAssessment = (notes?: string | null): FieldAssessment => {
 };
 
 export default function ReportsPage() {
+  const { showDemoData } = useDemoData();
   const [searchParams, setSearchParams] = useSearchParams();
   const [currentTime, setCurrentTime] = useState(() => new Date().toLocaleTimeString());
   const [reports, setReports] = useState<IncidentReport[]>([]);
@@ -93,6 +97,11 @@ export default function ReportsPage() {
   const [responderError, setResponderError] = useState('');
   const [saving, setSaving] = useState(false);
   const [preview, setPreview] = useState<{ url: string; video: boolean } | null>(null);
+
+  const displayReports = useMemo(
+    () => showDemoData ? [...reports, ...DEMO_INCIDENT_REPORTS as unknown as IncidentReport[]] : reports,
+    [reports, showDemoData],
+  );
 
   const fetchReports = async () => {
     try {
@@ -130,12 +139,12 @@ export default function ReportsPage() {
   }, []);
   useEffect(() => {
     const id = searchParams.get('id');
-    if (!id || !reports.length) return;
-    const target = reports.find((item) => item.id === id);
+    if (!id || !displayReports.length) return;
+    const target = displayReports.find((item) => item.id === id);
     if (target) { setSelectedId(target.id); setGroup(getGroup(target)); setStage(getStage(target)); }
-  }, [searchParams, reports]);
+  }, [searchParams, displayReports]);
 
-  const inGroup = useMemo(() => reports.filter((item) => getGroup(item) === group), [reports, group]);
+  const inGroup = useMemo(() => displayReports.filter((item) => getGroup(item) === group), [displayReports, group]);
   const counts = useMemo(() => ({
     pending: inGroup.filter((item) => getStage(item) === 'pending').length,
     responding: inGroup.filter((item) => getStage(item) === 'responding').length,
@@ -157,6 +166,7 @@ export default function ReportsPage() {
   };
 
   const openDispatch = async (report: IncidentReport) => {
+    if (report.is_demo_data) return;
     setIncidentType(report.incident_type || '');
     setSeverity(report.severity || '');
     setDispatchNotes(report.mdrrmo_dispatch_notes || '');
@@ -177,6 +187,7 @@ export default function ReportsPage() {
     if (!dispatchReport || !incidentType || !severity || !responderIds.length) {
       toast.error('Choose an incident category, priority, and at least one active responder'); return;
     }
+    if (dispatchReport.is_demo_data) return;
     try {
       setSaving(true);
       await reportAPI.dispatchToMdrrmo(dispatchReport.id, { incident_type: incidentType, severity, responder_ids: responderIds, notes: dispatchNotes.trim() });
@@ -187,6 +198,7 @@ export default function ReportsPage() {
     } finally { setSaving(false); }
   };
   const markInvalid = async (report: IncidentReport) => {
+    if (report.is_demo_data) return;
     if (!window.confirm('Mark this report as invalid? This decision will be recorded for the report.')) return;
     try {
       await reportAPI.review(report.id, { outcome: 'false_report', reason: '' });
@@ -195,8 +207,8 @@ export default function ReportsPage() {
     } catch (error) { console.error('Invalid-report review failed', error); toast.error('Could not mark this report invalid'); }
   };
 
-  const residentCount = reports.filter((item) => getGroup(item) === 'resident').length;
-  const escalatedCount = reports.filter((item) => getGroup(item) === 'escalated').length;
+  const residentCount = displayReports.filter((item) => getGroup(item) === 'resident').length;
+  const escalatedCount = displayReports.filter((item) => getGroup(item) === 'escalated').length;
   const assessment = parseAssessment(selected?.mdrrmo_response_notes || selected?.barangay_response_notes);
   const assignment = selected?.mdrrmo_assignments?.find((item) => item.status !== 'removed');
   const reporterName = selected?.reporter_name || selected?.reporter?.full_name || 'Resident';
@@ -232,8 +244,8 @@ export default function ReportsPage() {
                 const reportProofs = getProofs(report);
                 const active = selected?.id === report.id;
                 return <button key={report.id} type="button" className={'reports-queue-item-v2 ' + stage + (active ? ' selected' : '')} onClick={() => selectReport(report)}>
-                  <span className="reports-queue-item-top"><strong>{report.description?.trim() || 'No report details provided.'}</strong><span className={'report-status-chip-v2 ' + stage}>{stage === 'responding' ? 'Responding' : stage === 'resolved' ? 'Resolved' : 'Pending'}</span></span>
-                  <span className="reports-queue-time">Report received {timeAgo(report.created_at)}</span>
+                  <span className="reports-queue-item-top"><strong>{report.description?.trim() || 'No report details provided.'}</strong><span className="reports-queue-tags">{report.is_demo_data && <small className="demo-record-badge">DEMO</small>}<span className={'report-status-chip-v2 ' + stage}>{stage === 'responding' ? 'Responding' : stage === 'resolved' ? 'Resolved' : 'Pending'}</span></span></span>
+                  <span className="reports-queue-time">Report received {timeAgo(report.client_submitted_at || report.created_at)}</span>
                   <span className="reports-queue-time">{incidentTimeLabel(report)}</span>
                   <span className="reports-queue-meta"><span><MapPin size={14} /> {report.barangay_name || 'Location not provided'}</span><span><Paperclip size={13} /> {reportProofs.length} attachment{reportProofs.length === 1 ? '' : 's'}</span></span>
                   {stage !== 'pending' && (report.incident_type || report.severity) && <span className="reports-classification-tags">
@@ -248,7 +260,7 @@ export default function ReportsPage() {
           {!selected ? <div className="reports-detail-empty-v2"><div><ImageIcon size={28} /></div><strong>Select a report</strong><p>Choose an item from the {stage} queue to see its details.</p></div> : <>
             <div className="reports-detail-scroll-v2">
               <header className="reports-detail-heading-v2">
-                <div><span className="reports-eyebrow-v2">Selected report</span><h2>Report details</h2><p>{stage === 'pending' ? 'Report received ' : stage === 'responding' ? 'Accepted ' : 'Resolved '}{timeAgo(stage === 'resolved' ? selected.resolved_at : stage === 'responding' ? selected.accepted_at || selected.dispatched_at : selected.created_at)} · {selected.barangay_name || 'Norzagaray'}</p></div>
+                <div><span className="reports-eyebrow-v2">Selected report {selected.is_demo_data && <small className="demo-record-badge">DEMO</small>}</span><h2>Report details</h2><p>{stage === 'pending' ? 'Report received ' : stage === 'responding' ? 'Accepted ' : 'Resolved '}{timeAgo(stage === 'resolved' ? selected.resolved_at : stage === 'responding' ? selected.accepted_at || selected.dispatched_at : selected.client_submitted_at || selected.created_at)} · {selected.barangay_name || 'Norzagaray'}</p></div>
                 <span className={'report-status-chip-v2 detail ' + stage}>{stage === 'responding' ? 'Responding' : stage === 'resolved' ? 'Resolved' : 'Pending'}</span>
               </header>
 
@@ -261,7 +273,7 @@ export default function ReportsPage() {
 
               <section className="reports-detail-section-v2"><h3>Incident time</h3><div className="reports-info-grid-v2">
                 <div className="reports-info-card-v2"><span>Incident occurred</span><strong>{incidentTimeLabel(selected)}</strong></div>
-                <div className="reports-info-card-v2"><span>Report received</span><strong>{dateTime(selected.created_at)}</strong></div>
+                <div className="reports-info-card-v2"><span>Report received</span><strong>{dateTime(selected.client_submitted_at || selected.created_at)}</strong></div>
               </div></section>
 
               {stage !== 'pending' && (category || priority) && <section className="reports-detail-section-v2"><h3>Incident classification</h3><div className="reports-info-grid-v2">
@@ -285,7 +297,7 @@ export default function ReportsPage() {
                 <section className="reports-detail-section-v2"><h3>Responder and response timeline</h3><div className="reports-timeline-grid-v2">
                   <div className="reports-assignee-card-v2"><strong>{assignment?.responder?.full_name || selected.mdrrmo_responder_name || 'Assigned responder'}</strong><span>MDRRMO response unit</span><em>{stage === 'resolved' ? 'Resolved' : assignment?.status === 'responding' ? 'Accepted' : 'Assigned'}</em></div>
                   <div className="reports-timeline-card-v2">{([
-                    ['Report received', selected.created_at],
+                    ['Report received', selected.client_submitted_at || selected.created_at],
                     ['Dispatched to MDRRMO', selected.dispatched_at],
                     ['Accepted by responder', selected.accepted_at || assignment?.accepted_at],
                     ['Arrived at incident area', selected.arrived_at || assignment?.arrived_at],
@@ -306,8 +318,9 @@ export default function ReportsPage() {
               </>}
             </div>
             {stage === 'pending' && <footer className="reports-detail-actions-v2">
-              <button type="button" className="reports-invalid-button-v2" onClick={() => void markInvalid(selected)}>Mark invalid</button>
-              <button type="button" className="reports-dispatch-button-v2" onClick={() => void openDispatch(selected)} disabled={saving}><Send size={17} /> {selected.dispatched_at ? 'Update dispatch' : 'Dispatch to MDRRMO'}</button>
+              {selected.is_demo_data && <span className="demo-readonly-note">Demo sample · actions are read-only</span>}
+              <button type="button" className="reports-invalid-button-v2" onClick={() => void markInvalid(selected)} disabled={selected.is_demo_data}>Mark invalid</button>
+              <button type="button" className="reports-dispatch-button-v2" onClick={() => void openDispatch(selected)} disabled={saving || selected.is_demo_data}><Send size={17} /> {selected.dispatched_at ? 'Update dispatch' : 'Dispatch to MDRRMO'}</button>
             </footer>}
           </>}
         </section>

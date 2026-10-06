@@ -17,6 +17,7 @@ import ReportsPage from './pages/ReportsPage';
 import EvacuationCentersPage from './pages/EvacuationCentersPage';
 import MunicipalityBoundaryPage from './pages/MunicipalityBoundaryPage';
 import { MunicipalityBoundaryProvider } from './context/MunicipalityBoundaryContext';
+import { DemoDataProvider } from './context/DemoDataContext';
 
 import './index.css';
 
@@ -70,13 +71,15 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <MunicipalityBoundaryProvider>
-          <NotificationManager />
-          <Toaster position="top-right" toastOptions={{
-            style: { background: '#1A2332', color: '#F4F6F7', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px' },
-          }} />
-          <AppRoutes />
-        </MunicipalityBoundaryProvider>
+        <DemoDataProvider>
+          <MunicipalityBoundaryProvider>
+            <NotificationManager />
+            <Toaster position="top-right" toastOptions={{
+              style: { background: '#1A2332', color: '#F4F6F7', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px' },
+            }} />
+            <AppRoutes />
+          </MunicipalityBoundaryProvider>
+        </DemoDataProvider>
       </AuthProvider>
     </BrowserRouter>
   );

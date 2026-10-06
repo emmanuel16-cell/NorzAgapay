@@ -10,6 +10,8 @@ import { useMunicipalityBoundary } from '../context/MunicipalityBoundaryContext'
 import MunicipalityBoundaryMapLayer, { MunicipalityBoundaryViewport } from '../components/MunicipalityBoundaryMapLayer';
 import CurrentWeatherPanel from '../components/CurrentWeatherPanel';
 import { isCoordinateInsideBoundary } from '../lib/municipalityBoundary';
+import { DEMO_DISPATCH_UNITS, DEMO_INCIDENT_REPORTS, DEMO_RESPONSE_TASKS, DEMO_RESPONDER_LOCATIONS } from '../lib/demoData';
+import { useDemoData } from '../context/DemoDataContext';
 import toast from 'react-hot-toast';
 import { AlertTriangle, Siren, Users, CheckCircle2, X } from 'lucide-react';
 
@@ -42,6 +44,7 @@ interface IncidentItem {
     created_at?: string;
   }>;
   created_at?: string;
+  client_submitted_at?: string | null;
   incident_occurred_at?: string | null;
   incident_time_precision?: 'exact' | 'approximate' | 'unknown' | null;
   reporter_name?: string;
@@ -69,6 +72,7 @@ interface IncidentItem {
   mdrrmo_responded_by?: string | null;
   arrived_at?: string | null;
   resolved_notes?: string | null;
+  is_demo_data?: boolean;
 }
 
 const incidentTimeText = (occurredAt?: string | null, precision?: string | null) => {
@@ -80,9 +84,10 @@ const incidentTimeText = (occurredAt?: string | null, precision?: string | null)
   return `Incident occurred: ${date.toLocaleString()} (${precision})`;
 };
 
-const reportReceivedText = (createdAt?: string) => {
-  if (!createdAt) return 'Report received: Not recorded';
-  const date = new Date(createdAt);
+const reportReceivedText = (submittedAt?: string | null, createdAt?: string) => {
+  const reportTime = submittedAt || createdAt;
+  if (!reportTime) return 'Report received: Not recorded';
+  const date = new Date(reportTime);
   return Number.isNaN(date.getTime())
     ? 'Report received: Not recorded'
     : `Report received: ${date.toLocaleString()}`;
@@ -500,6 +505,7 @@ function FitBoundsController({ points }: { points: [number, number][] }) {
 
 export default function CommandCenter() {
   const { user } = useAuth();
+  const { showDemoData } = useDemoData();
   const { boundary } = useMunicipalityBoundary();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -529,6 +535,65 @@ export default function CommandCenter() {
   const [responseTasks, setResponseTasks] = useState<MapResponseTask[]>([]);
   const [responderLocations, setResponderLocations] = useState<Record<string, ResponderGpsLocation>>({});
   const [loading, setLoading] = useState(true);
+
+  const demoIncidents = useMemo<IncidentItem[]>(() => DEMO_INCIDENT_REPORTS.map((report) => ({
+    id: report.id,
+    title: report.title,
+    type: report.type,
+    incident_type: report.incident_type,
+    report_kind: report.is_escalated ? 'escalated' : 'resident',
+    status: report.status as ReportStage,
+    severity: report.severity,
+    latitude: report.latitude,
+    longitude: report.longitude,
+    description: report.description,
+    specifics: report.specifics,
+    proof_url: report.proof_url || undefined,
+    proof_type: report.proof_type || undefined,
+    proof_urls: report.proof_urls,
+    proof_types: report.proof_types,
+    created_at: report.created_at,
+    client_submitted_at: report.client_submitted_at,
+    incident_occurred_at: report.incident_occurred_at,
+    incident_time_precision: report.incident_time_precision as IncidentItem['incident_time_precision'],
+    reporter_name: report.reporter_name || 'Resident',
+    reporter_phone: report.reporter_phone || '',
+    reporter_id: report.reporter?.id || null,
+    reporter_type: report.reporter_type || 'resident',
+    reporter_false_report_count: 0,
+    barangay_name: report.barangay_name,
+    barangay_response_status: report.status === 'pending' ? 'pending' : 'responding',
+    mdrrmo_response_status: report.mdrrmo_response_status,
+    mdrrmo_responder_name: report.mdrrmo_responder_name || undefined,
+    mdrrmo_response_notes: report.mdrrmo_response_notes,
+    mdrrmo_dispatch_notes: report.mdrrmo_dispatch_notes,
+    mdrrmo_coordination_notes: report.mdrrmo_coordination_notes,
+    mdrrmo_dispatched: Boolean(report.dispatched_at),
+    mdrrmo_responded_by: report.mdrrmo_responded_by,
+    arrived_at: report.arrived_at,
+    resolved_notes: report.resolved_notes,
+    assigned_unit_id: report.id === 'demo-report-fire-responding' ? 'demo-unit-fire-response-01' : undefined,
+    is_demo_data: true,
+  })), []);
+  const displayIncidents = useMemo(
+    () => showDemoData ? [...incidents, ...demoIncidents] : incidents,
+    [demoIncidents, incidents, showDemoData],
+  );
+  const displayDispatchUnits = useMemo(
+    () => showDemoData ? [...dispatchUnits, ...DEMO_DISPATCH_UNITS] : dispatchUnits,
+    [dispatchUnits, showDemoData],
+  );
+  const displayResponseTasks = useMemo(
+    () => showDemoData ? [...responseTasks, ...DEMO_RESPONSE_TASKS as unknown as MapResponseTask[]] : responseTasks,
+    [responseTasks, showDemoData],
+  );
+  const displayResponderLocations = useMemo(() => showDemoData
+    ? {
+        ...responderLocations,
+        ...Object.fromEntries(DEMO_RESPONDER_LOCATIONS.map((location) => [location.userId, { ...location, timestamp: Date.now() }])),
+      }
+    : responderLocations,
+  [currentTime, responderLocations, showDemoData]);
 
   // Interactive Modal State
   const [activeModalType, setActiveModalType] = useState<'incident' | 'escalated' | 'unit' | null>(null);
@@ -614,6 +679,7 @@ export default function CommandCenter() {
             proof_types: Array.isArray(r.proof_types) ? r.proof_types : (r.proof_type ? [r.proof_type] : []),
             responder_media: Array.isArray(r.responder_media) ? r.responder_media : [],
             created_at: r.created_at,
+            client_submitted_at: r.client_submitted_at || null,
             incident_occurred_at: r.incident_occurred_at || null,
             incident_time_precision: r.incident_time_precision || 'unknown',
             reporter_name: r.reporter_name || r.reporter?.full_name || 'Resident',
@@ -711,22 +777,22 @@ export default function CommandCenter() {
 
   // Stats calculation — real counts, no demo padding
   const stats = useMemo(() => {
-    const incCount = incidents.filter(i => i.report_kind === 'resident' && i.status === 'pending').length;
-    const escCount = incidents.filter(i => i.report_kind === 'escalated' && i.status === 'pending').length;
-    const unitCount = dispatchUnits.length;
-    const resCount = incidents.filter(i => i.status === 'resolved').length;
+    const incCount = displayIncidents.filter(i => i.report_kind === 'resident' && i.status === 'pending').length;
+    const escCount = displayIncidents.filter(i => i.report_kind === 'escalated' && i.status === 'pending').length;
+    const unitCount = displayDispatchUnits.length;
+    const resCount = displayIncidents.filter(i => i.status === 'resolved').length;
     return {
       incident: incCount,
       escalated: escCount,
       dispatch: unitCount,
       resolved: resCount,
     };
-  }, [incidents, dispatchUnits]);
+  }, [displayIncidents, displayDispatchUnits]);
 
   const focusedResponder = useMemo((): ResponderMapAssignment | null => {
     if (!focusedResponderId) return null;
 
-    for (const task of responseTasks) {
+    for (const task of displayResponseTasks) {
       if (focusedTaskId && task.id !== focusedTaskId) continue;
       if (task.status === 'cancelled') continue;
 
@@ -743,7 +809,7 @@ export default function CommandCenter() {
       const incidentPosition = incidentLatitude !== null && incidentLongitude !== null
         ? [incidentLatitude, incidentLongitude] as [number, number]
         : null;
-      const receivedLocation = responderLocations[focusedResponderId];
+      const receivedLocation = displayResponderLocations[focusedResponderId];
       const gpsLocation = receivedLocation && Date.now() - receivedLocation.timestamp < 30 * 60 * 1000
         && Number.isFinite(receivedLocation.latitude) && Number.isFinite(receivedLocation.longitude)
         ? receivedLocation
@@ -774,12 +840,12 @@ export default function CommandCenter() {
     }
 
     return null;
-  }, [focusedResponderId, focusedTaskId, focusedResponderName, responseTasks, responderLocations, boundary]);
+  }, [focusedResponderId, focusedTaskId, focusedResponderName, displayResponseTasks, displayResponderLocations, boundary]);
 
   // Compute all visible pin points for auto-fit bounds
   const visiblePinPoints = useMemo((): [number, number][] => {
     const pts: [number, number][] = [];
-    incidents.forEach((inc) => {
+    displayIncidents.forEach((inc) => {
       if (inc.report_kind === 'resident' && !filters.incidents) return;
       if (inc.report_kind === 'escalated' && !filters.escalated) return;
       if (inc.status === 'arrived' && !filters.arrived) return;
@@ -789,20 +855,20 @@ export default function CommandCenter() {
       pts.push([inc.latitude, inc.longitude]);
     });
     if (filters.responding) {
-      dispatchUnits.forEach((u) => {
+      displayDispatchUnits.forEach((u) => {
         if (!boundary.enabled || isCoordinateInsideBoundary(u.latitude, u.longitude, boundary.geometry)) {
           pts.push([u.latitude, u.longitude]);
         }
       });
     }
     return pts;
-  }, [incidents, dispatchUnits, filters, boundary]);
+  }, [displayIncidents, displayDispatchUnits, filters, boundary]);
 
   const selectedResponderUnit = selectedIncident?.status === 'responding'
-    ? dispatchUnits.find((unit) => unit.target_incident_id === selectedIncident.id || unit.id === selectedIncident.assigned_unit_id) || null
+    ? displayDispatchUnits.find((unit) => unit.target_incident_id === selectedIncident.id || unit.id === selectedIncident.assigned_unit_id) || null
     : null;
   const selectedResponderId = selectedIncident?.mdrrmo_responded_by || selectedIncident?.barangay_responded_by;
-  const selectedResponderGps = selectedResponderId ? responderLocations[selectedResponderId] : null;
+  const selectedResponderGps = selectedResponderId ? displayResponderLocations[selectedResponderId] : null;
   const selectedResponderPosition: [number, number] | null = selectedIncident?.status === 'responding'
     ? selectedResponderGps && Date.now() - selectedResponderGps.timestamp < 30 * 60 * 1000
       ? [selectedResponderGps.latitude, selectedResponderGps.longitude]
@@ -852,6 +918,7 @@ export default function CommandCenter() {
 
   const submitInvalidReview = async (outcome: 'inconclusive' | 'false_report') => {
     if (!selectedIncident || reviewSubmitting) return;
+    if (selectedIncident.is_demo_data) return;
     const reason = invalidReason.trim();
     if (outcome === 'inconclusive' && !reason) {
       toast.error('Enter a reason before marking this report inconclusive.');
@@ -888,6 +955,7 @@ export default function CommandCenter() {
   };
 
   const openMdrrmoDispatch = async (incident: IncidentItem) => {
+    if (incident.is_demo_data) return;
     const requestId = ++mdrrmoDispatchRequestId.current;
     setMdrrmoDispatchIncident(incident);
     setMdrrmoDispatchResponders([]);
@@ -963,12 +1031,14 @@ export default function CommandCenter() {
   } | null>(null);
 
   const executeMdrrmoDispatch = async (incident: IncidentItem) => {
+    if (incident.is_demo_data) return;
     setCoResponseConfirmModal(null);
     await openMdrrmoDispatch(incident);
   };
 
   const handleDispatch = (overrideConfirm = false) => {
     if (!selectedIncident) return;
+    if (selectedIncident.is_demo_data) return;
 
     // Check if Barangay is currently responding
     const isBarangayResponding =
@@ -1186,7 +1256,7 @@ export default function CommandCenter() {
           )}
 
           {/* Incident Markers */}
-          {incidents.map((inc) => {
+          {displayIncidents.map((inc) => {
             if (boundary.enabled && !isCoordinateInsideBoundary(inc.latitude, inc.longitude, boundary.geometry)) return null;
             if (inc.report_kind === 'resident' && !filters.incidents) return null;
             if (inc.report_kind === 'escalated' && !filters.escalated) return null;
@@ -1206,7 +1276,7 @@ export default function CommandCenter() {
 
           {/* Dispatch Units Markers */}
           {filters.responding &&
-            dispatchUnits.map((u) => (
+            displayDispatchUnits.map((u) => (
               (!boundary.enabled || isCoordinateInsideBoundary(u.latitude, u.longitude, boundary.geometry)) &&
               <Marker
                 key={u.id}
@@ -1219,10 +1289,10 @@ export default function CommandCenter() {
 
           {/* Units Line (Dashed Polyline connecting Unit to Target Incident) */}
           {filters.responding &&
-            dispatchUnits.map((u) => {
+            displayDispatchUnits.map((u) => {
               if (!u.target_incident_id) return null;
               if (boundary.enabled && !isCoordinateInsideBoundary(u.latitude, u.longitude, boundary.geometry)) return null;
-              const target = incidents.find((i) => i.id === u.target_incident_id);
+              const target = displayIncidents.find((i) => i.id === u.target_incident_id);
               if (!target) return null;
               if (boundary.enabled && !isCoordinateInsideBoundary(target.latitude, target.longitude, boundary.geometry)) return null;
 
@@ -1256,7 +1326,7 @@ export default function CommandCenter() {
               {/* Left Card: Resident Details & Visual Proofs */}
               <div className="panel-resident">
                 <div className="selection-panel-heading">
-                  <span>Resident Report</span>
+                  <span>Resident Report {selectedIncident.is_demo_data && <small className="demo-record-badge">DEMO</small>}</span>
                   <strong className={`report-status-badge status-${selectedIncident.status}`}>{selectedIncident.status === 'arrived' ? 'Arrived' : selectedIncident.status === 'responding' ? 'Responding' : selectedIncident.status === 'resolved' ? 'Resolved' : 'Pending'}</strong>
                   <button className="selection-close-btn" onClick={closeModal} aria-label="Close report"><X size={20} /></button>
                 </div>
@@ -1297,7 +1367,7 @@ export default function CommandCenter() {
                   <div className="reporter-note-content">
                     <strong>Incident time</strong>
                     <p>{incidentTimeText(selectedIncident.incident_occurred_at, selectedIncident.incident_time_precision)}</p>
-                    <p>{reportReceivedText(selectedIncident.created_at)}</p>
+                    <p>{reportReceivedText(selectedIncident.client_submitted_at, selectedIncident.created_at)}</p>
                   </div>
                 </div>
 
@@ -1433,9 +1503,9 @@ export default function CommandCenter() {
                   </div>
                 </div>
                 {selectedIncident.status === 'pending' && <div className="selection-actions">
-                  <button className="selection-invalid-btn" onClick={() => setInvalidReviewStep('choice')}>Invalid Report</button>
+                  <button className="selection-invalid-btn" onClick={() => setInvalidReviewStep('choice')} disabled={selectedIncident.is_demo_data}>Invalid Report</button>
                   {!selectedIncident.mdrrmo_dispatched && (
-                    <button className="selection-dispatch-btn" onClick={() => handleDispatch()} disabled={dispatching}>
+                    <button className="selection-dispatch-btn" onClick={() => handleDispatch()} disabled={dispatching || selectedIncident.is_demo_data}>
                       {dispatching ? 'Dispatching…' : 'Dispatch'}
                     </button>
                   )}
@@ -1500,7 +1570,7 @@ export default function CommandCenter() {
                   <button className="btn-preview-close" onClick={closeModal}>
                     ✕ CLOSE
                   </button>
-                  <button className="btn-preview-dispatch" onClick={() => handleDispatch()}>
+                  <button className="btn-preview-dispatch" onClick={() => handleDispatch()} disabled={selectedIncident.is_demo_data}>
                     🚑 DISPATCH
                   </button>
                 </div>
@@ -1566,7 +1636,7 @@ export default function CommandCenter() {
                   <div className="reporter-note-content">
                     <strong>Incident time</strong>
                     <p>{incidentTimeText(selectedIncident.incident_occurred_at, selectedIncident.incident_time_precision)}</p>
-                    <p>{reportReceivedText(selectedIncident.created_at)}</p>
+                    <p>{reportReceivedText(selectedIncident.client_submitted_at, selectedIncident.created_at)}</p>
                   </div>
                 </div>
 
@@ -1761,7 +1831,7 @@ export default function CommandCenter() {
                   <button className="btn-preview-close" onClick={closeModal}>
                     ✕ CLOSE
                   </button>
-                  <button className="btn-preview-dispatch" onClick={() => handleDispatch()}>
+                  <button className="btn-preview-dispatch" onClick={() => handleDispatch()} disabled={selectedIncident.is_demo_data}>
                     🚑 DISPATCH
                   </button>
                 </div>

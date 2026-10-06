@@ -15,6 +15,8 @@ import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { socket, taskAPI } from '../lib/api';
+import { DEMO_RESPONSE_TASKS, DEMO_RESPONDER_LOCATIONS } from '../lib/demoData';
+import { useDemoData } from '../context/DemoDataContext';
 
 interface Incident {
   id: string;
@@ -61,6 +63,7 @@ interface ResponseTask {
   returned_at?: string | null;
   incident?: Incident | null;
   report?: IncidentReportDetails | null;
+  is_demo_data?: boolean;
   address?: string;
   latitude?: number | string;
   longitude?: number | string;
@@ -269,11 +272,24 @@ function arrivalEstimate(task: ResponseTask, location: ResponderLocation | null)
 export default function ResponderTrackerPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { showDemoData } = useDemoData();
   const [tasks, setTasks] = useState<ResponseTask[]>([]);
   const [locations, setLocations] = useState<Record<string, ResponderLocation>>({});
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Filter>('active');
   const [clockNow, setClockNow] = useState(() => Date.now());
+
+  const displayTasks = useMemo(
+    () => showDemoData ? [...tasks, ...DEMO_RESPONSE_TASKS as unknown as ResponseTask[]] : tasks,
+    [showDemoData, tasks],
+  );
+  const displayLocations = useMemo(() => showDemoData
+    ? {
+        ...locations,
+        ...Object.fromEntries(DEMO_RESPONDER_LOCATIONS.map((location) => [location.userId, { ...location, timestamp: clockNow }])),
+      }
+    : locations,
+  [clockNow, locations, showDemoData]);
 
   useEffect(() => {
     const interval = window.setInterval(() => setClockNow(Date.now()), 30000);
@@ -316,16 +332,16 @@ export default function ResponderTrackerPage() {
   }, [fetchTasks]);
 
   const trackedTasks = useMemo(() => {
-    const assigned = tasks.filter((task) => task.assigned_to || task.responders?.some((responder) => responder.status !== 'left'));
+    const assigned = displayTasks.filter((task) => task.assigned_to || task.responders?.some((responder) => responder.status !== 'left'));
     if (filter === 'active') return assigned.filter((task) => !taskIsFinished(task));
     if (filter === 'resolved') return assigned.filter(taskIsFinished);
     return assigned;
-  }, [filter, tasks]);
+  }, [displayTasks, filter]);
 
-  const activeCount = tasks.filter((task) => (task.assigned_to || task.responders?.some((responder) => responder.status !== 'left')) && !taskIsFinished(task)).length;
-  const enRouteCount = tasks.filter((task) => task.status === 'accepted' && !taskIsFinished(task)).length;
-  const returningCount = tasks.filter((task) =>
-    !taskIsFinished(task) && (task.status === 'returning' || isReturning(task, locationFor(task, locations)))).length;
+  const activeCount = displayTasks.filter((task) => (task.assigned_to || task.responders?.some((responder) => responder.status !== 'left')) && !taskIsFinished(task)).length;
+  const enRouteCount = displayTasks.filter((task) => task.status === 'accepted' && !taskIsFinished(task)).length;
+  const returningCount = displayTasks.filter((task) =>
+    !taskIsFinished(task) && (task.status === 'returning' || isReturning(task, locationFor(task, displayLocations)))).length;
 
   const openResponderOnMap = (task: ResponseTask) => {
     const responder = task.assigned_to
@@ -392,7 +408,7 @@ export default function ResponderTrackerPage() {
         ) : (
           <div className="responder-tracker-grid">
             {trackedTasks.map((task) => {
-              const responderLocation = locationFor(task, locations);
+              const responderLocation = locationFor(task, displayLocations);
               const currentStage = stageCurrentIndex(task);
               const incidentName = task.incident?.title || task.title || 'Incident response';
               const address = task.address || task.incident?.address;
@@ -418,9 +434,9 @@ export default function ResponderTrackerPage() {
                         <h2>{respondersFor(task)}</h2>
                       </div>
                     </div>
-                    <span className={`responder-status-pill ${cancelled ? 'cancelled' : finished ? 'resolved' : 'active'}`}>
+                    <span className="responder-card-badges">{task.is_demo_data && <small className="demo-record-badge">DEMO</small>}<span className={`responder-status-pill ${cancelled ? 'cancelled' : finished ? 'resolved' : 'active'}`}>
                       {taskStatusLabel(task, responderLocation)}
-                    </span>
+                    </span></span>
                   </div>
 
                   <div className="responder-incident-summary">

@@ -10,17 +10,21 @@ import 'screens/mdrrmo_reports_screen.dart';
 import 'models/user.dart';
 import 'core/constants.dart';
 import 'services/offline_service.dart';
+import 'providers/demo_mode_provider.dart';
 import '../services/municipality_boundary_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await OfflineService.init();
   await MunicipalityBoundaryService.instance.initialize();
-  runApp(const NorzAgapayApp());
+  final demoMode = DemoModeProvider();
+  await demoMode.load();
+  runApp(NorzAgapayApp(demoMode: demoMode));
 }
 
 class NorzAgapayApp extends StatelessWidget {
-  const NorzAgapayApp({super.key});
+  final DemoModeProvider demoMode;
+  const NorzAgapayApp({super.key, required this.demoMode});
 
   @override
   Widget build(BuildContext context) {
@@ -29,6 +33,7 @@ class NorzAgapayApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => TaskProvider()),
         ChangeNotifierProvider(create: (_) => GpsService()),
+        ChangeNotifierProvider<DemoModeProvider>.value(value: demoMode),
       ],
       child: MaterialApp(
         title: AppConstants.appName,

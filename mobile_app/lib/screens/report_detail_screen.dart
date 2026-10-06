@@ -61,6 +61,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
   void initState() {
     super.initState();
     _report = widget.report;
+    if (_report.isDemoData) return;
     _loadCurrentLocation();
     _fetchAssistanceRequest();
 
@@ -79,11 +80,14 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
       });
       socket.onReportUpdated((data) {
         if (!mounted || data is! Map) return;
-        final eventReportId = data['report_id'] ?? data['id'] ?? data['reportId'];
+        final eventReportId =
+            data['report_id'] ?? data['id'] ?? data['reportId'];
         if (eventReportId == _report.id && data['report_id'] != null) {
           _refreshReportFromServer();
         } else if (eventReportId == _report.id) {
-          final updated = IncidentReport.fromJson(Map<String, dynamic>.from(data));
+          final updated = IncidentReport.fromJson(
+            Map<String, dynamic>.from(data),
+          );
           if (updated.lifecycleRevision >= _report.lifecycleRevision) {
             setState(() => _report = updated);
             _syncArrivalMonitoring();
@@ -113,7 +117,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         }
       }
       final latest = refreshed;
-      if (mounted && latest != null &&
+      if (mounted &&
+          latest != null &&
           latest.lifecycleRevision >= _report.lifecycleRevision) {
         setState(() => _report = latest);
         _syncArrivalMonitoring();
@@ -213,7 +218,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         permission = await _locationService.requestPermission();
       }
       if (permission != PermissionStatus.granted &&
-          permission != PermissionStatus.grantedLimited) return null;
+          permission != PermissionStatus.grantedLimited)
+        return null;
       return await _locationService.getLocation();
     } catch (error) {
       debugPrint('Acceptance location capture error: $error');
@@ -244,7 +250,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
   Future<void> _startArrivalMonitoring() async {
     if (_arrivalLocationSubscription != null ||
         _startingArrivalMonitoring ||
-        !_canMonitorArrival()) return;
+        !_canMonitorArrival())
+      return;
     _startingArrivalMonitoring = true;
     try {
       if (!await _locationService.serviceEnabled()) return;
@@ -253,7 +260,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         permission = await _locationService.requestPermission();
       }
       if (permission != PermissionStatus.granted &&
-          permission != PermissionStatus.grantedLimited) return;
+          permission != PermissionStatus.grantedLimited)
+        return;
       if (!mounted || !_canMonitorArrival()) return;
 
       await _locationService.changeSettings(
@@ -284,7 +292,10 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
       current,
       LatLng(_report.latitude, _report.longitude),
     );
-    if (accuracy == null || accuracy < 0 || accuracy > 50 || distanceM + accuracy > 100) {
+    if (accuracy == null ||
+        accuracy < 0 ||
+        accuracy > 50 ||
+        distanceM + accuracy > 100) {
       _arrivalCandidateSince = null;
       return;
     }
@@ -333,7 +344,11 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         _syncArrivalMonitoring();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(method == 'gps' ? 'Arrival confirmed by GPS.' : 'Arrival recorded manually.'),
+            content: Text(
+              method == 'gps'
+                  ? 'Arrival confirmed by GPS.'
+                  : 'Arrival recorded manually.',
+            ),
             backgroundColor: const Color(0xFF10B981),
           ),
         );
@@ -386,12 +401,21 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
       ('Report received', _report.createdAt, ''),
       ('Dispatcher reviewed', _report.dispatcherReviewedAt, ''),
       ('Responder dispatched', _report.dispatchedAt, ''),
-      ('Responder accepted', _report.acceptedAt,
-        'Response to acceptance: ${_formatElapsed(_report.createdAt, _report.acceptedAt)}'),
-      ('Arrived at incident area', _report.arrivedAt,
-        'Travel to arrival: ${_formatElapsed(_report.acceptedAt, _report.arrivedAt)}'),
-      ('Incident resolved', _report.resolvedAt,
-        'Time to resolve: ${_formatElapsed(_report.arrivedAt, _report.resolvedAt)}'),
+      (
+        'Responder accepted',
+        _report.acceptedAt,
+        'Response to acceptance: ${_formatElapsed(_report.createdAt, _report.acceptedAt)}',
+      ),
+      (
+        'Arrived at incident area',
+        _report.arrivedAt,
+        'Travel to arrival: ${_formatElapsed(_report.acceptedAt, _report.arrivedAt)}',
+      ),
+      (
+        'Incident resolved',
+        _report.resolvedAt,
+        'Time to resolve: ${_formatElapsed(_report.arrivedAt, _report.resolvedAt)}',
+      ),
     ];
     return Container(
       width: double.infinity,
@@ -405,23 +429,56 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Response Timeline', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
-          const SizedBox(height: 8),
-          ...rows.map((row) => Padding(
-            padding: const EdgeInsets.symmetric(vertical: 5),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Icon(Icons.circle, size: 7, color: Color(0xFF0284C7)),
-                const SizedBox(width: 9),
-                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(row.$1, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF334155))),
-                  Text(_formatTimestamp(row.$2), style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
-                  if (row.$3.isNotEmpty) Text(row.$3, style: const TextStyle(fontSize: 11, color: Color(0xFF0369A1))),
-                ])),
-              ],
+          const Text(
+            'Response Timeline',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF0F172A),
             ),
-          )),
+          ),
+          const SizedBox(height: 8),
+          ...rows.map(
+            (row) => Padding(
+              padding: const EdgeInsets.symmetric(vertical: 5),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.circle, size: 7, color: Color(0xFF0284C7)),
+                  const SizedBox(width: 9),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          row.$1,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF334155),
+                          ),
+                        ),
+                        Text(
+                          _formatTimestamp(row.$2),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFF64748B),
+                          ),
+                        ),
+                        if (row.$3.isNotEmpty)
+                          Text(
+                            row.$3,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: Color(0xFF0369A1),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
           if (_report.travelDistanceM != null)
             Padding(
               padding: const EdgeInsets.only(top: 4, left: 16),
@@ -442,7 +499,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
 
   Widget _buildIncidentTimeSummary() {
     final occurredAt = _report.incidentOccurredAt;
-    final incidentTime = occurredAt == null || _report.incidentTimePrecision == 'unknown'
+    final incidentTime =
+        occurredAt == null || _report.incidentTimePrecision == 'unknown'
         ? 'Incident time unknown'
         : '${_formatTimestamp(occurredAt)} (${_report.incidentTimePrecision})';
     return Container(
@@ -457,11 +515,23 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Incident Time', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+          const Text(
+            'Incident Time',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF0F172A),
+            ),
+          ),
           const SizedBox(height: 8),
-          Text('Incident occurred: $incidentTime', style: const TextStyle(color: Color(0xFF334155), fontSize: 12)),
+          Text(
+            'Incident occurred: $incidentTime',
+            style: const TextStyle(color: Color(0xFF334155), fontSize: 12),
+          ),
           const SizedBox(height: 4),
-          Text('Report received: ${_formatTimestamp(_report.createdAt)}', style: const TextStyle(color: Color(0xFF334155), fontSize: 12)),
+          Text(
+            'Report received: ${_formatTimestamp(_report.createdAt)}',
+            style: const TextStyle(color: Color(0xFF334155), fontSize: 12),
+          ),
         ],
       ),
     );
@@ -1341,16 +1411,20 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         latitude: acceptanceLocation?.latitude,
         longitude: acceptanceLocation?.longitude,
         accuracyM: acceptanceLocation?.accuracy,
-        fixAt: acceptanceLocation == null ? null : _locationFixTime(acceptanceLocation),
+        fixAt: acceptanceLocation == null
+            ? null
+            : _locationFixTime(acceptanceLocation),
       );
       setState(() => _report = updated);
       _syncArrivalMonitoring();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(updated.travelDistanceM == null
-                ? 'Incident accepted. Travel distance could not be captured from GPS.'
-                : 'Incident accepted. Starting distance: ${_formatDistance(updated.travelDistanceM!)}.'),
+            content: Text(
+              updated.travelDistanceM == null
+                  ? 'Incident accepted. Travel distance could not be captured from GPS.'
+                  : 'Incident accepted. Starting distance: ${_formatDistance(updated.travelDistanceM!)}.',
+            ),
             backgroundColor: Color(0xFF10B981),
           ),
         );
@@ -1845,8 +1919,153 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     }
   }
 
+  Widget _buildDemoReadOnlyScreen() {
+    String stamp(DateTime? value) => value == null
+        ? 'Not recorded'
+        : DateFormat('MMMM d, y · h:mm a').format(value.toLocal());
+
+    Widget info(String label, String value, IconData icon) => Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: const Color(0xFF0D9488), size: 19),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: Color(0xFF64748B),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  value.isEmpty ? 'Not provided' : value,
+                  style: const TextStyle(
+                    color: Color(0xFF0F172A),
+                    fontSize: 14,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+
+    final status = _report.isResolved
+        ? 'RESOLVED'
+        : _report.isResponding
+        ? 'RESPONDING'
+        : 'PENDING';
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F6FA),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF0C243B),
+        foregroundColor: Colors.white,
+        title: const Text('Demo Incident'),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Container(
+            margin: const EdgeInsets.only(bottom: 14),
+            padding: const EdgeInsets.all(13),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF7E6),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFF3D28B)),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.science_outlined, color: Color(0xFF9A6700)),
+                SizedBox(width: 9),
+                Expanded(
+                  child: Text(
+                    'DEMO · Read-only sample incident',
+                    style: TextStyle(
+                      color: Color(0xFF7A5100),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Text(
+            _report.title,
+            style: const TextStyle(
+              color: Color(0xFF0F172A),
+              fontSize: 21,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Chip(
+              label: Text(status),
+              backgroundColor: const Color(0xFFE6F6F3),
+            ),
+          ),
+          info(
+            'Incident details',
+            _report.description ?? _report.specifics ?? '',
+            Icons.description_outlined,
+          ),
+          info('Location', _report.address ?? '', Icons.location_on_outlined),
+          info(
+            'Reported by',
+            _report.reporterName ?? 'Resident',
+            Icons.person_outline_rounded,
+          ),
+          info(
+            'Report received',
+            stamp(_report.createdAt),
+            Icons.schedule_rounded,
+          ),
+          info(
+            'Incident time',
+            _report.incidentOccurredAt == null
+                ? 'Unknown'
+                : '${stamp(_report.incidentOccurredAt)} (${_report.incidentTimePrecision})',
+            Icons.history_rounded,
+          ),
+          if ((_report.cleanBarangayNotes ?? '').isNotEmpty)
+            info(
+              'Barangay response',
+              _report.cleanBarangayNotes!,
+              Icons.groups_outlined,
+            ),
+          if ((_report.mdrrmoCoordinationNotes ?? '').isNotEmpty)
+            info(
+              'MDRRMO coordination',
+              _report.mdrrmoCoordinationNotes!,
+              Icons.local_fire_department_outlined,
+            ),
+          if ((_report.resolvedNotes ?? '').isNotEmpty)
+            info('Resolution', _report.resolvedNotes!, Icons.task_alt_rounded),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (_report.isDemoData) return _buildDemoReadOnlyScreen();
     final auth = Provider.of<AuthService>(context);
     final user = auth.currentUser;
     final canManage = user?.canRespondToEmergency ?? false;
@@ -2804,7 +3023,10 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                         children: [
                           const Text(
                             'Arrival detection is active while this report is open. GPS confirms arrival inside the 100 m incident area.',
-                            style: TextStyle(color: Color(0xFF075985), fontSize: 12),
+                            style: TextStyle(
+                              color: Color(0xFF075985),
+                              fontSize: 12,
+                            ),
                           ),
                           const SizedBox(height: 8),
                           SizedBox(
@@ -2817,7 +3039,9 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                               label: const Text('Mark Arrival Manually'),
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: const Color(0xFF0369A1),
-                                side: const BorderSide(color: Color(0xFF0284C7)),
+                                side: const BorderSide(
+                                  color: Color(0xFF0284C7),
+                                ),
                               ),
                             ),
                           ),

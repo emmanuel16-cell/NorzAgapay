@@ -16,6 +16,7 @@ import 'mdrrmo/services/offline_service.dart' as global_offline;
 import 'mdrrmo/screens/home_screen.dart' as global_home;
 import 'mdrrmo/screens/mdrrmo_reports_screen.dart' as global_reports;
 import 'mdrrmo/models/user.dart' as global_user;
+import 'mdrrmo/providers/demo_mode_provider.dart';
 import 'services/municipality_boundary_service.dart';
 
 void main() async {
@@ -28,6 +29,8 @@ void main() async {
   await authService.loadSavedAuth();
   final mdrrmoAuth = global_auth.AuthProvider();
   await mdrrmoAuth.tryAutoLogin();
+  final demoMode = DemoModeProvider();
+  await demoMode.load();
 
   runApp(
     MultiProvider(
@@ -43,6 +46,7 @@ void main() async {
         ChangeNotifierProvider<global_gps.GpsService>(
           create: (_) => global_gps.GpsService(),
         ),
+        ChangeNotifierProvider<DemoModeProvider>.value(value: demoMode),
       ],
       child: const MobileApp(),
     ),

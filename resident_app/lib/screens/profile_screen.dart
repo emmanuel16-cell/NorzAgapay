@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../services/offline_service.dart';
+import '../services/report_updates_service.dart';
 import '../core/constants.dart';
 import '../core/phone_number_utils.dart';
 import '../widgets/legal_dialogs.dart';
@@ -25,6 +26,7 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   bool _isLoggedIn = false;
+  bool _showDemoData = false;
   Map<String, dynamic>? _userProfile;
 
   // Sign In / Register toggle for guests
@@ -59,8 +61,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void _loadProfileState() {
     final profile = OfflineService.getProfile();
     final loggedIn = OfflineService.isLoggedIn();
+    final showDemoData = OfflineService.getShowDemoData();
     setState(() {
       _isLoggedIn = loggedIn;
+      _showDemoData = showDemoData;
       _userProfile = profile;
       if (profile != null) {
         _selectedBarangayId = profile['barangay_id'];
@@ -70,9 +74,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
     });
   }
 
+  Future<void> _setShowDemoData(bool enabled) async {
+    setState(() => _showDemoData = enabled);
+    await OfflineService.setShowDemoData(enabled);
+    ResidentReportUpdates.showDemoData.value = enabled;
+  }
+
   Future<void> _saveBarangayPreference(String barangayName) async {
     final matches = _verifiedBarangays.where(
-      (barangay) => barangay['name']?.toString().toLowerCase() == barangayName.toLowerCase(),
+      (barangay) =>
+          barangay['name']?.toString().toLowerCase() ==
+          barangayName.toLowerCase(),
     );
     final match = matches.isEmpty ? null : matches.first;
     if (match == null) return;
@@ -98,24 +110,30 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (_isLoggedIn) {
       final token = currentProfile['token'] as String?;
       if (token == null || token.isEmpty) {
-        _showBarangaySaveMessage('Barangay saved on this device; sign in again to sync it to your account.');
+        _showBarangaySaveMessage(
+          'Barangay saved on this device; sign in again to sync it to your account.',
+        );
         return;
       }
       try {
-        final response = await http.patch(
-          Uri.parse('${AppConstants.apiBaseUrl}/auth/resident/profile'),
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer $token',
-          },
-          body: jsonEncode({'barangay_name': barangayName}),
-        ).timeout(const Duration(seconds: 20));
+        final response = await http
+            .patch(
+              Uri.parse('${AppConstants.apiBaseUrl}/auth/resident/profile'),
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer $token',
+              },
+              body: jsonEncode({'barangay_name': barangayName}),
+            )
+            .timeout(const Duration(seconds: 20));
         if (response.statusCode != 200) {
           throw Exception('Server returned ${response.statusCode}');
         }
         _showBarangaySaveMessage('Profile barangay updated.');
       } catch (_) {
-        _showBarangaySaveMessage('Saved on this device, but could not sync to your account.');
+        _showBarangaySaveMessage(
+          'Saved on this device, but could not sync to your account.',
+        );
       }
     } else {
       _showBarangaySaveMessage('Profile barangay saved on this device.');
@@ -131,10 +149,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _selectAvailableBarangay();
     }
     try {
-      final response = await http.get(
-        Uri.parse('${AppConstants.apiBaseUrl}/barangay/list?verified_only=true'),
-        headers: {'ngrok-skip-browser-warning': 'true'},
-      ).timeout(const Duration(seconds: 12));
+      final response = await http
+          .get(
+            Uri.parse(
+              '${AppConstants.apiBaseUrl}/barangay/list?verified_only=true',
+            ),
+            headers: {'ngrok-skip-browser-warning': 'true'},
+          )
+          .timeout(const Duration(seconds: 12));
       if (response.statusCode == 200) {
         final items = (jsonDecode(response.body) as List)
             .map((item) => Map<String, dynamic>.from(item))
@@ -151,9 +173,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   void _selectAvailableBarangay() {
     if (_verifiedBarangays.isEmpty) return;
-    final valid = _verifiedBarangays.any((barangay) =>
-        barangay['name']?.toString() == _selectedBarangayName &&
-        (_selectedBarangayId == null || barangay['id']?.toString() == _selectedBarangayId));
+    final valid = _verifiedBarangays.any(
+      (barangay) =>
+          barangay['name']?.toString() == _selectedBarangayName &&
+          (_selectedBarangayId == null ||
+              barangay['id']?.toString() == _selectedBarangayId),
+    );
     if (!valid) {
       final first = _verifiedBarangays.first;
       _selectedBarangayName = first['name']?.toString();
@@ -163,7 +188,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   void _showBarangaySaveMessage(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   Widget _buildBarangaySelector() {
@@ -171,25 +198,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
       return const InputDecorator(
         decoration: InputDecoration(
           labelText: 'Barangay of Residence',
-          prefixIcon: Icon(Icons.location_city_rounded, color: Color(0xFF1B4F72)),
+          prefixIcon: Icon(
+            Icons.location_city_rounded,
+            color: Color(0xFF1B4F72),
+          ),
           border: OutlineInputBorder(),
         ),
         child: Text('No MDRRMO-verified barangays are available.'),
       );
     }
-    final availableNames = _verifiedBarangays.map((barangay) => barangay['name'].toString()).toList();
-    final value = availableNames.contains(_selectedBarangayName) ? _selectedBarangayName : availableNames.first;
+    final availableNames = _verifiedBarangays
+        .map((barangay) => barangay['name'].toString())
+        .toList();
+    final value = availableNames.contains(_selectedBarangayName)
+        ? _selectedBarangayName
+        : availableNames.first;
     return DropdownButtonFormField<String>(
       initialValue: value,
       decoration: InputDecoration(
         labelText: 'Barangay of Residence',
-        prefixIcon: const Icon(Icons.location_city_rounded, color: Color(0xFF1B4F72)),
+        prefixIcon: const Icon(
+          Icons.location_city_rounded,
+          color: Color(0xFF1B4F72),
+        ),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
         filled: true,
         fillColor: Colors.white,
       ),
       items: availableNames
-          .map((name) => DropdownMenuItem(value: name, child: Text('Barangay $name')))
+          .map(
+            (name) =>
+                DropdownMenuItem(value: name, child: Text('Barangay $name')),
+          )
           .toList(),
       onChanged: (name) {
         if (name != null && name != _selectedBarangayName) {
@@ -207,17 +247,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     setState(() => _isSubmitting = true);
     try {
-      final response = await http.post(
-        Uri.parse('${AppConstants.apiBaseUrl}/auth/resident/login'),
-        headers: {
-          'Content-Type': 'application/json',
-          'ngrok-skip-browser-warning': 'true',
-        },
-        body: jsonEncode({
-          'email': email,
-          'password': password,
-        }),
-      ).timeout(const Duration(seconds: 30));
+      final response = await http
+          .post(
+            Uri.parse('${AppConstants.apiBaseUrl}/auth/resident/login'),
+            headers: {
+              'Content-Type': 'application/json',
+              'ngrok-skip-browser-warning': 'true',
+            },
+            body: jsonEncode({'email': email, 'password': password}),
+          )
+          .timeout(const Duration(seconds: 30));
 
       final data = jsonDecode(response.body);
 
@@ -251,7 +290,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Could not sign in. Check your internet connection and try again.'),
+            content: Text(
+              'Could not sign in. Check your internet connection and try again.',
+            ),
             backgroundColor: Color(0xFFEF4444),
           ),
         );
@@ -273,21 +314,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
     setState(() => _isSubmitting = true);
 
     try {
-      final response = await http.post(
-        Uri.parse('${AppConstants.apiBaseUrl}/auth/resident/register-otp'),
-        headers: {
-          'Content-Type': 'application/json',
-          'ngrok-skip-browser-warning': 'true',
-        },
-        body: jsonEncode({
-          'full_name': fullName,
-          'contact_number': contact,
-          'email': email,
-          'barangay_name': barangayName,
-          'barangay_id': _selectedBarangayId,
-          'delivery_method': _registrationOtpChannel,
-        }),
-      ).timeout(const Duration(seconds: 30));
+      final response = await http
+          .post(
+            Uri.parse('${AppConstants.apiBaseUrl}/auth/resident/register-otp'),
+            headers: {
+              'Content-Type': 'application/json',
+              'ngrok-skip-browser-warning': 'true',
+            },
+            body: jsonEncode({
+              'full_name': fullName,
+              'contact_number': contact,
+              'email': email,
+              'barangay_name': barangayName,
+              'barangay_id': _selectedBarangayId,
+              'delivery_method': _registrationOtpChannel,
+            }),
+          )
+          .timeout(const Duration(seconds: 30));
 
       final data = jsonDecode(response.body);
       if (response.statusCode != 200) {
@@ -355,7 +398,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
           return AlertDialog(
             backgroundColor: const Color(0xFFE7EAF1),
             surfaceTintColor: Colors.transparent,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(24),
+            ),
             titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
             contentPadding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
             title: Row(
@@ -376,7 +421,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 Expanded(
                   child: Text(
                     isSms ? 'SMS Verification' : 'Email Verification',
-                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 21, color: Color(0xFF171B20)),
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 21,
+                      color: Color(0xFF171B20),
+                    ),
                   ),
                 ),
               ],
@@ -393,7 +442,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   const SizedBox(height: 3),
                   Text(
                     destination,
-                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF1B4F72)),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 16,
+                      color: Color(0xFF1B4F72),
+                    ),
                   ),
                   const SizedBox(height: 18),
                   TextFormField(
@@ -414,11 +467,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       fillColor: const Color(0xFFF8FAFC),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(16),
-                        borderSide: const BorderSide(color: Color(0xFF555B63), width: 1.4),
+                        borderSide: const BorderSide(
+                          color: Color(0xFF555B63),
+                          width: 1.4,
+                        ),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(16),
-                        borderSide: const BorderSide(color: Color(0xFF1B4F72), width: 2),
+                        borderSide: const BorderSide(
+                          color: Color(0xFF1B4F72),
+                          width: 2,
+                        ),
                       ),
                     ),
                   ),
@@ -426,7 +485,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     const SizedBox(height: 10),
                     Text(
                       errorMessage!,
-                      style: const TextStyle(color: Color(0xFFDC2626), fontSize: 12.5, fontWeight: FontWeight.w600),
+                      style: const TextStyle(
+                        color: Color(0xFFDC2626),
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ],
                   const SizedBox(height: 16),
@@ -435,10 +498,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     children: [
                       Text(
                         'Code expires in 10 mins',
-                        style: const TextStyle(fontSize: 12, color: Color(0xFF92979E)),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF92979E),
+                        ),
                       ),
                       TextButton(
-                        onPressed: isVerifying || isResending || resendCooldownSeconds > 0
+                        onPressed:
+                            isVerifying ||
+                                isResending ||
+                                resendCooldownSeconds > 0
                             ? null
                             : () async {
                                 setDialogState(() {
@@ -446,40 +515,55 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   isResending = true;
                                 });
                                 try {
-                                  final response = await http.post(
-                                    Uri.parse('${AppConstants.apiBaseUrl}/auth/resident/register-otp'),
-                                    headers: {'Content-Type': 'application/json'},
-                                    body: jsonEncode({
-                                      'full_name': fullName,
-                                      'contact_number': contact,
-                                      'email': email,
-                                      'barangay_name': barangayName,
-                                      'barangay_id': _selectedBarangayId,
-                                      'delivery_method': deliveryMethod,
-                                    }),
-                                  ).timeout(const Duration(seconds: 30));
+                                  final response = await http
+                                      .post(
+                                        Uri.parse(
+                                          '${AppConstants.apiBaseUrl}/auth/resident/register-otp',
+                                        ),
+                                        headers: {
+                                          'Content-Type': 'application/json',
+                                        },
+                                        body: jsonEncode({
+                                          'full_name': fullName,
+                                          'contact_number': contact,
+                                          'email': email,
+                                          'barangay_name': barangayName,
+                                          'barangay_id': _selectedBarangayId,
+                                          'delivery_method': deliveryMethod,
+                                        }),
+                                      )
+                                      .timeout(const Duration(seconds: 30));
                                   final data = jsonDecode(response.body);
                                   if (response.statusCode != 200) {
-                                    throw data['error'] ?? 'Failed to resend verification code';
+                                    throw data['error'] ??
+                                        'Failed to resend verification code';
                                   }
                                   setDialogState(() {
                                     isResending = false;
                                     resendCooldownSeconds = 60;
-                                    errorMessage = 'A new code has been sent to your ${isSms ? 'mobile number' : 'email'}.';
+                                    errorMessage =
+                                        'A new code has been sent to your ${isSms ? 'mobile number' : 'email'}.';
                                   });
                                   resendTimer?.cancel();
-                                  resendTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-                                    if (!ctx.mounted) {
-                                      timer.cancel();
-                                      return;
-                                    }
-                                    if (resendCooldownSeconds <= 1) {
-                                      timer.cancel();
-                                      setDialogState(() => resendCooldownSeconds = 0);
-                                    } else {
-                                      setDialogState(() => resendCooldownSeconds--);
-                                    }
-                                  });
+                                  resendTimer = Timer.periodic(
+                                    const Duration(seconds: 1),
+                                    (timer) {
+                                      if (!ctx.mounted) {
+                                        timer.cancel();
+                                        return;
+                                      }
+                                      if (resendCooldownSeconds <= 1) {
+                                        timer.cancel();
+                                        setDialogState(
+                                          () => resendCooldownSeconds = 0,
+                                        );
+                                      } else {
+                                        setDialogState(
+                                          () => resendCooldownSeconds--,
+                                        );
+                                      }
+                                    },
+                                  );
                                 } catch (e) {
                                   setDialogState(() {
                                     isResending = false;
@@ -491,7 +575,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           resendCooldownSeconds > 0
                               ? 'Resend Code (${resendCooldownSeconds}s)'
                               : 'Resend Code',
-                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                     ],
@@ -507,29 +594,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   final shouldCancel = await showDialog<bool>(
                                     context: dialogCtx,
                                     builder: (confirmCtx) => AlertDialog(
-                                      title: const Text('Cancel account creation?'),
+                                      title: const Text(
+                                        'Cancel account creation?',
+                                      ),
                                       content: const Text(
                                         'If you close verification, you’ll need to wait 60 seconds before requesting another code.',
                                       ),
                                       actions: [
                                         TextButton(
-                                          onPressed: () => Navigator.pop(confirmCtx, false),
+                                          onPressed: () =>
+                                              Navigator.pop(confirmCtx, false),
                                           child: const Text('Keep verifying'),
                                         ),
                                         FilledButton(
-                                          onPressed: () => Navigator.pop(confirmCtx, true),
-                                          child: const Text('Cancel registration'),
+                                          onPressed: () =>
+                                              Navigator.pop(confirmCtx, true),
+                                          child: const Text(
+                                            'Cancel registration',
+                                          ),
                                         ),
                                       ],
                                     ),
                                   );
-                                  if (shouldCancel == true && dialogCtx.mounted) {
+                                  if (shouldCancel == true &&
+                                      dialogCtx.mounted) {
                                     _startRegistrationCooldown();
                                     Navigator.pop(dialogCtx);
                                   }
                                 },
                           style: OutlinedButton.styleFrom(
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
                             padding: const EdgeInsets.symmetric(vertical: 12),
                           ),
                           child: const Text('Cancel'),
@@ -543,7 +639,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               : () async {
                                   final code = otpController.text.trim();
                                   if (code.length != 6) {
-                                    setDialogState(() => errorMessage = 'Please enter the complete 6-digit code.');
+                                    setDialogState(
+                                      () => errorMessage =
+                                          'Please enter the complete 6-digit code.',
+                                    );
                                     return;
                                   }
 
@@ -553,27 +652,39 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   });
 
                                   try {
-                                    final response = await http.post(
-                                      Uri.parse('${AppConstants.apiBaseUrl}/auth/resident/verify-register-otp'),
-                                      headers: {
-                                        'Content-Type': 'application/json',
-                                        'ngrok-skip-browser-warning': 'true',
-                                      },
-                                      body: jsonEncode({'email': email, 'otp': code}),
-                                    ).timeout(const Duration(seconds: 30));
+                                    final response = await http
+                                        .post(
+                                          Uri.parse(
+                                            '${AppConstants.apiBaseUrl}/auth/resident/verify-register-otp',
+                                          ),
+                                          headers: {
+                                            'Content-Type': 'application/json',
+                                            'ngrok-skip-browser-warning':
+                                                'true',
+                                          },
+                                          body: jsonEncode({
+                                            'email': email,
+                                            'otp': code,
+                                          }),
+                                        )
+                                        .timeout(const Duration(seconds: 30));
 
                                     final data = jsonDecode(response.body);
 
-                                    if (response.statusCode != 200 && response.statusCode != 201) {
+                                    if (response.statusCode != 200 &&
+                                        response.statusCode != 201) {
                                       setDialogState(() {
                                         isVerifying = false;
-                                        errorMessage = data['error'] ?? 'Verification failed';
+                                        errorMessage =
+                                            data['error'] ??
+                                            'Verification failed';
                                       });
                                       return;
                                     }
 
                                     final token = data['token'] as String?;
-                                    final tempPass = data['temporaryPassword'] as String?;
+                                    final tempPass =
+                                        data['temporaryPassword'] as String?;
                                     final u = data['user'] ?? {};
 
                                     await OfflineService.saveProfile({
@@ -592,31 +703,44 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     _showTemporaryPasswordNoticeDialog(
                                       email: email,
                                       contact: contact,
-                                      deliveryMethod: data['temporaryPasswordDeliveryMethod']?.toString() ?? deliveryMethod,
-                                      passwordSent: data['temporaryPasswordSent'] == true,
+                                      deliveryMethod:
+                                          data['temporaryPasswordDeliveryMethod']
+                                              ?.toString() ??
+                                          deliveryMethod,
+                                      passwordSent:
+                                          data['temporaryPasswordSent'] == true,
                                       tempPassword: tempPass,
                                     );
                                   } catch (err) {
                                     if (!dialogCtx.mounted) return;
                                     setDialogState(() {
                                       isVerifying = false;
-                                      errorMessage = 'Could not verify the code. Check your connection and try again.';
+                                      errorMessage =
+                                          'Could not verify the code. Check your connection and try again.';
                                     });
                                   }
                                 },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFF1B4F72),
                             foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
                             padding: const EdgeInsets.symmetric(vertical: 12),
                           ),
                           child: isVerifying
                               ? const SizedBox(
                                   width: 18,
                                   height: 18,
-                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
                                 )
-                              : const Text('Confirm OTP', style: TextStyle(fontWeight: FontWeight.bold)),
+                              : const Text(
+                                  'Confirm OTP',
+                                  style: TextStyle(fontWeight: FontWeight.bold),
+                                ),
                         ),
                       ),
                     ],
@@ -636,7 +760,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _registrationCooldownTimer?.cancel();
     if (!mounted) return;
     setState(() => _registrationCooldownSeconds = 60);
-    _registrationCooldownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+    _registrationCooldownTimer = Timer.periodic(const Duration(seconds: 1), (
+      timer,
+    ) {
       if (!mounted || _registrationCooldownSeconds <= 1) {
         timer.cancel();
         if (mounted) setState(() => _registrationCooldownSeconds = 0);
@@ -671,7 +797,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 color: const Color(0xFFF0FDF4),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: const Icon(Icons.check_circle_rounded, color: Color(0xFF16A34A), size: 26),
+              child: const Icon(
+                Icons.check_circle_rounded,
+                color: Color(0xFF16A34A),
+                size: 26,
+              ),
             ),
             const SizedBox(width: 12),
             const Expanded(
@@ -699,14 +829,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 passwordSent
                     ? 'NorzAgapay sent your temporary password by $deliveryChannel. Don\'t share it with anyone.'
                     : 'We could not send the temporary password by $deliveryChannel. It is shown below; save it securely.',
-                style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: Color(0xFF0F172A), height: 1.45),
+                style: const TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF0F172A),
+                  height: 1.45,
+                ),
               ),
             ),
             if (tempPassword != null && tempPassword.isNotEmpty) ...[
               const SizedBox(height: 14),
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                padding: const EdgeInsets.symmetric(
+                  vertical: 12,
+                  horizontal: 16,
+                ),
                 decoration: BoxDecoration(
                   color: const Color(0xFFEFF6FF),
                   borderRadius: BorderRadius.circular(10),
@@ -714,11 +852,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
                 child: Column(
                   children: [
-                    const Text('Your Temporary Login Password:', style: TextStyle(fontSize: 12, color: Color(0xFF1E40AF), fontWeight: FontWeight.w600)),
+                    const Text(
+                      'Your Temporary Login Password:',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF1E40AF),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                     const SizedBox(height: 4),
                     SelectableText(
                       tempPassword,
-                      style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, letterSpacing: 2, color: Color(0xFF1D4ED8)),
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 2,
+                        color: Color(0xFF1D4ED8),
+                      ),
                     ),
                   ],
                 ),
@@ -729,12 +879,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
               passwordSent
                   ? 'The temporary password was sent to $deliveryDestination by $deliveryChannel.'
                   : 'The temporary password could not be sent to $deliveryDestination. Use the password shown above.',
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade700, height: 1.4),
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.grey.shade700,
+                height: 1.4,
+              ),
             ),
             const SizedBox(height: 8),
             Text(
               'You can use this temporary password to log in. You can also update your password anytime in Profile Settings.',
-              style: TextStyle(fontSize: 12.5, color: Colors.grey.shade600, height: 1.4),
+              style: TextStyle(
+                fontSize: 12.5,
+                color: Colors.grey.shade600,
+                height: 1.4,
+              ),
             ),
             const SizedBox(height: 22),
             SizedBox(
@@ -748,10 +906,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF1B4F72),
                   foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                   elevation: 1,
                 ),
-                child: const Text('Proceed to Citizen Portal', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                child: const Text(
+                  'Proceed to Citizen Portal',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                ),
               ),
             ),
           ],
@@ -778,7 +941,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
       builder: (dialogCtx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
           return AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
             titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
             contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
             title: Row(
@@ -789,7 +954,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     color: const Color(0xFFFFFBEB),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: const Icon(Icons.lock_reset_rounded, color: Color(0xFFD97706), size: 24),
+                  child: const Icon(
+                    Icons.lock_reset_rounded,
+                    color: Color(0xFFD97706),
+                    size: 24,
+                  ),
                 ),
                 const SizedBox(width: 12),
                 const Expanded(
@@ -807,12 +976,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 children: [
                   Text(
                     'An email OTP verification code is required to update your password.',
-                    style: TextStyle(fontSize: 12.5, color: Colors.grey.shade600, height: 1.4),
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      color: Colors.grey.shade600,
+                      height: 1.4,
+                    ),
                   ),
                   const SizedBox(height: 6),
                   Text(
                     'Account: $email',
-                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF1B4F72)),
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF1B4F72),
+                    ),
                   ),
                   const SizedBox(height: 14),
 
@@ -829,11 +1006,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   errorMessage = null;
                                 });
                                 try {
-                                  final response = await http.post(
-                                    Uri.parse('${AppConstants.apiBaseUrl}/auth/resident/password-otp'),
-                                    headers: {'Content-Type': 'application/json'},
-                                    body: jsonEncode({'email': email}),
-                                  ).timeout(const Duration(seconds: 30));
+                                  final response = await http
+                                      .post(
+                                        Uri.parse(
+                                          '${AppConstants.apiBaseUrl}/auth/resident/password-otp',
+                                        ),
+                                        headers: {
+                                          'Content-Type': 'application/json',
+                                        },
+                                        body: jsonEncode({'email': email}),
+                                      )
+                                      .timeout(const Duration(seconds: 30));
 
                                   final data = jsonDecode(response.body);
                                   if (response.statusCode != 200) {
@@ -843,12 +1026,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   setDialogState(() {
                                     isOtpSent = true;
                                     isSendingOtp = false;
-                                    successMessage = 'Verification code sent to $email!';
+                                    successMessage =
+                                        'Verification code sent to $email!';
                                   });
                                 } catch (e) {
                                   setDialogState(() {
                                     isSendingOtp = false;
-                                    errorMessage = 'Could not send verification code: $e';
+                                    errorMessage =
+                                        'Could not send verification code: $e';
                                   });
                                 }
                               },
@@ -856,14 +1041,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             ? const SizedBox(
                                 width: 16,
                                 height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
                               )
                             : const Icon(Icons.send_rounded, size: 16),
-                        label: Text(isSendingOtp ? 'Sending Code...' : 'Send OTP to Email'),
+                        label: Text(
+                          isSendingOtp
+                              ? 'Sending Code...'
+                              : 'Send OTP to Email',
+                        ),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF1B4F72),
                           foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
                         ),
                       ),
                     ),
@@ -871,7 +1065,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   if (isOtpSent) ...[
                     if (successMessage != null) ...[
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
                         decoration: BoxDecoration(
                           color: const Color(0xFFF0FDF4),
                           borderRadius: BorderRadius.circular(8),
@@ -879,12 +1076,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.check_circle_outline, size: 16, color: Color(0xFF16A34A)),
+                            const Icon(
+                              Icons.check_circle_outline,
+                              size: 16,
+                              color: Color(0xFF16A34A),
+                            ),
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
                                 successMessage!,
-                                style: const TextStyle(fontSize: 12, color: Color(0xFF15803D), fontWeight: FontWeight.w600),
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Color(0xFF15803D),
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
                             ),
                           ],
@@ -899,8 +1104,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       maxLength: 6,
                       decoration: InputDecoration(
                         labelText: '6-Digit Email OTP',
-                        prefixIcon: const Icon(Icons.pin_rounded, color: Color(0xFF1B4F72)),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                        prefixIcon: const Icon(
+                          Icons.pin_rounded,
+                          color: Color(0xFF1B4F72),
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
                         filled: true,
                         fillColor: Colors.white,
                       ),
@@ -911,8 +1121,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       obscureText: true,
                       decoration: InputDecoration(
                         labelText: 'Current or Temporary Password',
-                        prefixIcon: const Icon(Icons.lock_clock_outlined, color: Color(0xFF1B4F72)),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                        prefixIcon: const Icon(
+                          Icons.lock_clock_outlined,
+                          color: Color(0xFF1B4F72),
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
                         filled: true,
                         fillColor: Colors.white,
                       ),
@@ -924,8 +1139,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       decoration: InputDecoration(
                         labelText: 'New Password',
                         hintText: 'Minimum 6 characters',
-                        prefixIcon: const Icon(Icons.lock_outline, color: Color(0xFF1B4F72)),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                        prefixIcon: const Icon(
+                          Icons.lock_outline,
+                          color: Color(0xFF1B4F72),
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
                         filled: true,
                         fillColor: Colors.white,
                       ),
@@ -936,8 +1156,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       obscureText: true,
                       decoration: InputDecoration(
                         labelText: 'Confirm New Password',
-                        prefixIcon: const Icon(Icons.lock_outline, color: Color(0xFF1B4F72)),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                        prefixIcon: const Icon(
+                          Icons.lock_outline,
+                          color: Color(0xFF1B4F72),
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
                         filled: true,
                         fillColor: Colors.white,
                       ),
@@ -948,7 +1173,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     const SizedBox(height: 10),
                     Text(
                       errorMessage!,
-                      style: const TextStyle(color: Color(0xFFDC2626), fontSize: 12, fontWeight: FontWeight.w600),
+                      style: const TextStyle(
+                        color: Color(0xFFDC2626),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ],
 
@@ -957,9 +1186,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     children: [
                       Expanded(
                         child: OutlinedButton(
-                          onPressed: isUpdating ? null : () => Navigator.pop(dialogCtx),
+                          onPressed: isUpdating
+                              ? null
+                              : () => Navigator.pop(dialogCtx),
                           style: OutlinedButton.styleFrom(
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
                             padding: const EdgeInsets.symmetric(vertical: 12),
                           ),
                           child: const Text('Cancel'),
@@ -973,20 +1206,31 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 ? null
                                 : () async {
                                     final otp = otpController.text.trim();
-                                    final currentPass = currentPasswordController.text;
+                                    final currentPass =
+                                        currentPasswordController.text;
                                     final newPass = newPasswordController.text;
-                                    final confirmPass = confirmPasswordController.text;
+                                    final confirmPass =
+                                        confirmPasswordController.text;
 
                                     if (otp.length != 6) {
-                                      setDialogState(() => errorMessage = 'Please enter the 6-digit OTP code.');
+                                      setDialogState(
+                                        () => errorMessage =
+                                            'Please enter the 6-digit OTP code.',
+                                      );
                                       return;
                                     }
                                     if (newPass.length < 6) {
-                                      setDialogState(() => errorMessage = 'New password must be at least 6 characters.');
+                                      setDialogState(
+                                        () => errorMessage =
+                                            'New password must be at least 6 characters.',
+                                      );
                                       return;
                                     }
                                     if (newPass != confirmPass) {
-                                      setDialogState(() => errorMessage = 'New passwords do not match.');
+                                      setDialogState(
+                                        () => errorMessage =
+                                            'New passwords do not match.',
+                                      );
                                       return;
                                     }
 
@@ -996,32 +1240,43 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     });
 
                                     try {
-                                      final response = await http.post(
-                                        Uri.parse('${AppConstants.apiBaseUrl}/auth/resident/change-password'),
-                                        headers: {
-                                          'Content-Type': 'application/json',
-                                          'ngrok-skip-browser-warning': 'true',
-                                        },
-                                        body: jsonEncode({
-                                          'email': email,
-                                          'otp': otp,
-                                          'current_password': currentPass,
-                                          'new_password': newPass,
-                                        }),
-                                      ).timeout(const Duration(seconds: 30));
+                                      final response = await http
+                                          .post(
+                                            Uri.parse(
+                                              '${AppConstants.apiBaseUrl}/auth/resident/change-password',
+                                            ),
+                                            headers: {
+                                              'Content-Type':
+                                                  'application/json',
+                                              'ngrok-skip-browser-warning':
+                                                  'true',
+                                            },
+                                            body: jsonEncode({
+                                              'email': email,
+                                              'otp': otp,
+                                              'current_password': currentPass,
+                                              'new_password': newPass,
+                                            }),
+                                          )
+                                          .timeout(const Duration(seconds: 30));
 
                                       final data = jsonDecode(response.body);
                                       if (response.statusCode != 200) {
-                                        throw data['error'] ?? 'Failed to update password';
+                                        throw data['error'] ??
+                                            'Failed to update password';
                                       }
 
                                       if (!dialogCtx.mounted) return;
                                       Navigator.pop(dialogCtx);
 
                                       if (mounted) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
                                           const SnackBar(
-                                            content: Text('Password updated successfully! Please keep it secure.'),
+                                            content: Text(
+                                              'Password updated successfully! Please keep it secure.',
+                                            ),
                                             backgroundColor: Color(0xFF16A34A),
                                           ),
                                         );
@@ -1036,16 +1291,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF1B4F72),
                               foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
                               padding: const EdgeInsets.symmetric(vertical: 12),
                             ),
                             child: isUpdating
                                 ? const SizedBox(
                                     width: 18,
                                     height: 18,
-                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
                                   )
-                                : const Text('Update Password', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                                : const Text(
+                                    'Update Password',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                    ),
+                                  ),
                           ),
                         ),
                       ],
@@ -1079,12 +1345,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Log Out', style: TextStyle(fontWeight: FontWeight.bold)),
-        content: const Text('Are you sure you want to log out of your resident account?'),
+        title: const Text(
+          'Log Out',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        content: const Text(
+          'Are you sure you want to log out of your resident account?',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel', style: TextStyle(color: Color(0xFF64748B))),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: Color(0xFF64748B)),
+            ),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
@@ -1113,12 +1387,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _showDebugAccounts() async {
     try {
-      final response = await http.get(
-        Uri.parse('${AppConstants.apiBaseUrl}/debug/accounts?audience=resident'),
-        headers: {'ngrok-skip-browser-warning': 'true'},
-      ).timeout(const Duration(seconds: 15));
+      final response = await http
+          .get(
+            Uri.parse(
+              '${AppConstants.apiBaseUrl}/debug/accounts?audience=resident',
+            ),
+            headers: {'ngrok-skip-browser-warning': 'true'},
+          )
+          .timeout(const Duration(seconds: 15));
       final data = jsonDecode(response.body);
-      if (response.statusCode != 200) throw data['error'] ?? 'Debug quick login unavailable';
+      if (response.statusCode != 200)
+        throw data['error'] ?? 'Debug quick login unavailable';
       final accounts = (data['accounts'] as List)
           .map((account) => Map<String, dynamic>.from(account))
           .toList();
@@ -1150,42 +1429,55 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           child: Icon(Icons.person, color: Colors.white),
                         ),
                         title: Text(acc['full_name'] ?? 'Resident'),
-                        subtitle: Text('${acc['email']} • ${acc['phone'] ?? "No phone"}'),
+                        subtitle: Text(
+                          '${acc['email']} • ${acc['phone'] ?? "No phone"}',
+                        ),
                         onTap: () async {
                           try {
-                            final loginResponse = await http.post(
-                              Uri.parse('${AppConstants.apiBaseUrl}/debug/quick-login'),
-                              headers: {
-                                'Content-Type': 'application/json',
-                                'ngrok-skip-browser-warning': 'true',
-                              },
-                              body: jsonEncode({
-                                'accountId': acc['id'],
-                                'audience': 'resident',
-                              }),
-                            ).timeout(const Duration(seconds: 15));
+                            final loginResponse = await http
+                                .post(
+                                  Uri.parse(
+                                    '${AppConstants.apiBaseUrl}/debug/quick-login',
+                                  ),
+                                  headers: {
+                                    'Content-Type': 'application/json',
+                                    'ngrok-skip-browser-warning': 'true',
+                                  },
+                                  body: jsonEncode({
+                                    'accountId': acc['id'],
+                                    'audience': 'resident',
+                                  }),
+                                )
+                                .timeout(const Duration(seconds: 15));
                             final loginData = jsonDecode(loginResponse.body);
                             if (loginResponse.statusCode != 200) {
                               throw loginData['error'] ?? 'Quick login failed';
                             }
 
-                            final user = Map<String, dynamic>.from(loginData['user'] ?? acc);
+                            final user = Map<String, dynamic>.from(
+                              loginData['user'] ?? acc,
+                            );
                             await OfflineService.saveProfile({
                               'user_id': user['id'] ?? acc['id'],
                               'full_name': user['full_name'] ?? 'Resident',
                               'contact_number': user['phone'] ?? '',
                               'email': user['email'] ?? acc['email'] ?? '',
-                              'barangay_name': user['barangay_name'] ?? 'Poblacion',
+                              'barangay_name':
+                                  user['barangay_name'] ?? 'Poblacion',
                               'token': loginData['token'],
                               'is_logged_in': true,
                             });
                             if (!sheetContext.mounted) return;
                             Navigator.pop(sheetContext);
-                            _onLoginSuccess('Logged in as ${user['full_name'] ?? 'Resident'}');
+                            _onLoginSuccess(
+                              'Logged in as ${user['full_name'] ?? 'Resident'}',
+                            );
                           } catch (error) {
                             if (!sheetContext.mounted) return;
                             ScaffoldMessenger.of(sheetContext).showSnackBar(
-                              SnackBar(content: Text('Quick login failed: $error')),
+                              SnackBar(
+                                content: Text('Quick login failed: $error'),
+                              ),
                             );
                           }
                         },
@@ -1235,7 +1527,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final email = _userProfile?['email'] ?? 'Not specified';
 
     final initials = name.isNotEmpty
-        ? name.trim().split(' ').map((s) => s.isNotEmpty ? s[0] : '').take(2).join()
+        ? name
+              .trim()
+              .split(' ')
+              .map((s) => s.isNotEmpty ? s[0] : '')
+              .take(2)
+              .join()
         : 'RZ';
 
     return SingleChildScrollView(
@@ -1291,11 +1588,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                       const SizedBox(height: 3),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF22C55E).withValues(alpha: 0.25),
+                          color: const Color(
+                            0xFF22C55E,
+                          ).withValues(alpha: 0.25),
                           borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: const Color(0xFF22C55E).withValues(alpha: 0.4)),
+                          border: Border.all(
+                            color: const Color(
+                              0xFF22C55E,
+                            ).withValues(alpha: 0.4),
+                          ),
                         ),
                         child: const Text(
                           'Verified Resident',
@@ -1332,17 +1638,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             child: Column(
               children: [
-                _DetailRow(icon: Icons.person_rounded, label: 'Full Name', value: name),
+                _DetailRow(
+                  icon: Icons.person_rounded,
+                  label: 'Full Name',
+                  value: name,
+                ),
                 const Divider(height: 1),
-                _DetailRow(icon: Icons.phone_rounded, label: 'Contact Number', value: contact),
+                _DetailRow(
+                  icon: Icons.phone_rounded,
+                  label: 'Contact Number',
+                  value: contact,
+                ),
                 const Divider(height: 1),
-                _DetailRow(icon: Icons.email_rounded, label: 'Email Address', value: email),
+                _DetailRow(
+                  icon: Icons.email_rounded,
+                  label: 'Email Address',
+                  value: email,
+                ),
                 const Divider(height: 1),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
-                  child: Column(children: [
-                    _buildBarangaySelector(),
-                  ]),
+                  child: Column(children: [_buildBarangaySelector()]),
                 ),
               ],
             ),
@@ -1378,7 +1694,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   children: [
                     CircleAvatar(
                       backgroundColor: Color(0xFFEFF6FF),
-                      child: Icon(Icons.assignment_rounded, color: Color(0xFF2563EB)),
+                      child: Icon(
+                        Icons.assignment_rounded,
+                        color: Color(0xFF2563EB),
+                      ),
                     ),
                     SizedBox(width: 14),
                     Expanded(
@@ -1387,12 +1706,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         children: [
                           Text(
                             'My Submitted Reports',
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                            ),
                           ),
                           SizedBox(height: 2),
                           Text(
                             'View status, evidence, and responder action on your reports',
-                            style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF64748B),
+                            ),
                           ),
                         ],
                       ),
@@ -1422,8 +1747,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 foregroundColor: const Color(0xFFDC2626),
                 elevation: 0,
                 side: const BorderSide(color: Color(0xFFFCA5A5)),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                textStyle: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14.5,
+                ),
               ),
             ),
           ),
@@ -1468,7 +1798,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const Text(
             'Login is required before reporting emergencies and community incidents to MDRRMO and Barangay.',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 13, color: Color(0xFF64748B), height: 1.4),
+            style: TextStyle(
+              fontSize: 13,
+              color: Color(0xFF64748B),
+              height: 1.4,
+            ),
           ),
           const SizedBox(height: 20),
 
@@ -1491,14 +1825,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(vertical: 10),
                       decoration: BoxDecoration(
-                        color: !_isRegisterMode ? Colors.white : Colors.transparent,
+                        color: !_isRegisterMode
+                            ? Colors.white
+                            : Colors.transparent,
                         borderRadius: BorderRadius.circular(10),
                         boxShadow: !_isRegisterMode
                             ? [
                                 BoxShadow(
                                   color: Colors.black.withValues(alpha: 0.05),
                                   blurRadius: 4,
-                                )
+                                ),
                               ]
                             : null,
                       ),
@@ -1507,7 +1843,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
-                          color: !_isRegisterMode ? const Color(0xFF1B4F72) : const Color(0xFF64748B),
+                          color: !_isRegisterMode
+                              ? const Color(0xFF1B4F72)
+                              : const Color(0xFF64748B),
                         ),
                       ),
                     ),
@@ -1520,14 +1858,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(vertical: 10),
                       decoration: BoxDecoration(
-                        color: _isRegisterMode ? Colors.white : Colors.transparent,
+                        color: _isRegisterMode
+                            ? Colors.white
+                            : Colors.transparent,
                         borderRadius: BorderRadius.circular(10),
                         boxShadow: _isRegisterMode
                             ? [
                                 BoxShadow(
                                   color: Colors.black.withValues(alpha: 0.05),
                                   blurRadius: 4,
-                                )
+                                ),
                               ]
                             : null,
                       ),
@@ -1536,7 +1876,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
-                          color: _isRegisterMode ? const Color(0xFF1B4F72) : const Color(0xFF64748B),
+                          color: _isRegisterMode
+                              ? const Color(0xFF1B4F72)
+                              : const Color(0xFF64748B),
                         ),
                       ),
                     ),
@@ -1592,6 +1934,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           child: Column(
             children: [
+              SwitchListTile.adaptive(
+                contentPadding: EdgeInsets.zero,
+                secondary: const Icon(
+                  Icons.dataset_outlined,
+                  color: Color(0xFF0D9488),
+                ),
+                title: const Text(
+                  'Show demo data',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                subtitle: const Text(
+                  'Preview sample incidents in My Reports. Samples are read-only.',
+                  style: TextStyle(fontSize: 12),
+                ),
+                value: _showDemoData,
+                onChanged: _setShowDemoData,
+                activeTrackColor: const Color(0xFF0D9488),
+              ),
+              const Divider(height: 16),
               // Button 1: Terms and Conditions
               SizedBox(
                 width: double.infinity,
@@ -1603,7 +1964,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   style: OutlinedButton.styleFrom(
                     foregroundColor: const Color(0xFF1B4F72),
                     side: const BorderSide(color: Color(0xFFCBD5E1)),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                     alignment: Alignment.centerLeft,
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                   ),
@@ -1622,7 +1985,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   style: OutlinedButton.styleFrom(
                     foregroundColor: const Color(0xFF0D9488),
                     side: const BorderSide(color: Color(0xFFCBD5E1)),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                     alignment: Alignment.centerLeft,
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                   ),
@@ -1642,7 +2007,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     style: OutlinedButton.styleFrom(
                       foregroundColor: const Color(0xFFD97706),
                       side: const BorderSide(color: Color(0xFFCBD5E1)),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                       alignment: Alignment.centerLeft,
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                     ),
@@ -1668,14 +2035,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
             decoration: InputDecoration(
               labelText: 'Email Address',
               hintText: 'citizen@example.com',
-              prefixIcon: const Icon(Icons.person_outline_rounded, color: Color(0xFF1B4F72)),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              prefixIcon: const Icon(
+                Icons.person_outline_rounded,
+                color: Color(0xFF1B4F72),
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
               filled: true,
               fillColor: Colors.white,
             ),
             validator: (v) {
               final identifier = v?.trim() ?? '';
-              if (identifier.isEmpty || !identifier.contains('@') || !identifier.contains('.')) {
+              if (identifier.isEmpty ||
+                  !identifier.contains('@') ||
+                  !identifier.contains('.')) {
                 return 'Please enter a valid email address';
               }
               return null;
@@ -1688,12 +2062,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
             decoration: InputDecoration(
               labelText: 'Password',
               hintText: 'Enter temporary or updated password',
-              prefixIcon: const Icon(Icons.lock_rounded, color: Color(0xFF1B4F72)),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              prefixIcon: const Icon(
+                Icons.lock_rounded,
+                color: Color(0xFF1B4F72),
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
               filled: true,
               fillColor: Colors.white,
             ),
-            validator: (v) => v == null || v.isEmpty ? 'Password is required' : null,
+            validator: (v) =>
+                v == null || v.isEmpty ? 'Password is required' : null,
           ),
           const SizedBox(height: 20),
           SizedBox(
@@ -1704,16 +2084,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF1B4F72),
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 elevation: 1,
               ),
               child: _isSubmitting
                   ? const SizedBox(
                       width: 20,
                       height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
                     )
-                  : const Text('Sign In', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  : const Text(
+                      'Sign In',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
             ),
           ),
         ],
@@ -1732,12 +2123,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
             decoration: InputDecoration(
               labelText: 'Full Name',
               hintText: 'e.g. Juan Dela Cruz',
-              prefixIcon: const Icon(Icons.person_outline, color: Color(0xFF1B4F72)),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              prefixIcon: const Icon(
+                Icons.person_outline,
+                color: Color(0xFF1B4F72),
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
               filled: true,
               fillColor: Colors.white,
             ),
-            validator: (v) => v == null || v.trim().isEmpty ? 'Full name is required' : null,
+            validator: (v) =>
+                v == null || v.trim().isEmpty ? 'Full name is required' : null,
           ),
           const SizedBox(height: 12),
           TextFormField(
@@ -1747,8 +2144,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
             decoration: InputDecoration(
               labelText: 'Active Contact Number',
               hintText: '09XXXXXXXXX',
-              prefixIcon: const Icon(Icons.phone_rounded, color: Color(0xFF1B4F72)),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              prefixIcon: const Icon(
+                Icons.phone_rounded,
+                color: Color(0xFF1B4F72),
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
               filled: true,
               fillColor: Colors.white,
             ),
@@ -1761,19 +2163,30 @@ class _ProfileScreenState extends State<ProfileScreen> {
             decoration: InputDecoration(
               labelText: 'Email Address',
               hintText: 'citizen@example.com',
-              prefixIcon: const Icon(Icons.email_outlined, color: Color(0xFF1B4F72)),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              prefixIcon: const Icon(
+                Icons.email_outlined,
+                color: Color(0xFF1B4F72),
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
               filled: true,
               fillColor: Colors.white,
             ),
-            validator: (v) => v == null || !v.contains('@') ? 'Valid email address is required' : null,
+            validator: (v) => v == null || !v.contains('@')
+                ? 'Valid email address is required'
+                : null,
           ),
           const SizedBox(height: 16),
           Align(
             alignment: Alignment.centerLeft,
             child: Text(
               'Send verification code by',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.grey.shade700),
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey.shade700,
+              ),
             ),
           ),
           const SizedBox(height: 8),
@@ -1809,24 +2222,34 @@ class _ProfileScreenState extends State<ProfileScreen> {
             width: double.infinity,
             height: 50,
             child: ElevatedButton(
-              onPressed: _isSubmitting || _registrationCooldownSeconds > 0 ? null : _handleRegister,
+              onPressed: _isSubmitting || _registrationCooldownSeconds > 0
+                  ? null
+                  : _handleRegister,
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF1B4F72),
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 elevation: 1,
               ),
               child: _isSubmitting
                   ? const SizedBox(
                       width: 20,
                       height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
                     )
                   : Text(
                       _registrationCooldownSeconds > 0
                           ? 'Create Account (${_registrationCooldownSeconds}s)'
                           : 'Create Account',
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
                     ),
             ),
           ),
@@ -1842,7 +2265,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }) {
     final selected = _registrationOtpChannel == channel;
     return InkWell(
-      onTap: _isSubmitting ? null : () => setState(() => _registrationOtpChannel = channel),
+      onTap: _isSubmitting
+          ? null
+          : () => setState(() => _registrationOtpChannel = channel),
       borderRadius: BorderRadius.circular(12),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 160),
@@ -1860,10 +2285,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
           children: [
             Icon(icon, size: 18, color: const Color(0xFF1B4F72)),
             const SizedBox(width: 8),
-            Text(label, style: const TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF1B4F72))),
+            Text(
+              label,
+              style: const TextStyle(
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF1B4F72),
+              ),
+            ),
             const SizedBox(width: 7),
             Icon(
-              selected ? Icons.radio_button_checked_rounded : Icons.radio_button_unchecked_rounded,
+              selected
+                  ? Icons.radio_button_checked_rounded
+                  : Icons.radio_button_unchecked_rounded,
               size: 17,
               color: selected ? const Color(0xFF1B4F72) : Colors.grey,
             ),
@@ -1914,7 +2347,11 @@ class _DetailRow extends StatelessWidget {
               const SizedBox(height: 2),
               Text(
                 value,
-                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF0F172A),
+                ),
               ),
             ],
           ),

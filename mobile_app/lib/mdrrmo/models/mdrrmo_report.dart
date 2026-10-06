@@ -35,6 +35,7 @@ class MdrrmoReport {
   final List<String> assignedResponderIds;
   final List<Map<String, dynamic>> assignments;
   final List<Map<String, dynamic>> responderMedia;
+  final bool isDemoData;
 
   const MdrrmoReport({
     required this.id,
@@ -71,6 +72,7 @@ class MdrrmoReport {
     this.assignedResponderIds = const [],
     this.assignments = const [],
     this.responderMedia = const [],
+    this.isDemoData = false,
   });
 
   bool get isResolved =>
@@ -138,9 +140,11 @@ class MdrrmoReport {
       reporterPhone: json['reporter_phone']?.toString(),
       createdAt: _date(json['created_at']),
       incidentOccurredAt: _date(json['incident_occurred_at']),
-      incidentTimePrecision: const {'exact', 'approximate'}.contains(
-        json['incident_time_precision']?.toString(),
-      )
+      incidentTimePrecision:
+          const {
+            'exact',
+            'approximate',
+          }.contains(json['incident_time_precision']?.toString())
           ? json['incident_time_precision'].toString()
           : 'unknown',
       status: (json['status'] ?? 'pending').toString(),
@@ -151,9 +155,13 @@ class MdrrmoReport {
       resolutionNotes: json['resolved_notes']?.toString(),
       barangayResponseNotes: json['barangay_response_notes']?.toString(),
       mdrrmoResponseNotes: json['mdrrmo_response_notes']?.toString(),
-      isEscalated: json['is_escalated'] == true ||
+      isEscalated:
+          json['is_escalated'] == true ||
           json['status'] == 'escalated' ||
-          (json['barangay_response_notes']?.toString().toLowerCase().contains('escalated') ?? false),
+          (json['barangay_response_notes']?.toString().toLowerCase().contains(
+                'escalated',
+              ) ??
+              false),
       barangayName:
           (json['barangay_name'] ??
                   (json['barangays'] is Map ? json['barangays']['name'] : null))
@@ -172,6 +180,7 @@ class MdrrmoReport {
               .toList(),
       assignments: assignments,
       responderMedia: media,
+      isDemoData: json['is_demo_data'] == true,
     );
   }
 }
