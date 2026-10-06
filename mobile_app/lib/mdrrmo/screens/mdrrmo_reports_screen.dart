@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import '../../widgets/incident_header_gradient.dart';
 import '../models/mdrrmo_report.dart';
 import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
@@ -127,7 +129,18 @@ class _MdrrmoReportsScreenState extends State<MdrrmoReportsScreen>
         );
 
   Widget _card(MdrrmoReport report) {
-    final color = _color(report);
+    final typeColor = report.type.toLowerCase().contains('emergency')
+        ? const Color(0xFFEF4444)
+        : const Color(0xFFF59E0B);
+    final statusColor = _color(report);
+    final statusLabel = report.isResolved
+        ? 'RESOLVED'
+        : report.isResponding
+        ? 'RESPONDING'
+        : report.dispatchedAt == null
+        ? 'PENDING DISPATCH'
+        : 'PENDING RESPONSE';
+    final specifics = (report.specifics ?? '').trim();
     final place = [
       report.barangayName,
       report.incidentType?.replaceAll('_', ' '),
@@ -136,130 +149,95 @@ class _MdrrmoReportsScreenState extends State<MdrrmoReportsScreen>
     final description = (report.description ?? report.specifics ?? '')
         .replaceAll(RegExp(r'\[SEND_TO:[^\]]+\]'), '')
         .trim();
-    final date = report.createdAt?.toLocal();
-    final occurredAt = report.incidentOccurredAt?.toLocal();
+    final address = (report.address ?? '').trim();
     return Card(
       color: Colors.white,
-      elevation: 0,
       margin: const EdgeInsets.only(bottom: 12),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(15),
-        side: const BorderSide(color: Color(0xFFE2E8F0)),
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(
+          color: report.isEscalated
+              ? const Color(0xFF38BDF8).withOpacity(.6)
+              : report.isPending && typeColor == const Color(0xFFEF4444)
+              ? Colors.red.withOpacity(.5)
+              : const Color(0xFFE2E8F0),
+        ),
       ),
       child: InkWell(
-        borderRadius: BorderRadius.circular(15),
+        borderRadius: BorderRadius.circular(14),
         onTap: () => _open(report),
         child: Padding(
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  const CircleAvatar(
-                    backgroundColor: Color(0xFFE6F6F3),
-                    child: Icon(Icons.warning_amber_rounded, color: _mdTeal),
-                  ),
-                  const SizedBox(width: 11),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          report.title,
-                          style: const TextStyle(
-                            color: Color(0xFF0F172A),
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          place,
-                          style: const TextStyle(color: _mdMuted, fontSize: 12),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Icon(Icons.chevron_right_rounded, color: _mdMuted),
-                ],
-              ),
+              Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                _cardBadge(report.type.toUpperCase(), typeColor),
+                _cardBadge(statusLabel, statusColor),
+              ]),
+              const SizedBox(height: 10),
+              Text(report.title, style: const TextStyle(color: Color(0xFF0F172A), fontSize: 16, fontWeight: FontWeight.bold)),
+              if ((report.reporterName ?? '').trim().isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text('Reported by ${report.reporterName}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Color(0xFF475569), fontSize: 12, fontWeight: FontWeight.w600)),
+              ],
+              if (specifics.isNotEmpty) ...[
+                const SizedBox(height: 3),
+                Text(specifics, style: const TextStyle(color: Color(0xFF64748B), fontSize: 13)),
+              ],
               if (description.isNotEmpty) ...[
-                const SizedBox(height: 10),
+                const SizedBox(height: 4),
                 Text(
                   description,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xFF334155),
-                    fontSize: 13,
-                    height: 1.4,
-                  ),
+                  style: const TextStyle(color: Color(0xFF64748B), fontSize: 12),
                 ),
               ],
-              const SizedBox(height: 11),
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 9,
-                      vertical: 5,
-                    ),
-                    decoration: BoxDecoration(
-                      color: color.withOpacity(.1),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Text(
-                      report.isResolved
-                          ? 'RESOLVED'
-                          : report.isResponding
-                          ? 'RESPONDING'
-                          : report.dispatchedAt == null
-                          ? 'PENDING REVIEW'
-                          : 'PENDING RESPONSE',
-                      style: TextStyle(
-                        color: color,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                  const Spacer(),
-                  const Icon(Icons.schedule_rounded, size: 13, color: _mdMuted),
+              if (address.isNotEmpty || place.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Row(children: [
+                  const Icon(Icons.location_on_outlined, size: 14, color: Color(0xFF64748B)),
                   const SizedBox(width: 4),
-                  Flexible(
-                    child: Text(
-                      date == null
-                          ? ''
-                          : 'Report received ${date.day}/${date.month}/${date.year} · ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: _mdMuted, fontSize: 11),
-                    ),
-                  ),
-                ],
-              ),
+                  Expanded(child: Text(address.isNotEmpty ? address : place, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Color(0xFF64748B), fontSize: 12))),
+                ]),
+              ],
+              if (address.isNotEmpty && place.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Padding(padding: const EdgeInsets.only(left: 18), child: Text(place, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Color(0xFF64748B), fontSize: 11))),
+              ],
+              const SizedBox(height: 10),
+              if (report.createdAt != null)
+                Row(children: [
+                  const Icon(Icons.access_time, size: 14, color: Color(0xFF64748B)),
+                  const SizedBox(width: 4),
+                  Expanded(child: Text('Report received: ${DateFormat('MMMM d, y h:mm a').format(report.createdAt!.toLocal())}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Color(0xFF64748B), fontSize: 11))),
+                ]),
               const SizedBox(height: 5),
-              Row(
-                children: [
+              Row(children: [
                   const Icon(Icons.history_rounded, size: 13, color: _mdMuted),
                   const SizedBox(width: 4),
                   Expanded(
                     child: Text(
-                      occurredAt == null || report.incidentTimePrecision == 'unknown'
+                      report.incidentOccurredAt == null || report.incidentTimePrecision == 'unknown'
                           ? 'Incident time unknown'
-                          : 'Incident occurred ${occurredAt.day}/${occurredAt.month}/${occurredAt.year} · ${occurredAt.hour.toString().padLeft(2, '0')}:${occurredAt.minute.toString().padLeft(2, '0')} (${report.incidentTimePrecision})',
-                      style: const TextStyle(color: _mdMuted, fontSize: 11),
+                          : 'Incident occurred: ${DateFormat('MMMM d, y h:mm a').format(report.incidentOccurredAt!.toLocal())} (${report.incidentTimePrecision})',
+                      style: const TextStyle(color: Color(0xFF64748B), fontSize: 11),
                     ),
                   ),
-                ],
-              ),
+                ]),
             ],
           ),
         ),
       ),
     );
   }
+
+  Widget _cardBadge(String label, Color color) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+    decoration: BoxDecoration(color: color.withOpacity(.2), borderRadius: BorderRadius.circular(6), border: Border.all(color: color.withOpacity(.5))),
+    child: Text(label, style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.bold)),
+  );
 
   Widget _list(int index) {
     if (_loading)
@@ -338,6 +316,7 @@ class _MdrrmoReportsScreenState extends State<MdrrmoReportsScreen>
         backgroundColor: _mdNavy,
         foregroundColor: Colors.white,
         surfaceTintColor: Colors.transparent,
+        flexibleSpace: const IncidentHeaderGradient(),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -363,7 +342,7 @@ class _MdrrmoReportsScreenState extends State<MdrrmoReportsScreen>
         bottom: statusTabs,
       ),
       body: widget.embedded
-          ? Column(children: [Material(color: _mdNavy, child: statusTabs), Expanded(child: reportTabs)])
+          ? Column(children: [IncidentHeaderGradient(child: statusTabs), Expanded(child: reportTabs)])
           : reportTabs,
     );
   }

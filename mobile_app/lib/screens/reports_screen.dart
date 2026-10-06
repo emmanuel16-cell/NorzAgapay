@@ -5,6 +5,7 @@ import '../services/auth_service.dart';
 import '../services/api_service.dart';
 import '../services/socket_service.dart';
 import '../models/incident_report.dart';
+import '../widgets/incident_header_gradient.dart';
 import 'report_detail_screen.dart';
 import 'barangay_report_incident_screen.dart';
 
@@ -190,7 +191,7 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
         backgroundColor: const Color(0xFF0C243B),
         surfaceTintColor: Colors.transparent,
         scrolledUnderElevation: 0,
-        flexibleSpace: const _BarangayReportsGradient(),
+        flexibleSpace: const IncidentHeaderGradient(),
         foregroundColor: Colors.white,
         title: const Text('Incident Reports', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
         actions: [
@@ -1339,14 +1340,4 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
     _tabController.dispose();
     super.dispose();
   }
-}
-
-class _BarangayReportsGradient extends StatelessWidget {
-  const _BarangayReportsGradient();
-
-  @override
-  Widget build(BuildContext context) => Container(
-        width: double.infinity,
-        decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF0C243B), Color(0xFF133E68), Color(0xFF0F5B78)], begin: Alignment.topLeft, end: Alignment.bottomRight)),
-      );
 }

@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../services/municipality_boundary_service.dart';
 import '../../widgets/municipality_boundary_map_layer.dart';
+import '../../widgets/incident_header_gradient.dart';
 import '../models/mdrrmo_report.dart';
 import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
@@ -31,6 +33,7 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
   late MdrrmoReport _report;
   late final TabController _tabs;
   bool _busy = false;
+  bool _incidentTimelineExpanded = false;
   int _assessmentAgencyIndex = 0;
   String _assistanceRequestType = 'goods';
   final _assistanceCategory = TextEditingController();
@@ -428,10 +431,11 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
   }
 
   Future<void> _recordFieldAssessment() async {
-    final situation = TextEditingController();
-    final people = TextEditingController();
-    final actions = TextEditingController();
-    final risks = TextEditingController();
+    final existing = _parseFieldAssessment(_extractFieldAssessment(_report.mdrrmoResponseNotes));
+    final situation = TextEditingController(text: existing['situation'] ?? '');
+    final people = TextEditingController(text: existing['people'] ?? '');
+    final actions = TextEditingController(text: existing['actions'] ?? '');
+    final risks = TextEditingController(text: existing['risks'] ?? '');
     final formKey = GlobalKey<FormState>();
     final saved = await showDialog<bool>(
       context: context,
@@ -544,11 +548,34 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
         .replaceAll(RegExp(r'\[SEND_TO:[^\]]+\]'), '')
         .trim();
     final hasLocation = _report.latitude != 0 && _report.longitude != 0;
+    final statusColor = _report.isResolved
+        ? const Color(0xFF10B981)
+        : _report.isResponding
+        ? const Color(0xFFF59E0B)
+        : const Color(0xFFEF4444);
     return ListView(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(18),
       children: [
+        Row(children: [
+          Expanded(child: Text(_report.title, style: const TextStyle(color: _detailInk, fontWeight: FontWeight.bold, fontSize: 18))),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(color: statusColor.withOpacity(.16), borderRadius: BorderRadius.circular(8)),
+            child: Text(_report.isResolved ? 'RESOLVED' : _report.isResponding ? 'RESPONDING' : 'PENDING', style: TextStyle(color: statusColor, fontSize: 10, fontWeight: FontWeight.bold)),
+          ),
+        ]),
+        if (_report.incidentType != null || _report.severity != null) ...[
+          const SizedBox(height: 10),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(11),
+            decoration: BoxDecoration(color: const Color(0xFFEFF6FF), borderRadius: BorderRadius.circular(10), border: Border.all(color: const Color(0xFFBFDBFE))),
+            child: Text('Dispatcher classification: ${_label(_report.incidentType).isEmpty ? 'Unclassified' : _label(_report.incidentType)} · ${_report.severity?.toUpperCase() ?? 'UNCLASSIFIED'}', style: const TextStyle(color: Color(0xFF1E3A8A), fontSize: 13, fontWeight: FontWeight.w700)),
+          ),
+        ],
+        const SizedBox(height: 14),
         _section(
-          'Reporter Detail',
+          'Reporter Details',
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -584,28 +611,7 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
             ],
           ),
         ),
-        _section(
-          'Incident Time',
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                _report.incidentOccurredAt == null ||
-                        _report.incidentTimePrecision == 'unknown'
-                    ? 'Incident time unknown'
-                    : 'Incident occurred: ${_report.incidentOccurredAt!.toLocal().toString().split('.').first} (${_report.incidentTimePrecision})',
-                style: const TextStyle(color: _detailInk),
-              ),
-              const SizedBox(height: 5),
-              Text(
-                _report.createdAt == null
-                    ? 'Report received: Not recorded'
-                    : 'Report received: ${_report.createdAt!.toLocal().toString().split('.').first}',
-                style: const TextStyle(color: _detailMuted),
-              ),
-            ],
-          ),
-        ),
+        _incidentTimeAndTimelineCard(),
         _section(
           'Details about the report',
           Text(
@@ -617,6 +623,51 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
             ),
           ),
         ),
+        _section(
+          'Assigned MDRRMO Responders',
+          _report.assignments.isEmpty
+              ? Text(_report.responderName ?? (_report.assignedResponderIds.isEmpty ? 'No responders assigned yet.' : '${_report.assignedResponderIds.length} responder(s) assigned'), style: const TextStyle(color: _detailInk, fontSize: 14))
+              : Column(children: _report.assignments.map((assignment) {
+                  final responder = assignment['responder'];
+                  final name = responder is Map ? responder['full_name']?.toString() : null;
+                  final status = (assignment['status'] ?? 'assigned').toString().toUpperCase();
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(children: [
+                      const Icon(Icons.person_pin_circle_outlined, color: _detailTeal, size: 19),
+                      const SizedBox(width: 8),
+                      Expanded(child: Text(name ?? 'MDRRMO responder', style: const TextStyle(color: _detailInk, fontSize: 13, fontWeight: FontWeight.w600))),
+                      Text(status, style: const TextStyle(color: _detailMuted, fontSize: 10, fontWeight: FontWeight.bold)),
+                    ]),
+                  );
+                }).toList()),
+        ),
+        if (_report.dispatchNotes?.isNotEmpty == true)
+          _section('Dispatcher Notes', Text(_report.dispatchNotes!, style: const TextStyle(color: Color(0xFF334155), height: 1.4))),
+        if (hasLocation)
+          _section(
+            'Incident Location',
+            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              if (_report.address?.isNotEmpty == true) Text(_report.address!, style: const TextStyle(color: _detailMuted, fontSize: 13)),
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 190,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: FlutterMap(
+                    options: MapOptions(initialCenter: LatLng(_report.latitude, _report.longitude), initialZoom: 14),
+                    children: [
+                      TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', userAgentPackageName: 'com.norzagapay.mobile'),
+                      MunicipalityBoundaryMarkerLayer(markers: [Marker(point: LatLng(_report.latitude, _report.longitude), width: 36, height: 36, child: const Icon(Icons.location_on, color: Color(0xFFEF4444), size: 34))]),
+                      const MunicipalityBoundaryMapLayer(outsideColor: Colors.white),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text('Coordinates: ${_report.latitude.toStringAsFixed(5)}, ${_report.longitude.toStringAsFixed(5)}', style: const TextStyle(color: _detailMuted, fontSize: 12)),
+            ]),
+          ),
         if (_report.proofUrls.isNotEmpty)
           _section(
             'Proof · ${_report.proofUrls.length} attachment${_report.proofUrls.length == 1 ? '' : 's'}',
@@ -660,261 +711,203 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
               ],
             ),
           ),
-        if (hasLocation)
-          _section(
-            'Incident Location',
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (_report.address != null)
-                  Text(
-                    _report.address!,
-                    style: const TextStyle(color: _detailMuted, fontSize: 13),
-                  ),
-                const SizedBox(height: 8),
-                SizedBox(
-                  height: 190,
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
-                    child: FlutterMap(
-                      options: MapOptions(
-                        initialCenter: LatLng(
-                          _report.latitude,
-                          _report.longitude,
-                        ),
-                        initialZoom: 14,
-                      ),
-                      children: [
-                        TileLayer(
-                          urlTemplate:
-                              'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                          userAgentPackageName: 'com.norzagapay.mobile',
-                        ),
-                        MunicipalityBoundaryMarkerLayer(
-                          markers: [
-                            Marker(
-                              point: LatLng(
-                                _report.latitude,
-                                _report.longitude,
-                              ),
-                              width: 36,
-                              height: 36,
-                              child: const Icon(
-                                Icons.location_on,
-                                color: Color(0xFFEF4444),
-                                size: 34,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const MunicipalityBoundaryMapLayer(
-                          outsideColor: Colors.white,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
       ],
+    );
+  }
+
+  Widget _incidentTimeAndTimelineCard() {
+    final occurredAt = _report.incidentOccurredAt;
+    final incidentTime = occurredAt == null || _report.incidentTimePrecision == 'unknown'
+        ? 'Incident time unknown'
+        : '${DateFormat('MMM d, y · h:mm a').format(occurredAt.toLocal())} (${_report.incidentTimePrecision})';
+    final receivedAt = _report.createdAt == null
+        ? 'Not recorded'
+        : DateFormat('MMM d, y · h:mm a').format(_report.createdAt!.toLocal());
+    final steps = <(String, DateTime?)>[
+      ('Report received', _report.createdAt),
+      ('MDRRMO responder dispatched', _report.dispatchedAt),
+      ('Responder accepted', _report.acceptedAt),
+      ('Arrived at incident area', _report.arrivedAt),
+      ('Incident resolved', _report.resolvedAt),
+    ];
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFFE2E8F0))),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        InkWell(
+          onTap: () => setState(() => _incidentTimelineExpanded = !_incidentTimelineExpanded),
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Text('Incident Time', style: TextStyle(fontWeight: FontWeight.bold, color: _detailInk)),
+                const SizedBox(height: 8),
+                Text('Incident occurred: $incidentTime', style: const TextStyle(color: Color(0xFF334155), fontSize: 12)),
+                const SizedBox(height: 4),
+                Text('Report received: $receivedAt', style: const TextStyle(color: Color(0xFF64748B), fontSize: 12)),
+              ])),
+              const SizedBox(width: 8),
+              Icon(_incidentTimelineExpanded ? Icons.expand_less : Icons.expand_more, color: _detailInk),
+            ]),
+          ),
+        ),
+        AnimatedCrossFade(
+          duration: const Duration(milliseconds: 220),
+          crossFadeState: _incidentTimelineExpanded ? CrossFadeState.showFirst : CrossFadeState.showSecond,
+          firstChild: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('Response Timeline', style: TextStyle(color: _detailInk, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              for (final step in steps)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 5),
+                  child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    const Padding(padding: EdgeInsets.only(top: 4), child: Icon(Icons.circle, size: 7, color: Color(0xFF0284C7))),
+                    const SizedBox(width: 9),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(step.$1, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF334155))),
+                      Text(step.$2 == null ? 'Not recorded' : DateFormat('MMM d, y · h:mm a').format(step.$2!.toLocal()), style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                    ])),
+                  ]),
+                ),
+            ]),
+          ),
+          secondChild: const SizedBox(width: double.infinity),
+        ),
+      ]),
     );
   }
 
   Widget _fieldAssessment() {
     final media = _report.responderMedia;
-    final assignments = _report.assignments;
     final user = context.read<AuthProvider>().user;
-    final assignmentStatus = _myAssignment(user?.id)?['status']?.toString();
+    final assignment = _myAssignment(user?.id);
+    final assignmentStatus = assignment?['status']?.toString();
     final canEditAssessment = user?.role.name == 'responder' &&
         (assignmentStatus == 'assigned' || assignmentStatus == 'responding') &&
         !_report.isResolved;
-    final showBarangayAssessment = _report.isEscalated && _assessmentAgencyIndex == 0;
-    final assessmentText = showBarangayAssessment
-        ? _extractFieldAssessment(_report.barangayResponseNotes)
-        : _report.mdrrmoResponseNotes;
-    return ListView(
-      padding: const EdgeInsets.all(14),
-      children: [
-        if (_report.isEscalated)
-          _section(
-            'Field Assessment Agency',
-            Wrap(spacing: 8, children: [
-              ChoiceChip(
-                label: const Text('Barangay'),
-                selected: showBarangayAssessment,
-                onSelected: (_) => setState(() => _assessmentAgencyIndex = 0),
-                selectedColor: const Color(0xFFDBEAFE),
-              ),
-              ChoiceChip(
-                label: const Text('MDRRMO'),
-                selected: !showBarangayAssessment,
-                onSelected: (_) => setState(() => _assessmentAgencyIndex = 1),
-                selectedColor: const Color(0xFFCCFBF1),
+    final showBarangayAssessment = _report.isEscalated && _assessmentAgencyIndex == 1;
+    final rawAssessment = showBarangayAssessment ? _report.barangayResponseNotes : _report.mdrrmoResponseNotes;
+    final assessmentText = _extractFieldAssessment(rawAssessment);
+    final assessmentValues = _parseFieldAssessment(assessmentText);
+    final arrivalAt = _assignmentArrival(assignment) ?? _report.arrivedAt;
+    final canMarkArrival = user?.role.name == 'responder' && assignmentStatus == 'responding' && arrivalAt == null && !_report.isResolved;
+    final barangayLabel = (_report.barangayName ?? '').trim().isEmpty ? 'Barangay' : _report.barangayName!.trim();
+    return Column(children: [
+      if (_report.isEscalated)
+        Container(
+          width: double.infinity,
+          height: 46,
+          decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF0C243B), Color(0xFF133E68), Color(0xFF0F5B78)], begin: Alignment.topLeft, end: Alignment.bottomRight)),
+          child: Row(children: [
+            _assessmentAgencyTab('MDRRMO', 0),
+            _assessmentAgencyTab(barangayLabel, 1),
+          ]),
+        ),
+      Expanded(
+        child: ListView(
+          padding: const EdgeInsets.all(14),
+          children: [
+        Container(
+          width: double.infinity,
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(13), border: Border.all(color: const Color(0xFFE2E8F0))),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Container(width: 32, height: 32, decoration: BoxDecoration(color: const Color(0xFFE0F2FE), borderRadius: BorderRadius.circular(8)), child: const Icon(Icons.fact_check_outlined, color: Color(0xFF38BDF8), size: 20)),
+              const SizedBox(width: 9),
+              const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Latest Field Assessment', style: TextStyle(color: _detailInk, fontWeight: FontWeight.bold, fontSize: 14)),
+                SizedBox(height: 2),
+                Text('On-scene report', style: TextStyle(color: _detailMuted, fontSize: 11)),
+              ])),
+            ]),
+            const SizedBox(height: 12),
+            _assessmentValueCard('Situation', assessmentValues['situation']),
+            _assessmentValueCard('People affected / urgency', assessmentValues['people']),
+            _assessmentValueCard('Actions taken', assessmentValues['actions']),
+            _assessmentValueCard('Risks / resources', assessmentValues['risks']),
+          ]),
+        ),
+        if (!showBarangayAssessment && canEditAssessment)
+          SizedBox(
+            width: double.infinity,
+            height: 44,
+            child: OutlinedButton.icon(
+              onPressed: _busy ? null : _recordFieldAssessment,
+              icon: const Icon(Icons.fact_check_outlined, size: 17),
+              label: Text(_busy ? 'Saving…' : 'Update Field Assessment'),
+              style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF38BDF8), side: const BorderSide(color: Color(0xFF38BDF8)), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+            ),
+          ),
+        const SizedBox(height: 16),
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          const Text('Responder Field Photos & Media', style: TextStyle(color: _detailInk, fontWeight: FontWeight.bold, fontSize: 14)),
+          Text('${media.length} item(s)', style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 11)),
+        ]),
+        const SizedBox(height: 8),
+        Container(
+          width: double.infinity,
+          constraints: const BoxConstraints(minHeight: 84),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10), border: Border.all(color: const Color(0xFFE2E8F0))),
+          child: media.isEmpty
+              ? const Center(child: Text('No field documentation yet. Add scene photos or video after assessing the incident.', textAlign: TextAlign.center, style: TextStyle(color: _detailMuted, fontSize: 12)))
+              : Wrap(spacing: 8, runSpacing: 8, children: [
+                  for (final item in media)
+                    GestureDetector(
+                      onTap: () => launchUrl(Uri.parse(item['url'].toString()), mode: LaunchMode.externalApplication),
+                      child: Container(
+                        width: 92,
+                        height: 92,
+                        decoration: BoxDecoration(color: const Color(0xFFE2E8F0), borderRadius: BorderRadius.circular(9)),
+                        child: item['type'] == 'video'
+                            ? const Icon(Icons.play_circle_outline, color: _detailNavy, size: 36)
+                            : ClipRRect(borderRadius: BorderRadius.circular(9), child: Image.network(item['url'].toString(), fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.broken_image_outlined)),),
+                      ),
+                    ),
+                ]),
+        ),
+        if (user?.role.name == 'responder' && !_report.isResolved) ...[
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            height: 44,
+            child: OutlinedButton.icon(
+              onPressed: _busy ? null : _uploadMedia,
+              icon: const Icon(Icons.add_a_photo_outlined, size: 17),
+              label: const Text('Attach Field Photo / Video'),
+              style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF38BDF8), side: const BorderSide(color: Color(0xFF38BDF8)), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+            ),
+          ),
+        ],
+        if (canMarkArrival) ...[
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(color: const Color(0xFFE0F2FE), borderRadius: BorderRadius.circular(10), border: Border.all(color: const Color(0xFFBAE6FD))),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('Confirm your arrival after reaching the incident area.', style: TextStyle(color: Color(0xFF075985), fontSize: 11)),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _busy ? null : _arrive,
+                  icon: const Icon(Icons.location_on_outlined, size: 16),
+                  label: const Text('Mark Arrival Manually'),
+                  style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF0284C7), side: const BorderSide(color: Color(0xFF38BDF8)), shape: const StadiumBorder()),
+                ),
               ),
             ]),
           ),
-        _section(
-          showBarangayAssessment ? 'Barangay Responder Assessment' : 'MDRRMO Responder Assessment',
-          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(
-              (assessmentText ?? '').trim().isEmpty
-                  ? 'No field assessment recorded yet.'
-                  : assessmentText!.trim(),
-              style: const TextStyle(color: Color(0xFF334155), height: 1.5),
-            ),
-            if (!showBarangayAssessment && canEditAssessment) ...[
-              const SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: _busy ? null : _recordFieldAssessment,
-                icon: const Icon(Icons.edit_note_rounded),
-                label: Text((assessmentText ?? '').isEmpty ? 'Record Field Assessment' : 'Update Field Assessment'),
-              ),
-            ],
-          ]),
-        ),
-        _section(
-          'Dispatcher Classification',
-          Text(
-            '${_label(_report.incidentType).isEmpty ? 'Unclassified' : _label(_report.incidentType)} · ${_report.severity?.toUpperCase() ?? 'UNCLASSIFIED'}',
-            style: const TextStyle(
-              color: _detailTeal,
-              fontSize: 15,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ),
-        _section(
-          'Assigned MDRRMO Responders',
-          assignments.isEmpty
-              ? Text(
-                  _report.responderName ??
-                      (_report.assignedResponderIds.isEmpty
-                          ? 'No responders assigned yet.'
-                          : '${_report.assignedResponderIds.length} responder(s) assigned'),
-                  style: const TextStyle(color: _detailInk, fontSize: 14),
-                )
-              : Column(
-                  children: assignments.map((assignment) {
-                    final responder = assignment['responder'];
-                    final name = responder is Map
-                        ? responder['full_name']?.toString()
-                        : null;
-                    final status = (assignment['status'] ?? 'assigned')
-                        .toString()
-                        .toUpperCase();
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Row(
-                        children: [
-                          const Icon(
-                            Icons.person_pin_circle_outlined,
-                            color: _detailTeal,
-                            size: 19,
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              name ?? 'MDRRMO responder',
-                              style: const TextStyle(
-                                color: _detailInk,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                          Text(
-                            status,
-                            style: const TextStyle(
-                              color: _detailMuted,
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }).toList(),
-                ),
-        ),
-        if (_report.dispatchNotes?.isNotEmpty == true)
-          _section(
-            'Dispatcher Notes',
-            Text(
-              _report.dispatchNotes!,
-              style: const TextStyle(color: Color(0xFF334155), height: 1.4),
-            ),
-          ),
-        _section(
-          'Response Timeline',
-          Column(
-            children: [
-              _timeline('Dispatched', _report.dispatchedAt),
-              _timeline('Accepted', _report.acceptedAt),
-              _timeline('Arrived', _report.arrivedAt),
-              _timeline('Resolved', _report.resolvedAt),
-            ],
-          ),
-        ),
-        _section(
-          'Field Photos & Videos',
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (media.isEmpty)
-                const Text(
-                  'No field media uploaded yet.',
-                  style: TextStyle(color: _detailMuted),
-                ),
-              if (media.isNotEmpty)
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    for (final item in media)
-                      GestureDetector(
-                        onTap: () => launchUrl(
-                          Uri.parse(item['url'].toString()),
-                          mode: LaunchMode.externalApplication,
-                        ),
-                        child: Container(
-                          width: 92,
-                          height: 92,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFE2E8F0),
-                            borderRadius: BorderRadius.circular(9),
-                          ),
-                          child: item['type'] == 'video'
-                              ? const Icon(
-                                  Icons.play_circle_outline,
-                                  color: _detailNavy,
-                                  size: 36,
-                                )
-                              : ClipRRect(
-                                  borderRadius: BorderRadius.circular(9),
-                                  child: Image.network(
-                                    item['url'].toString(),
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) =>
-                                        const Icon(Icons.broken_image_outlined),
-                                  ),
-                                ),
-                        ),
-                      ),
-                  ],
-                ),
-              if (context.read<AuthProvider>().user?.role.name == 'responder' &&
-                  !_report.isResolved) ...[
-                const SizedBox(height: 10),
-                OutlinedButton.icon(
-                  onPressed: _busy ? null : _uploadMedia,
-                  icon: const Icon(Icons.add_a_photo_outlined),
-                  label: const Text('Add field media'),
-                ),
-              ],
-            ],
-          ),
-        ),
+        ] else if (arrivalAt != null) ...[
+          const SizedBox(height: 10),
+          Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: const Color(0xFFE0F2FE), borderRadius: BorderRadius.circular(10)), child: Text('Arrival recorded: ${DateFormat('MMM d, y · h:mm a').format(arrivalAt.toLocal())}', style: const TextStyle(color: Color(0xFF075985), fontSize: 12))),
+        ],
         if (_report.resolutionNotes?.isNotEmpty == true)
           _section(
             'Resolution Summary',
@@ -923,8 +916,84 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
               style: const TextStyle(color: Color(0xFF334155), height: 1.4),
             ),
           ),
-      ],
+          ],
+        ),
+      ),
+    ]);
+  }
+
+  Widget _assessmentAgencyTab(String label, int index) {
+    final selected = _assessmentAgencyIndex == index;
+    return Expanded(
+      child: InkWell(
+        onTap: () => setState(() => _assessmentAgencyIndex = index),
+        child: Stack(fit: StackFit.expand, children: [
+          Center(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: selected ? FontWeight.bold : FontWeight.w500))),
+          if (selected)
+            const Positioned(
+              left: 14,
+              right: 14,
+              bottom: 0,
+              child: SizedBox(
+                height: 3,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Color(0xFF64D2B4),
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(3)),
+                  ),
+                ),
+              ),
+            ),
+        ]),
+      ),
     );
+  }
+
+  Widget _assessmentValueCard(String label, String? value) => Container(
+    width: double.infinity,
+    margin: const EdgeInsets.only(bottom: 6),
+    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 8),
+    decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(9), border: Border.all(color: const Color(0xFFE2E8F0))),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(label, style: const TextStyle(color: Color(0xFF0284C7), fontSize: 11, fontWeight: FontWeight.bold)),
+      const SizedBox(height: 3),
+      Text((value ?? '').trim().isEmpty ? 'No details recorded.' : value!.trim(), style: const TextStyle(color: Color(0xFF475569), fontSize: 12, height: 1.35)),
+    ]),
+  );
+
+  Map<String, String> _parseFieldAssessment(String? source) {
+    final values = <String, String>{};
+    final text = (source ?? '').trim();
+    if (text.isEmpty) return values;
+    final body = text.replaceFirst(RegExp(r'^\[?(?:MDRRMO\s+)?FIELD ASSESSMENT\]?\s*:?\s*', caseSensitive: false), '');
+    String? current;
+    for (final rawLine in body.split(RegExp(r'\r?\n'))) {
+      final line = rawLine.trim();
+      if (line.isEmpty) continue;
+      final colon = line.indexOf(':');
+      if (colon > 0) {
+        final label = line.substring(0, colon).toLowerCase().trim();
+        if (label.contains('situation')) {
+          current = 'situation';
+        } else if (label.contains('people') || label.contains('affected') || label.contains('urgency')) {
+          current = 'people';
+        } else if (label.contains('actions')) {
+          current = 'actions';
+        } else if (label.contains('risks') || label.contains('resources')) {
+          current = 'risks';
+        } else {
+          current = null;
+        }
+        if (current != null) {
+          final value = line.substring(colon + 1).trim();
+          values[current] = [if ((values[current] ?? '').isNotEmpty) values[current]!, value].where((part) => part.isNotEmpty).join('\n');
+          continue;
+        }
+      }
+      if (current != null) values[current] = [values[current], line].whereType<String>().where((part) => part.isNotEmpty).join('\n');
+    }
+    if (values.isEmpty) values['situation'] = body.isEmpty ? text : body;
+    return values;
   }
 
   String? _extractFieldAssessment(String? notes) {
@@ -999,29 +1068,6 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
     );
   }
 
-  Widget _timeline(String label, DateTime? date) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 5),
-    child: Row(
-      children: [
-        Icon(
-          date == null ? Icons.radio_button_unchecked : Icons.check_circle,
-          color: date == null ? const Color(0xFFCBD5E1) : _detailTeal,
-          size: 18,
-        ),
-        const SizedBox(width: 9),
-        Expanded(
-          child: Text(label, style: const TextStyle(color: _detailInk)),
-        ),
-        Text(
-          date == null
-              ? '—'
-              : '${date.toLocal().day}/${date.toLocal().month} ${date.toLocal().hour.toString().padLeft(2, '0')}:${date.toLocal().minute.toString().padLeft(2, '0')}',
-          style: const TextStyle(color: _detailMuted, fontSize: 12),
-        ),
-      ],
-    ),
-  );
-
   Widget? _bottomAction() {
     final user = context.watch<AuthProvider>().user;
     final isDispatcher = user?.role.name == 'dispatcher';
@@ -1042,16 +1088,6 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
         Icons.check_circle_outline,
         const Color(0xFF10B981),
         _accept,
-      );
-    if (isResponder &&
-        !_report.isResolved &&
-        assignmentStatus == 'responding' &&
-        myArrival == null)
-      return _action(
-        'Mark Arrived',
-        Icons.location_on_outlined,
-        const Color(0xFFF59E0B),
-        _arrive,
       );
     if (isResponder &&
         !_report.isResolved &&
@@ -1116,6 +1152,7 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
         backgroundColor: _detailNavy,
         foregroundColor: Colors.white,
         surfaceTintColor: Colors.transparent,
+        flexibleSpace: const IncidentHeaderGradient(),
         title: const Text(
           'Incident Response',
           style: TextStyle(fontWeight: FontWeight.bold),
@@ -1127,51 +1164,14 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
           unselectedLabelColor: Colors.white70,
           tabs: const [
             Tab(text: 'Report Details'),
-          Tab(text: 'Request Assistance'),
-          Tab(text: 'Field Assessment'),
+            Tab(text: 'Request Assistance'),
+            Tab(text: 'Field Assessment'),
           ],
         ),
       ),
       bottomNavigationBar: action,
       body: Column(
         children: [
-          Container(
-            width: double.infinity,
-            color: const Color(0xFFE6F6F3),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    _report.title,
-                    style: const TextStyle(
-                      color: _detailInk,
-                      fontWeight: FontWeight.bold,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  _report.isResolved
-                      ? 'RESOLVED'
-                      : _report.isResponding
-                      ? 'RESPONDING'
-                      : 'PENDING',
-                  style: TextStyle(
-                    color: _report.isResolved
-                        ? const Color(0xFF10B981)
-                        : _report.isResponding
-                        ? const Color(0xFFF59E0B)
-                        : const Color(0xFFEF4444),
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ],
-            ),
-          ),
           Expanded(
             child: TabBarView(
               controller: _tabs,

@@ -16,6 +16,7 @@ import '../models/incident_report.dart';
 import '../core/phone_number_utils.dart';
 import '../models/barangay_user.dart';
 import '../widgets/video_proof_player.dart';
+import '../widgets/incident_header_gradient.dart';
 
 class ReportDetailScreen extends StatefulWidget {
   final IncidentReport report;
@@ -48,6 +49,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
   bool _arrivalSubmitting = false;
   bool _startingArrivalMonitoring = false;
   final MapController _mapController = MapController();
+  bool _incidentTimelineExpanded = false;
   LatLng? _currentLocation;
   String? _locationMessage;
   List<Map<String, dynamic>> _assistanceRequests = [];
@@ -393,18 +395,9 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
       ('Incident resolved', _report.resolvedAt,
         'Time to resolve: ${_formatElapsed(_report.arrivedAt, _report.resolvedAt)}'),
     ];
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
           const Text('Response Timeline', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
           const SizedBox(height: 8),
           ...rows.map((row) => Padding(
@@ -436,7 +429,6 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
               style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
             ),
         ],
-      ),
     );
   }
 
@@ -447,8 +439,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         : '${_formatTimestamp(occurredAt)} (${_report.incidentTimePrecision})';
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(14),
+      margin: const EdgeInsets.only(bottom: 14),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
@@ -457,11 +448,38 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Incident Time', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
-          const SizedBox(height: 8),
-          Text('Incident occurred: $incidentTime', style: const TextStyle(color: Color(0xFF334155), fontSize: 12)),
-          const SizedBox(height: 4),
-          Text('Report received: ${_formatTimestamp(_report.createdAt)}', style: const TextStyle(color: Color(0xFF334155), fontSize: 12)),
+          InkWell(
+            onTap: () => setState(() => _incidentTimelineExpanded = !_incidentTimelineExpanded),
+            borderRadius: BorderRadius.circular(12),
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      const Text('Incident Time', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+                      const SizedBox(height: 8),
+                      Text('Incident occurred: $incidentTime', style: const TextStyle(color: Color(0xFF334155), fontSize: 12)),
+                      const SizedBox(height: 4),
+                      Text('Report received: ${_formatTimestamp(_report.createdAt)}', style: const TextStyle(color: Color(0xFF334155), fontSize: 12)),
+                    ]),
+                  ),
+                  const SizedBox(width: 8),
+                  Icon(_incidentTimelineExpanded ? Icons.expand_less : Icons.expand_more, color: const Color(0xFF0F172A)),
+                ],
+              ),
+            ),
+          ),
+          AnimatedCrossFade(
+            duration: const Duration(milliseconds: 220),
+            crossFadeState: _incidentTimelineExpanded ? CrossFadeState.showFirst : CrossFadeState.showSecond,
+            firstChild: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+              child: _buildResponseTimeline(),
+            ),
+            secondChild: const SizedBox(width: double.infinity),
+          ),
         ],
       ),
     );
@@ -1882,7 +1900,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           surfaceTintColor: Colors.transparent,
           scrolledUnderElevation: 0,
           foregroundColor: Colors.white,
-          flexibleSpace: const _IncidentResponseGradient(),
+          flexibleSpace: const IncidentHeaderGradient(),
           title: const Text('Incident Response'),
           bottom: PreferredSize(
             preferredSize: const Size.fromHeight(44),
@@ -2004,139 +2022,6 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (_selectedTabIndex == 0) ...[
-                _buildIncidentTimeSummary(),
-                _buildResponseTimeline(),
-                if (_report.isMdrrmoResponding) ...[
-                  Container(
-                    margin: const EdgeInsets.only(bottom: 14),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 10,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFE0F2FE),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFFBAE6FD)),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(
-                          Icons.shield_outlined,
-                          color: Color(0xFF38BDF8),
-                          size: 22,
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            'The MDRRMO is currently responding to this incident${_report.mdrrmoResponderName != null ? " (${_report.mdrrmoResponderName})" : ""}.',
-                            style: const TextStyle(
-                              color: Color(0xFF075985),
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-
-                // Pending Assignment Banner
-                if (_report.isPending) ...[
-                  if (isResponder)
-                    Container(
-                      margin: const EdgeInsets.only(bottom: 14),
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFE0F2FE),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: const Color(0xFF7DD3FC),
-                          width: 1.2,
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(
-                            Icons.assignment_ind_outlined,
-                            color: Color(0xFF38BDF8),
-                            size: 26,
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'Incident Dispatched to You',
-                                  style: TextStyle(
-                                    color: Color(0xFF0F172A),
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  _report.barangayResponseNotes ??
-                                      'Please review details and tap Accept & Respond below to begin initial response.',
-                                  style: const TextStyle(
-                                    color: Color(0xFF334155),
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                  else if (isDispatcher && _report.barangayRespondedBy != null)
-                    Container(
-                      margin: const EdgeInsets.only(bottom: 14),
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF59E0B).withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: const Color(0xFFF59E0B),
-                          width: 1.2,
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(
-                            Icons.schedule,
-                            color: Color(0xFFF59E0B),
-                            size: 26,
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Dispatched to ${_report.barangayResponderName ?? "Responder"}',
-                                  style: const TextStyle(
-                                    color: Color(0xFF0F172A),
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                const Text(
-                                  'Awaiting Responder acceptance. You may re-dispatch or escalate if necessary.',
-                                  style: TextStyle(
-                                    color: Color(0xFF475569),
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                ],
                 // Incident title and current status
                 Row(
                   children: [
@@ -2320,6 +2205,141 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                     ),
                   ),
                 const SizedBox(height: 16),
+
+                _buildIncidentTimeSummary(),
+
+                if (_report.isMdrrmoResponding) ...[
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 14),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE0F2FE),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFBAE6FD)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.shield_outlined,
+                          color: Color(0xFF38BDF8),
+                          size: 22,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'The MDRRMO is currently responding to this incident${_report.mdrrmoResponderName != null ? " (${_report.mdrrmoResponderName})" : ""}.',
+                            style: const TextStyle(
+                              color: Color(0xFF075985),
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+
+                // Pending Assignment Banner
+                if (_report.isPending) ...[
+                  if (isResponder)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 14),
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE0F2FE),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: const Color(0xFF7DD3FC),
+                          width: 1.2,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.assignment_ind_outlined,
+                            color: Color(0xFF38BDF8),
+                            size: 26,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Incident Dispatched to You',
+                                  style: TextStyle(
+                                    color: Color(0xFF0F172A),
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  _report.barangayResponseNotes ??
+                                      'Please review details and tap Accept & Respond below to begin initial response.',
+                                  style: const TextStyle(
+                                    color: Color(0xFF334155),
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  else if (isDispatcher && _report.barangayRespondedBy != null)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 14),
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF59E0B).withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: const Color(0xFFF59E0B),
+                          width: 1.2,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.schedule,
+                            color: Color(0xFFF59E0B),
+                            size: 26,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Dispatched to ${_report.barangayResponderName ?? "Responder"}',
+                                  style: const TextStyle(
+                                    color: Color(0xFF0F172A),
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                const Text(
+                                  'Awaiting Responder acceptance. You may re-dispatch or escalate if necessary.',
+                                  style: TextStyle(
+                                    color: Color(0xFF475569),
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+
 
                 // Map Pin Location
                 const Text(
@@ -3679,20 +3699,4 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
       ),
     );
   }
-}
-
-class _IncidentResponseGradient extends StatelessWidget {
-  const _IncidentResponseGradient();
-
-  @override
-  Widget build(BuildContext context) => Container(
-    width: double.infinity,
-    decoration: const BoxDecoration(
-      gradient: LinearGradient(
-        colors: [Color(0xFF0C243B), Color(0xFF133E68), Color(0xFF0F5B78)],
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-      ),
-    ),
-  );
 }
