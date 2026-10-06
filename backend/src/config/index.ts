@@ -23,14 +23,17 @@ export const config = {
 
   // Supabase Storage
   supabaseBucketName: process.env.SUPABASE_BUCKET_NAME || 'norzagapay-files',
+  resolutionPdfBucketName: process.env.RESOLUTION_PDF_BUCKET_NAME || 'incident-resolution-documents',
+  timesNewRomanRegularFontPath: process.env.TIMES_NEW_ROMAN_REGULAR_FONT_PATH || '',
+  timesNewRomanBoldFontPath: process.env.TIMES_NEW_ROMAN_BOLD_FONT_PATH || '',
 
   // Mapbox
   mapboxAccessToken: process.env.MAPBOX_ACCESS_TOKEN || '',
 
   // HTTPS Email API
-  gmailUser: process.env.GMAILUSER || '',
   sendGridApiKey: process.env.SENDGRID_API_KEY || '',
   emailFrom: process.env.EMAIL_FROM || '',
+  emailReplyTo: process.env.EMAIL_REPLY_TO || '',
 
   // TextBee SMS gateway
   textBeeApiKey: process.env.TEXTBEE_API_KEY || '',

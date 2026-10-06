@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/incident_time_format.dart';
 import '../../widgets/incident_header_gradient.dart';
+import '../../widgets/resolved_report_card.dart';
 import '../models/mdrrmo_report.dart';
 import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
@@ -152,6 +153,27 @@ class _MdrrmoReportsScreenState extends State<MdrrmoReportsScreen>
         .replaceAll(RegExp(r'\[SEND_TO:[^\]]+\]'), '')
         .trim();
     final address = (report.address ?? '').trim();
+    if (report.isResolved) {
+      final token = context.read<AuthProvider>().token;
+      return ResolvedReportCard(
+        reportId: report.id,
+        reportType: report.type,
+        title: report.title,
+        reporterName: report.reporterName,
+        reporterEmail: report.reporterEmail,
+        reporterPhone: report.reporterPhone,
+        classification: [
+          report.incidentType?.replaceAll('_', ' '),
+          report.severity,
+        ].whereType<String>().where((value) => value.trim().isNotEmpty).join(' · '),
+        receivedAt: report.createdAt,
+        incidentOccurredAt: report.incidentOccurredAt,
+        incidentTimePrecision: report.incidentTimePrecision,
+        resolvedAt: report.resolvedAt,
+        loadPdf: () => ApiService.downloadResolutionPdf(token!, report.id),
+        onTap: () => _open(report),
+      );
+    }
     return Card(
       color: Colors.white,
       margin: const EdgeInsets.only(bottom: 12),

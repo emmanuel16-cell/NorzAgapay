@@ -16,7 +16,7 @@ async function sendEmail(toEmail: string, subject: string, html: string, text: s
       body: JSON.stringify({
         personalizations: [{ to: [{ email: toEmail }] }],
         from: { email: config.emailFrom, name: 'NorzAgapay Portal' },
-        ...(config.gmailUser ? { reply_to: { email: config.gmailUser } } : {}),
+        ...(config.emailReplyTo ? { reply_to: { email: config.emailReplyTo } } : {}),
         subject,
         content: [
           { type: 'text/plain', value: text },
@@ -47,13 +47,9 @@ export const emailService = {
     const isRegistration = purpose === 'registration' || purpose === 'barangay_registration';
     const isBarangayRegistration = purpose === 'barangay_registration';
     const isBarangayPasswordChange = purpose === 'barangay_password_change';
-    const subject = isBarangayRegistration
-      ? 'NorzAgapay - Barangay Account Verification Code'
-      : isRegistration
-      ? 'NorzAgapay - Citizen Account Verification Code'
-      : isBarangayPasswordChange
-        ? 'NorzAgapay - Barangay Account Password Change OTP'
-        : 'NorzAgapay - Password Change OTP Code';
+    const subject = isRegistration
+      ? 'Your NorzAgapay verification code'
+      : 'Your NorzAgapay password change code';
 
     const actionText = isBarangayRegistration
       ? 'complete your NorzAgapay Barangay Administrator registration'
@@ -64,28 +60,13 @@ export const emailService = {
         : 'update your resident account password';
 
     const html = `
-      <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 520px; margin: 0 auto; background: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; overflow: hidden;">
-        <div style="background: linear-gradient(135deg, #0c243b, #133e68, #0f5b78); padding: 24px; text-align: center; color: white;">
-          <h2 style="margin: 0; font-size: 22px; font-weight: 800;">NorzAgapay</h2>
-          <p style="margin: 4px 0 0; font-size: 13px; opacity: 0.85;">Municipality of Norzagaray &bull; MDRRMO &amp; Barangay Portal</p>
-        </div>
-        <div style="padding: 28px 24px; color: #1e293b;">
-          <p style="font-size: 15px; line-height: 1.5; margin-top: 0;">Hello,</p>
-          <p style="font-size: 14px; line-height: 1.5; color: #475569;">
-            Use the 6-digit verification code below to ${actionText}:
-          </p>
-          <div style="margin: 24px 0; text-align: center;">
-            <div style="display: inline-block; background: #f0fdf4; border: 2px dashed #22c55e; border-radius: 12px; padding: 14px 28px;">
-              <span style="font-size: 32px; font-weight: 900; letter-spacing: 6px; color: #15803d; font-family: monospace;">${otp}</span>
-            </div>
-          </div>
-          <p style="font-size: 12.5px; color: #64748b; line-height: 1.5;">
-            &#9200; This code will expire in <strong>10 minutes</strong>. For your security, do not share this code with anyone.
-          </p>
-          <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;" />
-          <p style="font-size: 11.5px; color: #94a3b8; line-height: 1.4; margin-bottom: 0;">
-            If you did not request this verification code, please ignore this email.
-          </p>
+      <div style="margin: 0; padding: 24px; background: #f5f7fa; color: #1f2937; font-family: Arial, Helvetica, sans-serif;">
+        <div style="max-width: 480px; margin: 0 auto; padding: 24px; background: #ffffff; border: 1px solid #dfe3e8;">
+          <h1 style="margin: 0 0 20px; color: #163b5c; font-size: 22px;">NorzAgapay</h1>
+          <p style="font-size: 16px; line-height: 1.5;">Your verification code is:</p>
+          <p style="margin: 20px 0; color: #163b5c; font-family: monospace; font-size: 32px; font-weight: bold; letter-spacing: 5px;">${otp}</p>
+          <p style="font-size: 15px; line-height: 1.5;">Use this code to ${actionText}. It expires in <strong>10 minutes</strong>. Do not share it with anyone.</p>
+          <p style="margin: 24px 0 0; color: #526171; font-size: 13px; line-height: 1.5;">If you did not request this code, you can ignore this email.</p>
         </div>
       </div>
     `;
@@ -94,7 +75,7 @@ export const emailService = {
       toEmail,
       subject,
       html,
-      `Your NorzAgapay verification code is ${otp}. It will expire in 10 minutes. If you did not request this, please ignore.`,
+      `Your NorzAgapay verification code is ${otp}.\n\nUse this code to ${actionText}. It expires in 10 minutes. Do not share it with anyone.\n\nIf you did not request this code, you can ignore this email.`,
     );
   },
 

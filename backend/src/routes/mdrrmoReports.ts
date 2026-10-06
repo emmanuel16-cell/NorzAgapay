@@ -6,6 +6,7 @@ import { supabaseAdmin } from '../config/supabase';
 import { AuthRequest, authenticate, authorize } from '../middleware/auth';
 import { io } from '../server';
 import { distanceMeters, validateArrivalFix, validateRecentGpsFix } from '../services/arrivalValidation';
+import { IncidentResolutionPdfService, IncompleteResolutionReportError } from '../services/incidentResolutionPdfService';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -29,7 +30,8 @@ function isMdrrmoReport(report: any): boolean {
 }
 
 function isResolved(report: any): boolean {
-  return report.mdrrmo_response_status === 'resolved' || report.status === 'resolved' || report.status === 'closed';
+  return report.mdrrmo_response_status === 'resolved' ||
+    (!report.mdrrmo_response_status && ['resolved', 'closed'].includes(String(report.status).toLowerCase()));
 }
 
 function formatReport(report: any): any {
@@ -209,7 +211,9 @@ router.patch('/:id/dispatch', authenticate, authorize('dispatcher', 'admin'), as
         mdrrmo_responder_name: responders.map((responder: any) => responder.full_name).join(', '),
         mdrrmo_responded_at: now,
         dispatcher_reviewed_at: now,
+        mdrrmo_dispatcher_reviewed_at: now,
         dispatched_at: now,
+        mdrrmo_dispatched_at: now,
       })
       .eq('id', req.params.id)
       .is('review_outcome', null)
@@ -299,7 +303,14 @@ router.patch('/:id/respond', authenticate, authorize('responder'), async (req: A
     const now = new Date().toISOString();
     const { data, error } = await supabaseAdmin
       .from('incident_reports')
-      .update({ status: 'responding', mdrrmo_response_status: 'responding', mdrrmo_responded_by: report.mdrrmo_responded_by || req.user!.userId, mdrrmo_responder_name: report.mdrrmo_responder_name || responder?.full_name, accepted_at: report.accepted_at || now })
+      .update({
+        status: 'responding',
+        mdrrmo_response_status: 'responding',
+        mdrrmo_responded_by: report.mdrrmo_responded_by || req.user!.userId,
+        mdrrmo_responder_name: report.mdrrmo_responder_name || responder?.full_name,
+        accepted_at: report.accepted_at || now,
+        mdrrmo_accepted_at: report.mdrrmo_accepted_at || report.accepted_at || now,
+      })
       .eq('id', report.id)
       .select('*, barangays(name)')
       .single();
@@ -329,12 +340,12 @@ const arrivalSchema = z.object({
 router.patch('/:id/field-assessment', authenticate, authorize('responder'), async (req: AuthRequest, res: Response): Promise<void> => {
   const parsed = z.object({
     situation: z.string().trim().min(1).max(1500),
-    affected_people: z.string().trim().max(1000).optional().default(''),
-    actions_taken: z.string().trim().max(1000).optional().default(''),
-    risks_resources: z.string().trim().max(1000).optional().default(''),
+    affected_people: z.string().trim().min(1).max(1000),
+    actions_taken: z.string().trim().min(1).max(1000),
+    risks_resources: z.string().trim().min(1).max(1000),
   }).safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: 'Describe the situation observed before saving the field assessment.', details: parsed.error.flatten() });
+    res.status(400).json({ error: 'Complete all four field assessment sections before saving. Enter “Not applicable” when a section does not apply.', details: parsed.error.flatten() });
     return;
   }
   try {
@@ -405,7 +416,16 @@ router.patch('/:id/arrive', authenticate, authorize('responder'), async (req: Au
     }
     const { data, error } = await supabaseAdmin
       .from('incident_reports')
-      .update({ arrived_at: arrivalAt.toISOString(), arrival_recorded_at: now.toISOString(), arrival_method: method, arrival_latitude: latitude ?? null, arrival_longitude: longitude ?? null, arrival_accuracy_m: accuracy_m ?? null, arrival_distance_m: distance === null ? null : Math.round(distance * 10) / 10 })
+      .update({
+        arrived_at: arrivalAt.toISOString(),
+        mdrrmo_arrived_at: arrivalAt.toISOString(),
+        arrival_recorded_at: now.toISOString(),
+        arrival_method: method,
+        arrival_latitude: latitude ?? null,
+        arrival_longitude: longitude ?? null,
+        arrival_accuracy_m: accuracy_m ?? null,
+        arrival_distance_m: distance === null ? null : Math.round(distance * 10) / 10,
+      })
       .eq('id', report.id)
       .select('*, barangays(name)')
       .single();
@@ -459,17 +479,43 @@ router.post('/:id/close', authenticate, authorize('responder', 'dispatcher'), as
   try {
     const report = await reportForAction(req.params.id);
     if (!report || !isMdrrmoReport(report)) { res.status(404).json({ error: 'MDRRMO report not found.' }); return; }
+    if (report.mdrrmo_response_status === 'resolved') { res.status(409).json({ error: 'The MDRRMO response cycle is already resolved.' }); return; }
+    let mdrrmoArrivalAt = report.mdrrmo_arrived_at ||
+      (!report.barangay_arrived_at ? report.arrived_at : null);
     if (req.user!.role === 'responder') {
       const assignment = await findAssignment(report.id, req.user!.userId);
       if (!assignment) { res.status(403).json({ error: 'This report is not assigned to your responder account.' }); return; }
       if (!assignment.arrived_at) { res.status(409).json({ error: 'Record your arrival before closing the report.' }); return; }
-    } else if (report.mdrrmo_response_status !== 'responding' || !report.arrived_at) {
+      mdrrmoArrivalAt = assignment.arrived_at;
+    } else if (report.mdrrmo_response_status !== 'responding' || !mdrrmoArrivalAt) {
       res.status(409).json({ error: 'A responder must accept the report and record arrival before it can be closed.' }); return;
+    }
+    const missingFields = IncidentResolutionPdfService.missingFields(
+      { ...report, mdrrmo_arrived_at: mdrrmoArrivalAt },
+      'mdrrmo',
+      parsed.data.resolved_notes,
+    );
+    if (report.barangay_response_status === 'resolved') {
+      missingFields.push(...IncidentResolutionPdfService.missingFields(report, 'barangay'));
+    }
+    if (missingFields.length) {
+      res.status(409).json({
+        error: `Complete the required report and field assessment details before resolving: ${missingFields.join(', ')}. Enter “Not applicable” where a section does not apply.`,
+        missing_fields: missingFields,
+      });
+      return;
     }
     const now = new Date().toISOString();
     const { data, error } = await supabaseAdmin
       .from('incident_reports')
-      .update({ status: 'resolved', mdrrmo_response_status: 'resolved', resolved_notes: parsed.data.resolved_notes, resolved_at: now })
+      .update({
+        status: 'resolved',
+        mdrrmo_response_status: 'resolved',
+        mdrrmo_resolved_notes: parsed.data.resolved_notes,
+        mdrrmo_resolved_at: now,
+        resolved_notes: parsed.data.resolved_notes,
+        resolved_at: now,
+      })
       .eq('id', report.id)
       .select('*, barangays(name)')
       .single();
@@ -480,11 +526,48 @@ router.post('/:id/close', authenticate, authorize('responder', 'dispatcher'), as
       .eq('report_id', report.id)
       .neq('status', 'removed');
     if (assignmentError) throw assignmentError;
+    let pdfStatus: 'ready' | 'failed' = 'failed';
+    try {
+      await IncidentResolutionPdfService.generateAndStore(report.id);
+      pdfStatus = 'ready';
+    } catch (pdfError) {
+      console.error('Could not create incident resolution PDF after MDRRMO close:', pdfError);
+      await supabaseAdmin.from('incident_reports')
+        .update({ resolution_pdf_status: 'failed' })
+        .eq('id', report.id);
+    }
     const assignments = await getAssignments([report.id]);
-    res.json(await emitReportUpdate(data, assignments));
+    const { data: latest } = await supabaseAdmin.from('incident_reports')
+      .select('*, barangays(name)').eq('id', report.id).maybeSingle();
+    res.json({ ...(await emitReportUpdate(latest || data, assignments)), resolution_pdf_status: pdfStatus });
   } catch (err) {
     console.error('MDRRMO report close error:', err);
     res.status(500).json({ error: 'Could not close this MDRRMO report.' });
+  }
+});
+
+router.get('/:id/resolution-pdf', authenticate, authorize('dispatcher', 'admin', 'responder'), async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const report = await reportForAction(req.params.id);
+    if (!report || !isMdrrmoReport(report)) { res.status(404).json({ error: 'MDRRMO report not found.' }); return; }
+    if (req.user!.role === 'responder' && !await findAssignment(report.id, req.user!.userId)) {
+      res.status(403).json({ error: 'This report is not assigned to your responder account.' }); return;
+    }
+    if (report.mdrrmo_response_status !== 'resolved' && !(!report.mdrrmo_response_status && ['resolved', 'closed'].includes(String(report.status).toLowerCase()))) {
+      res.status(409).json({ error: 'The MDRRMO response cycle has not been resolved yet.' }); return;
+    }
+    const pdf = await IncidentResolutionPdfService.generateAndStore(report.id);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="NorzAgapay_Incident_${report.id.slice(0, 8)}.pdf"`);
+    res.setHeader('Content-Length', pdf.buffer.length);
+    res.send(pdf.buffer);
+  } catch (error) {
+    if (error instanceof IncompleteResolutionReportError) {
+      res.status(409).json({ error: error.message, missing_fields: error.missingFields });
+      return;
+    }
+    console.error('MDRRMO incident PDF download error:', error);
+    res.status(500).json({ error: 'Could not create or download the incident PDF.' });
   }
 });
 

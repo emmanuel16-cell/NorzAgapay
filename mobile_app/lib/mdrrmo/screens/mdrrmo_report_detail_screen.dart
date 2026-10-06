@@ -5,7 +5,6 @@ import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../services/municipality_boundary_service.dart';
 import '../../core/incident_time_format.dart';
 import '../../widgets/municipality_boundary_map_layer.dart';
 import '../../widgets/incident_header_gradient.dart';
@@ -390,7 +389,7 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
     if (submitted != true || summary.isEmpty || !mounted) return;
     await _run(() async {
       _report = await ApiService.closeMdrrmoReport(token, _report.id, summary);
-    }, 'Incident closed and recorded.');
+    }, 'Incident closed. Its PDF is available from the resolved report card.');
   }
 
   Future<void> _uploadMedia() async {
@@ -463,20 +462,34 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
                   controller: people,
                   maxLines: 2,
                   decoration: const InputDecoration(
-                    labelText: 'People affected / urgency',
+                    labelText: 'People affected / urgency *',
+                    hintText: 'Enter details or “Not applicable”',
                   ),
+                  validator: (value) => (value?.trim().isEmpty ?? true)
+                      ? 'Enter details or “Not applicable”.'
+                      : null,
                 ),
                 TextFormField(
                   controller: actions,
                   maxLines: 2,
-                  decoration: const InputDecoration(labelText: 'Actions taken'),
+                  decoration: const InputDecoration(
+                    labelText: 'Actions taken *',
+                    hintText: 'Enter details or “Not applicable”',
+                  ),
+                  validator: (value) => (value?.trim().isEmpty ?? true)
+                      ? 'Enter details or “Not applicable”.'
+                      : null,
                 ),
                 TextFormField(
                   controller: risks,
                   maxLines: 2,
                   decoration: const InputDecoration(
-                    labelText: 'Risks / resources needed',
+                    labelText: 'Risks / resources needed *',
+                    hintText: 'Enter details or “Not applicable”',
                   ),
+                  validator: (value) => (value?.trim().isEmpty ?? true)
+                      ? 'Enter details or “Not applicable”.'
+                      : null,
                 ),
               ],
             ),

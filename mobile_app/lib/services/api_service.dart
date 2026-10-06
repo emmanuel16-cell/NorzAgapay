@@ -1,5 +1,6 @@
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:image_picker/image_picker.dart';
 import '../models/incident_report.dart';
 import '../models/barangay_user.dart';
@@ -268,6 +269,22 @@ class ApiService {
     }
     final data = jsonDecode(res.body);
     throw Exception(data['error'] ?? 'Failed to close report');
+  }
+
+  static Future<Uint8List> downloadResolutionPdf(String token, String reportId) async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/barangay/reports/$reportId/resolution-pdf'),
+      headers: _headers(token),
+    );
+    if (res.statusCode == 200 && (res.headers['content-type'] ?? '').contains('application/pdf')) {
+      return res.bodyBytes;
+    }
+    try {
+      final data = jsonDecode(res.body);
+      throw Exception(data['error'] ?? 'Could not download the incident PDF.');
+    } on FormatException {
+      throw Exception('Could not download the incident PDF.');
+    }
   }
 
   // ── Team Management ────────────────────────────────────────────────────────

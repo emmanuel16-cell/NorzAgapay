@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../services/offline_service.dart';
+import '../core/barangay_names.dart';
 import '../core/constants.dart';
 import '../core/phone_number_utils.dart';
 import '../widgets/legal_dialogs.dart';
@@ -189,7 +190,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
         fillColor: Colors.white,
       ),
       items: availableNames
-          .map((name) => DropdownMenuItem(value: name, child: Text('Barangay $name')))
+          .map(
+            (name) => DropdownMenuItem(
+              value: name,
+              child: Text(barangayDisplayLabel(name)),
+            ),
+          )
           .toList(),
       onChanged: (name) {
         if (name != null && name != _selectedBarangayName) {

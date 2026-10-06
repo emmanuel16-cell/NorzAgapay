@@ -1505,18 +1505,18 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
               ),
               _assessmentField(
                 people,
-                'People affected / urgency',
-                'Estimated affected people and immediate risks',
+                'People affected / urgency *',
+                'Enter details or “Not applicable”',
               ),
               _assessmentField(
                 actions,
-                'Actions taken',
-                'What responders have done so far',
+                'Actions taken *',
+                'Enter details or “Not applicable”',
               ),
               _assessmentField(
                 risks,
-                'Risks or resources needed',
-                'Hazards, equipment, or support required',
+                'Risks / resources needed *',
+                'Enter details or “Not applicable”',
               ),
             ],
           ),
@@ -1528,11 +1528,12 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           ),
           ElevatedButton(
             onPressed: () {
-              if (condition.text.trim().isEmpty) {
+              if ([condition, people, actions, risks]
+                  .any((controller) => controller.text.trim().isEmpty)) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                     content: Text(
-                      'Describe the situation observed before saving.',
+                      'Complete all field assessment sections. Enter “Not applicable” where needed.',
                     ),
                   ),
                 );
@@ -1549,12 +1550,9 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     final text = [
       'FIELD ASSESSMENT',
       'Situation: ${condition.text.trim()}',
-      if (people.text.trim().isNotEmpty)
-        'People affected / urgency: ${people.text.trim()}',
-      if (actions.text.trim().isNotEmpty)
-        'Actions taken: ${actions.text.trim()}',
-      if (risks.text.trim().isNotEmpty)
-        'Risks / resources: ${risks.text.trim()}',
+      'People affected / urgency: ${people.text.trim()}',
+      'Actions taken: ${actions.text.trim()}',
+      'Risks / resources: ${risks.text.trim()}',
     ].join('\n');
     setState(() => _isProcessing = true);
     try {
@@ -1934,9 +1932,15 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         setState(() => _report = updated);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Incident closed and recorded successfully!'),
-              backgroundColor: Color(0xFF10B981),
+            SnackBar(
+              content: Text(
+                updated.resolutionPdfStatus == 'ready'
+                    ? 'Incident closed and resolution PDF created.'
+                    : 'Incident closed. The PDF could not be saved yet; use Download document to retry.',
+              ),
+              backgroundColor: updated.resolutionPdfStatus == 'ready'
+                  ? const Color(0xFF10B981)
+                  : const Color(0xFFF59E0B),
             ),
           );
         }

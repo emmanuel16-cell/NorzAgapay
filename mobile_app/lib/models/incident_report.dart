@@ -1,6 +1,20 @@
 import 'dart:convert';
 
 class IncidentReport {
+  static DateTime? _channelDate(
+    Map<String, dynamic> json,
+    String channel,
+    String event,
+    String legacyField,
+  ) {
+    final own = json['${channel}_$event'];
+    if (own != null) return DateTime.tryParse(own.toString());
+    final other = channel == 'barangay' ? 'mdrrmo' : 'barangay';
+    if (json['${other}_$event'] != null) return null;
+    final legacy = json[legacyField];
+    return legacy == null ? null : DateTime.tryParse(legacy.toString());
+  }
+
   final String id;
   final String type;
   final String title;
@@ -49,6 +63,7 @@ class IncidentReport {
   final double? arrivalAccuracyM;
   final double? arrivalDistanceM;
   final DateTime? resolvedAt;
+  final String resolutionPdfStatus;
 
   IncidentReport({
     required this.id,
@@ -99,13 +114,16 @@ class IncidentReport {
     this.arrivalAccuracyM,
     this.arrivalDistanceM,
     this.resolvedAt,
+    this.resolutionPdfStatus = 'missing',
   })  : proofUrls = proofUrls ?? (proofUrl != null ? [proofUrl] : []),
         proofTypes = proofTypes ?? [proofType],
         responderMedia = responderMedia ?? const [];
 
   bool get isEmergency => type == 'emergency';
   bool get isResponding => barangayResponseStatus == 'responding';
-  bool get isResolved => barangayResponseStatus == 'resolved' || status == 'resolved';
+  // The shared report status can reflect the other agency's closeout. Keep
+  // Barangay report lists bound to the Barangay response cycle.
+  bool get isResolved => barangayResponseStatus == 'resolved';
   bool get isPending => !isResponding && !isResolved;
   bool get isMdrrmoResponding => mdrrmoResponseStatus == 'responding';
   bool get isArrived => arrivedAt != null;
@@ -226,26 +244,27 @@ class IncidentReport {
       mdrrmoResponseStatus: json['mdrrmo_response_status'] ?? 'pending',
       mdrrmoResponderName: json['mdrrmo_responder_name'],
       mdrrmoRespondedAt: json['mdrrmo_responded_at'] != null ? DateTime.tryParse(json['mdrrmo_responded_at']) : null,
-      resolvedNotes: json['resolved_notes'],
+      resolvedNotes: json['barangay_resolved_notes'] ?? json['resolved_notes'],
       createdAt: json['created_at'] != null ? DateTime.tryParse(json['created_at']) : null,
       incidentOccurredAt: json['incident_occurred_at'] != null ? DateTime.tryParse(json['incident_occurred_at'].toString()) : null,
       incidentTimePrecision: const {'exact', 'approximate'}.contains(json['incident_time_precision']?.toString())
           ? json['incident_time_precision'].toString()
           : 'unknown',
-      dispatcherReviewedAt: json['dispatcher_reviewed_at'] != null ? DateTime.tryParse(json['dispatcher_reviewed_at']) : null,
-      dispatchedAt: json['dispatched_at'] != null ? DateTime.tryParse(json['dispatched_at']) : null,
-      acceptedAt: json['accepted_at'] != null ? DateTime.tryParse(json['accepted_at']) : null,
+      dispatcherReviewedAt: _channelDate(json, 'barangay', 'dispatcher_reviewed_at', 'dispatcher_reviewed_at'),
+      dispatchedAt: _channelDate(json, 'barangay', 'dispatched_at', 'dispatched_at'),
+      acceptedAt: _channelDate(json, 'barangay', 'accepted_at', 'accepted_at'),
       travelDistanceM: (json['travel_distance_m'] as num?)?.toDouble(),
       travelDistanceAccuracyM: (json['travel_distance_accuracy_m'] as num?)?.toDouble(),
       travelDistanceFixAt: json['travel_distance_fix_at'] != null ? DateTime.tryParse(json['travel_distance_fix_at']) : null,
-      arrivedAt: json['arrived_at'] != null ? DateTime.tryParse(json['arrived_at']) : null,
+      arrivedAt: _channelDate(json, 'barangay', 'arrived_at', 'arrived_at'),
       arrivalRecordedAt: json['arrival_recorded_at'] != null ? DateTime.tryParse(json['arrival_recorded_at']) : null,
       arrivalMethod: json['arrival_method'],
       arrivalLatitude: (json['arrival_latitude'] as num?)?.toDouble(),
       arrivalLongitude: (json['arrival_longitude'] as num?)?.toDouble(),
       arrivalAccuracyM: (json['arrival_accuracy_m'] as num?)?.toDouble(),
       arrivalDistanceM: (json['arrival_distance_m'] as num?)?.toDouble(),
-      resolvedAt: json['resolved_at'] != null ? DateTime.tryParse(json['resolved_at']) : null,
+      resolvedAt: _channelDate(json, 'barangay', 'resolved_at', 'resolved_at'),
+      resolutionPdfStatus: json['resolution_pdf_status']?.toString() ?? 'missing',
     );
   }
 
@@ -295,6 +314,7 @@ class IncidentReport {
       'arrival_accuracy_m': arrivalAccuracyM,
       'arrival_distance_m': arrivalDistanceM,
       'resolved_at': resolvedAt?.toIso8601String(),
+      'resolution_pdf_status': resolutionPdfStatus,
     };
   }
 }

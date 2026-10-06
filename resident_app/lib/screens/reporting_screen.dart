@@ -635,11 +635,6 @@ class _ReportingScreenState extends State<ReportingScreen> {
             color: Color(0xFF1E293B),
           ),
         ),
-        const SizedBox(height: 4),
-        const Text(
-          'This is separate from when your report reaches dispatch.',
-          style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-        ),
         const SizedBox(height: 8),
         Wrap(
           spacing: 8,
@@ -661,13 +656,7 @@ class _ReportingScreenState extends State<ReportingScreen> {
             ),
           ],
         ),
-        if (_incidentTimeChoice == 'just_now') ...[
-          const SizedBox(height: 2),
-          const Text(
-            'Incident time will match Report received when submitted now.',
-            style: const TextStyle(fontSize: 12, color: Color(0xFF475569)),
-          ),
-        ] else if (_incidentTimeChoice == 'earlier') ...[
+        if (_incidentTimeChoice == 'earlier') ...[
           const SizedBox(height: 2),
           if (occurredAt != null)
             Text(

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:url_launcher/url_launcher.dart';
+import '../core/barangay_names.dart';
 import '../core/constants.dart';
 import '../services/offline_service.dart';
 
@@ -654,7 +655,7 @@ class _FeedScreenState extends State<FeedScreen> {
                             .map(
                               (name) => PopupMenuItem<String>(
                                 value: name,
-                                child: Text('Barangay $name'),
+                                child: Text(barangayDisplayLabel(name)),
                               ),
                             )
                             .toList(),
@@ -707,7 +708,7 @@ class _FeedScreenState extends State<FeedScreen> {
                             child: Text(
                               residentBarangay.isEmpty
                                   ? 'No verified barangay'
-                                  : 'Barangay $residentBarangay',
+                                  : barangayDisplayLabel(residentBarangay),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(

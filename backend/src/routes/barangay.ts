@@ -20,6 +20,7 @@ import {
   validateRecentGpsFix,
 } from '../services/arrivalValidation';
 import { getVerifiedBarangayIds, isBarangayVerified } from '../services/verifiedBarangayService';
+import { IncidentResolutionPdfService, IncompleteResolutionReportError } from '../services/incidentResolutionPdfService';
 import { formatIncidentReport } from './incidentReports';
 import { isReportResolved, reportStageDurations, summarizeReportTimings } from '../services/reportTiming';
 
@@ -1431,7 +1432,27 @@ router.get('/reports/resolved', authenticateBarangay, requireRole(['admin', 'sta
       .limit(5000);
     if (error) throw error;
 
-    res.json((data || []).filter(isReportResolved).map(formatIncidentReport));
+    const resolvedReports = (data || []).filter((report: any) =>
+      report.barangay_response_status === 'resolved' ||
+      (!report.barangay_response_status && ['resolved', 'closed'].includes(String(report.status).toLowerCase())),
+    );
+    const residentIds = [...new Set(resolvedReports.map((report: any) => report.reporter_id).filter(Boolean))];
+    const residents = new Map<string, any>();
+    if (residentIds.length) {
+      const { data: residentRows, error: residentError } = await supabaseAdmin
+        .from('resident_user').select('id, full_name, phone, email').in('id', residentIds);
+      if (residentError) throw residentError;
+      for (const resident of residentRows || []) residents.set(resident.id, resident);
+    }
+    res.json(resolvedReports.map((report: any) => {
+      const resident = residents.get(report.reporter_id);
+      return formatIncidentReport({
+        ...report,
+        reporter_name: report.reporter_name || resident?.full_name || null,
+        reporter_phone: report.reporter_phone || resident?.phone || null,
+        reporter_email: report.reporter_email || resident?.email || null,
+      });
+    }));
   } catch (err) {
     console.error('Barangay resolved reports error:', err);
     res.status(500).json({ error: 'Failed to fetch resolved reports.' });
@@ -1730,7 +1751,9 @@ router.patch('/reports/:id/dispatch', authenticateBarangay, requireRole(['dispat
         barangay_responded_by: primaryLeaderId,
         barangay_responded_at: reviewedAndDispatchedAt,
         dispatcher_reviewed_at: reviewedAndDispatchedAt,
+        barangay_dispatcher_reviewed_at: reviewedAndDispatchedAt,
         dispatched_at: reviewedAndDispatchedAt,
+        barangay_dispatched_at: reviewedAndDispatchedAt,
       })
       .eq('id', req.params.id)
       .eq('barangay_id', req.barangayUser.barangayId)
@@ -1884,7 +1907,7 @@ router.patch('/reports/:id/respond', authenticateBarangay, requireRole(['dispatc
     }
     const { data: currentReport, error: currentError } = await supabaseAdmin
       .from('incident_reports')
-      .select('latitude, longitude, barangay_response_notes, barangay_responded_by, accepted_at')
+      .select('latitude, longitude, barangay_response_notes, barangay_responded_by, accepted_at, barangay_accepted_at, mdrrmo_accepted_at')
       .eq('id', req.params.id).eq('barangay_id', req.barangayUser.barangayId).maybeSingle();
     if (currentError) throw currentError;
     if (!currentReport) { res.status(404).json({ error: 'Incident report not found' }); return; }
@@ -1903,6 +1926,7 @@ router.patch('/reports/:id/respond', authenticateBarangay, requireRole(['dispatc
     };
     if (req.barangayUser.role === 'responder') {
       updatePayload.accepted_at = currentReport.accepted_at || actionAt;
+      updatePayload.barangay_accepted_at = currentReport.barangay_accepted_at || currentReport.accepted_at || actionAt;
     }
     if (req.barangayUser.role === 'responder' && !currentReport.accepted_at &&
         latitude !== undefined && longitude !== undefined && accuracy_m !== undefined && fix_at) {
@@ -1993,7 +2017,7 @@ router.patch('/reports/:id/arrive', authenticateBarangay, requireRole(['responde
 
     const { data: currentReport, error: fetchError } = await supabaseAdmin
       .from('incident_reports')
-      .select('id, latitude, longitude, barangay_response_status, barangay_responded_by, barangay_response_notes, accepted_at, arrived_at, resolved_at')
+      .select('id, latitude, longitude, barangay_response_status, barangay_responded_by, barangay_response_notes, accepted_at, arrived_at, resolved_at, barangay_accepted_at, barangay_arrived_at, barangay_resolved_at, mdrrmo_accepted_at, mdrrmo_arrived_at')
       .eq('id', req.params.id)
       .eq('barangay_id', req.barangayUser.barangayId)
       .maybeSingle();
@@ -2009,12 +2033,12 @@ router.patch('/reports/:id/arrive', authenticateBarangay, requireRole(['responde
       res.status(403).json({ error: 'This incident has not been assigned to your responder account.' });
       return;
     }
-    if (currentReport.resolved_at || currentReport.barangay_response_status !== 'responding') {
+    if (currentReport.barangay_resolved_at || currentReport.barangay_response_status !== 'responding') {
       res.status(409).json({ error: 'Accept the dispatch before marking arrival.' });
       return;
     }
-    if (currentReport.arrived_at) {
-      res.json(currentReport);
+    if (currentReport.barangay_arrived_at || (!currentReport.mdrrmo_arrived_at && currentReport.arrived_at)) {
+      res.json({ ...currentReport, arrived_at: currentReport.barangay_arrived_at || currentReport.arrived_at });
       return;
     }
 
@@ -2063,6 +2087,9 @@ router.patch('/reports/:id/arrive', authenticateBarangay, requireRole(['responde
     const updatePayload = {
       accepted_at: currentReport.accepted_at || now.toISOString(),
       arrived_at: fixAt.toISOString(),
+      barangay_accepted_at: currentReport.barangay_accepted_at ||
+        (currentReport.mdrrmo_accepted_at ? now.toISOString() : currentReport.accepted_at || now.toISOString()),
+      barangay_arrived_at: fixAt.toISOString(),
       arrival_recorded_at: now.toISOString(),
       arrival_method: parsed.data.method,
       arrival_latitude: latitude,
@@ -2112,7 +2139,7 @@ router.post('/reports/:id/close', authenticateBarangay, requireRole(['dispatcher
 
     const { data: currentReport, error: accessError } = await supabaseAdmin
       .from('incident_reports')
-      .select('barangay_response_notes, barangay_responded_by, arrived_at, resolved_at, send_to, specifics, description, status, mdrrmo_response_status')
+      .select('*')
       .eq('id', req.params.id)
       .eq('barangay_id', req.barangayUser.barangayId)
       .maybeSingle();
@@ -2122,34 +2149,57 @@ router.post('/reports/:id/close', authenticateBarangay, requireRole(['dispatcher
       return;
     }
 
-    const hasMdrrmoRoutingMarker = [currentReport.specifics, currentReport.description]
-      .some((value) => typeof value === 'string' && value.includes('[SEND_TO:mdrrmo]'));
-    const isMdrrmoOwned = currentReport.send_to === 'mdrrmo' || hasMdrrmoRoutingMarker ||
-      currentReport.status === 'escalated' ||
-      ['responding', 'resolved'].includes((currentReport.mdrrmo_response_status || '').toLowerCase());
-    if (isMdrrmoOwned) {
+    const assignedMatch = (currentReport.barangay_response_notes || '').match(/^\[ASSIGNED:([^\]]+)\]/);
+    const assignedIds = assignedMatch ? assignedMatch[1].split(',').map((id: string) => id.trim()) : [];
+    const hasBarangayCycle = currentReport.barangay_response_status === 'responding' ||
+      currentReport.barangay_response_status === 'resolved' ||
+      Boolean(currentReport.barangay_responded_by) || assignedIds.length > 0 ||
+      Boolean(currentReport.barangay_resolved_at);
+    if (!hasBarangayCycle) {
       res.status(403).json({ error: 'This report is being handled by MDRRMO and must be resolved by its dispatcher or responder.' });
       return;
     }
+    if (currentReport.barangay_response_status === 'resolved') {
+      res.status(409).json({ error: 'The Barangay response cycle is already resolved.' });
+      return;
+    }
 
-    if (!currentReport.arrived_at) {
+    const barangayArrivalAt = currentReport.barangay_arrived_at ||
+      (!currentReport.mdrrmo_arrived_at ? currentReport.arrived_at : null);
+    if (!barangayArrivalAt) {
       res.status(409).json({ error: 'Mark the responder as arrived before resolving the incident.' });
       return;
     }
 
     if (req.barangayUser.role === 'responder') {
-      const assignedMatch = (currentReport.barangay_response_notes || '').match(/^\[ASSIGNED:([^\]]+)\]/);
-      const assignedIds = assignedMatch ? assignedMatch[1].split(',').map((id: string) => id.trim()) : [];
       if (currentReport.barangay_responded_by !== req.barangayUser.userId && !assignedIds.includes(req.barangayUser.userId)) {
         res.status(403).json({ error: 'Only an assigned responder can close this incident' }); return;
       }
     }
+    const missingFields = IncidentResolutionPdfService.missingFields(
+      currentReport,
+      'barangay',
+      resolved_notes.trim(),
+    );
+    if (currentReport.mdrrmo_response_status === 'resolved') {
+      missingFields.push(...IncidentResolutionPdfService.missingFields(currentReport, 'mdrrmo'));
+    }
+    if (missingFields.length) {
+      res.status(409).json({
+        error: `Complete the required report and field assessment details before resolving: ${missingFields.join(', ')}. Enter “Not applicable” where a section does not apply.`,
+        missing_fields: missingFields,
+      });
+      return;
+    }
+    const resolvedAt = currentReport.barangay_resolved_at || new Date().toISOString();
     const { data, error } = await supabaseAdmin
       .from('incident_reports')
       .update({
         barangay_response_status: 'resolved',
+        barangay_resolved_notes: resolved_notes.trim(),
+        barangay_resolved_at: resolvedAt,
         resolved_notes: resolved_notes.trim(),
-        resolved_at: currentReport.resolved_at || new Date().toISOString(),
+        resolved_at: resolvedAt,
         status: 'resolved',
       })
       .eq('id', req.params.id)
@@ -2163,6 +2213,17 @@ router.post('/reports/:id/close', authenticateBarangay, requireRole(['dispatcher
       return;
     }
 
+    let pdfReady = false;
+    try {
+      await IncidentResolutionPdfService.generateAndStore(req.params.id);
+      pdfReady = true;
+    } catch (pdfError) {
+      console.error('Could not create incident resolution PDF after Barangay close:', pdfError);
+      await supabaseAdmin.from('incident_reports')
+        .update({ resolution_pdf_status: 'failed' })
+        .eq('id', req.params.id);
+    }
+
     io.to('dashboard_staff').emit('barangay:incident_closed', {
       reportId: req.params.id,
       barangayId: req.barangayUser.barangayId,
@@ -2171,10 +2232,38 @@ router.post('/reports/:id/close', authenticateBarangay, requireRole(['dispatcher
     io.to('dashboard_staff').emit('incident_report:updated', data);
     io.to(`barangay:${req.barangayUser.barangayId}`).emit('barangay:report_updated', data);
 
-    res.json(data);
+    res.json({ ...data, resolution_pdf_status: pdfReady ? 'ready' : 'failed' });
   } catch (err) {
     console.error('Close report error:', err);
     res.status(500).json({ error: 'Failed to close report' });
+  }
+});
+
+router.get('/reports/:id/resolution-pdf', authenticateBarangay, requireRole(['admin', 'staff', 'dispatcher', 'responder']), async (req: any, res: Response) => {
+  try {
+    const { data: report, error } = await supabaseAdmin
+      .from('incident_reports')
+      .select('id, barangay_id, barangay_response_status, status')
+      .eq('id', req.params.id)
+      .eq('barangay_id', req.barangayUser.barangayId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!report) { res.status(404).json({ error: 'Incident report not found.' }); return; }
+    if (report.barangay_response_status !== 'resolved' && !['resolved', 'closed'].includes(String(report.status).toLowerCase())) {
+      res.status(409).json({ error: 'This report has not been resolved yet.' }); return;
+    }
+    const pdf = await IncidentResolutionPdfService.generateAndStore(req.params.id);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="NorzAgapay_Incident_${req.params.id.slice(0, 8)}.pdf"`);
+    res.setHeader('Content-Length', pdf.buffer.length);
+    res.send(pdf.buffer);
+  } catch (error) {
+    if (error instanceof IncompleteResolutionReportError) {
+      res.status(409).json({ error: error.message, missing_fields: error.missingFields });
+      return;
+    }
+    console.error('Barangay incident PDF download error:', error);
+    res.status(500).json({ error: 'Could not create or download the incident PDF.' });
   }
 });
 

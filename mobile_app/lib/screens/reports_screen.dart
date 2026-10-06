@@ -6,6 +6,7 @@ import '../services/socket_service.dart';
 import '../models/incident_report.dart';
 import '../core/incident_time_format.dart';
 import '../widgets/incident_header_gradient.dart';
+import '../widgets/resolved_report_card.dart';
 import 'report_detail_screen.dart';
 import 'barangay_report_incident_screen.dart';
 
@@ -432,6 +433,36 @@ class _ReportsScreenState extends State<ReportsScreen>
         .replaceAll(RegExp(r'\[SEND_TO:[^\]]+\]'), '')
         .trim();
     final specifics = (report.specifics ?? '').trim();
+
+    if (report.isResolved) {
+      return ResolvedReportCard(
+        reportId: report.id,
+        reportType: report.type,
+        title: report.title,
+        reporterName: report.reporterName,
+        reporterEmail: report.reporterEmail,
+        reporterPhone: report.reporterPhone,
+        classification: [
+          specifics,
+          report.severity,
+        ].whereType<String>().where((value) => value.trim().isNotEmpty).join(' · '),
+        receivedAt: report.createdAt,
+        incidentOccurredAt: report.incidentOccurredAt,
+        incidentTimePrecision: report.incidentTimePrecision,
+        resolvedAt: report.resolvedAt,
+        loadPdf: () => ApiService.downloadResolutionPdf(auth.token!, report.id),
+        onTap: () => _openDetail(report),
+        footer: hasAssistance
+            ? _buildAssistanceBanner(
+                report.id,
+                assistanceData,
+                isExpanded,
+                isDispatcher,
+                isResponder,
+              )
+            : null,
+      );
+    }
 
     return Card(
       color: Colors.white,

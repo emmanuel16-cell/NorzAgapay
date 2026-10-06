@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import '../core/constants.dart';
 import '../models/evacuation_center.dart';
@@ -161,6 +162,22 @@ class ApiService {
       body: jsonEncode({'resolved_notes': resolvedNotes}),
     );
     return _mdrrmoReportFromResponse(response, 'Failed to close report');
+  }
+
+  static Future<Uint8List> downloadResolutionPdf(String token, String reportId) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/mdrrmo/reports/$reportId/resolution-pdf'),
+      headers: _headers(token),
+    );
+    if (response.statusCode == 200 && (response.headers['content-type'] ?? '').contains('application/pdf')) {
+      return response.bodyBytes;
+    }
+    try {
+      final body = jsonDecode(response.body);
+      throw Exception(body is Map ? body['error'] ?? 'Could not download the incident PDF.' : 'Could not download the incident PDF.');
+    } on FormatException {
+      throw Exception('Could not download the incident PDF.');
+    }
   }
 
   static Future<MdrrmoReport> uploadMdrrmoFieldMedia(String token, String reportId, XFile file) async {

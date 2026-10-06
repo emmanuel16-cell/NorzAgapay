@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/incident_report.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
+import '../widgets/resolved_report_card.dart';
 import 'report_detail_screen.dart';
 
 class ResolvedReportsScreen extends StatefulWidget {
@@ -124,47 +125,31 @@ class _ResolvedReportsScreenState extends State<ResolvedReportsScreen> {
               separatorBuilder: (_, __) => const SizedBox(height: 10),
               itemBuilder: (context, index) {
                 final report = _reports[index];
-                final type = report.type == 'community'
-                    ? 'Community'
-                    : 'Emergency';
-                return Card(
-                  elevation: 1,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: ListTile(
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
+                final token = context.read<AuthService>().token;
+                return ResolvedReportCard(
+                  reportId: report.id,
+                  reportType: report.type,
+                  title: report.title,
+                  reporterName: report.reporterName,
+                  reporterEmail: report.reporterEmail,
+                  reporterPhone: report.reporterPhone,
+                  classification: [
+                    report.incidentType?.replaceAll('_', ' '),
+                    report.severity,
+                  ].whereType<String>().where((value) => value.trim().isNotEmpty).join(' · '),
+                  receivedAt: report.createdAt,
+                  incidentOccurredAt: report.incidentOccurredAt,
+                  incidentTimePrecision: report.incidentTimePrecision,
+                  resolvedAt: report.resolvedAt,
+                  loadPdf: () => ApiService.downloadResolutionPdf(token!, report.id),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ReportDetailScreen(report: report),
                     ),
-                    leading: CircleAvatar(
-                      backgroundColor: const Color(
-                        0xFF0F9D83,
-                      ).withValues(alpha: .12),
-                      child: const Icon(
-                        Icons.task_alt_rounded,
-                        color: Color(0xFF0F9D83),
-                      ),
-                    ),
-                    title: Text(
-                      report.title,
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                    subtitle: Text(
-                      '$type${report.severity == null ? '' : ' · ${report.severity}'}\n${report.resolvedAt?.toLocal().toString().split('.').first ?? 'Resolution time unavailable'}',
-                    ),
-                    isThreeLine: true,
-                    trailing: const Icon(Icons.chevron_right_rounded),
-                    onTap: () =>
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => ReportDetailScreen(report: report),
-                          ),
-                        ).then((_) {
-                          if (mounted) _load();
-                        }),
-                  ),
+                  ).then((_) {
+                    if (mounted) _load();
+                  }),
                 );
               },
             ),

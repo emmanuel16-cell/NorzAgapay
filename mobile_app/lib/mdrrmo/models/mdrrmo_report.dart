@@ -12,6 +12,7 @@ class MdrrmoReport {
   final String? reporterId;
   final String? reporterName;
   final String? reporterPhone;
+  final String? reporterEmail;
   final DateTime? createdAt;
   final DateTime? incidentOccurredAt;
   final String incidentTimePrecision;
@@ -30,6 +31,7 @@ class MdrrmoReport {
   final DateTime? acceptedAt;
   final DateTime? arrivedAt;
   final DateTime? resolvedAt;
+  final String resolutionPdfStatus;
   final List<String> proofUrls;
   final List<String> proofTypes;
   final List<String> assignedResponderIds;
@@ -50,6 +52,7 @@ class MdrrmoReport {
     this.reporterId,
     this.reporterName,
     this.reporterPhone,
+    this.reporterEmail,
     this.createdAt,
     this.incidentOccurredAt,
     this.incidentTimePrecision = 'unknown',
@@ -66,6 +69,7 @@ class MdrrmoReport {
     this.acceptedAt,
     this.arrivedAt,
     this.resolvedAt,
+    this.resolutionPdfStatus = 'missing',
     this.proofUrls = const [],
     this.proofTypes = const [],
     this.assignedResponderIds = const [],
@@ -73,10 +77,8 @@ class MdrrmoReport {
     this.responderMedia = const [],
   });
 
-  bool get isResolved =>
-      responseStatus == 'resolved' ||
-      status == 'resolved' ||
-      status == 'closed';
+  // Barangay and MDRRMO can be at different lifecycle stages for one report.
+  bool get isResolved => responseStatus == 'resolved';
   bool get isResponding => responseStatus == 'responding';
   bool get isPending => !isResolved && !isResponding;
 
@@ -109,6 +111,17 @@ class MdrrmoReport {
   static DateTime? _date(dynamic value) =>
       value == null ? null : DateTime.tryParse(value.toString());
 
+  static DateTime? _channelDate(
+    Map<String, dynamic> json,
+    String event,
+    String legacyField,
+  ) {
+    final own = json['mdrrmo_$event'];
+    if (own != null) return _date(own);
+    if (json['barangay_$event'] != null) return null;
+    return _date(json[legacyField]);
+  }
+
   factory MdrrmoReport.fromJson(Map<String, dynamic> json) {
     final proofUrls = _stringList(json['proof_urls']).isNotEmpty
         ? _stringList(json['proof_urls'])
@@ -136,6 +149,7 @@ class MdrrmoReport {
       reporterId: json['reporter_id']?.toString(),
       reporterName: json['reporter_name']?.toString(),
       reporterPhone: json['reporter_phone']?.toString(),
+      reporterEmail: json['reporter_email']?.toString(),
       createdAt: _date(json['created_at']),
       incidentOccurredAt: _date(json['incident_occurred_at']),
       incidentTimePrecision: const {'exact', 'approximate'}.contains(
@@ -148,7 +162,7 @@ class MdrrmoReport {
       incidentType: json['incident_type']?.toString(),
       severity: json['severity']?.toString(),
       dispatchNotes: json['mdrrmo_dispatch_notes']?.toString(),
-      resolutionNotes: json['resolved_notes']?.toString(),
+      resolutionNotes: (json['mdrrmo_resolved_notes'] ?? json['resolved_notes'])?.toString(),
       barangayResponseNotes: json['barangay_response_notes']?.toString(),
       mdrrmoResponseNotes: json['mdrrmo_response_notes']?.toString(),
       isEscalated: json['is_escalated'] == true ||
@@ -159,10 +173,11 @@ class MdrrmoReport {
                   (json['barangays'] is Map ? json['barangays']['name'] : null))
               ?.toString(),
       responderName: json['mdrrmo_responder_name']?.toString(),
-      dispatchedAt: _date(json['dispatched_at']),
-      acceptedAt: _date(json['accepted_at']),
-      arrivedAt: _date(json['arrived_at']),
-      resolvedAt: _date(json['resolved_at']),
+      dispatchedAt: _channelDate(json, 'dispatched_at', 'dispatched_at'),
+      acceptedAt: _channelDate(json, 'accepted_at', 'accepted_at'),
+      arrivedAt: _channelDate(json, 'arrived_at', 'arrived_at'),
+      resolvedAt: _channelDate(json, 'resolved_at', 'resolved_at'),
+      resolutionPdfStatus: (json['resolution_pdf_status'] ?? 'missing').toString(),
       proofUrls: proofUrls,
       proofTypes: _stringList(json['proof_types']),
       assignedResponderIds:
