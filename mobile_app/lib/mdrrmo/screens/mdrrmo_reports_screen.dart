@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import '../../core/incident_time_format.dart';
 import '../../widgets/incident_header_gradient.dart';
 import '../models/mdrrmo_report.dart';
 import '../providers/auth_provider.dart';
@@ -77,9 +77,11 @@ class _MdrrmoReportsScreenState extends State<MdrrmoReportsScreen>
           _error = null;
         });
     } catch (error) {
-      if (mounted && loadSequence == _loadSequence) setState(() => _error = error.toString());
+      if (mounted && loadSequence == _loadSequence)
+        setState(() => _error = error.toString());
     } finally {
-      if (mounted && loadSequence == _loadSequence && !silent) setState(() => _loading = false);
+      if (mounted && loadSequence == _loadSequence && !silent)
+        setState(() => _loading = false);
     }
   }
 
@@ -171,19 +173,44 @@ class _MdrrmoReportsScreenState extends State<MdrrmoReportsScreen>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                _cardBadge(report.type.toUpperCase(), typeColor),
-                _cardBadge(statusLabel, statusColor),
-              ]),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  _cardBadge(report.type.toUpperCase(), typeColor),
+                  _cardBadge(statusLabel, statusColor),
+                ],
+              ),
               const SizedBox(height: 10),
-              Text(report.title, style: const TextStyle(color: Color(0xFF0F172A), fontSize: 16, fontWeight: FontWeight.bold)),
+              Text(
+                report.title,
+                style: const TextStyle(
+                  color: Color(0xFF0F172A),
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
               if ((report.reporterName ?? '').trim().isNotEmpty) ...[
                 const SizedBox(height: 4),
-                Text('Reported by ${report.reporterName}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Color(0xFF475569), fontSize: 12, fontWeight: FontWeight.w600)),
+                Text(
+                  'Reported by ${report.reporterName}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF475569),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ],
               if (specifics.isNotEmpty) ...[
                 const SizedBox(height: 3),
-                Text(specifics, style: const TextStyle(color: Color(0xFF64748B), fontSize: 13)),
+                Text(
+                  specifics,
+                  style: const TextStyle(
+                    color: Color(0xFF64748B),
+                    fontSize: 13,
+                  ),
+                ),
               ],
               if (description.isNotEmpty) ...[
                 const SizedBox(height: 4),
@@ -191,41 +218,94 @@ class _MdrrmoReportsScreenState extends State<MdrrmoReportsScreen>
                   description,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Color(0xFF64748B), fontSize: 12),
+                  style: const TextStyle(
+                    color: Color(0xFF64748B),
+                    fontSize: 12,
+                  ),
                 ),
               ],
               if (address.isNotEmpty || place.isNotEmpty) ...[
                 const SizedBox(height: 6),
-                Row(children: [
-                  const Icon(Icons.location_on_outlined, size: 14, color: Color(0xFF64748B)),
-                  const SizedBox(width: 4),
-                  Expanded(child: Text(address.isNotEmpty ? address : place, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Color(0xFF64748B), fontSize: 12))),
-                ]),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.location_on_outlined,
+                      size: 14,
+                      color: Color(0xFF64748B),
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        address.isNotEmpty ? address : place,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFF64748B),
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ],
               if (address.isNotEmpty && place.isNotEmpty) ...[
                 const SizedBox(height: 4),
-                Padding(padding: const EdgeInsets.only(left: 18), child: Text(place, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Color(0xFF64748B), fontSize: 11))),
+                Padding(
+                  padding: const EdgeInsets.only(left: 18),
+                  child: Text(
+                    place,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFF64748B),
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
               ],
               const SizedBox(height: 10),
               if (report.createdAt != null)
-                Row(children: [
-                  const Icon(Icons.access_time, size: 14, color: Color(0xFF64748B)),
-                  const SizedBox(width: 4),
-                  Expanded(child: Text('Report received: ${DateFormat('MMMM d, y h:mm a').format(report.createdAt!.toLocal())}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Color(0xFF64748B), fontSize: 11))),
-                ]),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.access_time,
+                      size: 14,
+                      color: Color(0xFF64748B),
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        'Report received: ${formatIncidentDateTime(report.createdAt!)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFF64748B),
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               const SizedBox(height: 5),
-              Row(children: [
+              Row(
+                children: [
                   const Icon(Icons.history_rounded, size: 13, color: _mdMuted),
                   const SizedBox(width: 4),
                   Expanded(
-                    child: Text(
-                      report.incidentOccurredAt == null || report.incidentTimePrecision == 'unknown'
-                          ? 'Incident time unknown'
-                          : 'Incident occurred: ${DateFormat('MMMM d, y h:mm a').format(report.incidentOccurredAt!.toLocal())} (${report.incidentTimePrecision})',
-                      style: const TextStyle(color: Color(0xFF64748B), fontSize: 11),
+                    child: IncidentOccurrenceText(
+                      occurredAt: report.incidentOccurredAt,
+                      receivedAt: report.createdAt,
+                      resolvedAt: report.resolvedAt,
+                      precision: report.incidentTimePrecision,
+                      isResolved: report.isResolved,
+                      style: const TextStyle(
+                        color: Color(0xFF64748B),
+                        fontSize: 11,
+                      ),
                     ),
                   ),
-                ]),
+                ],
+              ),
             ],
           ),
         ),
@@ -235,8 +315,15 @@ class _MdrrmoReportsScreenState extends State<MdrrmoReportsScreen>
 
   Widget _cardBadge(String label, Color color) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-    decoration: BoxDecoration(color: color.withOpacity(.2), borderRadius: BorderRadius.circular(6), border: Border.all(color: color.withOpacity(.5))),
-    child: Text(label, style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.bold)),
+    decoration: BoxDecoration(
+      color: color.withOpacity(.2),
+      borderRadius: BorderRadius.circular(6),
+      border: Border.all(color: color.withOpacity(.5)),
+    ),
+    child: Text(
+      label,
+      style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.bold),
+    ),
   );
 
   Widget _list(int index) {
@@ -304,45 +391,79 @@ class _MdrrmoReportsScreenState extends State<MdrrmoReportsScreen>
       labelColor: Colors.white,
       unselectedLabelColor: Colors.white70,
       tabs: [
-        Tab(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [const Text('Pending'), _badge(_forTab(0).length, const Color(0xFFEF4444))])),
-        Tab(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [const Text('Responding'), _badge(_forTab(1).length, const Color(0xFFF59E0B))])),
-        Tab(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [const Text('Resolved'), _badge(_forTab(2).length, const Color(0xFF10B981))])),
+        Tab(
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Text('Pending'),
+              _badge(_forTab(0).length, const Color(0xFFEF4444)),
+            ],
+          ),
+        ),
+        Tab(
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Text('Responding'),
+              _badge(_forTab(1).length, const Color(0xFFF59E0B)),
+            ],
+          ),
+        ),
+        Tab(
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Text('Resolved'),
+              _badge(_forTab(2).length, const Color(0xFF10B981)),
+            ],
+          ),
+        ),
       ],
     );
-    final reportTabs = TabBarView(controller: _tabs, children: [_list(0), _list(1), _list(2)]);
+    final reportTabs = TabBarView(
+      controller: _tabs,
+      children: [_list(0), _list(1), _list(2)],
+    );
     return Scaffold(
       backgroundColor: _mdPage,
-      appBar: widget.embedded ? null : AppBar(
-        backgroundColor: _mdNavy,
-        foregroundColor: Colors.white,
-        surfaceTintColor: Colors.transparent,
-        flexibleSpace: const IncidentHeaderGradient(),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Incident Reports',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+      appBar: widget.embedded
+          ? null
+          : AppBar(
+              backgroundColor: _mdNavy,
+              foregroundColor: Colors.white,
+              surfaceTintColor: Colors.transparent,
+              flexibleSpace: const IncidentHeaderGradient(),
+              title: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Incident Reports',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                  ),
+                  Text(
+                    user?.role.name == 'dispatcher'
+                        ? 'MDRRMO Dispatcher'
+                        : 'MDRRMO Responder',
+                    style: const TextStyle(fontSize: 11, color: Colors.white70),
+                  ),
+                ],
+              ),
+              actions: [
+                IconButton(
+                  onPressed: _load,
+                  tooltip: 'Refresh',
+                  icon: const Icon(Icons.refresh_rounded),
+                ),
+              ],
+              bottom: statusTabs,
             ),
-            Text(
-              user?.role.name == 'dispatcher'
-                  ? 'MDRRMO Dispatcher'
-                  : 'MDRRMO Responder',
-              style: const TextStyle(fontSize: 11, color: Colors.white70),
-            ),
-          ],
-        ),
-        actions: [
-          IconButton(
-            onPressed: _load,
-            tooltip: 'Refresh',
-            icon: const Icon(Icons.refresh_rounded),
-          ),
-        ],
-        bottom: statusTabs,
-      ),
       body: widget.embedded
-          ? Column(children: [IncidentHeaderGradient(child: statusTabs), Expanded(child: reportTabs)])
+          ? Column(
+              children: [
+                IncidentHeaderGradient(child: statusTabs),
+                Expanded(child: reportTabs),
+              ],
+            )
           : reportTabs,
     );
   }

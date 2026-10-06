@@ -276,6 +276,13 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
     const clientSubmittedAt = parsedClientSubmittedAt && Number.isFinite(parsedClientSubmittedAt.getTime())
       ? parsedClientSubmittedAt.toISOString()
       : null;
+    const rawIncidentTimeChoice = typeof req.body.incident_time_choice === 'string'
+      ? req.body.incident_time_choice.trim().toLowerCase()
+      : '';
+    const incidentTimeChoice = rawIncidentTimeChoice === 'just_now' ||
+        rawIncidentTimeChoice === 'earlier' || rawIncidentTimeChoice === 'unknown'
+      ? rawIncidentTimeChoice
+      : null;
     const rawIncidentPrecision = typeof req.body.incident_time_precision === 'string'
       ? req.body.incident_time_precision.trim().toLowerCase()
       : 'unknown';
@@ -295,7 +302,18 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
         Number.isFinite(parsedIncidentOccurredAt.getTime())
       ? parsedIncidentOccurredAt.toISOString()
       : null;
-    if (!incidentOccurredAt || incidentTimePrecision === 'unknown' ||
+    if (incidentTimeChoice === 'just_now') {
+      const submittedTime = parsedClientSubmittedAt &&
+          Number.isFinite(parsedClientSubmittedAt.getTime()) &&
+          parsedClientSubmittedAt.getTime() <= Date.now() + 5 * 60 * 1000
+        ? parsedClientSubmittedAt
+        : null;
+      incidentOccurredAt = (submittedTime || new Date()).toISOString();
+      incidentTimePrecision = 'exact';
+    } else if (incidentTimeChoice === 'unknown') {
+      incidentOccurredAt = null;
+      incidentTimePrecision = 'unknown';
+    } else if (!incidentOccurredAt || incidentTimePrecision === 'unknown' ||
         parsedIncidentOccurredAt!.getTime() > Date.now() + 5 * 60 * 1000) {
       incidentOccurredAt = null;
       incidentTimePrecision = 'unknown';
@@ -465,14 +483,36 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
       const safePayload = { ...insertPayload };
       delete safePayload.send_to;
       delete safePayload.reporter_email;
-      delete safePayload.client_submitted_at;
-      delete safePayload.incident_occurred_at;
-      delete safePayload.incident_time_precision;
-      const fallbackResult = await supabaseAdmin
+      let fallbackResult = await supabaseAdmin
         .from('incident_reports')
         .insert(safePayload)
         .select('*, barangays(name)')
         .single();
+
+      const fallbackErrorText = [
+        fallbackResult.error?.message,
+        fallbackResult.error?.details,
+        fallbackResult.error?.hint,
+      ].filter(Boolean).join(' ').toLowerCase();
+      const missingIncidentTimeColumn = [
+        'client_submitted_at',
+        'incident_occurred_at',
+        'incident_time_precision',
+      ].some((column) => fallbackErrorText.includes(column));
+
+      // Preserve incident-time metadata when only newer unrelated columns are
+      // missing. Drop it only for a genuinely older database schema.
+      if (fallbackResult.error && missingIncidentTimeColumn) {
+        const legacyPayload = { ...safePayload };
+        delete legacyPayload.client_submitted_at;
+        delete legacyPayload.incident_occurred_at;
+        delete legacyPayload.incident_time_precision;
+        fallbackResult = await supabaseAdmin
+          .from('incident_reports')
+          .insert(legacyPayload)
+          .select('*, barangays(name)')
+          .single();
+      }
       report = fallbackResult.data;
       dbError = fallbackResult.error;
     }

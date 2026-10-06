@@ -5,12 +5,12 @@ import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
 import 'dart:math';
-import 'package:intl/intl.dart';
 import '../services/offline_service.dart';
 import '../services/norzagaray_boundary.dart';
 import '../services/resident_gps_service.dart';
 import '../services/evidence_upload_service.dart';
 import '../core/constants.dart';
+import '../core/incident_time_format.dart';
 import '../core/phone_number_utils.dart';
 import '../widgets/resident_gradient_app_bar.dart';
 import 'my_reports_screen.dart';
@@ -68,6 +68,8 @@ class _ReportingScreenState extends State<ReportingScreen> {
   String _incidentTimeChoice = 'just_now';
   DateTime? _incidentOccurredAt = DateTime.now();
   String _incidentTimePrecision = 'exact';
+  int _earlierHours = 0;
+  int _earlierMinutes = 30;
   bool _keepCurrentLocationForSubmit = false;
   final TextEditingController _descController = TextEditingController();
 
@@ -138,9 +140,8 @@ class _ReportingScreenState extends State<ReportingScreen> {
     );
     _incidentOccurredAt = occurredAt;
     final savedPrecision = draft['incident_time_precision']?.toString();
-    _incidentTimePrecision = const {'exact', 'approximate'}.contains(
-      savedPrecision,
-    )
+    _incidentTimePrecision =
+        const {'exact', 'approximate'}.contains(savedPrecision)
         ? savedPrecision!
         : 'exact';
     if (_incidentTimeChoice == 'unknown') {
@@ -154,6 +155,15 @@ class _ReportingScreenState extends State<ReportingScreen> {
     } else if (_incidentOccurredAt == null) {
       _incidentTimeChoice = 'unknown';
       _incidentTimePrecision = 'unknown';
+    }
+    if (_incidentTimeChoice == 'earlier' && _incidentOccurredAt != null) {
+      final elapsedMinutes = DateTime.now()
+          .difference(_incidentOccurredAt!.toLocal())
+          .inMinutes;
+      if (elapsedMinutes > 0) {
+        _earlierHours = elapsedMinutes ~/ 60;
+        _earlierMinutes = elapsedMinutes % 60;
+      }
     }
     _selectedCategory = draft['category']?.toString();
     _selectedSpecific = draft['specifics']?.toString();
@@ -545,7 +555,40 @@ class _ReportingScreenState extends State<ReportingScreen> {
     return '${minutes.toString()}:${seconds.toString().padLeft(2, '0')}';
   }
 
-  Future<void> _chooseIncidentTime(String choice) async {
+  int get _maxEarlierMinutes {
+    final now = DateTime.now();
+    final minutesSinceMidnight = now.hour * 60 + now.minute;
+    final existingElapsed = _incidentOccurredAt == null
+        ? 0
+        : now.difference(_incidentOccurredAt!.toLocal()).inMinutes;
+    return max(minutesSinceMidnight, existingElapsed);
+  }
+
+  void _updateEarlierTime({int? hours, int? minutes}) {
+    final maxMinutes = _maxEarlierMinutes;
+    final nextHours = (hours ?? _earlierHours)
+        .clamp(0, maxMinutes ~/ 60)
+        .toInt();
+    final maximumMinute = min(59, maxMinutes - nextHours * 60);
+    var nextMinutes = (minutes ?? _earlierMinutes)
+        .clamp(0, maximumMinute)
+        .toInt();
+    if (nextHours == 0 && nextMinutes == 0 && maxMinutes > 0) {
+      nextMinutes = 1;
+    }
+    setState(() {
+      _earlierHours = nextHours;
+      _earlierMinutes = nextMinutes;
+      _incidentOccurredAt = DateTime.now().subtract(
+        Duration(hours: nextHours, minutes: nextMinutes),
+      );
+      if (_incidentTimePrecision == 'unknown') {
+        _incidentTimePrecision = 'approximate';
+      }
+    });
+  }
+
+  void _chooseIncidentTime(String choice) {
     if (choice == 'unknown') {
       setState(() {
         _incidentTimeChoice = 'unknown';
@@ -562,47 +605,21 @@ class _ReportingScreenState extends State<ReportingScreen> {
       });
       return;
     }
+    if (_incidentTimeChoice == 'earlier') return;
+    final availableMinutes = _maxEarlierMinutes;
+    final initialMinutes = min(30, availableMinutes);
     setState(() {
       _incidentTimeChoice = 'earlier';
-      _incidentOccurredAt ??= DateTime.now();
-      if (_incidentTimePrecision == 'unknown') {
-        _incidentTimePrecision = 'exact';
+      _earlierHours = initialMinutes ~/ 60;
+      _earlierMinutes = initialMinutes % 60;
+      if (initialMinutes == 0 && availableMinutes > 0) {
+        _earlierMinutes = 1;
       }
-    });
-    await _pickIncidentOccurredAt();
-  }
-
-  Future<void> _pickIncidentOccurredAt() async {
-    final now = DateTime.now();
-    final initial = (_incidentOccurredAt ?? now).toLocal();
-    final pickedDate = await showDatePicker(
-      context: context,
-      initialDate: initial.isAfter(now) ? now : initial,
-      firstDate: DateTime(1900),
-      lastDate: now,
-      helpText: 'When did the incident happen?',
-    );
-    if (pickedDate == null || !mounted) return;
-    final pickedTime = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.fromDateTime(initial),
-      helpText: 'Choose the incident time',
-    );
-    if (pickedTime == null || !mounted) return;
-    final selected = DateTime(
-      pickedDate.year,
-      pickedDate.month,
-      pickedDate.day,
-      pickedTime.hour,
-      pickedTime.minute,
-    );
-    if (selected.isAfter(DateTime.now())) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Incident time cannot be in the future.')),
+      _incidentOccurredAt = DateTime.now().subtract(
+        Duration(hours: _earlierHours, minutes: _earlierMinutes),
       );
-      return;
-    }
-    setState(() => _incidentOccurredAt = selected);
+      _incidentTimePrecision = 'approximate';
+    });
   }
 
   Widget _buildIncidentTimeInput() {
@@ -646,35 +663,72 @@ class _ReportingScreenState extends State<ReportingScreen> {
         ),
         if (_incidentTimeChoice == 'just_now') ...[
           const SizedBox(height: 2),
-          Text(
-            occurredAt == null
-                ? 'Current device time will be recorded.'
-                : 'Current device time: ${DateFormat('MMM d, yyyy · h:mm a').format(occurredAt.toLocal())}',
+          const Text(
+            'Incident time will match Report received when submitted now.',
             style: const TextStyle(fontSize: 12, color: Color(0xFF475569)),
           ),
         ] else if (_incidentTimeChoice == 'earlier') ...[
           const SizedBox(height: 2),
-          OutlinedButton.icon(
-            onPressed: _pickIncidentOccurredAt,
-            icon: const Icon(Icons.edit_calendar_outlined, size: 18),
-            label: Text(
-              occurredAt == null
-                  ? 'Choose date and time'
-                  : DateFormat('MMM d, yyyy · h:mm a').format(occurredAt.toLocal()),
+          if (occurredAt != null)
+            Text(
+              formatIncidentAge(occurredAt, DateTime.now()),
+              style: const TextStyle(fontSize: 12, color: Color(0xFF475569)),
             ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: DropdownButtonFormField<int>(
+                  value: _earlierHours,
+                  decoration: const InputDecoration(labelText: 'Hours ago'),
+                  items: List.generate(
+                    (_maxEarlierMinutes ~/ 60) + 1,
+                    (hour) => DropdownMenuItem(
+                      value: hour,
+                      child: Text('$hour ${hour == 1 ? 'hour' : 'hours'}'),
+                    ),
+                  ),
+                  onChanged: (value) {
+                    if (value != null) _updateEarlierTime(hours: value);
+                  },
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: DropdownButtonFormField<int>(
+                  value: _earlierMinutes,
+                  decoration: const InputDecoration(labelText: 'Minutes ago'),
+                  items: List.generate(
+                    min(59, _maxEarlierMinutes - _earlierHours * 60) + 1,
+                    (minute) => DropdownMenuItem(
+                      value: minute,
+                      child: Text(
+                        '$minute ${minute == 1 ? 'minute' : 'minutes'}',
+                      ),
+                    ),
+                  ),
+                  onChanged: (value) {
+                    if (value != null) _updateEarlierTime(minutes: value);
+                  },
+                ),
+              ),
+            ],
           ),
+          const SizedBox(height: 8),
           Wrap(
             spacing: 8,
             children: [
               ChoiceChip(
                 label: const Text('Exact'),
                 selected: _incidentTimePrecision == 'exact',
-                onSelected: (_) => setState(() => _incidentTimePrecision = 'exact'),
+                onSelected: (_) =>
+                    setState(() => _incidentTimePrecision = 'exact'),
               ),
               ChoiceChip(
                 label: const Text('Approximate'),
                 selected: _incidentTimePrecision == 'approximate',
-                onSelected: (_) => setState(() => _incidentTimePrecision = 'approximate'),
+                onSelected: (_) =>
+                    setState(() => _incidentTimePrecision = 'approximate'),
               ),
             ],
           ),
@@ -746,10 +800,16 @@ class _ReportingScreenState extends State<ReportingScreen> {
           .toList();
       final email = (profile['email'] ?? '').toString().trim();
       final rawPhone = (profile['contact_number'] ?? '').toString().trim();
+      final isFirstSubmitAttempt = _clientSubmittedAt == null;
       _clientSubmittedAt ??= DateTime.now().toUtc();
+      if (isFirstSubmitAttempt && _incidentTimeChoice == 'just_now') {
+        _incidentOccurredAt = _clientSubmittedAt!.toLocal();
+        _incidentTimePrecision = 'exact';
+      }
       final fields = <String, dynamic>{
         'client_request_id': _clientRequestId,
         'client_submitted_at': _clientSubmittedAt!.toIso8601String(),
+        'incident_time_choice': _incidentTimeChoice,
         'incident_occurred_at': _incidentOccurredAt?.toUtc().toIso8601String(),
         'incident_time_precision': _incidentTimePrecision,
         'type': _reportType,

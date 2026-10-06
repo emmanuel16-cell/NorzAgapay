@@ -4,9 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:http/http.dart' as http;
-import 'package:intl/intl.dart';
 import '../models/incident_report.dart';
 import '../core/constants.dart';
+import '../core/incident_time_format.dart';
 import '../services/norzagaray_boundary.dart';
 import '../services/report_updates_service.dart';
 import '../widgets/video_proof_player.dart';
@@ -71,8 +71,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
 
   String _formatDate(DateTime? dt) {
     if (dt == null) return '—';
-    final local = dt.toLocal();
-    return '${DateFormat('MMM d, yyyy').format(local)} / ${DateFormat('hh:mm a').format(local)}';
+    return formatIncidentDateTime(dt);
   }
 
   void _openProofFullscreen(int index) {
@@ -758,11 +757,6 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
   }
 
   Widget _buildIncidentTimeSummary() {
-    final occurredAt = _report.incidentOccurredAt;
-    final incidentTime = occurredAt == null ||
-            _report.incidentTimePrecision == 'unknown'
-        ? 'Incident time unknown'
-        : '${_formatDate(occurredAt)} (${_report.incidentTimePrecision})';
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Container(
@@ -778,10 +772,19 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           children: [
             const Text(
               'Incident Time',
-              style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1A1A2E)),
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF1A1A2E),
+              ),
             ),
             const SizedBox(height: 8),
-            Text('Incident occurred: $incidentTime'),
+            IncidentOccurrenceText(
+              occurredAt: _report.incidentOccurredAt,
+              receivedAt: _report.createdAt,
+              resolvedAt: _report.resolvedAt,
+              precision: _report.incidentTimePrecision,
+              isResolved: _report.displayStatus == 'resolved',
+            ),
             const SizedBox(height: 4),
             Text('Report received: ${_formatDate(_report.createdAt)}'),
           ],

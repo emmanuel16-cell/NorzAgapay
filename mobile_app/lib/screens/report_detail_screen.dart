@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:location/location.dart';
-import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -13,6 +12,7 @@ import '../services/auth_service.dart';
 import '../services/api_service.dart';
 import '../services/socket_service.dart';
 import '../models/incident_report.dart';
+import '../core/incident_time_format.dart';
 import '../core/phone_number_utils.dart';
 import '../models/barangay_user.dart';
 import '../widgets/video_proof_player.dart';
@@ -81,11 +81,14 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
       });
       socket.onReportUpdated((data) {
         if (!mounted || data is! Map) return;
-        final eventReportId = data['report_id'] ?? data['id'] ?? data['reportId'];
+        final eventReportId =
+            data['report_id'] ?? data['id'] ?? data['reportId'];
         if (eventReportId == _report.id && data['report_id'] != null) {
           _refreshReportFromServer();
         } else if (eventReportId == _report.id) {
-          final updated = IncidentReport.fromJson(Map<String, dynamic>.from(data));
+          final updated = IncidentReport.fromJson(
+            Map<String, dynamic>.from(data),
+          );
           if (updated.lifecycleRevision >= _report.lifecycleRevision) {
             setState(() => _report = updated);
             _syncArrivalMonitoring();
@@ -115,7 +118,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         }
       }
       final latest = refreshed;
-      if (mounted && latest != null &&
+      if (mounted &&
+          latest != null &&
           latest.lifecycleRevision >= _report.lifecycleRevision) {
         setState(() => _report = latest);
         _syncArrivalMonitoring();
@@ -215,7 +219,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         permission = await _locationService.requestPermission();
       }
       if (permission != PermissionStatus.granted &&
-          permission != PermissionStatus.grantedLimited) return null;
+          permission != PermissionStatus.grantedLimited)
+        return null;
       return await _locationService.getLocation();
     } catch (error) {
       debugPrint('Acceptance location capture error: $error');
@@ -246,7 +251,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
   Future<void> _startArrivalMonitoring() async {
     if (_arrivalLocationSubscription != null ||
         _startingArrivalMonitoring ||
-        !_canMonitorArrival()) return;
+        !_canMonitorArrival())
+      return;
     _startingArrivalMonitoring = true;
     try {
       if (!await _locationService.serviceEnabled()) return;
@@ -255,7 +261,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         permission = await _locationService.requestPermission();
       }
       if (permission != PermissionStatus.granted &&
-          permission != PermissionStatus.grantedLimited) return;
+          permission != PermissionStatus.grantedLimited)
+        return;
       if (!mounted || !_canMonitorArrival()) return;
 
       await _locationService.changeSettings(
@@ -286,7 +293,10 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
       current,
       LatLng(_report.latitude, _report.longitude),
     );
-    if (accuracy == null || accuracy < 0 || accuracy > 50 || distanceM + accuracy > 100) {
+    if (accuracy == null ||
+        accuracy < 0 ||
+        accuracy > 50 ||
+        distanceM + accuracy > 100) {
       _arrivalCandidateSince = null;
       return;
     }
@@ -335,7 +345,11 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         _syncArrivalMonitoring();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(method == 'gps' ? 'Arrival confirmed by GPS.' : 'Arrival recorded manually.'),
+            content: Text(
+              method == 'gps'
+                  ? 'Arrival confirmed by GPS.'
+                  : 'Arrival recorded manually.',
+            ),
             backgroundColor: const Color(0xFF10B981),
           ),
         );
@@ -362,9 +376,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     );
   }
 
-  String _formatTimestamp(DateTime? timestamp) => timestamp == null
-      ? 'Not recorded'
-      : DateFormat('MMM d, y · h:mm a').format(timestamp.toLocal());
+  String _formatTimestamp(DateTime? timestamp) =>
+      timestamp == null ? 'Not recorded' : formatIncidentDateTime(timestamp);
 
   String _formatElapsed(DateTime? start, DateTime? end) {
     if (start == null || end == null) return '—';
@@ -388,55 +401,93 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
       ('Report received', _report.createdAt, ''),
       ('Dispatcher reviewed', _report.dispatcherReviewedAt, ''),
       ('Responder dispatched', _report.dispatchedAt, ''),
-      ('Responder accepted', _report.acceptedAt,
-        'Response to acceptance: ${_formatElapsed(_report.createdAt, _report.acceptedAt)}'),
-      ('Arrived at incident area', _report.arrivedAt,
-        'Travel to arrival: ${_formatElapsed(_report.acceptedAt, _report.arrivedAt)}'),
-      ('Incident resolved', _report.resolvedAt,
-        'Time to resolve: ${_formatElapsed(_report.arrivedAt, _report.resolvedAt)}'),
+      (
+        'Responder accepted',
+        _report.acceptedAt,
+        'Response to acceptance: ${_formatElapsed(_report.createdAt, _report.acceptedAt)}',
+      ),
+      (
+        'Arrived at incident area',
+        _report.arrivedAt,
+        'Travel to arrival: ${_formatElapsed(_report.acceptedAt, _report.arrivedAt)}',
+      ),
+      (
+        'Incident resolved',
+        _report.resolvedAt,
+        'Time to resolve: ${_formatElapsed(_report.arrivedAt, _report.resolvedAt)}',
+      ),
     ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-          const Text('Response Timeline', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
-          const SizedBox(height: 8),
-          ...rows.map((row) => Padding(
+        const Text(
+          'Response Timeline',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF0F172A),
+          ),
+        ),
+        const SizedBox(height: 8),
+        ...rows.map(
+          (row) => Padding(
             padding: const EdgeInsets.symmetric(vertical: 5),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Icon(Icons.circle, size: 7, color: Color(0xFF0284C7)),
                 const SizedBox(width: 9),
-                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(row.$1, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF334155))),
-                  Text(_formatTimestamp(row.$2), style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
-                  if (row.$3.isNotEmpty) Text(row.$3, style: const TextStyle(fontSize: 11, color: Color(0xFF0369A1))),
-                ])),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        row.$1,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF334155),
+                        ),
+                      ),
+                      Text(
+                        _formatTimestamp(row.$2),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF64748B),
+                        ),
+                      ),
+                      if (row.$3.isNotEmpty)
+                        Text(
+                          row.$3,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Color(0xFF0369A1),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
               ],
             ),
-          )),
-          if (_report.travelDistanceM != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 4, left: 16),
-              child: Text(
-                'Responder distance at acceptance: ${_formatDistance(_report.travelDistanceM!)} from incident${_report.travelDistanceAccuracyM == null ? '' : ' · GPS accuracy ±${_report.travelDistanceAccuracyM!.round()} m'}',
-                style: const TextStyle(fontSize: 11, color: Color(0xFF0369A1)),
-              ),
+          ),
+        ),
+        if (_report.travelDistanceM != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4, left: 16),
+            child: Text(
+              'Responder distance at acceptance: ${_formatDistance(_report.travelDistanceM!)} from incident${_report.travelDistanceAccuracyM == null ? '' : ' · GPS accuracy ±${_report.travelDistanceAccuracyM!.round()} m'}',
+              style: const TextStyle(fontSize: 11, color: Color(0xFF0369A1)),
             ),
-          if (_report.arrivedAt != null)
-            Text(
-              'Arrival recorded ${_report.arrivalMethod == 'gps' ? 'by GPS' : 'manually'}${_report.arrivalDistanceM == null ? '' : ' · ${_report.arrivalDistanceM!.round()} m from incident'}',
-              style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
-            ),
-        ],
+          ),
+        if (_report.arrivedAt != null)
+          Text(
+            'Arrival recorded ${_report.arrivalMethod == 'gps' ? 'by GPS' : 'manually'}${_report.arrivalDistanceM == null ? '' : ' · ${_report.arrivalDistanceM!.round()} m from incident'}',
+            style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+          ),
+      ],
     );
   }
 
   Widget _buildIncidentTimeSummary() {
-    final occurredAt = _report.incidentOccurredAt;
-    final incidentTime = occurredAt == null || _report.incidentTimePrecision == 'unknown'
-        ? 'Incident time unknown'
-        : '${_formatTimestamp(occurredAt)} (${_report.incidentTimePrecision})';
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 14),
@@ -449,7 +500,9 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           InkWell(
-            onTap: () => setState(() => _incidentTimelineExpanded = !_incidentTimelineExpanded),
+            onTap: () => setState(
+              () => _incidentTimelineExpanded = !_incidentTimelineExpanded,
+            ),
             borderRadius: BorderRadius.circular(12),
             child: Padding(
               padding: const EdgeInsets.all(14),
@@ -457,23 +510,55 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      const Text('Incident Time', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
-                      const SizedBox(height: 8),
-                      Text('Incident occurred: $incidentTime', style: const TextStyle(color: Color(0xFF334155), fontSize: 12)),
-                      const SizedBox(height: 4),
-                      Text('Report received: ${_formatTimestamp(_report.createdAt)}', style: const TextStyle(color: Color(0xFF334155), fontSize: 12)),
-                    ]),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Incident Time',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF0F172A),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        IncidentOccurrenceText(
+                          occurredAt: _report.incidentOccurredAt,
+                          receivedAt: _report.createdAt,
+                          resolvedAt: _report.resolvedAt,
+                          precision: _report.incidentTimePrecision,
+                          isResolved: _report.isResolved,
+                          style: const TextStyle(
+                            color: Color(0xFF334155),
+                            fontSize: 12,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Report received: ${_formatTimestamp(_report.createdAt)}',
+                          style: const TextStyle(
+                            color: Color(0xFF334155),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(width: 8),
-                  Icon(_incidentTimelineExpanded ? Icons.expand_less : Icons.expand_more, color: const Color(0xFF0F172A)),
+                  Icon(
+                    _incidentTimelineExpanded
+                        ? Icons.expand_less
+                        : Icons.expand_more,
+                    color: const Color(0xFF0F172A),
+                  ),
                 ],
               ),
             ),
           ),
           AnimatedCrossFade(
             duration: const Duration(milliseconds: 220),
-            crossFadeState: _incidentTimelineExpanded ? CrossFadeState.showFirst : CrossFadeState.showSecond,
+            crossFadeState: _incidentTimelineExpanded
+                ? CrossFadeState.showFirst
+                : CrossFadeState.showSecond,
             firstChild: Padding(
               padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
               child: _buildResponseTimeline(),
@@ -1359,16 +1444,20 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         latitude: acceptanceLocation?.latitude,
         longitude: acceptanceLocation?.longitude,
         accuracyM: acceptanceLocation?.accuracy,
-        fixAt: acceptanceLocation == null ? null : _locationFixTime(acceptanceLocation),
+        fixAt: acceptanceLocation == null
+            ? null
+            : _locationFixTime(acceptanceLocation),
       );
       setState(() => _report = updated);
       _syncArrivalMonitoring();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(updated.travelDistanceM == null
-                ? 'Incident accepted. Travel distance could not be captured from GPS.'
-                : 'Incident accepted. Starting distance: ${_formatDistance(updated.travelDistanceM!)}.'),
+            content: Text(
+              updated.travelDistanceM == null
+                  ? 'Incident accepted. Travel distance could not be captured from GPS.'
+                  : 'Incident accepted. Starting distance: ${_formatDistance(updated.travelDistanceM!)}.',
+            ),
             backgroundColor: Color(0xFF10B981),
           ),
         );
@@ -1920,7 +2009,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
               ),
               tabs: const [
                 Tab(text: 'Report Details'),
-                Tab(text: 'Request Assistance'),
+                Tab(text: 'Assistance'),
                 Tab(text: 'Field Assessment'),
               ],
             ),
@@ -2339,7 +2428,6 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                       ),
                     ),
                 ],
-
 
                 // Map Pin Location
                 const Text(
@@ -2824,7 +2912,10 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                         children: [
                           const Text(
                             'Arrival detection is active while this report is open. GPS confirms arrival inside the 100 m incident area.',
-                            style: TextStyle(color: Color(0xFF075985), fontSize: 12),
+                            style: TextStyle(
+                              color: Color(0xFF075985),
+                              fontSize: 12,
+                            ),
                           ),
                           const SizedBox(height: 8),
                           SizedBox(
@@ -2837,7 +2928,9 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                               label: const Text('Mark Arrival Manually'),
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: const Color(0xFF0369A1),
-                                side: const BorderSide(color: Color(0xFF0284C7)),
+                                side: const BorderSide(
+                                  color: Color(0xFF0284C7),
+                                ),
                               ),
                             ),
                           ),

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'package:intl/intl.dart';
+import '../core/incident_time_format.dart';
 import '../services/offline_service.dart';
 import '../services/report_updates_service.dart';
 import '../models/incident_report.dart';
@@ -519,27 +519,38 @@ class _MyReportsScreenState extends State<MyReportsScreen> {
         final firstSubmitAttempt = DateTime.tryParse(
           draft['client_submitted_at']?.toString() ?? '',
         );
-        final firstSubmitText = firstSubmitAttempt == null
-            ? ''
-            : '\nFirst submit attempt: ${DateFormat('MMM d, y · h:mm a').format(firstSubmitAttempt.toLocal())}';
         final occurredAt = DateTime.tryParse(
           draft['incident_occurred_at']?.toString() ?? '',
         );
         final precision = draft['incident_time_precision']?.toString();
-        final incidentTimeText = occurredAt == null || precision == 'unknown'
-            ? 'Incident time unknown'
-            : 'Incident occurred: ${DateFormat('MMM d, y · h:mm a').format(occurredAt.toLocal())} (${precision == 'approximate' ? 'approximate' : 'exact'})';
         return Card(
           margin: const EdgeInsets.only(bottom: 12),
           child: ListTile(
             leading: const Icon(Icons.edit_note, color: Color(0xFF16496A)),
             title: Text((draft['title'] ?? 'Incident Report').toString()),
-            subtitle: Text(
-              '${draft['type'] == 'community' ? 'Community' : 'Emergency'} · $proofCount proof file(s)${(draft['description'] ?? '').toString().isNotEmpty ? '\n${draft['description']}' : ''}\n$incidentTimeText$firstSubmitText',
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${draft['type'] == 'community' ? 'Community' : 'Emergency'} · $proofCount proof file(s)',
+                ),
+                if ((draft['description'] ?? '').toString().isNotEmpty)
+                  Text(draft['description'].toString()),
+                IncidentOccurrenceText(
+                  occurredAt: occurredAt,
+                  precision: precision == 'exact' || precision == 'approximate'
+                      ? precision!
+                      : 'unknown',
+                  style: const TextStyle(fontSize: 12),
+                ),
+                if (firstSubmitAttempt != null)
+                  Text(
+                    'First submit attempt: ${formatIncidentDateTime(firstSubmitAttempt)}',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+              ],
             ),
-            isThreeLine:
-                (draft['description'] ?? '').toString().isNotEmpty ||
-                firstSubmitText.isNotEmpty || incidentTimeText.isNotEmpty,
+            isThreeLine: true,
             trailing: IconButton(
               tooltip: 'Delete draft',
               icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
@@ -607,16 +618,8 @@ class _MyReportsScreenState extends State<MyReportsScreen> {
     String submittedText = '';
     final submittedAt = report.createdAt;
     if (submittedAt != null) {
-      final local = submittedAt.toLocal();
-      final datePart = DateFormat('MMM - d, y').format(local);
-      final timePart = DateFormat('hh:mm a').format(local);
-      submittedText = '$datePart/ $timePart';
+      submittedText = formatIncidentDateTime(submittedAt);
     }
-    final occurredAt = report.incidentOccurredAt;
-    final incidentTimeText = occurredAt == null ||
-            report.incidentTimePrecision == 'unknown'
-        ? 'Incident time unknown'
-        : 'Incident occurred: ${DateFormat('MMM d, y · h:mm a').format(occurredAt.toLocal())} (${report.incidentTimePrecision})';
 
     // ── Description preview ───────────────────────────────────────────────────
     final String? descPreview = report.description?.trim().isNotEmpty == true
@@ -725,27 +728,31 @@ class _MyReportsScreenState extends State<MyReportsScreen> {
                 children: [
                   if (submittedText.isNotEmpty)
                     Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Report received: $submittedText',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Color(0xFF374151),
-                            fontWeight: FontWeight.w600,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Report received: $submittedText',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF374151),
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          incidentTimeText,
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: Color(0xFF64748B),
+                          const SizedBox(height: 3),
+                          IncidentOccurrenceText(
+                            occurredAt: report.incidentOccurredAt,
+                            receivedAt: report.createdAt,
+                            resolvedAt: report.resolvedAt,
+                            precision: report.incidentTimePrecision,
+                            isResolved: report.displayStatus == 'resolved',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: Color(0xFF64748B),
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
+                        ],
+                      ),
                     ),
                   GestureDetector(
                     onTap: () => _openDetail(report),
