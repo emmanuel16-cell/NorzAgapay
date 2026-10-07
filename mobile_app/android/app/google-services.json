@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "726287539777",
+    "project_id": "norzagapay",
+    "storage_bucket": "norzagapay.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:726287539777:android:c06179f70e4de33f79b0c0",
+        "android_client_info": {
+          "package_name": "ph.gov.mdrrmo.norzagapay_mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAK7wmNos-JZPiYa5zTl9VxFT-tcr0yg3s"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
