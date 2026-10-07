@@ -104,6 +104,9 @@ export default function MunicipalityBoundaryPage() {
   const [dirty, setDirty] = useState(false);
   const [savedGeometryLoaded, setSavedGeometryLoaded] = useState(false);
   const [editRevision, setEditRevision] = useState(0);
+  const [editTargetRevision, setEditTargetRevision] = useState<number | null>(null);
+  const [editVersionUpdatedAt, setEditVersionUpdatedAt] = useState<string | null>(null);
+  const [editOriginalGeometry, setEditOriginalGeometry] = useState<BoundaryGeometry | null>(null);
   const [history, setHistory] = useState<MunicipalityBoundary[]>([]);
   const [selectedVersion, setSelectedVersion] = useState<MunicipalityBoundary | null>(null);
   const [confirmation, setConfirmation] = useState<BoundaryConfirmation | null>(null);
@@ -149,6 +152,9 @@ export default function MunicipalityBoundaryPage() {
       setEditing(false);
       setSelectedVertex(null);
       setSelectedVersion(null);
+      setEditTargetRevision(null);
+      setEditVersionUpdatedAt(null);
+      setEditOriginalGeometry(null);
       toast.success(enabled ? 'Boundary saved and enabled across all app maps.' : 'Boundary saved and disabled across all app maps.');
       return true;
     } catch (error: any) {
@@ -171,6 +177,39 @@ export default function MunicipalityBoundaryPage() {
       message,
       action: () => save(geometry, enabled, options.expectedRevision),
     });
+  };
+
+  const saveSpecificVersion = async (
+    revision: number,
+    geometry: BoundaryGeometry,
+    expectedUpdatedAt: string | null,
+  ) => {
+    setSaving(true);
+    try {
+      const response = await municipalityBoundaryAPI.updateVersion(revision, {
+        geometry,
+        expectedUpdatedAt,
+      });
+      const updatedVersion = responseConfig(response.data);
+      if (boundary.revision === revision) setBoundary(updatedVersion);
+      void loadHistory();
+      setParts(geometryToParts(updatedVersion.geometry));
+      setDirty(false);
+      setEditing(false);
+      setSelectedVertex(null);
+      setSelectedVersion(null);
+      setEditTargetRevision(null);
+      setEditVersionUpdatedAt(null);
+      setEditOriginalGeometry(null);
+      toast.success(`Boundary ${revision} updated in place. No new revision was created.`);
+      return true;
+    } catch (error: any) {
+      const message = error?.response?.data?.error;
+      toast.error(typeof message === 'string' ? message : 'Could not update this boundary version.');
+      return false;
+    } finally {
+      setSaving(false);
+    }
   };
 
   const runConfirmation = async () => {
@@ -236,7 +275,7 @@ export default function MunicipalityBoundaryPage() {
   };
 
   const resetToSaved = () => {
-    setParts(geometryToParts(boundary.geometry));
+    setParts(geometryToParts(editOriginalGeometry ?? boundary.geometry));
     setDirty(false);
     setSelectedVertex(null);
   };
@@ -244,6 +283,17 @@ export default function MunicipalityBoundaryPage() {
   const saveDraft = () => {
     if (!valid || !draftGeometry) {
       toast.error('Add at least three distinct points to every boundary part.');
+      return;
+    }
+    if (editTargetRevision !== null) {
+      const revision = editTargetRevision;
+      const expectedUpdatedAt = editVersionUpdatedAt;
+      setConfirmation({
+        title: `Save changes to boundary ${revision}?`,
+        message: 'This will update the selected saved boundary in place. It will not create a new revision.',
+        confirmLabel: 'Save changes',
+        action: () => saveSpecificVersion(revision, draftGeometry, expectedUpdatedAt),
+      });
       return;
     }
     requestSaveConfirmation(
@@ -260,6 +310,9 @@ export default function MunicipalityBoundaryPage() {
 
   const startNewBoundary = () => {
     setSelectedVersion(null);
+    setEditTargetRevision(null);
+    setEditVersionUpdatedAt(null);
+    setEditOriginalGeometry(null);
     setEditing(true);
     setParts([[]]);
     setActivePart(0);
@@ -270,13 +323,27 @@ export default function MunicipalityBoundaryPage() {
 
   const editVersion = (version: MunicipalityBoundary) => {
     if (!version.geometry) return;
-    setParts(geometryToParts(version.geometry));
+    const versionParts = geometryToParts(version.geometry);
+    setParts(versionParts);
+    setEditOriginalGeometry(version.geometry);
     setActivePart(0);
     setSelectedVertex(null);
     setEditing(true);
     setDirty(false);
     setEditRevision(boundary.revision);
+    setEditTargetRevision(version.revision > 0 ? version.revision : null);
+    setEditVersionUpdatedAt(version.revision > 0 ? version.updated_at ?? null : null);
     setSelectedVersion(null);
+  };
+
+  const cancelEditing = () => {
+    setParts(geometryToParts(boundary.geometry));
+    setDirty(false);
+    setSelectedVertex(null);
+    setEditing(false);
+    setEditTargetRevision(null);
+    setEditVersionUpdatedAt(null);
+    setEditOriginalGeometry(null);
   };
 
   const useVersion = (version: MunicipalityBoundary) => {
@@ -370,7 +437,7 @@ export default function MunicipalityBoundaryPage() {
             <Plus size={16} /> Add boundary
           </button>
           {!editing ? <>
-            <button className="btn btn-outline" type="button" onClick={() => { setEditing(true); setDirty(false); setEditRevision(boundary.revision); }} disabled={loading || saving}>
+            <button className="btn btn-outline" type="button" onClick={() => editVersion(boundary)} disabled={loading || saving || !boundary.geometry}>
               <MapPin size={16} /> Edit selected boundary
             </button>
             <button className={`btn ${boundary.enabled ? 'btn-outline' : 'btn-primary'}`} type="button" onClick={() => changeEnabled(!boundary.enabled)} disabled={saving || loading}>
@@ -381,10 +448,10 @@ export default function MunicipalityBoundaryPage() {
             <button className="btn btn-outline" type="button" onClick={addPart} disabled={saving || parts.some((part) => part.length < 3)}><Plus size={16} /> Add polygon part</button>
             <button className="btn btn-outline" type="button" onClick={removeSelected} disabled={!selectedVertex || saving}><Trash2 size={16} /> Remove selected point</button>
             <button className="btn btn-outline" type="button" onClick={resetToSaved} disabled={!dirty || saving}><RotateCcw size={16} /> Reset</button>
-            <button className="btn btn-outline" type="button" onClick={() => { resetToSaved(); setEditing(false); }} disabled={saving}>Cancel</button>
+            <button className="btn btn-outline" type="button" onClick={cancelEditing} disabled={saving}>Cancel</button>
             <button className="btn btn-primary" type="button" onClick={saveDraft} disabled={!valid || saving}>
               {saving ? <LoaderCircle className="boundary-spinner" size={16} /> : <Save size={16} />}
-              Save boundary
+              {editTargetRevision === null ? 'Save boundary' : 'Save changes'}
             </button>
           </>}
         </div>
@@ -392,7 +459,9 @@ export default function MunicipalityBoundaryPage() {
 
       {editing && <section className="municipality-boundary-edit-help">
         <CircleHelp size={16} />
-        <span>Click to add a point; drag a dot to move it. Every polygon part needs at least 3 distinct points.</span>
+        <span>{editTargetRevision === null
+          ? 'Click to add a point; drag a dot to move it. Every polygon part needs at least 3 distinct points.'
+          : `Editing Boundary ${editTargetRevision}. Changes will update this boundary in place. Click to add a point or drag a dot to move it.`}</span>
         <label className="boundary-part-select">Editing part
           <select value={activePart} onChange={(event) => setActivePart(Number(event.target.value))}>
             {parts.map((part, index) => <option key={index} value={index}>Part {index + 1} ({part.length} points)</option>)}
@@ -497,7 +566,7 @@ export default function MunicipalityBoundaryPage() {
           <span>{geometryToParts(selectedVersion.geometry).reduce((total, part) => total + part.length, 0)} boundary points</span>
         </div>
         <p className="municipality-boundary-modal-copy">
-          Choose what to do with this boundary. Editing creates a new saved revision when you save; using it applies its shape across all apps.
+          Edit this specific saved boundary in place, use it across all apps, or delete it. Editing will not create a new revision.
         </p>
         <div className="municipality-boundary-modal-actions">
           <button className="btn btn-outline" type="button" onClick={() => editVersion(selectedVersion)} disabled={!selectedVersion.geometry || saving}>

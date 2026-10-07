@@ -205,6 +205,8 @@ export const municipalityBoundaryAPI = {
   deleteVersion: (revision: number) => api.delete(`/municipality-boundary/history/${revision}`),
   useVersion: (revision: number, data: { expectedRevision: number; expectedUpdatedAt: string | null }) =>
     api.post(`/municipality-boundary/history/${revision}/use`, data),
+  updateVersion: (revision: number, data: { geometry: unknown; expectedUpdatedAt: string | null }) =>
+    api.put(`/municipality-boundary/history/${revision}`, data),
   save: (data: { geometry: unknown; enabled: boolean; expectedRevision: number; expectedUpdatedAt: string | null }) =>
     api.put('/municipality-boundary', data),
 };
