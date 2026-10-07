@@ -3790,10 +3790,15 @@ tbody tr:last-child td { border-bottom: none; }
 .reports-video-thumb { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 88px; color: #fff; background: #14284a; font-weight: 700; }
 .reports-no-media-v2 { padding: 16px; border: 1px dashed #405c88; border-radius: 8px; color: #91add9; background: #102141; font-size: 13px; }
 .reports-timeline-grid-v2 { display: grid; grid-template-columns: minmax(200px, .8fr) minmax(280px, 1.2fr); gap: 12px; }
+.reports-assignee-stack-v2 { display: flex; flex-direction: column; gap: 10px; }
 .reports-assignee-card-v2 { position: relative; display: flex; min-height: 116px; flex-direction: column; gap: 6px; padding: 18px 14px; }
 .reports-assignee-card-v2 strong { color: #f0f5ff; font-size: 14px; }
 .reports-assignee-card-v2 span { color: #91add9; font-size: 13px; }
 .reports-assignee-card-v2 em { position: absolute; right: 13px; bottom: 16px; color: #64ddb5; font-size: 12px; font-style: normal; }
+.reports-assignment-crew-v2 { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; padding-top: 8px; border-top: 1px solid #2a426c; }
+.reports-assignment-crew-v2 b { color: #1bc9e8; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+.reports-assignment-crew-v2 span { color: #dce7f8; font-size: 12px; }
+.reports-crew-pending-v2 { margin-top: 5px; color: #91add9; font-size: 11px; }
 .reports-timeline-card-v2 { display: flex; flex-direction: column; justify-content: center; gap: 10px; padding: 14px 16px; }
 .reports-timeline-card-v2 > div { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; align-items: center; gap: 9px; color: #dce7f8; font-size: 13px; }
 .reports-timeline-card-v2 svg { color: #aabbd6; }
@@ -3857,6 +3862,11 @@ tbody tr:last-child td { border-bottom: none; }
 :root[data-theme='light'] .reports-info-card-v2 > strong,
 :root[data-theme='light'] .reports-text-card-v2,
 :root[data-theme='light'] .reports-location-card-v2 strong { color: #1d2d49; }
+:root[data-theme='light'] .reports-assignee-card-v2 strong,
+:root[data-theme='light'] .reports-assignment-crew-v2 span { color: #1d2d49; }
+:root[data-theme='light'] .reports-assignee-card-v2 span,
+:root[data-theme='light'] .reports-crew-pending-v2 { color: #60718d; }
+:root[data-theme='light'] .reports-assignment-crew-v2 { border-color: #cbd7e8; }
 :root[data-theme='light'] .reports-info-card-v2,
 :root[data-theme='light'] .reports-text-card-v2,
 :root[data-theme='light'] .reports-location-card-v2,

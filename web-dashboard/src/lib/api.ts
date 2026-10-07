@@ -140,8 +140,15 @@ export const dispatchUnitAPI = {
 // Respond Units
 export const respondUnitAPI = {
   list: () => api.get('/respond-units'),
+  leaderAccounts: (unitId?: string) => api.get('/respond-units/leader-accounts', { params: unitId ? { unit_id: unitId } : undefined }),
+  activateToday: (id: string, active: boolean) => api.put(`/respond-units/${id}/activation-today`, { active }),
+  emergencyActivateAllToday: () => api.post<{ activation_date: string; activated_count: number; skipped_count: number }>('/respond-units/activate-all-today'),
   create: (data: any) => api.post('/respond-units', data),
   update: (id: string, data: any) => api.patch(`/respond-units/${id}`, data),
+  assignLeader: (id: string, responder_user_id: string) => api.put(`/respond-units/${id}/team-leader`, { responder_user_id }),
+  addMember: (id: string, data: { name: string; phone?: string; member_role: string }) => api.post(`/respond-units/${id}/members`, data),
+  updateMember: (id: string, memberId: string, data: Record<string, unknown>) => api.patch(`/respond-units/${id}/members/${memberId}`, data),
+  removeMember: (id: string, memberId: string) => api.delete(`/respond-units/${id}/members/${memberId}`),
   delete: (id: string) => api.delete(`/respond-units/${id}`),
 };
 
@@ -173,7 +180,7 @@ export const reportAPI = {
   list: (params?: any) => api.get('/incident-reports', { params }),
   get: (id: string) => api.get(`/incident-reports/${id}`),
   mdrrmoQueue: () => api.get('/mdrrmo/reports/queue'),
-  mdrrmoResponders: () => api.get<{ responders: Array<{ id: string; full_name: string; phone?: string | null; unit_type?: string | null }> }>('/mdrrmo/reports/responders'),
+  mdrrmoResponders: () => api.get<{ responders: Array<{ id: string; full_name: string; phone?: string | null; unit_type?: string | null; unit_id: string; unit_name: string }> }>('/mdrrmo/reports/responders'),
   dispatchToMdrrmo: (id: string, data: { responder_ids: string[]; incident_type: string; severity: string; notes?: string }) => api.patch(`/mdrrmo/reports/${id}/dispatch`, data),
   review: (id: string, data: { outcome: 'inconclusive' | 'false_report'; reason?: string }) => api.patch(`/incident-reports/${id}/review`, data),
 };

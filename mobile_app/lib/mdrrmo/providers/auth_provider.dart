@@ -109,6 +109,7 @@ class AuthProvider with ChangeNotifier {
         }
         _token = token;
         _user = user;
+        await fetchMyUnit();
         notifyListeners();
       } else {
         await logout();
@@ -145,6 +146,7 @@ class AuthProvider with ChangeNotifier {
         _token = data['token'];
         _user = user;
         await _storage.write(key: AppConstants.tokenKey, value: _token);
+        await fetchMyUnit();
         notifyListeners();
       } else {
         throw data['error'] ?? 'Login failed';
@@ -195,6 +197,7 @@ class AuthProvider with ChangeNotifier {
       _token = data['token'];
       _user = user;
       await _storage.write(key: AppConstants.tokenKey, value: _token);
+      await fetchMyUnit();
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -383,6 +386,9 @@ class AuthProvider with ChangeNotifier {
     }
     _token = null;
     _user = null;
+    _myUnit = null;
+    _unitMembers = [];
+    _isTeamLeader = false;
     await _storage.delete(key: AppConstants.tokenKey);
     notifyListeners();
   }

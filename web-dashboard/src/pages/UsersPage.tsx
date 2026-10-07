@@ -13,6 +13,8 @@ const roleColors: Record<string,string> = {
   master_admin:'badge-high', admin:'badge-critical', responder:'badge-open',
 };
 
+const roleLabel = (role: string) => role === 'logistics' ? 'Staff' : role.replace(/_/g, ' ');
+
 export default function UsersPage() {
   const { user } = useAuth();
   const isMasterAdmin = user?.role === 'master_admin';
@@ -62,7 +64,7 @@ export default function UsersPage() {
         phone: createForm.phone.trim() || undefined,
         unit_type: createForm.role === 'responder' ? createForm.unit_type || undefined : undefined,
       });
-      toast.success(`${createForm.role.replace(/_/g, ' ')} account created`);
+      toast.success(`${roleLabel(createForm.role)} account created`);
       setShowCreate(false);
       setCreateForm({ full_name:'', email:'', password:'', phone:'', unit_type:'', role:'logistics' });
       fetchUsers();
@@ -82,7 +84,7 @@ export default function UsersPage() {
           <option value="">All Roles</option>
           {isMasterAdmin && <option value="master_admin">Master Admin</option>}
           {isMasterAdmin && <option value="admin">Admin</option>}
-          <option value="logistics">Logistics</option>
+          <option value="logistics">Staff</option>
           <option value="dispatcher">Dispatcher</option>
           <option value="responder">Responder</option>
         </select>
@@ -103,7 +105,7 @@ export default function UsersPage() {
                 {users.map(u => (
                   <tr key={u.id}>
                     <td style={{fontWeight:600,color:'var(--text-primary)'}}>{u.full_name}</td>
-                    <td><span className={`badge ${roleColors[u.role]||'badge-low'}`}>{u.role.replace(/_/g,' ')}</span></td>
+                    <td><span className={`badge ${roleColors[u.role]||'badge-low'}`}>{roleLabel(u.role)}</span></td>
                     <td><span className={`badge ${u.status==='active'?'badge-low':'badge-pending'}`}>{u.status}</span></td>
                     <td style={{fontSize:'12px'}}>{u.last_seen ? new Date(u.last_seen).toLocaleString() : '—'}</td>
                     <td><button className="btn btn-outline btn-sm" onClick={()=>openEdit(u)}>Edit</button></td>
@@ -127,11 +129,11 @@ export default function UsersPage() {
               {isMasterAdmin ? (
                 <select className="form-select" value={editForm.role} onChange={e=>setEditForm({...editForm,role:e.target.value,...(e.target.value === 'responder' ? {status:'active'} : {})})}>
                   <option value="admin">Admin</option>
-                  <option value="logistics">Logistics</option>
+                  <option value="logistics">Staff</option>
                   <option value="dispatcher">Dispatcher</option>
                   <option value="responder">Responder</option>
                 </select>
-              ) : <input className="form-input" value={editForm.role.replace(/_/g, ' ')} disabled />}
+              ) : <input className="form-input" value={roleLabel(editForm.role)} disabled />}
             </div>
             <div className="form-group">
               <label className="form-label">Status</label>
@@ -172,7 +174,7 @@ export default function UsersPage() {
               <label className="form-label">Role</label>
               <select className="form-select" value={createForm.role} onChange={event => setCreateForm({...createForm,role:event.target.value})}>
                 {isMasterAdmin && <option value="admin">Admin</option>}
-                <option value="logistics">Logistics</option>
+                <option value="logistics">Staff</option>
                 <option value="dispatcher">Dispatcher</option>
                 <option value="responder">Responder</option>
               </select>

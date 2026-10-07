@@ -8,6 +8,7 @@ import { io } from '../server';
 import { distanceMeters, validateArrivalFix, validateRecentGpsFix } from '../services/arrivalValidation';
 import { IncidentResolutionPdfService, IncompleteResolutionReportError } from '../services/incidentResolutionPdfService';
 import { isEscalatedForMdrrmo, isVisibleToMdrrmo } from '../services/mdrrmoReportVisibility';
+import { getDispatchableRespondUnits } from '../services/respondUnitAvailability';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -103,7 +104,9 @@ async function getAssignments(reportIds: string[]) {
   if (error) throw error;
   const rows = data || [];
   const responderIds = [...new Set(rows.map((row: any) => row.responder_id))];
+  const assignmentIds = rows.map((row: any) => row.id);
   const names = new Map<string, any>();
+  const crewByAssignment = new Map<string, any[]>();
   if (responderIds.length) {
     const { data: responders, error: responderError } = await supabaseAdmin
       .from('users')
@@ -112,11 +115,41 @@ async function getAssignments(reportIds: string[]) {
     if (responderError) throw responderError;
     for (const responder of responders || []) names.set(responder.id, responder);
   }
-  return rows.map((row: any) => ({ ...row, responder: names.get(row.responder_id) || null }));
+  if (assignmentIds.length) {
+    const { data: crew, error: crewError } = await supabaseAdmin
+      .from('mdrrmo_assignment_crew_members')
+      .select('assignment_id, unit_member_id, member_name_snapshot, member_role_snapshot, selected_at')
+      .in('assignment_id', assignmentIds)
+      .order('selected_at', { ascending: true });
+    if (crewError) throw crewError;
+    for (const member of crew || []) {
+      const members = crewByAssignment.get(member.assignment_id) || [];
+      members.push({
+        unit_member_id: member.unit_member_id,
+        name: member.member_name_snapshot,
+        member_role: member.member_role_snapshot,
+        selected_at: member.selected_at,
+      });
+      crewByAssignment.set(member.assignment_id, members);
+    }
+  }
+  return rows.map((row: any) => ({
+    ...row,
+    responder: names.get(row.responder_id) || null,
+    crew: crewByAssignment.get(row.id) || [],
+  }));
 }
 
 async function emitReportUpdate(report: any, assignments: any[]) {
-  const payload = formatReport(report);
+  const payload = {
+    ...formatReport(report),
+    mdrrmo_assignments: assignments,
+    assigned_responder_ids: assignments.map((assignment) => assignment.responder_id),
+    mdrrmo_responder_name: assignments
+      .map((assignment) => assignment.responder?.full_name)
+      .filter(Boolean)
+      .join(', ') || report.responder_name || report.mdrrmo_responder_name || null,
+  };
   io.to('dashboard_staff').emit('incident_report:updated', payload);
   io.to('dashboard_staff').emit('mdrrmo:report_updated', payload);
   for (const assignment of assignments) {
@@ -186,14 +219,24 @@ router.get('/queue', authenticate, authorize('dispatcher', 'admin', 'responder')
 
 router.get('/responders', authenticate, authorize('dispatcher', 'admin'), async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
+    const availableUnits = await getDispatchableRespondUnits();
+    const leaderIds = [...new Set(availableUnits.map((unit) => unit.responder_user_id))];
+    if (!leaderIds.length) { res.json({ responders: [] }); return; }
+
     const { data, error } = await supabaseAdmin
       .from('users')
       .select('id, full_name, phone, unit_type, status, latitude, longitude, last_seen')
+      .in('id', leaderIds)
       .eq('role', 'responder')
       .eq('status', 'active')
       .order('full_name', { ascending: true });
     if (error) throw error;
-    res.json({ responders: data || [] });
+    const leaderUnits = new Map(availableUnits.map((unit) => [unit.responder_user_id, unit]));
+    res.json({ responders: (data || []).map((responder: any) => ({
+      ...responder,
+      unit_id: leaderUnits.get(responder.id)?.unit_id,
+      unit_name: leaderUnits.get(responder.id)?.unit_name || null,
+    })) });
   } catch (err) {
     console.error('Fetch active MDRRMO responders error:', err);
     res.status(500).json({ error: 'Could not load active MDRRMO responders.' });
@@ -284,6 +327,13 @@ router.patch('/:id/dispatch', authenticate, authorize('dispatcher', 'admin'), as
     }
 
     const responderIds = [...new Set(parsed.data.responder_ids)];
+    const dispatchableUnits = await getDispatchableRespondUnits();
+    const dispatchableResponderIds = new Set(dispatchableUnits.map((unit) => unit.responder_user_id));
+    if (responderIds.some((id) => !dispatchableResponderIds.has(id))) {
+      res.status(400).json({ error: 'One or more selected responders do not belong to an available unit activated today with a complete roster.' });
+      return;
+    }
+
     const { data: responders, error: respondersError } = await supabaseAdmin
       .from('users')
       .select('id, full_name, phone, unit_type')
@@ -369,6 +419,14 @@ async function reportForAction(reportId: string) {
 }
 
 router.patch('/:id/respond', authenticate, authorize('responder'), async (req: AuthRequest, res: Response): Promise<void> => {
+  const parsed = z.object({
+    member_ids: z.array(z.string().uuid()).min(2).max(7)
+      .refine((ids) => new Set(ids).size === ids.length, 'Choose each crew member once.'),
+  }).safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Choose at least one Driver Responder and one First Aider Responder before accepting.' });
+    return;
+  }
   try {
     const report = await reportForAction(req.params.id);
     if (!report) { res.status(404).json({ error: 'MDRRMO report not found.' }); return; }
@@ -385,22 +443,24 @@ router.patch('/:id/respond', authenticate, authorize('responder'), async (req: A
       res.status(409).json({ error: 'Only an assigned report can be accepted.' });
       return;
     }
-    const { data: responder, error: responderError } = await supabaseAdmin
-      .from('users').select('full_name').eq('id', req.user!.userId).maybeSingle();
-    if (responderError) throw responderError;
-
-    // Write to new mdrrmo_reports (V2 RPC)
-    const { error: acceptV2Error } = await supabaseAdmin.rpc('accept_mdrrmo_report_v2', {
+    const { error: acceptError } = await supabaseAdmin.rpc('accept_mdrrmo_report_with_crew_v1', {
       p_report_id: report.id,
       p_responder_id: req.user!.userId,
+      p_member_ids: parsed.data.member_ids,
     });
-    if (acceptV2Error?.code === 'P0002') {
+    if (acceptError?.code === 'P0002') {
       res.status(409).json({ error: 'This assignment was accepted or changed by another responder. Refresh the report.' });
       return;
     }
-    if (acceptV2Error) throw acceptV2Error;
-
-    // (Legacy accept_mdrrmo_report dual-write removed)
+    if (acceptError?.code === '42501') {
+      res.status(403).json({ error: 'Only the Team Leader assigned to this unit can accept the dispatch.' });
+      return;
+    }
+    if (acceptError?.code === '22023' || acceptError?.code === '23514') {
+      res.status(400).json({ error: acceptError.message || 'Choose a valid crew from your assigned unit.' });
+      return;
+    }
+    if (acceptError) throw acceptError;
 
     const data = await reportForAction(report.id);
     if (!data) { res.status(404).json({ error: 'MDRRMO report not found.' }); return; }

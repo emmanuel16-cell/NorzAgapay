@@ -9,7 +9,8 @@ import { getMdrrmoReportGroup, isVisibleToMdrrmo } from '../lib/mdrrmoReportVisi
 
 type ReportGroup = 'resident' | 'escalated';
 type ReportStage = 'pending' | 'responding' | 'resolved';
-type Assignment = { responder_id: string; status: string; assigned_at?: string; accepted_at?: string; arrived_at?: string; resolved_at?: string; responder?: { full_name?: string; phone?: string } | null };
+type CrewMember = { unit_member_id: string; name: string; member_role: string; selected_at?: string };
+type Assignment = { responder_id: string; status: string; assigned_at?: string; accepted_at?: string; arrived_at?: string; resolved_at?: string; responder?: { full_name?: string; phone?: string } | null; crew?: CrewMember[] };
 type FieldAssessment = { situation: string; people: string; actions: string; risks: string };
 
 interface IncidentReport {
@@ -31,7 +32,7 @@ interface IncidentReport {
   arrival_recorded_at?: string | null; resolved_at?: string | null; mdrrmo_assignments?: Assignment[];
   reporter?: { id: string; full_name: string; role: string } | null;
 }
-type ResponderOption = { id: string; full_name: string; phone?: string | null; unit_type?: string | null };
+type ResponderOption = { id: string; full_name: string; phone?: string | null; unit_type?: string | null; unit_id: string; unit_name: string };
 
 const isVideo = (url?: string | null, type?: string | null) => type === 'video' || Boolean(url && /\.(mp4|mov|webm|3gp|mkv|avi)(\?.*)?$/i.test(url));
 const getStage = (report: IncidentReport): ReportStage => {
@@ -207,6 +208,7 @@ export default function ReportsPage() {
   const escalatedCount = reports.filter((item) => getGroup(item) === 'escalated').length;
   const assessment = parseAssessment(selected?.mdrrmo_response_notes || selected?.barangay_response_notes);
   const assignment = selected?.mdrrmo_assignments?.find((item) => item.status !== 'removed');
+  const activeAssignments = selected?.mdrrmo_assignments?.filter((item) => item.status !== 'removed') || [];
   const reporterName = selected?.reporter_name || selected?.reporter?.full_name || 'Resident';
   const locationName = selected?.location_name || selected?.address || selected?.barangay_name || 'Norzagaray, Bulacan';
   const locationNote = selected?.address && selected.address !== locationName ? selected.address : selected && hasPin(selected) ? 'Location pin received from the resident' : 'Location not provided';
@@ -291,7 +293,10 @@ export default function ReportsPage() {
               </section> : <>
                 {getGroup(selected) === 'escalated' && (selected.mdrrmo_coordination_notes || selected.barangay_response_notes) && <section className="reports-detail-section-v2"><h3>Escalation notes</h3><div className="reports-text-card-v2">{selected.mdrrmo_coordination_notes || selected.barangay_response_notes}</div></section>}
                 <section className="reports-detail-section-v2"><h3>Responder and response timeline</h3><div className="reports-timeline-grid-v2">
-                  <div className="reports-assignee-card-v2"><strong>{assignment?.responder?.full_name || selected.mdrrmo_responder_name || 'Assigned responder'}</strong><span>MDRRMO response unit</span><em>{stage === 'resolved' ? 'Resolved' : assignment?.status === 'responding' ? 'Accepted' : 'Assigned'}</em></div>
+                  <div className="reports-assignee-stack-v2">{activeAssignments.length ? activeAssignments.map((item) => <div className="reports-assignee-card-v2" key={item.responder_id}>
+                    <strong>{item.responder?.full_name || selected.mdrrmo_responder_name || 'Assigned responder'}</strong><span>MDRRMO Team Leader</span><em>{stage === 'resolved' ? 'Resolved' : item.status === 'responding' ? 'Accepted' : 'Assigned'}</em>
+                    {item.crew?.length ? <div className="reports-assignment-crew-v2"><b>Accepted crew</b>{item.crew.map((member) => <span key={member.unit_member_id}>{member.name} · {member.member_role.replaceAll('_', ' ')}</span>)}</div> : <small className="reports-crew-pending-v2">Crew is selected when the Team Leader accepts.</small>}
+                  </div>) : <div className="reports-assignee-card-v2"><strong>{selected.mdrrmo_responder_name || 'Assigned responder'}</strong><span>MDRRMO Team Leader</span><em>Assigned</em></div>}</div>
                   <div className="reports-timeline-card-v2">{([
                     ['Report received', selected.created_at],
                       ['Dispatched to MDRRMO', selected.mdrrmo_dispatched_at || (getGroup(selected) === 'resident' ? selected.dispatched_at : null)],
@@ -330,7 +335,7 @@ export default function ReportsPage() {
           <label htmlFor="report-priority-v2">Priority</label><select id="report-priority-v2" value={severity} onChange={(event) => setSeverity(event.target.value)}><option value="">Select priority</option>{INCIDENT_SEVERITY_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>
           <label htmlFor="report-dispatch-notes-v2">Dispatcher notes <span>(optional)</span></label><textarea id="report-dispatch-notes-v2" rows={3} maxLength={1000} value={dispatchNotes} onChange={(event) => setDispatchNotes(event.target.value)} placeholder="Add instructions or response details…" />
           <div className="reports-responder-list-heading-v2"><strong>Active MDRRMO responders</strong>{responders.length > 0 && <button type="button" onClick={() => setResponderIds(responderIds.length === responders.length ? [] : responders.map((item) => item.id))}>{responderIds.length === responders.length ? 'Deselect all' : 'Select all'}</button>}</div>
-          <div className="reports-responder-list-v2">{loadingResponders ? <p>Loading active responders…</p> : responderError ? <p className="error">{responderError}</p> : responders.length === 0 ? <p>No active MDRRMO responders are available.</p> : responders.map((item) => <label key={item.id}><input type="checkbox" checked={responderIds.includes(item.id)} onChange={(event) => setResponderIds((current) => event.target.checked ? [...current, item.id] : current.filter((id) => id !== item.id))} /><span><strong>{item.full_name}</strong><small>{[item.unit_type, item.phone].filter(Boolean).join(' · ') || 'MDRRMO responder'}</small></span></label>)}</div>
+          <div className="reports-responder-list-v2">{loadingResponders ? <p>Loading active responders…</p> : responderError ? <p className="error">{responderError}</p> : responders.length === 0 ? <p>No units are active for dispatch today.</p> : responders.map((item) => <label key={item.id}><input type="checkbox" checked={responderIds.includes(item.id)} onChange={(event) => setResponderIds((current) => event.target.checked ? [...current, item.id] : current.filter((id) => id !== item.id))} /><span><strong>{item.full_name}</strong><small>{[item.unit_name, item.unit_type, item.phone].filter(Boolean).join(' · ')}</small></span></label>)}</div>
           <footer><button type="button" className="reports-invalid-button-v2" onClick={() => setDispatchReport(null)}>Cancel</button><button type="button" className="reports-dispatch-button-v2" disabled={saving || loadingResponders || !incidentType || !severity || responderIds.length === 0} onClick={() => void submitDispatch()}>{saving ? 'Saving dispatch…' : 'Send responders'}</button></footer>
         </section>
       </div>}

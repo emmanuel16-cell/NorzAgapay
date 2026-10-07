@@ -26,11 +26,11 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { label: 'Operations', section: true },
+  { label: 'Incident Monitoring', section: true },
   { path: '/', icon: <MapPin size={19} strokeWidth={1.8} />, label: 'Command Center' },
   { path: '/reports', icon: <AlertTriangle size={19} strokeWidth={1.8} />, label: 'Incidents' },
   { path: '/requests', icon: <ClipboardList size={19} strokeWidth={1.8} />, label: 'Assistance Request' },
-  { label: 'Logistics', section: true },
+  { label: 'Operations', section: true },
   { path: '/evacuation-centers', icon: <Tent size={19} strokeWidth={1.8} />, label: 'Evacuation Centers' },
   { path: '/municipality-boundary', icon: <MapIcon size={19} strokeWidth={1.8} />, label: 'Municipality Boundary' },
   { path: '/respond-units', icon: <Ambulance size={19} strokeWidth={1.8} />, label: 'Respond Units' },
@@ -90,11 +90,11 @@ export default function DashboardLayout() {
   const roleNav = isMasterAdmin
     ? navItems
     : user?.role === 'admin'
-      ? navItems.filter(item => ['Logistics', '/officers', 'Administration', '/verification/barangay', '/users', '/alert-broadcasts', '/analytics'].includes(item.path || item.label))
+      ? navItems.filter(item => ['Operations', '/officers', 'Administration', '/verification/barangay', '/users', '/alert-broadcasts', '/analytics'].includes(item.path || item.label))
       : user?.role === 'logistics'
-        ? navItems.filter(item => ['Logistics', '/evacuation-centers', '/municipality-boundary', '/respond-units', '/officers'].includes(item.path || item.label))
+        ? navItems.filter(item => ['Operations', '/evacuation-centers', '/municipality-boundary', '/respond-units', '/officers'].includes(item.path || item.label))
         : user?.role === 'dispatcher'
-          ? navItems.filter(item => ['Operations', '/', '/reports', '/requests'].includes(item.path || item.label))
+          ? navItems.filter(item => ['Incident Monitoring', '/', '/reports', '/requests'].includes(item.path || item.label))
           : [];
 
   return (
@@ -167,7 +167,7 @@ export default function DashboardLayout() {
                   <div className="user-name" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {user?.full_name}
                   </div>
-                  <div className="user-role">{user?.role?.replace(/_/g, ' ')}</div>
+                  <div className="user-role">{user?.role === 'logistics' ? 'Staff' : user?.role?.replace(/_/g, ' ')}</div>
                 </div>
                 <button
                   className="theme-toggle-btn"
@@ -191,7 +191,7 @@ export default function DashboardLayout() {
             <div className="collapsed-footer-actions">
               <div
                 className="user-avatar"
-                title={`${user?.full_name || ''} (${user?.role?.replace(/_/g, ' ') || ''})`}
+                title={`${user?.full_name || ''} (${user?.role === 'logistics' ? 'Staff' : user?.role?.replace(/_/g, ' ') || ''})`}
               >
                 {initials}
               </div>

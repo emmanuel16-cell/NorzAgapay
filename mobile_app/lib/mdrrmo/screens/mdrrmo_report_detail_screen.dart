@@ -214,9 +214,23 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
     final auth = context.read<AuthProvider>();
     final token = auth.token;
     final userId = auth.user?.id;
-    if (token == null || userId == null) return;
+    if (token == null || userId == null || !auth.isTeamLeader) return;
+
+    final eligibleMembers = auth.unitMembers.where((member) {
+      final role = member['member_role']?.toString();
+      return member['unit_member_id'] != null &&
+          const {'radio_operator', 'driver_responder', 'first_aider_responder'}
+              .contains(role);
+    }).toList();
+    final selectedMemberIds = await _selectCrewMembers(eligibleMembers);
+    if (selectedMemberIds == null || !mounted) return;
+
     await _run(() async {
-      _report = await ApiService.respondToMdrrmoReport(token, _report.id);
+      _report = await ApiService.respondToMdrrmoReport(
+        token,
+        _report.id,
+        memberIds: selectedMemberIds,
+      );
       _acceptedAssignment = {
         'responder_id': userId,
         'status': 'responding',
@@ -230,6 +244,109 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
         debugPrint('Could not refresh accepted MDRRMO assignment: $error');
       }
     }, 'Report accepted.');
+  }
+
+  Future<List<String>?> _selectCrewMembers(
+    List<Map<String, dynamic>> members,
+  ) async {
+    final selectedIds = <String>{};
+    return showDialog<List<String>>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final selected = members
+              .where((member) =>
+                  selectedIds.contains(member['unit_member_id'].toString()))
+              .toList();
+          final hasDriver = selected.any(
+            (member) => member['member_role'] == 'driver_responder',
+          );
+          final hasFirstAider = selected.any(
+            (member) => member['member_role'] == 'first_aider_responder',
+          );
+          final canSubmit = hasDriver && hasFirstAider;
+          final rosterHeight = (members.length * 68.0)
+              .clamp(120.0, MediaQuery.of(context).size.height * 0.42)
+              .toDouble();
+          return AlertDialog(
+            title: const Text('Choose the response crew'),
+            content: SizedBox(
+              width: 420,
+              child: members.isEmpty
+                  ? const Text(
+                      'Your unit roster has no eligible members. Ask Staff to add at least one Driver Responder and one First Aider Responder.',
+                    )
+                  : Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text(
+                          'Select at least one Driver Responder and one First Aider Responder. The Team Leader is included automatically.',
+                        ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          height: rosterHeight,
+                          child: ListView(
+                            children: members.map((member) {
+                              final id = member['unit_member_id'].toString();
+                              final role = member['member_role'].toString();
+                              final label = switch (role) {
+                                'radio_operator' => 'Radio Operator',
+                                'driver_responder' => 'Driver Responder',
+                                'first_aider_responder' => 'First Aider Responder',
+                                _ => role,
+                              };
+                              final isSelected = selectedIds.contains(id);
+                              return CheckboxListTile(
+                                value: isSelected,
+                                contentPadding: EdgeInsets.zero,
+                                title: Text(member['name']?.toString() ?? 'Unit member'),
+                                subtitle: Text(label),
+                                onChanged: (checked) {
+                                  setDialogState(() {
+                                    if (checked == true && selectedIds.length < 7) {
+                                      selectedIds.add(id);
+                                    } else {
+                                      selectedIds.remove(id);
+                                    }
+                                  });
+                                },
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            canSubmit
+                                ? '${selectedIds.length} crew member(s) selected'
+                                : 'A driver and a first aider are required.',
+                            style: TextStyle(
+                              color: canSubmit ? _detailTeal : _detailMuted,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: canSubmit
+                    ? () => Navigator.pop(dialogContext, selectedIds.toList())
+                    : null,
+                child: const Text('Accept dispatch'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
   }
 
   Future<void> _arrive() async {
@@ -630,34 +747,45 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
                     final status = (assignment['status'] ?? 'assigned')
                         .toString()
                         .toUpperCase();
+                    final crew = assignment['crew'] is List
+                        ? (assignment['crew'] as List)
+                            .whereType<Map>()
+                            .map((member) => Map<String, dynamic>.from(member))
+                            .toList()
+                        : <Map<String, dynamic>>[];
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 8),
-                      child: Row(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Icon(
-                            Icons.person_pin_circle_outlined,
-                            color: _detailTeal,
-                            size: 19,
+                          Row(
+                            children: [
+                              const Icon(Icons.person_pin_circle_outlined, color: _detailTeal, size: 19),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  name ?? 'MDRRMO responder',
+                                  style: const TextStyle(color: _detailInk, fontSize: 13, fontWeight: FontWeight.w600),
+                                ),
+                              ),
+                              Text(status, style: const TextStyle(color: _detailMuted, fontSize: 10, fontWeight: FontWeight.bold)),
+                            ],
                           ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              name ?? 'MDRRMO responder',
-                              style: const TextStyle(
-                                color: _detailInk,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
+                          if (crew.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(left: 28, top: 5),
+                              child: Wrap(
+                                spacing: 6,
+                                runSpacing: 4,
+                                children: crew.map((member) {
+                                  final role = (member['member_role'] ?? '').toString().replaceAll('_', ' ');
+                                  return Chip(
+                                    visualDensity: VisualDensity.compact,
+                                    label: Text('${member['name'] ?? 'Crew member'} · $role'),
+                                  );
+                                }).toList(),
                               ),
                             ),
-                          ),
-                          Text(
-                            status,
-                            style: const TextStyle(
-                              color: _detailMuted,
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
                         ],
                       ),
                     );
@@ -1469,12 +1597,13 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
   }
 
   Widget? _bottomAction() {
-    final user = context.watch<AuthProvider>().user;
+    final auth = context.watch<AuthProvider>();
+    final user = auth.user;
     final isResponder = user?.role.name == 'responder';
     final assignment = _myAssignment(user?.id);
     final assignmentStatus = assignment?['status']?.toString();
     final myArrival = _assignmentArrival(assignment);
-    if (isResponder && !_report.isResolved && assignmentStatus == 'assigned')
+    if (isResponder && auth.isTeamLeader && !_report.isResolved && assignmentStatus == 'assigned')
       return _action(
         'Accept & Respond',
         Icons.check_circle_outline,

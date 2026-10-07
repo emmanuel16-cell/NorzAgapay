@@ -90,8 +90,17 @@ class ApiService {
     }
   }
 
-  static Future<MdrrmoReport> respondToMdrrmoReport(String token, String reportId) async {
-    return _mdrrmoMutation(token, reportId, 'respond', method: 'PATCH');
+  static Future<MdrrmoReport> respondToMdrrmoReport(
+    String token,
+    String reportId, {
+    required List<String> memberIds,
+  }) async {
+    final response = await http.patch(
+      Uri.parse('$baseUrl/mdrrmo/reports/$reportId/respond'),
+      headers: _headers(token),
+      body: jsonEncode({'member_ids': memberIds}),
+    );
+    return _mdrrmoReportFromResponse(response, 'Failed to accept report');
   }
 
   static Future<MdrrmoReport> markMdrrmoReportArrived(
@@ -149,14 +158,6 @@ class ApiService {
     request.files.add(await http.MultipartFile.fromPath('media', file.path));
     final streamed = await request.send().timeout(const Duration(seconds: 40));
     return _mdrrmoReportFromResponse(await http.Response.fromStream(streamed), 'Failed to upload field media');
-  }
-
-  static Future<MdrrmoReport> _mdrrmoMutation(String token, String reportId, String action, {required String method}) async {
-    final uri = Uri.parse('$baseUrl/mdrrmo/reports/$reportId/$action');
-    final response = method == 'POST'
-        ? await http.post(uri, headers: _headers(token), body: jsonEncode({}))
-        : await http.patch(uri, headers: _headers(token), body: jsonEncode({}));
-    return _mdrrmoReportFromResponse(response, 'Failed to update report');
   }
 
   static MdrrmoReport _mdrrmoReportFromResponse(http.Response response, String fallback) {
