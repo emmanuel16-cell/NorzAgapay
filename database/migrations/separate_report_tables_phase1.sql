@@ -106,6 +106,9 @@ CREATE TABLE IF NOT EXISTS public.barangay_reports (
   client_request_id         UUID,
   client_submitted_at       TIMESTAMPTZ,
 
+  -- Status (mirrors overall status for UX; separate from response_status lifecycle)
+  status                    TEXT NOT NULL DEFAULT 'pending',
+
   created_at                TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at                TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -175,6 +178,7 @@ ALTER TABLE public.barangay_reports
   ADD COLUMN IF NOT EXISTS lifecycle_actor_role TEXT,
   ADD COLUMN IF NOT EXISTS client_request_id UUID,
   ADD COLUMN IF NOT EXISTS client_submitted_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'pending',
   ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
 
@@ -1117,10 +1121,10 @@ BEGIN
       resolved_at, resolved_notes,
       resolution_pdf_status, resolution_pdf_path, resolution_pdf_generated_at,
       review_outcome, review_reason, reviewed_by, reviewed_at,
-      escalated_to_mdrrmo, mdrrmo_coordination_notes,
+      escalated_to_mdrrmo, escalated_at, mdrrmo_coordination_notes,
       dispatch_incident_id,
       lifecycle_revision, lifecycle_actor_id, lifecycle_actor_role,
-      client_request_id, client_submitted_at, created_at
+      client_request_id, client_submitted_at, status, created_at
     )
     SELECT
       id, '
@@ -1148,8 +1152,29 @@ BEGIN
       || pg_temp.col_text('reporter_email', 'NULL::TEXT') || ', '
       || pg_temp.col_raw('barangay_id', 'NULL::UUID') || ', '
       || 'CASE
+        -- Escalated + received by barangay responder (accepted/responded) OR MDRRMO accepted/responding → barangay resolution complete
+        WHEN (' ||
+          CASE WHEN pg_temp.has_col('status') THEN 'status::TEXT = ''escalated''' ELSE 'FALSE' END || '
+          OR ' ||
+          CASE WHEN pg_temp.has_col('is_escalated') THEN 'COALESCE(is_escalated, false) = true' ELSE 'FALSE' END || '
+          OR ' ||
+          CASE WHEN pg_temp.has_col('beyond_barangay_capability') THEN 'COALESCE(beyond_barangay_capability, false) = true' ELSE 'FALSE' END || '
+        ) AND (' ||
+          CASE WHEN pg_temp.has_col('barangay_accepted_at') THEN 'barangay_accepted_at IS NOT NULL' ELSE 'FALSE' END || '
+          OR ' ||
+          CASE WHEN pg_temp.has_col('accepted_at') THEN 'accepted_at IS NOT NULL' ELSE 'FALSE' END || '
+          OR ' ||
+          CASE WHEN pg_temp.has_col('barangay_responded_by') THEN 'barangay_responded_by IS NOT NULL' ELSE 'FALSE' END || '
+          OR ' ||
+          CASE WHEN pg_temp.has_col('mdrrmo_accepted_at') THEN 'mdrrmo_accepted_at IS NOT NULL' ELSE 'FALSE' END || '
+          OR ' ||
+          CASE WHEN pg_temp.has_col('mdrrmo_response_status') THEN 'lower(COALESCE(mdrrmo_response_status::TEXT, '''')) IN (''responding'', ''resolved'')' ELSE 'FALSE' END || '
+        ) THEN ''resolved''
+        -- Standard resolved
+        WHEN lower(COALESCE(' || pg_temp.col_text('barangay_response_status', '''pending''') || ', ''pending'')) IN (''resolved'', ''completed'')
+          OR lower(COALESCE(' || pg_temp.col_text('status', '''pending''') || ', ''pending'')) IN (''resolved'', ''completed'') THEN ''resolved''
+        -- Responding
         WHEN lower(COALESCE(' || pg_temp.col_text('barangay_response_status', '''pending''') || ', ''pending'')) IN (''responding'', ''in_progress'') THEN ''responding''
-        WHEN lower(COALESCE(' || pg_temp.col_text('barangay_response_status', '''pending''') || ', ''pending'')) IN (''resolved'', ''completed'') THEN ''resolved''
         ELSE ''pending''
       END, '
       || pg_temp.col_text('barangay_response_notes', 'NULL::TEXT') || ', '
@@ -1168,7 +1193,7 @@ BEGIN
       || pg_temp.col_raw('arrival_longitude', 'NULL::DOUBLE PRECISION') || ', '
       || pg_temp.col_raw('arrival_accuracy_m', 'NULL::DOUBLE PRECISION') || ', '
       || pg_temp.col_raw('arrival_distance_m', 'NULL::DOUBLE PRECISION') || ', '
-      || pg_temp.coalesce_raw(ARRAY['barangay_resolved_at', 'resolved_at'], 'NULL::TIMESTAMPTZ') || ', '
+      || pg_temp.coalesce_raw(ARRAY['barangay_resolved_at', 'resolved_at', 'mdrrmo_resolved_at', 'barangay_accepted_at', 'accepted_at'], 'NULL::TIMESTAMPTZ') || ', '
       || pg_temp.coalesce_text(ARRAY['barangay_resolved_notes', 'resolved_notes'], 'NULL::TEXT') || ', '
       || pg_temp.col_text('resolution_pdf_status', '''missing''') || ', '
       || pg_temp.col_text('resolution_pdf_path', 'NULL::TEXT') || ', '
@@ -1178,6 +1203,7 @@ BEGIN
       || pg_temp.col_raw('reviewed_by', 'NULL::UUID') || ', '
       || pg_temp.col_raw('reviewed_at', 'NULL::TIMESTAMPTZ') || ', '
       || pg_temp.coalesce_raw(ARRAY['is_escalated', 'beyond_barangay_capability'], 'false') || ', '
+      || pg_temp.coalesce_raw(ARRAY['escalated_at', 'mdrrmo_dispatched_at', 'barangay_responded_at'], 'NULL::TIMESTAMPTZ') || ', '
       || pg_temp.col_text('mdrrmo_coordination_notes', 'NULL::TEXT') || ', '
       || pg_temp.col_raw('dispatch_incident_id', 'NULL::UUID') || ', '
       || pg_temp.col_raw('lifecycle_revision', '0') || ', '
@@ -1185,6 +1211,19 @@ BEGIN
       || pg_temp.col_text('lifecycle_actor_role', 'NULL::TEXT') || ', '
       || pg_temp.col_raw('client_request_id', 'NULL::UUID') || ', '
       || pg_temp.col_raw('client_submitted_at', 'NULL::TIMESTAMPTZ') || ', '
+      || 'CASE
+        WHEN (' ||
+          CASE WHEN pg_temp.has_col('status') THEN 'status::TEXT = ''escalated''' ELSE 'FALSE' END || '
+          OR ' ||
+          CASE WHEN pg_temp.has_col('is_escalated') THEN 'COALESCE(is_escalated, false) = true' ELSE 'FALSE' END || '
+          OR ' ||
+          CASE WHEN pg_temp.has_col('beyond_barangay_capability') THEN 'COALESCE(beyond_barangay_capability, false) = true' ELSE 'FALSE' END || '
+        ) THEN ''escalated''
+        WHEN lower(COALESCE(' || pg_temp.col_text('barangay_response_status', '''pending''') || ', ''pending'')) IN (''resolved'', ''completed'')
+          OR lower(COALESCE(' || pg_temp.col_text('status', '''pending''') || ', ''pending'')) IN (''resolved'', ''completed'') THEN ''resolved''
+        WHEN lower(COALESCE(' || pg_temp.col_text('barangay_response_status', '''pending''') || ', ''pending'')) IN (''responding'', ''in_progress'') THEN ''responding''
+        ELSE ''pending''
+      END, '
       || pg_temp.col_raw('created_at', 'now()')
       || ' FROM public.incident_reports
          WHERE ' || CASE

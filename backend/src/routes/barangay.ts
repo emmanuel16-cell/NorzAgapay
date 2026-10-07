@@ -1937,15 +1937,32 @@ router.patch('/reports/:id/escalate', authenticateBarangay, requireRole(['dispat
     const escalationNotes = notes.trim();
     const now = new Date().toISOString();
 
+    const isReceivedByBarangayResponder = Boolean(assignedReport.barangay_accepted_at) ||
+      Boolean(assignedReport.accepted_at) ||
+      Boolean(assignedReport.barangay_responded_by);
+
+    const barangayReportsUpdate: any = {
+      status: 'escalated',
+      coordination_notes: escalationNotes,
+      escalated_to_mdrrmo: true,
+      escalated_at: now,
+      lifecycle_actor_id: req.barangayUser.userId,
+      lifecycle_actor_role: 'barangay_dispatcher',
+    };
+
+    if (isReceivedByBarangayResponder) {
+      barangayReportsUpdate.response_status = 'resolved';
+      barangayReportsUpdate.resolved_at = assignedReport.barangay_resolved_at ||
+        assignedReport.barangay_accepted_at ||
+        assignedReport.accepted_at ||
+        now;
+      barangayReportsUpdate.resolved_notes = `Escalated to MDRRMO: ${escalationNotes}`;
+    }
+
     // Write escalation status to barangay_reports
     await supabaseAdmin
       .from('barangay_reports')
-      .update({
-        status: 'escalated',
-        coordination_notes: escalationNotes,
-        lifecycle_actor_id: req.barangayUser.userId,
-        lifecycle_actor_role: 'barangay_dispatcher',
-      })
+      .update(barangayReportsUpdate)
       .eq('id', req.params.id)
       .eq('barangay_id', req.barangayUser.barangayId);
 
@@ -2088,7 +2105,7 @@ router.patch('/reports/:id/respond', authenticateBarangay, requireRole(['dispatc
     }
     const { data: currentReport, error: currentError } = await supabaseAdmin
       .from('incident_reports')
-      .select('latitude, longitude, barangay_response_notes, barangay_responded_by, accepted_at, barangay_accepted_at, mdrrmo_accepted_at')
+      .select('status, latitude, longitude, barangay_response_notes, barangay_responded_by, accepted_at, barangay_accepted_at, mdrrmo_accepted_at')
       .eq('id', req.params.id).eq('barangay_id', req.barangayUser.barangayId).maybeSingle();
     if (currentError) throw currentError;
     if (!currentReport) { res.status(404).json({ error: 'Incident report not found' }); return; }
@@ -2133,17 +2150,27 @@ router.patch('/reports/:id/respond', authenticateBarangay, requireRole(['dispatc
     }
 
     // Dual-write: barangay_reports
+    const isEscalatedReport = String(currentReport.status || '').toLowerCase() === 'escalated' ||
+      Boolean((currentReport as any).is_escalated);
+
+    const barangayReportsUpdate: any = {
+      response_status: isEscalatedReport ? 'resolved' : 'responding',
+      responded_by: req.barangayUser.userId,
+      responded_at: updatePayload.barangay_responded_at,
+      accepted_at: updatePayload.barangay_accepted_at || null,
+      response_notes: updatePayload.barangay_response_notes || null,
+      lifecycle_actor_id: req.barangayUser.userId,
+      lifecycle_actor_role: updatePayload.lifecycle_actor_role,
+    };
+
+    if (isEscalatedReport) {
+      barangayReportsUpdate.resolved_at = actionAt;
+      barangayReportsUpdate.resolved_notes = 'Escalated to MDRRMO and received by barangay responder';
+    }
+
     await supabaseAdmin
       .from('barangay_reports')
-      .update({
-        response_status: 'responding',
-        responded_by: req.barangayUser.userId,
-        responded_at: updatePayload.barangay_responded_at,
-        accepted_at: updatePayload.barangay_accepted_at || null,
-        response_notes: updatePayload.barangay_response_notes || null,
-        lifecycle_actor_id: req.barangayUser.userId,
-        lifecycle_actor_role: updatePayload.lifecycle_actor_role,
-      })
+      .update(barangayReportsUpdate)
       .eq('id', req.params.id)
       .eq('barangay_id', req.barangayUser.barangayId);
 
