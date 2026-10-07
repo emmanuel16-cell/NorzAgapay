@@ -34,7 +34,9 @@ class ApiService {
     throw Exception('Failed to fetch barangays');
   }
 
-  static Future<List<Map<String, dynamic>>> getBarangayHotlines(String barangayId) async {
+  static Future<List<Map<String, dynamic>>> getBarangayHotlines(
+    String barangayId,
+  ) async {
     final res = await http.get(
       Uri.parse('$baseUrl/barangay/hotlines/$barangayId'),
       headers: _headers(null),
@@ -42,7 +44,9 @@ class ApiService {
     if (res.statusCode == 200) {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       final entries = data['entries'] as List? ?? const [];
-      return entries.map((entry) => Map<String, dynamic>.from(entry as Map)).toList();
+      return entries
+          .map((entry) => Map<String, dynamic>.from(entry as Map))
+          .toList();
     }
     throw Exception('Failed to fetch barangay hotline numbers');
   }
@@ -59,14 +63,19 @@ class ApiService {
     if (res.statusCode == 200) {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       final savedEntries = data['entries'] as List? ?? const [];
-      return savedEntries.map((entry) => Map<String, dynamic>.from(entry as Map)).toList();
+      return savedEntries
+          .map((entry) => Map<String, dynamic>.from(entry as Map))
+          .toList();
     }
     final data = jsonDecode(res.body);
     throw Exception(data['error'] ?? 'Failed to save barangay hotline numbers');
   }
 
   // ── Incident Reports ───────────────────────────────────────────────────────
-  static Future<List<IncidentReport>> getReports(String token, {String? status}) async {
+  static Future<List<IncidentReport>> getReports(
+    String token, {
+    String? status,
+  }) async {
     String url = '$baseUrl/barangay/reports';
     if (status != null) {
       url += '?status=$status';
@@ -77,6 +86,39 @@ class ApiService {
       return data.map((e) => IncidentReport.fromJson(e)).toList();
     }
     throw Exception('Failed to fetch reports');
+  }
+
+  static Future<void> registerDispatcherPushToken(
+    String token,
+    String fcmToken, {
+    required String platform,
+  }) async {
+    final response = await http.put(
+      Uri.parse('$baseUrl/barangay/push-token'),
+      headers: _headers(token),
+      body: jsonEncode({'fcm_token': fcmToken, 'platform': platform}),
+    );
+    if (response.statusCode != 200 && response.statusCode != 201) {
+      final data = jsonDecode(response.body);
+      throw Exception(data['error'] ?? 'Could not register push notifications');
+    }
+  }
+
+  static Future<void> removeDispatcherPushToken(
+    String token,
+    String fcmToken,
+  ) async {
+    final response = await http.delete(
+      Uri.parse('$baseUrl/barangay/push-token'),
+      headers: _headers(token),
+      body: jsonEncode({'fcm_token': fcmToken}),
+    );
+    if (response.statusCode != 200 && response.statusCode != 204) {
+      final data = jsonDecode(response.body);
+      throw Exception(
+        data['error'] ?? 'Could not unregister push notifications',
+      );
+    }
   }
 
   static Future<Map<String, dynamic>> getReportStatistics(String token) async {
@@ -191,7 +233,8 @@ class ApiService {
     required String incidentType,
     required String severity,
   }) async {
-    final ids = teamLeaderIds ?? (teamLeaderId != null ? [teamLeaderId] : <String>[]);
+    final ids =
+        teamLeaderIds ?? (teamLeaderId != null ? [teamLeaderId] : <String>[]);
     final primaryId = ids.isNotEmpty ? ids.first : '';
     try {
       final res = await http.patch(
@@ -225,9 +268,7 @@ class ApiService {
       final res = await http.patch(
         Uri.parse('$baseUrl/barangay/reports/$reportId/escalate'),
         headers: _headers(token),
-        body: jsonEncode({
-          'notes': notes,
-        }),
+        body: jsonEncode({'notes': notes}),
       );
       if (res.statusCode == 200) {
         return IncidentReport.fromJson(jsonDecode(res.body));
@@ -271,12 +312,16 @@ class ApiService {
     throw Exception(data['error'] ?? 'Failed to close report');
   }
 
-  static Future<Uint8List> downloadResolutionPdf(String token, String reportId) async {
+  static Future<Uint8List> downloadResolutionPdf(
+    String token,
+    String reportId,
+  ) async {
     final res = await http.get(
       Uri.parse('$baseUrl/barangay/reports/$reportId/resolution-pdf'),
       headers: _headers(token),
     );
-    if (res.statusCode == 200 && (res.headers['content-type'] ?? '').contains('application/pdf')) {
+    if (res.statusCode == 200 &&
+        (res.headers['content-type'] ?? '').contains('application/pdf')) {
       return res.bodyBytes;
     }
     try {
@@ -357,7 +402,8 @@ class ApiService {
         if (password != null && password.isNotEmpty) 'password': password,
       }),
     );
-    if (res.statusCode == 200) return BarangayUser.fromJson(jsonDecode(res.body));
+    if (res.statusCode == 200)
+      return BarangayUser.fromJson(jsonDecode(res.body));
     final data = jsonDecode(res.body);
     throw Exception(data['error'] ?? 'Failed to update team member');
   }
@@ -365,7 +411,10 @@ class ApiService {
   static Future<void> sendBarangayPasswordOtp(String email) async {
     final res = await http.post(
       Uri.parse('$baseUrl/auth/barangay/password-otp'),
-      headers: {'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true'},
+      headers: {
+        'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': 'true',
+      },
       body: jsonEncode({'email': email}),
     );
     if (res.statusCode == 200) return;
@@ -381,7 +430,10 @@ class ApiService {
   }) async {
     final res = await http.post(
       Uri.parse('$baseUrl/auth/barangay/change-password'),
-      headers: {'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true'},
+      headers: {
+        'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': 'true',
+      },
       body: jsonEncode({
         'email': email,
         'otp': otp,
@@ -418,7 +470,10 @@ class ApiService {
     );
   }
 
-  static Future<List<EvacuationCenter>> getEvacuationCenters(String token, {String? barangayId}) async {
+  static Future<List<EvacuationCenter>> getEvacuationCenters(
+    String token, {
+    String? barangayId,
+  }) async {
     String url = '$baseUrl/evacuation-centers';
     if (barangayId != null) {
       url += '?barangay_id=$barangayId';
@@ -480,7 +535,10 @@ class ApiService {
     throw Exception(data['error'] ?? 'Failed to update evacuation center');
   }
 
-  static Future<void> removeEvacuationCenter(String token, String centerId) async {
+  static Future<void> removeEvacuationCenter(
+    String token,
+    String centerId,
+  ) async {
     final res = await http.delete(
       Uri.parse('$baseUrl/evacuation-centers/$centerId'),
       headers: _headers(token),
@@ -521,7 +579,9 @@ class ApiService {
     }
   }
 
-  static Future<List<Map<String, dynamic>>> getAssistanceRequests(String token) async {
+  static Future<List<Map<String, dynamic>>> getAssistanceRequests(
+    String token,
+  ) async {
     final res = await http.get(
       Uri.parse('$baseUrl/barangay/assistance-requests'),
       headers: _headers(token),
@@ -553,7 +613,10 @@ class ApiService {
       throw Exception(data['error'] ?? 'Failed to update assistance request');
     }
   }
-  static Future<List<Map<String, dynamic>>> getMyAssistanceRequests(String token) async {
+
+  static Future<List<Map<String, dynamic>>> getMyAssistanceRequests(
+    String token,
+  ) async {
     final res = await http.get(
       Uri.parse('$baseUrl/barangay/my-assistance-requests'),
       headers: _headers(token),
@@ -617,7 +680,11 @@ class ApiService {
     );
     if (res.statusCode == 200) {
       final List<dynamic> data = jsonDecode(res.body);
-      return data.map((e) => BroadcastPost.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+      return data
+          .map(
+            (e) => BroadcastPost.fromJson(Map<String, dynamic>.from(e as Map)),
+          )
+          .toList();
     }
     throw Exception('Failed to fetch broadcasts');
   }
@@ -641,7 +708,8 @@ class ApiService {
     if (mediaFiles != null) {
       for (final file in mediaFiles) {
         final lower = file.name.toLowerCase();
-        final isVideo = lower.endsWith('.mp4') ||
+        final isVideo =
+            lower.endsWith('.mp4') ||
             lower.endsWith('.mov') ||
             lower.endsWith('.avi') ||
             lower.endsWith('.mkv');
@@ -651,14 +719,18 @@ class ApiService {
           filename: file.name,
         );
         req.files.add(mf);
-        req.fields['media_type_${req.files.length - 1}'] = isVideo ? 'video' : 'image';
+        req.fields['media_type_${req.files.length - 1}'] = isVideo
+            ? 'video'
+            : 'image';
       }
     }
 
     final streamed = await req.send().timeout(const Duration(seconds: 60));
     final res = await http.Response.fromStream(streamed);
     if (res.statusCode == 201) {
-      return BroadcastPost.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+      return BroadcastPost.fromJson(
+        jsonDecode(res.body) as Map<String, dynamic>,
+      );
     }
     final data = jsonDecode(res.body);
     throw Exception(data['error'] ?? 'Failed to create broadcast');
@@ -688,7 +760,8 @@ class ApiService {
 
       for (final file in newMediaFiles) {
         final lower = file.name.toLowerCase();
-        final isVideo = lower.endsWith('.mp4') ||
+        final isVideo =
+            lower.endsWith('.mp4') ||
             lower.endsWith('.mov') ||
             lower.endsWith('.avi') ||
             lower.endsWith('.mkv');
@@ -698,13 +771,17 @@ class ApiService {
           filename: file.name,
         );
         req.files.add(mf);
-        req.fields['media_type_${req.files.length - 1}'] = isVideo ? 'video' : 'image';
+        req.fields['media_type_${req.files.length - 1}'] = isVideo
+            ? 'video'
+            : 'image';
       }
 
       final streamed = await req.send().timeout(const Duration(seconds: 60));
       final res = await http.Response.fromStream(streamed);
       if (res.statusCode == 200) {
-        return BroadcastPost.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+        return BroadcastPost.fromJson(
+          jsonDecode(res.body) as Map<String, dynamic>,
+        );
       }
       final data = jsonDecode(res.body);
       throw Exception(data['error'] ?? 'Failed to update broadcast');
@@ -721,7 +798,9 @@ class ApiService {
       }),
     );
     if (res.statusCode == 200) {
-      return BroadcastPost.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+      return BroadcastPost.fromJson(
+        jsonDecode(res.body) as Map<String, dynamic>,
+      );
     }
     final data = jsonDecode(res.body);
     throw Exception(data['error'] ?? 'Failed to update broadcast');
@@ -762,18 +841,27 @@ class ApiService {
     );
     if (res.statusCode == 200) {
       final List<dynamic> data = jsonDecode(res.body);
-      return data.map((e) => BroadcastPost.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+      return data
+          .map(
+            (e) => BroadcastPost.fromJson(Map<String, dynamic>.from(e as Map)),
+          )
+          .toList();
     }
     throw Exception('Failed to fetch MDRRMO broadcasts');
   }
 
-  static Future<BroadcastPost> repostBroadcast(String token, String broadcastId) async {
+  static Future<BroadcastPost> repostBroadcast(
+    String token,
+    String broadcastId,
+  ) async {
     final res = await http.post(
       Uri.parse('$baseUrl/barangay/broadcasts/$broadcastId/repost'),
       headers: _headers(token),
     );
     if (res.statusCode == 200 || res.statusCode == 201) {
-      return BroadcastPost.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+      return BroadcastPost.fromJson(
+        jsonDecode(res.body) as Map<String, dynamic>,
+      );
     }
     final data = jsonDecode(res.body);
     throw Exception(data['error'] ?? 'Failed to repost broadcast');

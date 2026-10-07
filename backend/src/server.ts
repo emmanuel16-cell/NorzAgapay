@@ -9,6 +9,8 @@ import { config } from './config';
 import { supabaseAdmin } from './config/supabase';
 import { DispatcherVerificationService } from './services/dispatcherVerificationService';
 import { startIncidentEventRelay } from './services/incidentEventRelay';
+import { startDispatcherPushRelay } from './services/dispatcherPushNotifications';
+import { startResidentPushRelay } from './services/residentPushNotifications';
 import { deleteResponderGpsLocation, RESPONDER_GPS_TTL_SECONDS, setResponderGpsLocation } from './config/redis';
 import { getActiveResponderTargets, getCurrentResponderLiveLocations, ResponderIncidentTarget } from './services/responderLiveLocation';
 
@@ -481,6 +483,8 @@ setInterval(runScheduledUpdates, 300000);
 if (require.main === module) {
   server.listen(config.port, () => {
     startIncidentEventRelay(io);
+    startDispatcherPushRelay();
+    startResidentPushRelay();
     console.log(`
     ╔══════════════════════════════════════════════╗
     ║         NorzAgapay Backend Server            ║

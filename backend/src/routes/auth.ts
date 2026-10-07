@@ -466,6 +466,64 @@ router.patch('/resident/profile', authenticate, async (req: AuthRequest, res: Re
   }
 });
 
+const residentPushTokenSchema = z.object({
+  fcm_token: z.string().trim().min(20).max(4096),
+  platform: z.literal('android').optional().default('android'),
+});
+
+// Register the signed-in resident's Android device for report-status pushes.
+router.put('/resident/push-token', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+  if (req.user?.role !== 'resident') {
+    res.status(403).json({ error: 'This endpoint is only for resident accounts.' });
+    return;
+  }
+  const parsed = residentPushTokenSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'A valid Android push token is required.' });
+    return;
+  }
+  try {
+    const { error } = await supabaseAdmin
+      .from('resident_push_tokens')
+      .upsert({
+        fcm_token: parsed.data.fcm_token,
+        resident_id: req.user.userId,
+        platform: parsed.data.platform,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'fcm_token' });
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Resident push token registration error:', err);
+    res.status(500).json({ error: 'Could not register this device for notifications.' });
+  }
+});
+
+// Remove this device association when a resident signs out.
+router.delete('/resident/push-token', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+  if (req.user?.role !== 'resident') {
+    res.status(403).json({ error: 'This endpoint is only for resident accounts.' });
+    return;
+  }
+  const parsed = z.object({ fcm_token: z.string().trim().min(20).max(4096) }).safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'A valid push token is required.' });
+    return;
+  }
+  try {
+    const { error } = await supabaseAdmin
+      .from('resident_push_tokens')
+      .delete()
+      .eq('fcm_token', parsed.data.fcm_token)
+      .eq('resident_id', req.user.userId);
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Resident push token removal error:', err);
+    res.status(500).json({ error: 'Could not unregister this device.' });
+  }
+});
+
 // ============================================
 // POST /api/auth/create-admin — master-admin-only admin account creation
 // ============================================

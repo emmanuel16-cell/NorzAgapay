@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
 import 'services/auth_service.dart';
@@ -16,10 +17,21 @@ import 'mdrrmo/services/offline_service.dart' as global_offline;
 import 'mdrrmo/screens/home_screen.dart' as global_home;
 import 'mdrrmo/models/user.dart' as global_user;
 import 'services/municipality_boundary_service.dart';
+import 'services/firebase_options.dart';
+import 'services/dispatcher_push_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await AuthService.init();
+  final firebaseOptions = DefaultFirebaseOptions.currentPlatform;
+  if (firebaseOptions != null) {
+    try {
+      await Firebase.initializeApp(options: firebaseOptions);
+      await DispatcherPushService.instance.initialize();
+    } catch (error) {
+      debugPrint('Firebase push notifications are not configured: $error');
+    }
+  }
   await global_offline.OfflineService.init();
   await MunicipalityBoundaryService.instance.initialize();
 

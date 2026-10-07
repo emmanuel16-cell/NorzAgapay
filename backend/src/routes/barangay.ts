@@ -165,6 +165,67 @@ const requireRole = (roles: string[]) => (req: any, res: Response, next: any) =>
   next();
 };
 
+// ─── Dispatcher push-token registration ──────────────────────────────────────
+
+router.put(
+  '/push-token',
+  authenticateBarangay,
+  requireRole(['dispatcher']),
+  async (req: any, res: Response) => {
+    const input = z.object({
+      fcm_token: z.string().trim().min(1).max(4096),
+      platform: z.literal('android'),
+    }).safeParse(req.body);
+    if (!input.success) {
+      res.status(400).json({ error: 'A valid FCM token and mobile platform are required.' });
+      return;
+    }
+
+    try {
+      const { error } = await supabaseAdmin
+        .from('dispatcher_push_tokens')
+        .upsert({
+          fcm_token: input.data.fcm_token,
+          user_id: req.barangayUser.userId,
+          barangay_id: req.barangayUser.barangayId,
+          platform: input.data.platform,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'fcm_token' });
+      if (error) throw error;
+      res.status(200).json({ registered: true });
+    } catch (error) {
+      console.error('Dispatcher push-token registration failed:', error);
+      res.status(503).json({ error: 'Push notifications could not be registered.' });
+    }
+  },
+);
+
+router.delete(
+  '/push-token',
+  authenticateBarangay,
+  requireRole(['dispatcher']),
+  async (req: any, res: Response) => {
+    const input = z.object({ fcm_token: z.string().trim().min(1).max(4096) }).safeParse(req.body);
+    if (!input.success) {
+      res.status(400).json({ error: 'A valid FCM token is required.' });
+      return;
+    }
+
+    try {
+      const { error } = await supabaseAdmin
+        .from('dispatcher_push_tokens')
+        .delete()
+        .eq('fcm_token', input.data.fcm_token)
+        .eq('user_id', req.barangayUser.userId);
+      if (error) throw error;
+      res.status(200).json({ removed: true });
+    } catch (error) {
+      console.error('Dispatcher push-token removal failed:', error);
+      res.status(503).json({ error: 'Push notifications could not be unregistered.' });
+    }
+  },
+);
+
 // ─── GET /api/barangay/list ──────────────────────────────────────────────────
 // Public: get all barangays (for dropdowns in resident app)
 

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../services/offline_service.dart';
+import '../services/resident_push_service.dart';
 import '../core/barangay_names.dart';
 import '../core/constants.dart';
 import '../core/phone_number_utils.dart';
@@ -82,14 +83,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
     await OfflineService.saveProfile({
       ...currentProfile,
       'barangay_name': barangayName,
-      'barangay_id': match?['id']?.toString(),
+      'barangay_id': match['id']?.toString(),
       'is_logged_in': _isLoggedIn,
     });
 
     if (mounted) {
       setState(() {
         _selectedBarangayName = barangayName;
-        _selectedBarangayId = match?['id']?.toString();
+        _selectedBarangayId = match['id']?.toString();
         _userProfile = OfflineService.getProfile();
       });
       // Rebuild Home so its dropdown default follows the saved Profile value.
@@ -1106,6 +1107,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
 
     if (confirmed == true) {
+      final authToken = OfflineService.getProfile()?['token']?.toString();
+      if (authToken != null && authToken.isNotEmpty) {
+        await ResidentPushService.instance.unregisterForResident(authToken);
+      }
       await OfflineService.logout();
       _loadProfileState();
       widget.onAuthStateChanged?.call();

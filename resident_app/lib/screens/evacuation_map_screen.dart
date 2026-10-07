@@ -35,6 +35,7 @@ class _EvacuationCentersScreenState extends State<EvacuationCentersScreen> {
   @override
   void initState() {
     super.initState();
+    _selectedBarangay = OfflineService.getProfile()?['barangay_name']?.toString();
     _loadStations();
   }
 
@@ -81,10 +82,10 @@ class _EvacuationCentersScreenState extends State<EvacuationCentersScreen> {
       _loadError = loadError;
       _isLoading = false;
       _selectedStationId = null;
-      if (_selectedBarangay != null &&
-          !_barangayNamesFor(localRows).contains(_selectedBarangay)) {
-        _selectedBarangay = null;
-      }
+      final selectedMatch = _barangayNamesFor(localRows).where(
+        (name) => _normalizeBarangay(name) == _normalizeBarangay(_selectedBarangay),
+      );
+      if (selectedMatch.isNotEmpty) _selectedBarangay = selectedMatch.first;
     });
     _moveMapToLoadedCenter();
 
@@ -157,11 +158,26 @@ class _EvacuationCentersScreenState extends State<EvacuationCentersScreen> {
     return name?.toString();
   }
 
-  List<String> get _barangayNames => _barangayNamesFor(_centers);
+  List<String> get _barangayNames {
+    final names = _barangayNamesFor(_centers);
+    final savedBarangay = OfflineService.getProfile()?['barangay_name']?.toString();
+    if (savedBarangay != null && savedBarangay.isNotEmpty &&
+        !names.any((name) => _normalizeBarangay(name) == _normalizeBarangay(savedBarangay))) {
+      names.add(savedBarangay);
+      names.sort();
+    }
+    return names;
+  }
+
+  String _normalizeBarangay(String? name) => (name ?? '')
+      .toLowerCase()
+      .replaceAll(RegExp(r'\s*\([^)]*\)'), '')
+      .replaceAll(RegExp(r'[^a-z0-9]'), '');
 
   List<Map<String, dynamic>> get _visibleCenters => _centers.where((center) {
     return _selectedBarangay == null ||
-        _barangayName(center) == _selectedBarangay;
+        _normalizeBarangay(_barangayName(center)) ==
+            _normalizeBarangay(_selectedBarangay);
   }).toList();
 
   bool _hasCoordinates(Map<String, dynamic> center) =>

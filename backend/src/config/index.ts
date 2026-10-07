@@ -35,6 +35,10 @@ export const config = {
   emailFrom: process.env.EMAIL_FROM || '',
   emailReplyTo: process.env.EMAIL_REPLY_TO || '',
 
+  // Firebase Cloud Messaging (optional until the Firebase project is configured)
+  firebaseServiceAccountJson: process.env.FIREBASE_SERVICE_ACCOUNT_JSON || '',
+  firebaseProjectId: process.env.FIREBASE_PROJECT_ID || '',
+
   // TextBee SMS gateway
   textBeeApiKey: process.env.TEXTBEE_API_KEY || '',
   textBeeBaseUrl: (process.env.TEXTBEE_BASE_URL || 'https://api.textbee.dev/api/v1')

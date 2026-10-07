@@ -560,21 +560,21 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
     // Preserve the immediate queue notification for installed clients. The
     // transactional outbox separately provides durable lifecycle delivery.
     if (targetSendTo !== 'barangay' || type === 'emergency') {
-      io.to('dashboard_staff').emit('incident_report:new', formattedReport);
-      io.to('role:dispatcher').emit('incident_report:new', formattedReport);
+      io.to(['dashboard_staff', 'role:dispatcher']).emit(
+        'incident_report:new',
+        formattedReport,
+      );
     }
-    // Always notify the local barangay room in real-time if an incident belongs to or resolves to that barangay
-    if (resolvedBarangayId) {
-      io.to(`barangay:${resolvedBarangayId}`).emit('barangay:report_received', formattedReport);
-      io.to(`barangay:${resolvedBarangayId}`).emit('incident_report:new', formattedReport);
-      io.to(`barangay:coordination:${resolvedBarangayId}`).emit('barangay:report_received', formattedReport);
-      io.to(`barangay:coordination:${resolvedBarangayId}`).emit('incident_report:new', formattedReport);
-    }
-    if (barangay_id && barangay_id !== resolvedBarangayId) {
-      io.to(`barangay:${barangay_id}`).emit('barangay:report_received', formattedReport);
-      io.to(`barangay:${barangay_id}`).emit('incident_report:new', formattedReport);
-      io.to(`barangay:coordination:${barangay_id}`).emit('barangay:report_received', formattedReport);
-      io.to(`barangay:coordination:${barangay_id}`).emit('incident_report:new', formattedReport);
+    // Emit one local-queue event per barangay. Barangay clients can be members
+    // of both room aliases, so sending both aliases to both rooms duplicates
+    // this alert several times for a single report.
+    const localBarangayIds = new Set(
+      [resolvedBarangayId, barangay_id].filter(
+        (id): id is string => typeof id === 'string' && id.length > 0,
+      ),
+    );
+    for (const localBarangayId of localBarangayIds) {
+      io.to(`barangay:${localBarangayId}`).emit('barangay:report_received', formattedReport);
     }
     if (formattedReport.reporter_type === 'resident' && formattedReport.reporter_id) {
       io.to(`user:${formattedReport.reporter_id}`).emit('incident_report:updated', formattedReport);

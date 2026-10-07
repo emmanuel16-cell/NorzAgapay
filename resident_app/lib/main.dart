@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/main_navigation_screen.dart';
 import 'screens/reporting_screen.dart';
@@ -9,10 +10,21 @@ import 'screens/evacuation_map_screen.dart';
 import 'screens/hotlines_screen.dart';
 import 'services/offline_service.dart';
 import 'services/norzagaray_boundary.dart';
+import 'services/firebase_options.dart';
+import 'services/resident_push_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await OfflineService.init();
+  final firebaseOptions = DefaultFirebaseOptions.currentPlatform;
+  if (firebaseOptions != null) {
+    try {
+      await Firebase.initializeApp(options: firebaseOptions);
+      await ResidentPushService.instance.initialize();
+    } catch (error) {
+      debugPrint('Firebase resident notifications are unavailable: $error');
+    }
+  }
   await NorzagarayBoundary.load();
   unawaited(NorzagarayBoundary.refresh());
 

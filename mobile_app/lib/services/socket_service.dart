@@ -7,12 +7,21 @@ class SocketService extends ChangeNotifier {
   IO.Socket? _socket;
   bool _isConnected = false;
   String? _barangayId;
+  final Set<void Function(IncidentReport)> _newReportCallbacks = {};
+  void Function(dynamic)? _newReportHandler;
 
   bool get isConnected => _isConnected;
 
-  void connect(String barangayId, {required String token, required String userId}) {
+  void connect(
+    String barangayId, {
+    required String token,
+    required String userId,
+  }) {
     _barangayId = barangayId;
     if (_socket != null && _socket!.connected) return;
+    _socket?.dispose();
+    _socket = null;
+    _newReportHandler = null;
 
     _socket = IO.io(
       _socketUrl,
@@ -43,6 +52,7 @@ class SocketService extends ChangeNotifier {
     _socket!.onConnectError((error) {
       debugPrint('Barangay socket connection error: $error');
     });
+    _ensureNewReportSubscription();
   }
 
   void ensureConnected() {
@@ -52,21 +62,44 @@ class SocketService extends ChangeNotifier {
   }
 
   void onNewReport(Function(IncidentReport report) callback) {
+    _newReportCallbacks.add(callback);
+    _ensureNewReportSubscription();
+  }
+
+  void removeNewReportListener(Function(IncidentReport report) callback) {
+    _newReportCallbacks.remove(callback);
+    if (_newReportCallbacks.isNotEmpty) return;
+    final handler = _newReportHandler;
+    if (handler != null) {
+      _socket?.off('barangay:report_received', handler);
+      _socket?.off('incident_report:new', handler);
+    }
+    _newReportHandler = null;
+  }
+
+  void _ensureNewReportSubscription() {
+    if (_socket == null || _newReportHandler != null) return;
     void handle(dynamic data) {
       if (data != null) {
         try {
           final map = data is Map ? Map<String, dynamic>.from(data) : null;
           if (map != null) {
             final report = IncidentReport.fromJson(map);
-            callback(report);
+            for (final callback in _newReportCallbacks.toList()) {
+              try {
+                callback(report);
+              } catch (error) {
+                debugPrint('New report listener failed: $error');
+              }
+            }
           }
         } catch (e) {
           debugPrint('Error parsing report from socket: $e');
         }
       }
     }
-    _socket?.off('barangay:report_received');
-    _socket?.off('incident_report:new');
+
+    _newReportHandler = handle;
     _socket?.on('barangay:report_received', handle);
     _socket?.on('incident_report:new', handle);
   }
@@ -151,11 +184,12 @@ class SocketService extends ChangeNotifier {
     });
   }
 
-
   void disconnect() {
     _socket?.disconnect();
     _socket?.dispose();
     _socket = null;
+    _newReportHandler = null;
+    _newReportCallbacks.clear();
     _barangayId = null;
     _isConnected = false;
   }

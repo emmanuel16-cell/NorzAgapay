@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
 import '../services/api_service.dart';
 import '../services/socket_service.dart';
+import '../services/dispatcher_push_service.dart';
 import '../models/incident_report.dart';
 import '../core/incident_time_format.dart';
 import '../widgets/incident_header_gradient.dart';
@@ -64,39 +65,14 @@ class _ReportsScreenState extends State<ReportsScreen>
       socket.addListener(_onSocketStateChanged);
       final auth = Provider.of<AuthService>(context, listen: false);
 
-      socket.onNewReport((newReport) {
-        if (mounted) {
-          setState(() {
-            _reports.removeWhere((r) => r.id == newReport.id);
-            _reports.insert(0, newReport);
-          });
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Row(
-                children: [
-                  const Icon(Icons.warning, color: Colors.white),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text('NEW INCIDENT REPORT: ${newReport.title}'),
-                  ),
-                ],
-              ),
-              backgroundColor: const Color(0xFFE74C3C),
-              duration: const Duration(seconds: 5),
-              action: SnackBarAction(
-                label: 'VIEW',
-                textColor: Colors.white,
-                onPressed: () => _openDetail(newReport),
-              ),
-            ),
-          );
-        }
-      });
+      socket.onNewReport(_handleNewReport);
       socket.onReportUpdated((data) {
         if (mounted) {
           if (data is Map) {
             try {
-              final updated = IncidentReport.fromJson(Map<String, dynamic>.from(data));
+              final updated = IncidentReport.fromJson(
+                Map<String, dynamic>.from(data),
+              );
               setState(() {
                 final idx = _reports.indexWhere((r) => r.id == updated.id);
                 if (idx != -1) {
@@ -127,7 +103,6 @@ class _ReportsScreenState extends State<ReportsScreen>
     });
   }
 
-
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed && mounted) {
@@ -135,8 +110,6 @@ class _ReportsScreenState extends State<ReportsScreen>
       _fetchReports(silent: true);
     }
   }
-
-
 
   Future<void> _fetchReports({bool silent = false}) async {
     final requestSequence = ++_reportFetchSequence;
@@ -159,10 +132,33 @@ class _ReportsScreenState extends State<ReportsScreen>
     try {
       final reports = await ApiService.getReports(auth.token!);
       if (mounted && requestSequence == _reportFetchSequence) {
+        final currentUser = auth.currentUser;
+        final snapshotScope = currentUser == null
+            ? null
+            : '${currentUser.barangayId}:${currentUser.id}';
+        final previousSnapshotIds = snapshotScope == null
+            ? null
+            : DispatcherPushService.readReportSnapshotIds(scope: snapshotScope);
         setState(() {
           _reports = reports;
           _errorMessage = null;
         });
+        if (currentUser?.isDispatcher == true && previousSnapshotIds != null) {
+          for (final report in reports) {
+            if (report.isPending && !previousSnapshotIds.contains(report.id)) {
+              DispatcherPushService.instance.announceReport(
+                report.id,
+                title: report.title,
+              );
+            }
+          }
+        }
+        if (snapshotScope != null) {
+          await DispatcherPushService.writeReportSnapshotIds(
+            reports.map((report) => report.id),
+            scope: snapshotScope,
+          );
+        }
         if (auth.currentUser?.isDispatcher == true ||
             auth.currentUser?.isResponder == true) {
           _fetchAssistanceRequests(auth.token!);
@@ -179,6 +175,18 @@ class _ReportsScreenState extends State<ReportsScreen>
         setState(() => _isLoading = false);
       }
     }
+  }
+
+  void _upsertReport(IncidentReport report) {
+    if (!mounted) return;
+    if (_reports.any((existing) => existing.id == report.id)) return;
+    setState(() {
+      _reports.insert(0, report);
+    });
+  }
+
+  void _handleNewReport(IncidentReport report) {
+    _upsertReport(report);
   }
 
   Future<void> _fetchAssistanceRequests(String token) async {
@@ -500,10 +508,10 @@ class _ReportsScreenState extends State<ReportsScreen>
         reporterName: report.reporterName,
         reporterEmail: report.reporterEmail,
         reporterPhone: report.reporterPhone,
-        classification: [
-          specifics,
-          report.severity,
-        ].whereType<String>().where((value) => value.trim().isNotEmpty).join(' · '),
+        classification: [specifics, report.severity]
+            .whereType<String>()
+            .where((value) => value.trim().isNotEmpty)
+            .join(' · '),
         receivedAt: report.createdAt,
         incidentOccurredAt: report.incidentOccurredAt,
         incidentTimePrecision: report.incidentTimePrecision,
@@ -1766,6 +1774,7 @@ class _ReportsScreenState extends State<ReportsScreen>
     _periodicRefreshTimer?.cancel();
     _socketReportRefreshTimer?.cancel();
     _socketService?.removeListener(_onSocketStateChanged);
+    _socketService?.removeNewReportListener(_handleNewReport);
     _tabController.dispose();
     super.dispose();
   }
