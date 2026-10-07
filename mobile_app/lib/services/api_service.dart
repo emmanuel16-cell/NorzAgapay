@@ -22,9 +22,12 @@ class ApiService {
   }
 
   // ── Barangays ─────────────────────────────────────────────────────────────
-  static Future<List<Map<String, dynamic>>> getBarangays() async {
+  static Future<List<Map<String, dynamic>>> getBarangays({bool adminSignup = false}) async {
+    final uri = Uri.parse('$baseUrl/barangay/list').replace(
+      queryParameters: adminSignup ? {'admin_signup': 'true'} : null,
+    );
     final res = await http.get(
-      Uri.parse('$baseUrl/barangay/list'),
+      uri,
       headers: _headers(null),
     );
     if (res.statusCode == 200) {

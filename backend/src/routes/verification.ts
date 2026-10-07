@@ -460,7 +460,8 @@ router.post(
       });
     } catch (err: any) {
       console.error('Approve dispatcher verification error:', err);
-      res.status(500).json({ error: err.message || 'Failed to approve dispatcher verification.' });
+      const status = err?.name === 'BarangayAdminAlreadyApprovedError' ? 409 : 500;
+      res.status(status).json({ error: err.message || 'Failed to approve dispatcher verification.' });
     }
   }
 );

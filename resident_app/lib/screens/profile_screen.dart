@@ -268,6 +268,207 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  Future<void> _showForgotPasswordDialog() async {
+    final emailController = TextEditingController(
+      text: _signInContactController.text.trim(),
+    );
+    final otpController = TextEditingController();
+    final passwordController = TextEditingController();
+    final confirmPasswordController = TextEditingController();
+    var otpSent = false;
+    var isSubmitting = false;
+    String? errorMessage;
+
+    try {
+      final reset = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (dialogContext, setDialogState) => AlertDialog(
+            title: const Text('Forgot Password'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'We will send a one-time code to your resident account email.',
+                    style: TextStyle(color: Color(0xFF64748B)),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: emailController,
+                    keyboardType: TextInputType.emailAddress,
+                    enabled: !otpSent,
+                    decoration: const InputDecoration(
+                      labelText: 'Email Address',
+                      prefixIcon: Icon(Icons.email_outlined),
+                    ),
+                  ),
+                  if (otpSent) ...[
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: otpController,
+                      keyboardType: TextInputType.number,
+                      maxLength: 6,
+                      decoration: const InputDecoration(
+                        labelText: '6-Digit Email Code',
+                        prefixIcon: Icon(Icons.pin_outlined),
+                      ),
+                    ),
+                    TextField(
+                      controller: passwordController,
+                      obscureText: true,
+                      decoration: const InputDecoration(
+                        labelText: 'New Password',
+                        helperText: 'At least 6 characters',
+                        prefixIcon: Icon(Icons.lock_outline),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: confirmPasswordController,
+                      obscureText: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Confirm New Password',
+                        prefixIcon: Icon(Icons.lock_outline),
+                      ),
+                    ),
+                  ],
+                  if (otpSent && errorMessage == null) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      'A verification code was sent to ${emailController.text.trim()}.',
+                      style: const TextStyle(color: Color(0xFF15803D)),
+                    ),
+                  ],
+                  if (errorMessage != null) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      errorMessage!,
+                      style: const TextStyle(color: Color(0xFFDC2626)),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: isSubmitting
+                    ? null
+                    : () => Navigator.pop(dialogContext, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: isSubmitting
+                    ? null
+                    : () async {
+                        final email = emailController.text.trim().toLowerCase();
+                        setDialogState(() {
+                          isSubmitting = true;
+                          errorMessage = null;
+                        });
+                        var completed = false;
+                        try {
+                          if (!otpSent) {
+                            if (!email.contains('@') || !email.contains('.')) {
+                              throw 'Enter a valid email address.';
+                            }
+                            final response = await http
+                                .post(
+                                  Uri.parse(
+                                    '${AppConstants.apiBaseUrl}/auth/resident/password-otp',
+                                  ),
+                                  headers: {
+                                    'Content-Type': 'application/json',
+                                    'ngrok-skip-browser-warning': 'true',
+                                  },
+                                  body: jsonEncode({'email': email}),
+                                )
+                                .timeout(const Duration(seconds: 30));
+                            final data = Map<String, dynamic>.from(
+                              jsonDecode(response.body) as Map,
+                            );
+                            if (response.statusCode != 200) {
+                              throw data['error'] ?? 'Could not send the code.';
+                            }
+                            setDialogState(() => otpSent = true);
+                          } else {
+                            final otp = otpController.text.trim();
+                            final password = passwordController.text;
+                            if (otp.length != 6) {
+                              throw 'Enter the 6-digit email code.';
+                            }
+                            if (password.length < 6) {
+                              throw 'Password must be at least 6 characters.';
+                            }
+                            if (password != confirmPasswordController.text) {
+                              throw 'The passwords do not match.';
+                            }
+                            final response = await http
+                                .post(
+                                  Uri.parse(
+                                    '${AppConstants.apiBaseUrl}/auth/resident/change-password',
+                                  ),
+                                  headers: {
+                                    'Content-Type': 'application/json',
+                                    'ngrok-skip-browser-warning': 'true',
+                                  },
+                                  body: jsonEncode({
+                                    'email': email,
+                                    'otp': otp,
+                                    'new_password': password,
+                                  }),
+                                )
+                                .timeout(const Duration(seconds: 30));
+                            final data = Map<String, dynamic>.from(
+                              jsonDecode(response.body) as Map,
+                            );
+                            if (response.statusCode != 200) {
+                              throw data['error'] ?? 'Could not reset password.';
+                            }
+                            completed = true;
+                          }
+                        } catch (error) {
+                          errorMessage = error.toString();
+                        } finally {
+                          if (dialogContext.mounted) {
+                            setDialogState(() => isSubmitting = false);
+                          }
+                        }
+                        if (completed && dialogContext.mounted) {
+                          Navigator.pop(dialogContext, true);
+                        }
+                      },
+                child: isSubmitting
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Text(otpSent ? 'Reset Password' : 'Send Code'),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      if (reset == true && mounted) {
+        _signInContactController.text = emailController.text.trim();
+        _signInPasswordController.clear();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Password reset. Sign in with your new password.'),
+            backgroundColor: Color(0xFF16A34A),
+          ),
+        );
+      }
+    } finally {
+      emailController.dispose();
+      otpController.dispose();
+      passwordController.dispose();
+      confirmPasswordController.dispose();
+    }
+  }
+
   Future<void> _handleRegister() async {
     if (_registrationCooldownSeconds > 0) return;
     if (!_regFormKey.currentState!.validate()) return;
@@ -758,7 +959,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   elevation: 1,
                 ),
-                child: const Text('Proceed to Citizen Portal', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                child: const Text('Proceed to Profile', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
               ),
             ),
           ],
@@ -1224,7 +1425,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: ResidentGradientAppBar(
         title: Text(
-          _isLoggedIn ? 'Citizen Profile' : 'Resident Portal',
+          _isLoggedIn ? 'Profile' : 'Resident Portal',
           style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 19),
         ),
       ),
@@ -1725,6 +1926,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                     )
                   : const Text('Sign In', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            ),
+          ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: _isSubmitting ? null : _showForgotPasswordDialog,
+              child: const Text('Forgot password?'),
             ),
           ),
         ],

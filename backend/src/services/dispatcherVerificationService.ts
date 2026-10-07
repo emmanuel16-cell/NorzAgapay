@@ -3,6 +3,7 @@ import path from 'path';
 import crypto from 'crypto';
 import PDFDocument from 'pdfkit';
 import { supabaseAdmin } from '../config/supabase';
+import { hasOtherApprovedBarangayAdmin } from './verifiedBarangayService';
 
 // Safe getter for socket.io to avoid circular boot in CLI / test scripts
 function getIO() {
@@ -861,6 +862,11 @@ export class DispatcherVerificationService {
     if (accountError) throw accountError;
     if (!account || account.role !== 'admin') {
       throw new Error('The Barangay Account Request must belong to an existing barangay administrator account.');
+    }
+    if (await hasOtherApprovedBarangayAdmin(record.barangay_id, record.user_id)) {
+      const conflict = new Error('Another MDRRMO-approved administrator already exists for this barangay.');
+      conflict.name = 'BarangayAdminAlreadyApprovedError';
+      throw conflict;
     }
 
     const now = new Date().toISOString();

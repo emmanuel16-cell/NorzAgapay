@@ -28,6 +28,7 @@ class _LoginScreenState extends State<LoginScreen> {
   String? _selectedBarangayId;
   List<Map<String, dynamic>> _barangays = [];
   bool _loadingBarangays = false;
+  bool _barangaysLoadFailed = false;
   bool _obscurePassword = true;
   int _registrationCooldownSeconds = 0;
   Timer? _registrationCooldownTimer;
@@ -53,13 +54,25 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _fetchBarangays() async {
     if (!mounted) return;
-    setState(() => _loadingBarangays = true);
+    setState(() {
+      _loadingBarangays = true;
+      _barangaysLoadFailed = false;
+    });
     try {
-      final list = await ApiService.getBarangays();
+      final list = await ApiService.getBarangays(adminSignup: true);
       if (!mounted) return;
-      setState(() => _barangays = list);
-    } catch (_) {}
-    if (mounted) setState(() => _loadingBarangays = false);
+      setState(() {
+        _barangays = list;
+        if (_selectedBarangayId != null &&
+            !_barangays.any((b) => b['id'] == _selectedBarangayId)) {
+          _selectedBarangayId = null;
+        }
+      });
+    } catch (_) {
+      if (mounted) setState(() => _barangaysLoadFailed = true);
+    } finally {
+      if (mounted) setState(() => _loadingBarangays = false);
+    }
   }
 
   Future<void> _handleSubmit() async {
@@ -522,7 +535,11 @@ class _LoginScreenState extends State<LoginScreen> {
                           value: _selectedBarangayId,
                           decoration: _inputDecoration('Select Barangay', Icons.location_city),
                           hint: Text(
-                            _loadingBarangays ? 'Loading...' : 'Select Barangay',
+                            _loadingBarangays
+                                ? 'Loading...'
+                                : _barangays.isEmpty
+                                    ? 'No barangays available'
+                                    : 'Select Barangay',
                             style: const TextStyle(color: Color(0xFF64748B)),
                           ),
                           items: _barangays.map((b) {
@@ -534,6 +551,26 @@ class _LoginScreenState extends State<LoginScreen> {
                           onChanged: (v) => setState(() => _selectedBarangayId = v),
                           validator: (v) => _isRegisterMode && v == null ? 'Barangay required' : null,
                         ),
+                        if (!_loadingBarangays && _barangays.isEmpty) ...[
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  _barangaysLoadFailed
+                                      ? 'Could not load available barangays. Check your connection and retry.'
+                                      : 'No barangays are currently available for a new admin account.',
+                                  style: const TextStyle(color: Color(0xFFB45309), fontSize: 12),
+                                ),
+                              ),
+                              if (_barangaysLoadFailed)
+                                TextButton(
+                                  onPressed: _fetchBarangays,
+                                  child: const Text('Retry'),
+                                ),
+                            ],
+                          ),
+                        ],
                         const SizedBox(height: 14),
                         TextFormField(
                           controller: _phoneController,
@@ -584,7 +621,13 @@ class _LoginScreenState extends State<LoginScreen> {
                         width: double.infinity,
                         height: 48,
                         child: ElevatedButton(
-                          onPressed: auth.isLoading || (_isRegisterMode && _registrationCooldownSeconds > 0) ? null : _handleSubmit,
+                          onPressed: auth.isLoading ||
+                                  (_isRegisterMode &&
+                                      (_registrationCooldownSeconds > 0 ||
+                                          _loadingBarangays ||
+                                          _barangays.isEmpty))
+                              ? null
+                              : _handleSubmit,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFF0284C7),
                             foregroundColor: Colors.white,

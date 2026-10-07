@@ -19,7 +19,11 @@ import {
   validateArrivalFix,
   validateRecentGpsFix,
 } from '../services/arrivalValidation';
-import { getVerifiedBarangayIds, isBarangayVerified } from '../services/verifiedBarangayService';
+import {
+  getBarangayIdsWithApprovedAdmins,
+  getVerifiedBarangayIds,
+  isBarangayVerified,
+} from '../services/verifiedBarangayService';
 import { IncidentResolutionPdfService, IncompleteResolutionReportError } from '../services/incidentResolutionPdfService';
 import { formatIncidentReport } from './incidentReports';
 import { isReportResolved, reportStageDurations, summarizeReportTimings } from '../services/reportTiming';
@@ -297,6 +301,10 @@ router.get('/list', async (req: Request, res: Response) => {
   try {
     const verifiedOnly = req.query.verified_only === 'true' || req.query.verified_only === '1';
     const verifiedIds = verifiedOnly ? await getVerifiedBarangayIds() : null;
+    const adminSignupOnly = req.query.admin_signup === 'true' || req.query.admin_signup === '1';
+    const barangayIdsWithApprovedAdmins = adminSignupOnly
+      ? new Set(await getBarangayIdsWithApprovedAdmins())
+      : null;
     const { data, error } = await supabaseAdmin
       .from('barangays')
       .select('id, name, municipality, latitude, longitude')
@@ -305,6 +313,7 @@ router.get('/list', async (req: Request, res: Response) => {
     if (error) throw error;
     const barangays = (data || [])
       .filter((barangay: any) => !verifiedIds || verifiedIds.includes(barangay.id))
+      .filter((barangay: any) => !barangayIdsWithApprovedAdmins?.has(barangay.id))
       .map((barangay: any) => ({ ...barangay, is_verified: verifiedIds ? true : undefined }));
     res.json(barangays);
   } catch (err) {
@@ -398,6 +407,8 @@ const barangayRegistrationOtpSchema = z.object({
   position_designation: z.string().trim().min(2).max(120),
 });
 
+const approvedAdminExistsMessage = 'This barangay already has an MDRRMO-approved administrator. Choose another barangay.';
+
 router.post('/register-otp', async (req: Request, res: Response): Promise<void> => {
   try {
     const parsed = barangayRegistrationOtpSchema.safeParse(req.body);
@@ -407,6 +418,12 @@ router.post('/register-otp', async (req: Request, res: Response): Promise<void> 
     }
     const body = parsed.data;
     const email = body.email;
+    const barangayIdsWithApprovedAdmins = await getBarangayIdsWithApprovedAdmins();
+    if (barangayIdsWithApprovedAdmins.includes(body.barangay_id)) {
+      res.status(409).json({ error: approvedAdminExistsMessage });
+      return;
+    }
+
     const { data: barangayUser, error: barangayLookupError } = await supabaseAdmin
       .from('barangay_users')
       .select('id')
@@ -459,6 +476,12 @@ router.post('/verify-register-otp', async (req: Request, res: Response): Promise
     }
     if (!record.fullName || !record.barangayId || !record.positionDesignation) {
       res.status(400).json({ error: 'Registration details are incomplete. Please register again.' });
+      return;
+    }
+    const barangayIdsWithApprovedAdmins = await getBarangayIdsWithApprovedAdmins();
+    if (barangayIdsWithApprovedAdmins.includes(record.barangayId)) {
+      await deleteOtp(email);
+      res.status(409).json({ error: approvedAdminExistsMessage });
       return;
     }
     const { data: existing } = await supabaseAdmin.from('barangay_users').select('id').eq('email', email).maybeSingle();
