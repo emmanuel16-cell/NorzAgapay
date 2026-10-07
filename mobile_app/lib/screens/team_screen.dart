@@ -224,7 +224,7 @@ class _TeamScreenState extends State<TeamScreen> {
   void _showAddMemberModal() {
     final auth = Provider.of<AuthService>(context, listen: false);
     final user = auth.currentUser;
-    if (user == null) return;
+    if (user == null || !user.isBarangayAdmin) return;
 
     final nameController = TextEditingController();
     final emailController = TextEditingController();

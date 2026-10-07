@@ -1279,7 +1279,7 @@ router.get('/team', authenticateBarangay, async (req: any, res: Response) => {
 });
 
 // ─── POST /api/barangay/team ─────────────────────────────────────────────────
-// Administrators manage all team roles; responders may add staff only.
+// Only barangay administrators may add team accounts.
 
 const addMemberSchema = z.object({
   full_name: z.string().min(2),
@@ -1289,7 +1289,7 @@ const addMemberSchema = z.object({
   role: z.enum(['dispatcher', 'responder', 'staff']),
 });
 
-router.post('/team', authenticateBarangay, requireRole(['admin', 'responder']), async (req: any, res: Response): Promise<void> => {
+router.post('/team', authenticateBarangay, requireRole(['admin']), async (req: any, res: Response): Promise<void> => {
   try {
     // Only an active account in this barangay may create team accounts.
     const { data: creator, error: creatorError } = await supabaseAdmin
@@ -1298,18 +1298,12 @@ router.post('/team', authenticateBarangay, requireRole(['admin', 'responder']), 
       .eq('id', req.barangayUser.userId)
       .maybeSingle();
     if (creatorError) throw creatorError;
-    if (!creator?.is_active || creator.role !== req.barangayUser.role || creator.barangay_id !== req.barangayUser.barangayId) {
-      res.status(403).json({ error: 'An active barangay team account is required to add team members.' });
+    if (!creator?.is_active || creator.role !== 'admin' || creator.role !== req.barangayUser.role || creator.barangay_id !== req.barangayUser.barangayId) {
+      res.status(403).json({ error: 'An active barangay administrator account is required to add team members.' });
       return;
     }
 
     const body = addMemberSchema.parse(req.body);
-
-    // Responders can add staff accounts only.
-    if (req.barangayUser.role === 'responder' && body.role !== 'staff') {
-      res.status(403).json({ error: 'Responders can only add staff accounts.' });
-      return;
-    }
 
     if (req.barangayUser.role === 'admin' && body.role === 'dispatcher') {
       const coordination = await DispatcherVerificationService.getByUserId(req.barangayUser.userId);
