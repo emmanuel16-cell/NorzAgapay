@@ -12,6 +12,13 @@ import { CARTO_ATTRIBUTION, CARTO_DARK_MAP_URL } from '../lib/mapConfig';
 
 type Point = [number, number]; // latitude, longitude for Leaflet
 type DraftPart = Point[];
+type BoundaryConfirmation = {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  danger?: boolean;
+  action: () => Promise<boolean>;
+};
 const DEFAULT_CENTER: Point = [14.9133, 121.0436];
 
 function geometryToParts(geometry: BoundaryGeometry | null): DraftPart[] {
@@ -99,6 +106,7 @@ export default function MunicipalityBoundaryPage() {
   const [editRevision, setEditRevision] = useState(0);
   const [history, setHistory] = useState<MunicipalityBoundary[]>([]);
   const [selectedVersion, setSelectedVersion] = useState<MunicipalityBoundary | null>(null);
+  const [confirmation, setConfirmation] = useState<BoundaryConfirmation | null>(null);
 
   const loadHistory = useCallback(async () => {
     try {
@@ -124,8 +132,7 @@ export default function MunicipalityBoundaryPage() {
   const fitKey = `${boundary.revision}-${editing}-${parts.length}-${savedGeometryLoaded}`;
   const draftGeometry = useMemo(() => valid ? partsToGeometry(parts) : null, [parts, valid]);
 
-  const save = async (geometry: BoundaryGeometry, enabled: boolean, confirmMessage: string, expectedRevision = boundary.revision) => {
-    if (!window.confirm(confirmMessage)) return false;
+  const save = async (geometry: BoundaryGeometry, enabled: boolean, expectedRevision = boundary.revision) => {
     setSaving(true);
     try {
       const response = await municipalityBoundaryAPI.save({
@@ -152,17 +159,41 @@ export default function MunicipalityBoundaryPage() {
     }
   };
 
+  const requestSaveConfirmation = (
+    geometry: BoundaryGeometry,
+    enabled: boolean,
+    message: string,
+    options: { title: string; confirmLabel: string; expectedRevision?: number; danger?: boolean },
+  ) => {
+    setConfirmation({
+      ...options,
+      message,
+      action: () => save(geometry, enabled, options.expectedRevision),
+    });
+  };
+
+  const runConfirmation = async () => {
+    if (!confirmation || saving) return;
+    const succeeded = await confirmation.action();
+    if (succeeded) setConfirmation(null);
+  };
+
   const changeEnabled = async (enabled: boolean) => {
     if (!boundary.geometry || !isValidParts(geometryToParts(boundary.geometry))) {
       toast.error('Create and save a boundary with at least three points first.');
       return;
     }
-    await save(
+    requestSaveConfirmation(
       boundary.geometry,
       enabled,
       enabled
         ? 'Use this boundary across the web dashboard, mobile app, and resident app? Web dashboard maps will show white outside it, and location/report checks will use it.'
         : 'Disable the municipality boundary across all apps? Full maps will be visible and boundary-based restrictions will stop.',
+      {
+        title: enabled ? 'Use this boundary?' : 'Disable this boundary?',
+        confirmLabel: enabled ? 'Use boundary' : 'Disable boundary',
+        danger: !enabled,
+      },
     );
   };
 
@@ -209,16 +240,20 @@ export default function MunicipalityBoundaryPage() {
     setSelectedVertex(null);
   };
 
-  const saveDraft = async () => {
+  const saveDraft = () => {
     if (!valid || !draftGeometry) {
       toast.error('Add at least three distinct points to every boundary part.');
       return;
     }
-    await save(
+    requestSaveConfirmation(
       draftGeometry,
       boundary.enabled,
       `Save this ${parts.reduce((sum, part) => sum + part.length, 0)}-point municipality boundary${boundary.enabled ? ' and apply it across all apps' : ''}?`,
-      editRevision,
+      {
+        title: 'Save boundary?',
+        confirmLabel: boundary.enabled ? 'Save and apply' : 'Save boundary',
+        expectedRevision: editRevision,
+      },
     );
   };
 
@@ -243,30 +278,43 @@ export default function MunicipalityBoundaryPage() {
     setSelectedVersion(null);
   };
 
-  const useVersion = async (version: MunicipalityBoundary) => {
+  const useVersion = (version: MunicipalityBoundary) => {
     if (!version.geometry) return;
-    await save(
+    requestSaveConfirmation(
       version.geometry,
       true,
       `Use boundary version ${version.revision} across the web dashboard, mobile app, and resident app? This will create a new active revision.`,
+      { title: `Use boundary ${version.revision}?`, confirmLabel: 'Use boundary' },
     );
   };
 
   const deleteVersion = async (version: MunicipalityBoundary) => {
-    if (version.revision === boundary.revision) return;
-    if (!window.confirm(`Delete saved boundary version ${version.revision}? This cannot be undone.`)) return;
+    if (version.revision === boundary.revision) return false;
     setSaving(true);
     try {
       await municipalityBoundaryAPI.deleteVersion(version.revision);
       await loadHistory();
       setSelectedVersion(null);
       toast.success(`Boundary version ${version.revision} deleted.`);
+      return true;
     } catch (error: any) {
       const message = error?.response?.data?.error;
       toast.error(typeof message === 'string' ? message : 'Could not delete this boundary version.');
+      return false;
     } finally {
       setSaving(false);
     }
+  };
+
+  const requestDeleteVersion = (version: MunicipalityBoundary) => {
+    if (version.revision === boundary.revision) return;
+    setConfirmation({
+      title: `Delete boundary ${version.revision}?`,
+      message: 'This saved version will be permanently removed. The boundary currently in use cannot be deleted.',
+      confirmLabel: 'Delete boundary',
+      danger: true,
+      action: () => deleteVersion(version),
+    });
   };
 
   const displayedVersions = [...history]
@@ -404,7 +452,7 @@ export default function MunicipalityBoundaryPage() {
         </section>
       </section>
     </div>
-    {selectedVersion && <div className="modal-backdrop municipality-boundary-modal-backdrop" onClick={() => { if (!saving) setSelectedVersion(null); }}>
+    {selectedVersion && !confirmation && <div className="modal-backdrop municipality-boundary-modal-backdrop" onClick={() => { if (!saving) setSelectedVersion(null); }}>
       <section className="modal municipality-boundary-modal" role="dialog" aria-modal="true" aria-labelledby="boundary-version-modal-title" onClick={(event) => event.stopPropagation()}>
         <div className="modal-header">
           <div>
@@ -430,16 +478,32 @@ export default function MunicipalityBoundaryPage() {
           <button className="btn btn-outline" type="button" onClick={() => editVersion(selectedVersion)} disabled={!selectedVersion.geometry || saving}>
             <Pencil size={16} /> Edit
           </button>
-          <button className="btn btn-primary" type="button" onClick={() => void useVersion(selectedVersion)} disabled={!selectedVersion.geometry || saving || (selectedVersion.revision === boundary.revision && boundary.enabled)}>
+          <button className="btn btn-primary" type="button" onClick={() => useVersion(selectedVersion)} disabled={!selectedVersion.geometry || saving || (selectedVersion.revision === boundary.revision && boundary.enabled)}>
             {saving ? <LoaderCircle className="boundary-spinner" size={16} /> : <Check size={16} />}
             {selectedVersion.revision === boundary.revision && boundary.enabled ? 'Already in use' : 'Use boundary'}
           </button>
-          <button className="btn btn-danger" type="button" onClick={() => void deleteVersion(selectedVersion)} disabled={saving || selectedVersion.revision === boundary.revision}>
+          <button className="btn btn-danger" type="button" onClick={() => requestDeleteVersion(selectedVersion)} disabled={saving || selectedVersion.revision === boundary.revision}>
             {saving ? <LoaderCircle className="boundary-spinner" size={16} /> : <Trash2 size={16} />}
             Delete
           </button>
         </div>
         {selectedVersion.revision === boundary.revision && <p className="municipality-boundary-delete-note">The boundary currently selected for the system cannot be deleted. Use another saved version first.</p>}
+      </section>
+    </div>}
+    {confirmation && <div className="modal-backdrop municipality-boundary-modal-backdrop" onClick={() => { if (!saving) setConfirmation(null); }}>
+      <section className="modal municipality-boundary-modal municipality-boundary-confirmation" role="alertdialog" aria-modal="true" aria-labelledby="boundary-confirmation-title" aria-describedby="boundary-confirmation-message" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-header">
+          <h2 className="modal-title" id="boundary-confirmation-title">{confirmation.title}</h2>
+          <button className="modal-close" type="button" aria-label="Close" onClick={() => setConfirmation(null)} disabled={saving}><X size={20} /></button>
+        </div>
+        <p className="municipality-boundary-modal-copy" id="boundary-confirmation-message">{confirmation.message}</p>
+        <div className="municipality-boundary-modal-actions">
+          <button className="btn btn-outline" type="button" onClick={() => setConfirmation(null)} disabled={saving}>Cancel</button>
+          <button className={`btn ${confirmation.danger ? 'btn-danger' : 'btn-primary'}`} type="button" onClick={() => void runConfirmation()} disabled={saving}>
+            {saving && <LoaderCircle className="boundary-spinner" size={16} />}
+            {confirmation.confirmLabel}
+          </button>
+        </div>
       </section>
     </div>}
   </>;
