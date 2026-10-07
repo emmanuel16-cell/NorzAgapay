@@ -47,7 +47,6 @@ export default function RespondUnitsPage() {
   const [specializationFilter, setSpecializationFilter] = useState('');
   const [form, setForm] = useState({
     unit_name: '',
-    specialization: 'Rescue Officer',
     officer_ids: [] as string[],
     team_leader_id: '',
   });
@@ -90,7 +89,7 @@ export default function RespondUnitsPage() {
       await respondUnitAPI.create({ ...form, team_leader_id: leaderId });
       toast.success('Respond Unit created with Team Leader');
       setShowAdd(false);
-      setForm({ unit_name: '', specialization: 'Rescue Officer', officer_ids: [], team_leader_id: '' });
+      setForm({ unit_name: '', officer_ids: [], team_leader_id: '' });
       fetchData();
     } catch {
       toast.error('Failed to create respond unit');
@@ -165,11 +164,6 @@ export default function RespondUnitsPage() {
   const filteredUnits = units.filter(u => {
     if (specializationFilter === '') return true;
     return u.specialization === specializationFilter;
-  });
-
-  const filteredOfficersForSelection = officers.filter(o => {
-    if (form.specialization === 'mixed') return true;
-    return o.specialization === form.specialization;
   });
 
   const filteredOfficersForEdit = officers.filter(o => {
@@ -303,25 +297,6 @@ export default function RespondUnitsPage() {
               </div>
 
               <div className="form-group">
-                <label className="form-label">Unit Specialization *</label>
-                <select
-                  className="form-select"
-                  required
-                  value={form.specialization}
-                  onChange={e => setForm({ ...form, specialization: e.target.value, officer_ids: [] })}
-                >
-                  {SPECIALIZATIONS.map(s => (
-                    <option key={s.value} value={s.value}>{s.label}</option>
-                  ))}
-                </select>
-                <p style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                  {form.specialization !== 'mixed'
-                    ? 'Only officers with matching specialization will be shown for selection'
-                    : 'Select officers from any specialization'}
-                </p>
-              </div>
-
-              <div className="form-group">
                 <label className="form-label">
                   Select Officers ({form.officer_ids.length} selected)
                 </label>
@@ -333,13 +308,12 @@ export default function RespondUnitsPage() {
                   padding: '8px',
                   background: 'rgba(0,0,0,0.2)'
                 }}>
-                  {filteredOfficersForSelection.length === 0 ? (
+                  {officers.length === 0 ? (
                     <p style={{ fontSize: '12px', color: 'var(--text-secondary)', padding: '8px' }}>
-                      No officers found with "{getSpecLabel(form.specialization)}" specialization.
-                      {!officers.some(o => o.specialization === form.specialization) && ' Add officers with this specialization first.'}
+                      No officers found. Add officers first, then select them for this unit.
                     </p>
                   ) : (
-                    filteredOfficersForSelection.map(officer => (
+                    officers.map(officer => (
                       <div
                         key={officer.id}
                         style={{
@@ -360,10 +334,7 @@ export default function RespondUnitsPage() {
                         />
                         <div style={{ flex: 1 }}>
                           <div style={{ fontSize: '14px', fontWeight: 500 }}>{officer.name}</div>
-                          <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                            {getSpecLabel(officer.specialization)}
-                            {officer.rank && ` • ${officer.rank}`}
-                          </div>
+                          {officer.rank && <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{officer.rank}</div>}
                         </div>
                       </div>
                     ))
@@ -389,7 +360,7 @@ export default function RespondUnitsPage() {
                       const officer = officers.find(o => o.id === id);
                       return (
                         <option key={id} value={id}>
-                          ⭐ {officer?.name || 'Officer'} ({getSpecLabel(officer?.specialization || '')})
+                          ⭐ {officer?.name || 'Officer'}
                         </option>
                       );
                     })}

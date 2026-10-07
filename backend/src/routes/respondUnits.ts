@@ -123,10 +123,13 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
 // POST /api/respond-units - create new unit
 router.post('/', authenticate, authorize('logistics'), async (req: AuthRequest, res: Response) => {
   try {
-    const { unit_name, specialization, officer_ids, team_leader_id } = req.body;
+    const { unit_name, officer_ids, team_leader_id } = req.body;
+    const specialization = typeof req.body.specialization === 'string' && req.body.specialization.trim()
+      ? req.body.specialization.trim()
+      : 'mixed';
     
-    if (!unit_name || !specialization) {
-      res.status(400).json({ error: 'Unit name and specialization are required' });
+    if (!unit_name) {
+      res.status(400).json({ error: 'Unit name is required' });
       return;
     }
 
