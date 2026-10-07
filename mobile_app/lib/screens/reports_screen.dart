@@ -32,9 +32,19 @@ class _ReportsScreenState extends State<ReportsScreen>
   SocketService? _socketService;
   int _reportFetchSequence = 0;
   Timer? _periodicRefreshTimer;
+  Timer? _socketReportRefreshTimer;
 
   void _onSocketStateChanged() {
-    if (mounted && _socketService?.isConnected == true) _fetchReports();
+    if (mounted && _socketService?.isConnected == true) {
+      _fetchReports(silent: true);
+    }
+  }
+
+  void _scheduleSocketReportRefresh() {
+    _socketReportRefreshTimer?.cancel();
+    _socketReportRefreshTimer = Timer(const Duration(milliseconds: 300), () {
+      if (mounted) _fetchReports(silent: true);
+    });
   }
 
   @override
@@ -42,8 +52,8 @@ class _ReportsScreenState extends State<ReportsScreen>
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
     WidgetsBinding.instance.addObserver(this);
-    _periodicRefreshTimer = Timer.periodic(const Duration(seconds: 15), (_) {
-      if (mounted) _fetchReports();
+    _periodicRefreshTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted) _fetchReports(silent: true);
     });
     _fetchReports();
 
@@ -97,7 +107,7 @@ class _ReportsScreenState extends State<ReportsScreen>
               });
             } catch (_) {}
           }
-          if (auth.token != null) _fetchReports();
+          if (auth.token != null) _scheduleSocketReportRefresh();
         }
       });
 
@@ -122,37 +132,52 @@ class _ReportsScreenState extends State<ReportsScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed && mounted) {
       _socketService?.ensureConnected();
-      _fetchReports();
+      _fetchReports(silent: true);
     }
   }
 
 
 
-  Future<void> _fetchReports() async {
+  Future<void> _fetchReports({bool silent = false}) async {
     final requestSequence = ++_reportFetchSequence;
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
-
     final auth = Provider.of<AuthService>(context, listen: false);
-    if (auth.token == null) return;
+    if (auth.token == null) {
+      if (mounted && requestSequence == _reportFetchSequence) {
+        setState(() => _isLoading = false);
+      }
+      return;
+    }
+
+    // Keep the current list on screen during background and manual refreshes.
+    if (mounted && !silent && _reports.isEmpty) {
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+      });
+    }
 
     try {
       final reports = await ApiService.getReports(auth.token!);
       if (mounted && requestSequence == _reportFetchSequence) {
-        setState(() => _reports = reports);
+        setState(() {
+          _reports = reports;
+          _errorMessage = null;
+        });
         if (auth.currentUser?.isDispatcher == true ||
             auth.currentUser?.isResponder == true) {
           _fetchAssistanceRequests(auth.token!);
         }
       }
     } catch (e) {
-      if (mounted && requestSequence == _reportFetchSequence)
+      if (mounted &&
+          requestSequence == _reportFetchSequence &&
+          _reports.isEmpty) {
         setState(() => _errorMessage = e.toString());
+      }
     } finally {
-      if (mounted && requestSequence == _reportFetchSequence)
+      if (mounted && requestSequence == _reportFetchSequence) {
         setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -1739,6 +1764,7 @@ class _ReportsScreenState extends State<ReportsScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _periodicRefreshTimer?.cancel();
+    _socketReportRefreshTimer?.cancel();
     _socketService?.removeListener(_onSocketStateChanged);
     _tabController.dispose();
     super.dispose();

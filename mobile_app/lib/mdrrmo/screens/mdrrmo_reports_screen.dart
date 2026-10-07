@@ -32,12 +32,13 @@ class _MdrrmoReportsScreenState extends State<MdrrmoReportsScreen>
   late final void Function(dynamic) _reportListener;
   late final void Function(dynamic) _connectListener;
   int _loadSequence = 0;
+  Timer? _reportRefreshDebounceTimer;
 
   @override
   void initState() {
     super.initState();
     _tabs = TabController(length: 3, vsync: this);
-    _reportListener = (_) => _load(silent: true);
+    _reportListener = (_) => _scheduleReportRefresh();
     _connectListener = (_) => _load(silent: true);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final auth = context.read<AuthProvider>();
@@ -52,8 +53,16 @@ class _MdrrmoReportsScreenState extends State<MdrrmoReportsScreen>
     });
   }
 
+  void _scheduleReportRefresh() {
+    _reportRefreshDebounceTimer?.cancel();
+    _reportRefreshDebounceTimer = Timer(const Duration(milliseconds: 300), () {
+      if (mounted) _load(silent: true);
+    });
+  }
+
   @override
   void dispose() {
+    _reportRefreshDebounceTimer?.cancel();
     _tabs.dispose();
     context.read<GpsService>().stopTracking();
     SocketService.socket.off('connect', _connectListener);
@@ -68,42 +77,36 @@ class _MdrrmoReportsScreenState extends State<MdrrmoReportsScreen>
     final loadSequence = ++_loadSequence;
     final token = context.read<AuthProvider>().token;
     if (token == null) {
-      if (!silent && mounted) setState(() => _loading = false);
+      if (mounted && loadSequence == _loadSequence) {
+        setState(() => _loading = false);
+      }
       return;
     }
-    final bool ownsSpinner = !silent;
-    if (ownsSpinner && mounted)
+
+    // Keep existing reports visible while an event or refresh updates them.
+    if (!silent && mounted && _reports.isEmpty) {
       setState(() {
         _loading = true;
         _error = null;
       });
+    }
+
     try {
       final reports = await ApiService.getMdrrmoReports(token)
           .timeout(const Duration(seconds: 20));
-      if (mounted) {
-        // Always apply the latest fetch result even if a newer silent load
-        // is in-flight — it is still better than stale data.
-        if (loadSequence == _loadSequence || ownsSpinner) {
-          _syncResponderGpsTracking(reports);
-          setState(() {
-            _reports = reports;
-            _error = null;
-            if (ownsSpinner) _loading = false;
-          });
-        }
+      if (mounted && loadSequence == _loadSequence) {
+        _syncResponderGpsTracking(reports);
+        setState(() {
+          _reports = reports;
+          _error = null;
+        });
       }
     } catch (error) {
-      if (mounted) {
-        if (loadSequence == _loadSequence || ownsSpinner) {
-          setState(() {
-            if (_reports.isEmpty) _error = error.toString();
-            if (ownsSpinner) _loading = false;
-          });
-        }
+      if (mounted && loadSequence == _loadSequence && _reports.isEmpty) {
+        setState(() => _error = error.toString());
       }
     } finally {
-      // Safety net: always clear the spinner if we own it.
-      if (ownsSpinner && mounted && _loading) {
+      if (mounted && loadSequence == _loadSequence && _loading) {
         setState(() => _loading = false);
       }
     }
