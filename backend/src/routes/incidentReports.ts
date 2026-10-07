@@ -199,18 +199,26 @@ async function persistIncidentEvidence(
   const proofUrls = uploaded.map((item) => item.proofUrl).filter((value): value is string => Boolean(value));
   const proofTypes = uploaded.filter((item) => item.proofUrl).map((item) => item.proofType);
   const failed = uploaded.some((item) => item.error !== null);
+  const evidenceUpdate = {
+    proof_url: proofUrls.length > 1 ? JSON.stringify(proofUrls) : proofUrls[0] || null,
+    proof_type: proofTypes[0] || fallbackType || 'image',
+    proof_urls: proofUrls,
+    proof_types: proofTypes,
+    evidence_status: failed ? 'failed' : 'ready',
+  };
   const { error: updateError } = await supabaseAdmin
     .from('incident_reports')
-    .update({
-      proof_url: proofUrls.length > 1 ? JSON.stringify(proofUrls) : proofUrls[0] || null,
-      proof_type: proofTypes[0] || fallbackType || 'image',
-      proof_urls: proofUrls,
-      proof_types: proofTypes,
-      evidence_status: failed ? 'failed' : 'ready',
-    })
+    .update(evidenceUpdate)
     .eq('id', reportId);
   if (updateError) throw updateError;
   if (failed) console.error(`One or more evidence objects failed for report ${reportId}.`);
+
+  // Dual-write evidence status into separated tables (Phase 2)
+  void Promise.allSettled([
+    supabaseAdmin.from('barangay_reports').update(evidenceUpdate).eq('id', reportId),
+    supabaseAdmin.from('mdrrmo_reports').update(evidenceUpdate).eq('id', reportId),
+  ]);
+
   return { proofUrls, proofTypes };
 }
 
@@ -529,6 +537,70 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
       console.error('Database error:', dbError);
       res.status(500).json({ error: 'Failed to save report to database.' });
       return;
+    }
+
+    // Dual-write into separated dedicated table (Phase 2)
+    try {
+      if (targetSendTo === 'mdrrmo') {
+        await supabaseAdmin.from('mdrrmo_reports').upsert({
+          id: report.id,
+          source_type: 'direct',
+          type: report.type || type,
+          title: report.title || title,
+          specifics: report.specifics || specifics || null,
+          description: report.description || description || null,
+          latitude: report.latitude,
+          longitude: report.longitude,
+          address: report.address || null,
+          barangay_id: resolvedBarangayId,
+          proof_url: encodedProofUrl,
+          proof_urls: proofUrls,
+          proof_type: primaryProofType,
+          proof_types: proofTypes,
+          evidence_status: uploadedFiles.length > 0 || providedProofTypes.length > 0 ? 'pending' : 'ready',
+          reporter_id: req.user?.userId || null,
+          reporter_type: reporter_type || 'resident',
+          reporter_name: reporterName,
+          reporter_phone: reporterPhone,
+          reporter_email: reporterEmail,
+          response_status: 'pending',
+          incident_occurred_at: incidentOccurredAt,
+          incident_time_precision: incidentTimePrecision,
+          client_request_id: clientRequestId,
+          client_submitted_at: clientSubmittedAt,
+          created_at: report.created_at || new Date().toISOString(),
+        });
+      } else {
+        await supabaseAdmin.from('barangay_reports').upsert({
+          id: report.id,
+          type: report.type || type,
+          title: report.title || title,
+          specifics: report.specifics || specifics || null,
+          description: report.description || description || null,
+          latitude: report.latitude,
+          longitude: report.longitude,
+          address: report.address || null,
+          barangay_id: resolvedBarangayId,
+          proof_url: encodedProofUrl,
+          proof_urls: proofUrls,
+          proof_type: primaryProofType,
+          proof_types: proofTypes,
+          evidence_status: uploadedFiles.length > 0 || providedProofTypes.length > 0 ? 'pending' : 'ready',
+          reporter_id: req.user?.userId || null,
+          reporter_type: reporter_type || 'resident',
+          reporter_name: reporterName,
+          reporter_phone: reporterPhone,
+          reporter_email: reporterEmail,
+          response_status: 'pending',
+          incident_occurred_at: incidentOccurredAt,
+          incident_time_precision: incidentTimePrecision,
+          client_request_id: clientRequestId,
+          client_submitted_at: clientSubmittedAt,
+          created_at: report.created_at || new Date().toISOString(),
+        });
+      }
+    } catch (dualWriteErr: any) {
+      console.warn('Dual-write to separated report table warning:', dualWriteErr?.message);
     }
 
     const formattedReport = formatIncidentReport({
@@ -967,6 +1039,12 @@ router.patch('/:id', optionalAuthenticate, upload.any(), async (req: AuthRequest
       updatedReport = data;
     }
 
+    // Dual-write updates into separated tables
+    void Promise.allSettled([
+      supabaseAdmin.from('barangay_reports').update({ ...updatePayload, proof_urls: allUrls }).eq('id', id),
+      supabaseAdmin.from('mdrrmo_reports').update({ ...updatePayload, proof_urls: allUrls }).eq('id', id),
+    ]);
+
     const formatted = formatIncidentReport({
       ...updatedReport,
       proof_urls: allUrls,
@@ -1076,6 +1154,12 @@ router.post('/:id/field-media', optionalAuthenticate, upload.single('media'), as
       if (error) throw error;
       updatedReport = data;
     }
+
+    // Dual-write responder_media into separated tables
+    void Promise.allSettled([
+      supabaseAdmin.from('barangay_reports').update({ responder_media: updatedMedia }).eq('id', id),
+      supabaseAdmin.from('mdrrmo_reports').update({ responder_media: updatedMedia }).eq('id', id),
+    ]);
 
     const formatted = formatIncidentReport(updatedReport);
 
