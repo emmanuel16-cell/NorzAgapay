@@ -2707,6 +2707,10 @@ tbody tr:last-child td { border-bottom: none; }
   width: min(92vw, 480px);
 }
 
+.municipality-boundary-modal-backdrop {
+  z-index: 5000;
+}
+
 .municipality-boundary-modal .modal-header {
   margin-bottom: 16px;
 }

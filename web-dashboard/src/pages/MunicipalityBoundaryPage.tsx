@@ -404,7 +404,7 @@ export default function MunicipalityBoundaryPage() {
         </section>
       </section>
     </div>
-    {selectedVersion && <div className="modal-backdrop" onClick={() => { if (!saving) setSelectedVersion(null); }}>
+    {selectedVersion && <div className="modal-backdrop municipality-boundary-modal-backdrop" onClick={() => { if (!saving) setSelectedVersion(null); }}>
       <section className="modal municipality-boundary-modal" role="dialog" aria-modal="true" aria-labelledby="boundary-version-modal-title" onClick={(event) => event.stopPropagation()}>
         <div className="modal-header">
           <div>
