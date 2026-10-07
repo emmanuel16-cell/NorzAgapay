@@ -9,6 +9,7 @@ import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
 import '../services/gps_service.dart';
 import '../services/socket_service.dart';
+import '../../services/mdrrmo_responder_push_service.dart';
 import 'mdrrmo_report_detail_screen.dart';
 
 const _mdNavy = Color(0xFF0C243B);
@@ -30,7 +31,10 @@ class _MdrrmoReportsScreenState extends State<MdrrmoReportsScreen>
   bool _loading = true;
   String? _error;
   late final void Function(dynamic) _reportListener;
+  late final void Function(dynamic) _assignmentListener;
   late final void Function(dynamic) _connectListener;
+  StreamSubscription<String>? _openReportSubscription;
+  final Set<String> _openingReportIds = <String>{};
   int _loadSequence = 0;
   Timer? _reportRefreshDebounceTimer;
 
@@ -39,18 +43,47 @@ class _MdrrmoReportsScreenState extends State<MdrrmoReportsScreen>
     super.initState();
     _tabs = TabController(length: 3, vsync: this);
     _reportListener = (_) => _scheduleReportRefresh();
+    _assignmentListener = _handleAssignment;
     _connectListener = (_) => _load(silent: true);
+    _openReportSubscription = MdrrmoResponderPushService.instance
+        .reportOpenRequests
+        .listen((reportId) => unawaited(_openReportId(reportId)));
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final auth = context.read<AuthProvider>();
       if (auth.token != null && auth.user != null) {
         SocketService.connect(auth.user!.id, auth.user!.role.name, auth.token!);
         SocketService.socket.on('connect', _connectListener);
-        SocketService.socket.on('mdrrmo:report_assigned', _reportListener);
+        SocketService.socket.on('mdrrmo:report_assigned', _assignmentListener);
         SocketService.socket.on('mdrrmo:report_updated', _reportListener);
         SocketService.socket.on('incident:lifecycle', _reportListener);
       }
-      _load();
+      unawaited(_initializeReports());
     });
+  }
+
+  Future<void> _initializeReports() async {
+    await _load();
+    if (!mounted) return;
+    final pendingReportId = MdrrmoResponderPushService.instance
+        .takePendingReportOpenId();
+    if (pendingReportId != null) {
+      await _openReportId(pendingReportId, refresh: false);
+    }
+  }
+
+  void _handleAssignment(dynamic payload) {
+    _scheduleReportRefresh();
+    if (payload is! Map) return;
+    final data = Map<String, dynamic>.from(payload);
+    final reportId = data['id']?.toString().trim();
+    if (reportId == null || reportId.isEmpty) return;
+    unawaited(
+      MdrrmoResponderPushService.instance.announceAssignment(
+        reportId: reportId,
+        assignmentId: data['assignment_id']?.toString(),
+        title: data['title']?.toString(),
+      ),
+    );
   }
 
   void _scheduleReportRefresh() {
@@ -63,10 +96,11 @@ class _MdrrmoReportsScreenState extends State<MdrrmoReportsScreen>
   @override
   void dispose() {
     _reportRefreshDebounceTimer?.cancel();
+    _openReportSubscription?.cancel();
     _tabs.dispose();
     context.read<GpsService>().stopTracking();
     SocketService.socket.off('connect', _connectListener);
-    SocketService.socket.off('mdrrmo:report_assigned', _reportListener);
+    SocketService.socket.off('mdrrmo:report_assigned', _assignmentListener);
     SocketService.socket.off('mdrrmo:report_updated', _reportListener);
     SocketService.socket.off('incident:lifecycle', _reportListener);
     SocketService.disconnect();
@@ -157,6 +191,26 @@ class _MdrrmoReportsScreenState extends State<MdrrmoReportsScreen>
       ),
     );
     _load(silent: true);
+  }
+
+  Future<void> _openReportId(String reportId, {bool refresh = true}) async {
+    if (!_openingReportIds.add(reportId)) return;
+    try {
+      if (refresh || !_reports.any((report) => report.id == reportId)) {
+        await _load(silent: true);
+      }
+      if (!mounted) return;
+      MdrrmoReport? report;
+      for (final item in _reports) {
+        if (item.id == reportId) {
+          report = item;
+          break;
+        }
+      }
+      if (report != null) await _open(report);
+    } finally {
+      _openingReportIds.remove(reportId);
+    }
   }
 
   Color _color(MdrrmoReport report, {String? userId}) {

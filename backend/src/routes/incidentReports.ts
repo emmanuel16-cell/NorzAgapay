@@ -242,6 +242,59 @@ async function fetchReportById(id: string) {
   return { report: null, table: null };
 }
 
+function combineResidentReportCopies(barangayReport: any, mdrrmoReport: any) {
+  return {
+    ...barangayReport,
+    ...mdrrmoReport,
+    source_barangay_report_id: mdrrmoReport.source_barangay_report_id || barangayReport.id,
+    barangay_response_status: barangayReport.response_status || 'pending',
+    barangay_response_notes: barangayReport.response_notes || null,
+    barangay_responded_by: barangayReport.responded_by || null,
+    barangay_responded_at: barangayReport.responded_at || null,
+    barangay_accepted_at: barangayReport.accepted_at || null,
+    barangay_arrived_at: barangayReport.arrived_at || null,
+    barangay_resolved_at: barangayReport.resolved_at || null,
+    barangay_resolved_notes: barangayReport.resolved_notes || null,
+    mdrrmo_response_status: mdrrmoReport.response_status || 'pending',
+    mdrrmo_response_notes: mdrrmoReport.response_notes || null,
+    mdrrmo_dispatched_at: mdrrmoReport.dispatched_at || null,
+    mdrrmo_accepted_at: mdrrmoReport.accepted_at || null,
+    mdrrmo_arrived_at: mdrrmoReport.arrived_at || null,
+    mdrrmo_resolved_at: mdrrmoReport.resolved_at || null,
+    is_escalated: true,
+  };
+}
+
+function mergeResidentReportCopies(barangayReports: any[], mdrrmoReports: any[]) {
+  const reportsBySource = new Map<string, any>();
+  for (const report of barangayReports) reportsBySource.set(report.id, report);
+
+  for (const report of mdrrmoReports) {
+    const sourceId = report.source_barangay_report_id ||
+      (reportsBySource.has(report.id) ? report.id : null);
+    const barangayReport = sourceId ? reportsBySource.get(sourceId) : null;
+    const key = sourceId || report.id;
+    reportsBySource.set(key, barangayReport
+      ? combineResidentReportCopies(barangayReport, report)
+      : report);
+  }
+
+  return [...reportsBySource.values()];
+}
+
+async function fetchResidentReportById(id: string) {
+  const [bResult, mResult] = await Promise.all([
+    supabaseAdmin.from('barangay_reports').select('*').eq('id', id).maybeSingle(),
+    supabaseAdmin.from('mdrrmo_reports').select('*').eq('id', id).maybeSingle(),
+  ]);
+  if (bResult.error) throw bResult.error;
+  if (mResult.error) throw mResult.error;
+  if (bResult.data && mResult.data) {
+    return combineResidentReportCopies(bResult.data, mResult.data);
+  }
+  return mResult.data || bResult.data || null;
+}
+
 async function persistIncidentEvidence(
   reportId: string,
   files: Express.Multer.File[],
@@ -520,7 +573,7 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
       reporter_name: reporterName,
       reporter_phone: reporterPhone,
       barangay_id: resolvedBarangayId,
-      status: targetSendTo === 'mdrrmo' ? 'open' : 'pending',
+      ...(targetSendTo === 'barangay' ? { status: 'pending' } : {}),
       response_status: 'pending',
       client_submitted_at: clientSubmittedAt,
       incident_occurred_at: incidentOccurredAt,
@@ -624,7 +677,7 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response) => {
           supabaseAdmin.from('mdrrmo_reports').select('*').eq('reporter_id', userId),
           getBarangayNameMap(),
         ]);
-        const reports = [...(bRes.data || []), ...(mRes.data || [])];
+        const reports = mergeResidentReportCopies(bRes.data || [], mRes.data || []);
         reports.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
         res.json(reports.map((r: any) => formatIncidentReport(r, bMap)));
@@ -663,7 +716,7 @@ router.get('/resident', optionalAuthenticate, async (req: AuthRequest, res: Resp
     }
 
     const [bRes, mRes, bMap] = await Promise.all([bQuery, mQuery, getBarangayNameMap()]);
-    const reportRows = [...(bRes.data || []), ...(mRes.data || [])];
+    const reportRows = mergeResidentReportCopies(bRes.data || [], mRes.data || []);
     reportRows.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
     const barangayIds = [...new Set(reportRows.map((report: any) => report.barangay_id).filter(Boolean))];
@@ -725,7 +778,7 @@ router.get('/resident', optionalAuthenticate, async (req: AuthRequest, res: Resp
 
 router.get('/resident/:id', optionalAuthenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { report } = await fetchReportById(req.params.id);
+    const report = await fetchResidentReportById(req.params.id);
     if (!report || report.reporter_type !== 'resident') {
       res.status(404).json({ error: 'Incident report not found.' });
       return;

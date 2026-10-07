@@ -49,6 +49,70 @@ function normalizeBarangayRole(role: string): string {
   return legacyRoleMap[role] || role;
 }
 
+async function upsertEscalatedMdrrmoReport(report: any, escalationNotes: string, actorId: string) {
+  const { error } = await supabaseAdmin
+    .from('mdrrmo_reports')
+    .upsert({
+      id: report.id,
+      source_type: 'escalated',
+      source_barangay_report_id: report.id,
+      type: report.type,
+      title: report.title,
+      specifics: report.specifics,
+      description: report.description,
+      latitude: report.latitude,
+      longitude: report.longitude,
+      address: report.address,
+      incident_occurred_at: report.incident_occurred_at,
+      incident_time_precision: report.incident_time_precision || 'unknown',
+      incident_type: report.incident_type,
+      severity: report.severity,
+      proof_url: report.proof_url || null,
+      proof_urls: report.proof_urls || [],
+      proof_type: report.proof_type || 'image',
+      proof_types: report.proof_types || [],
+      evidence_status: report.evidence_status || 'ready',
+      responder_media: report.responder_media || [],
+      reporter_id: report.reporter_id,
+      reporter_type: report.reporter_type,
+      reporter_name: report.reporter_name,
+      reporter_phone: report.reporter_phone,
+      reporter_email: report.reporter_email,
+      barangay_id: report.barangay_id,
+      coordination_notes: escalationNotes,
+      response_status: 'pending',
+      lifecycle_actor_id: actorId,
+      lifecycle_actor_role: 'barangay_dispatcher',
+      client_request_id: report.client_request_id || null,
+      client_submitted_at: report.client_submitted_at || null,
+      created_at: report.created_at,
+    }, { onConflict: 'id', ignoreDuplicates: false });
+
+  if (error) throw error;
+}
+
+async function hasActiveMdrrmoEscalation(reportId: string): Promise<boolean> {
+  const [sameIdResult, linkedResult] = await Promise.all([
+    supabaseAdmin.from('mdrrmo_reports')
+      .select('id, response_status, dispatched_at, accepted_at, arrived_at, resolved_at')
+      .eq('id', reportId)
+      .eq('source_type', 'escalated')
+      .maybeSingle(),
+    supabaseAdmin.from('mdrrmo_reports')
+      .select('id, response_status, dispatched_at, accepted_at, arrived_at, resolved_at')
+      .eq('source_barangay_report_id', reportId)
+      .maybeSingle(),
+  ]);
+  if (sameIdResult.error) throw sameIdResult.error;
+  if (linkedResult.error) throw linkedResult.error;
+
+  const report = sameIdResult.data || linkedResult.data;
+  return Boolean(report && (
+    report.dispatched_at || report.accepted_at || report.arrived_at || report.resolved_at ||
+    ['responding', 'resolved'].includes(String(report.response_status || '').toLowerCase())
+  ));
+}
+
 // ─── Middleware: Barangay Auth ───────────────────────────────────────────────
 
 interface BarangayPayload {
@@ -1847,7 +1911,7 @@ router.patch('/reports/:id/escalate', authenticateBarangay, requireRole(['dispat
     let assignedReport: any = null;
     const { data: newRow, error: newRowErr } = await supabaseAdmin
       .from('barangay_reports')
-      .select('id, status, response_status, incident_type, severity, resolved_at, responded_by, response_notes, coordination_notes, dispatched_at, accepted_at')
+      .select('*')
       .eq('id', req.params.id)
       .eq('barangay_id', req.barangayUser.barangayId)
       .maybeSingle();
@@ -1891,13 +1955,13 @@ router.patch('/reports/:id/escalate', authenticateBarangay, requireRole(['dispat
       res.status(409).json({ error: 'Dispatch a responder before escalating this incident to MDRRMO.' });
       return;
     }
+    if (await hasActiveMdrrmoEscalation(req.params.id)) {
+      res.status(409).json({ error: 'The MDRRMO response cycle has already started.' });
+      return;
+    }
 
     const escalationNotes = notes.trim();
     const now = new Date().toISOString();
-
-    const isReceivedByBarangayResponder = Boolean(assignedReport.barangay_accepted_at) ||
-      Boolean(assignedReport.accepted_at) ||
-      Boolean(assignedReport.barangay_responded_by);
 
     const barangayReportsUpdate: any = {
       status: 'escalated',
@@ -1908,61 +1972,39 @@ router.patch('/reports/:id/escalate', authenticateBarangay, requireRole(['dispat
       lifecycle_actor_role: 'barangay_dispatcher',
     };
 
-    if (isReceivedByBarangayResponder) {
-      barangayReportsUpdate.response_status = 'resolved';
-      barangayReportsUpdate.resolved_at = assignedReport.barangay_resolved_at ||
-        assignedReport.barangay_accepted_at ||
-        assignedReport.accepted_at ||
-        now;
-      barangayReportsUpdate.resolved_notes = `Escalated to MDRRMO: ${escalationNotes}`;
-    }
-
     // Write escalation status to barangay_reports
-    const { data, error } = await supabaseAdmin
+    let barangayUpdate: any = supabaseAdmin
       .from('barangay_reports')
       .update(barangayReportsUpdate)
       .eq('id', req.params.id)
-      .eq('barangay_id', req.barangayUser.barangayId)
-      .select()
-      .maybeSingle();
+      .eq('barangay_id', req.barangayUser.barangayId);
+    if (newRow!.response_status) barangayUpdate = barangayUpdate.eq('response_status', newRow!.response_status);
+    if (newRow!.status) barangayUpdate = barangayUpdate.eq('status', newRow!.status);
+    const { data, error } = await barangayUpdate.select('*').maybeSingle();
 
     if (error) throw error;
     if (!data) { res.status(409).json({ error: 'The report lifecycle changed. Refresh before escalating.' }); return; }
 
-    // Upsert into mdrrmo_reports so MDRRMO can pick it up
-    const { data: barangayRow } = await supabaseAdmin
-      .from('barangay_reports')
-      .select('*')
-      .eq('id', req.params.id)
-      .maybeSingle();
-    if (barangayRow) {
-      await supabaseAdmin
-        .from('mdrrmo_reports')
-        .upsert({
-          id: barangayRow.id,
-          source_type: 'escalated',
-          type: barangayRow.type,
-          title: barangayRow.title,
-          specifics: barangayRow.specifics,
-          description: barangayRow.description,
-          latitude: barangayRow.latitude,
-          longitude: barangayRow.longitude,
-          address: barangayRow.address,
-          incident_occurred_at: barangayRow.incident_occurred_at,
-          incident_type: barangayRow.incident_type,
-          severity: barangayRow.severity,
-          reporter_id: barangayRow.reporter_id,
-          reporter_type: barangayRow.reporter_type,
-          reporter_name: barangayRow.reporter_name,
-          reporter_phone: barangayRow.reporter_phone,
-          reporter_email: barangayRow.reporter_email,
-          barangay_id: barangayRow.barangay_id,
-          coordination_notes: escalationNotes,
-          response_status: 'pending',
-          lifecycle_actor_id: req.barangayUser.userId,
-          lifecycle_actor_role: 'barangay_dispatcher',
-          created_at: barangayRow.created_at,
-        }, { onConflict: 'id', ignoreDuplicates: false });
+    // Preserve the Barangay response status; assignment or escalation is not acceptance or resolution.
+    try {
+      await upsertEscalatedMdrrmoReport(data, escalationNotes, req.barangayUser.userId);
+    } catch (upsertError) {
+      const { error: rollbackError } = await supabaseAdmin
+        .from('barangay_reports')
+        .update({
+          status: newRow!.status,
+          coordination_notes: newRow!.coordination_notes,
+          escalated_to_mdrrmo: newRow!.escalated_to_mdrrmo,
+          escalated_at: newRow!.escalated_at,
+          lifecycle_actor_id: newRow!.lifecycle_actor_id,
+          lifecycle_actor_role: newRow!.lifecycle_actor_role,
+        })
+        .eq('id', req.params.id)
+        .eq('barangay_id', req.barangayUser.barangayId)
+        .eq('status', 'escalated')
+        .eq('escalated_at', now);
+      if (rollbackError) console.error('Could not roll back Barangay escalation after MDRRMO handoff failed:', rollbackError);
+      throw upsertError;
     }
 
     const { data: bData } = await supabaseAdmin
@@ -2641,7 +2683,7 @@ router.patch('/assistance-requests/:id/decide', authenticateBarangay, requireRol
     if (decision === 'coordinate_mdrrmo' && assistanceRequest.incident_report_id) {
       const { data, error } = await supabaseAdmin
         .from('barangay_reports')
-        .select('id, title, incident_type, severity, responded_by, response_notes')
+        .select('*')
         .eq('id', assistanceRequest.incident_report_id)
         .eq('barangay_id', req.barangayUser.barangayId)
         .maybeSingle();
@@ -2657,31 +2699,16 @@ router.patch('/assistance-requests/:id/decide', authenticateBarangay, requireRol
         res.status(409).json({ error: 'Classify and dispatch a responder to the linked incident before escalating it.' });
         return;
       }
+      if (data.response_status === 'resolved' || data.resolved_at || ['resolved', 'closed', 'rejected'].includes(String(data.status || '').toLowerCase())) {
+        res.status(409).json({ error: 'A resolved Barangay incident cannot be escalated.' });
+        return;
+      }
+      if (await hasActiveMdrrmoEscalation(data.id)) {
+        res.status(409).json({ error: 'The MDRRMO response cycle has already started.' });
+        return;
+      }
       linkedReport = data;
     }
-
-    const { data, error } = await supabaseAdmin
-      .from('barangay_assistance_requests')
-      .update({
-        status: 'actioned',
-        decision,
-        dispatcher_notes: dispatcher_notes || null,
-        decided_at: new Date().toISOString(),
-        decided_by: req.barangayUser.userId,
-      })
-      .eq('id', req.params.id)
-      .eq('barangay_id', req.barangayUser.barangayId)
-      .select('*, requested_by_user:barangay_users!requested_by(full_name, role), decided_by_user:barangay_users!decided_by(full_name, role)')
-      .single();
-
-    if (error) {
-      console.error('Decide assistance request error:', error);
-      res.status(500).json({ error: 'Failed to update assistance request.' });
-      return;
-    }
-
-    // Notify responder via socket
-    io.to(`barangay:${req.barangayUser.barangayId}`).emit('assistance:decision', { request: data, decision });
 
     let escalatedReport: any = null;
     if (linkedReport) {
@@ -2694,42 +2721,40 @@ router.patch('/assistance-requests/:id/decide', authenticateBarangay, requireRol
           status: 'escalated',
           escalated_to_mdrrmo: true,
           escalated_at: now,
-          response_status: 'resolved',
-          resolved_at: now,
-          resolved_notes: `Escalated to MDRRMO: ${escalationNotes}`,
+          lifecycle_actor_id: req.barangayUser.userId,
+          lifecycle_actor_role: 'barangay_dispatcher',
         })
         .eq('id', linkedReport.id)
         .eq('barangay_id', req.barangayUser.barangayId)
+        .eq('response_status', linkedReport.response_status)
         .select('*')
-        .single();
+        .maybeSingle();
       if (reportError) throw reportError;
+      if (!reportData) {
+        res.status(409).json({ error: 'The linked incident lifecycle changed. Refresh before escalating.' });
+        return;
+      }
 
-      // Upsert into mdrrmo_reports
-      await supabaseAdmin
-        .from('mdrrmo_reports')
-        .upsert({
-          id: reportData.id,
-          source_type: 'escalated',
-          type: reportData.type,
-          title: reportData.title,
-          specifics: reportData.specifics,
-          description: reportData.description,
-          latitude: reportData.latitude,
-          longitude: reportData.longitude,
-          address: reportData.address,
-          incident_occurred_at: reportData.incident_occurred_at,
-          incident_type: reportData.incident_type,
-          severity: reportData.severity,
-          reporter_id: reportData.reporter_id,
-          reporter_type: reportData.reporter_type,
-          reporter_name: reportData.reporter_name,
-          reporter_phone: reportData.reporter_phone,
-          reporter_email: reportData.reporter_email,
-          barangay_id: reportData.barangay_id,
-          coordination_notes: escalationNotes,
-          response_status: 'pending',
-          created_at: reportData.created_at,
-        }, { onConflict: 'id', ignoreDuplicates: false });
+      try {
+        await upsertEscalatedMdrrmoReport(reportData, escalationNotes, req.barangayUser.userId);
+      } catch (upsertError) {
+        const { error: rollbackError } = await supabaseAdmin
+          .from('barangay_reports')
+          .update({
+            status: linkedReport.status,
+            coordination_notes: linkedReport.coordination_notes,
+            escalated_to_mdrrmo: linkedReport.escalated_to_mdrrmo,
+            escalated_at: linkedReport.escalated_at,
+            lifecycle_actor_id: linkedReport.lifecycle_actor_id,
+            lifecycle_actor_role: linkedReport.lifecycle_actor_role,
+          })
+          .eq('id', linkedReport.id)
+          .eq('barangay_id', req.barangayUser.barangayId)
+          .eq('status', 'escalated')
+          .eq('escalated_at', now);
+        if (rollbackError) console.error('Could not roll back Barangay escalation after MDRRMO handoff failed:', rollbackError);
+        throw upsertError;
+      }
 
       const barangayName = reportData.barangays?.name || null;
       escalatedReport = {
@@ -2753,7 +2778,29 @@ router.patch('/assistance-requests/:id/decide', authenticateBarangay, requireRol
       io.to(`barangay:${req.barangayUser.barangayId}`).emit('barangay:report_updated', escalatedReport);
     }
 
-    res.json({ message: `Request actioned: ${decision}.`, request: data, escalated_report: escalatedReport });
+    const { data: decisionRequest, error: requestUpdateError } = await supabaseAdmin
+      .from('barangay_assistance_requests')
+      .update({
+        status: 'actioned',
+        decision,
+        dispatcher_notes: dispatcher_notes || null,
+        decided_at: new Date().toISOString(),
+        decided_by: req.barangayUser.userId,
+      })
+      .eq('id', req.params.id)
+      .eq('barangay_id', req.barangayUser.barangayId)
+      .select('*, requested_by_user:barangay_users!requested_by(full_name, role), decided_by_user:barangay_users!decided_by(full_name, role)')
+      .single();
+
+    if (requestUpdateError) {
+      console.error('Decide assistance request error:', requestUpdateError);
+      res.status(500).json({ error: 'Failed to update assistance request.' });
+      return;
+    }
+
+    io.to(`barangay:${req.barangayUser.barangayId}`).emit('assistance:decision', { request: decisionRequest, decision });
+
+    res.json({ message: `Request actioned: ${decision}.`, request: decisionRequest, escalated_report: escalatedReport });
   } catch (err) {
     console.error('Decide assistance request error:', err);
     res.status(500).json({ error: 'Internal server error.' });

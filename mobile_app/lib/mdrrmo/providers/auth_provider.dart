@@ -5,6 +5,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/user.dart';
 import '../core/constants.dart';
+import '../../services/mdrrmo_responder_push_service.dart';
 
 class AuthProvider with ChangeNotifier {
   User? _user;
@@ -375,6 +376,11 @@ class AuthProvider with ChangeNotifier {
   }
 
   Future<void> logout() async {
+    final currentToken = _token;
+    if (currentToken != null) {
+      await MdrrmoResponderPushService.instance
+          .unregisterForResponder(currentToken);
+    }
     _token = null;
     _user = null;
     await _storage.delete(key: AppConstants.tokenKey);

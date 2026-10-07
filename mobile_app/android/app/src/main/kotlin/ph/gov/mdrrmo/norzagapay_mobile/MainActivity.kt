@@ -14,7 +14,7 @@ class MainActivity : FlutterActivity() {
                 "Incident reports",
                 NotificationManager.IMPORTANCE_HIGH,
             ).apply {
-                description = "New incident reports awaiting dispatcher review"
+                description = "New incident reports and MDRRMO dispatch assignments"
             }
             getSystemService(NotificationManager::class.java)
                 .createNotificationChannel(channel)

@@ -10,6 +10,7 @@ import { supabaseAdmin } from './config/supabase';
 import { DispatcherVerificationService } from './services/dispatcherVerificationService';
 import { startIncidentEventRelay } from './services/incidentEventRelay';
 import { startDispatcherPushRelay } from './services/dispatcherPushNotifications';
+import { startMdrrmoResponderPushRelay } from './services/mdrrmoResponderPushNotifications';
 import { startResidentPushRelay } from './services/residentPushNotifications';
 import { deleteResponderGpsLocation, RESPONDER_GPS_TTL_SECONDS, setResponderGpsLocation } from './config/redis';
 import { getActiveResponderTargets, getCurrentResponderLiveLocations, ResponderIncidentTarget } from './services/responderLiveLocation';
@@ -484,6 +485,7 @@ if (require.main === module) {
   server.listen(config.port, () => {
     startIncidentEventRelay(io);
     startDispatcherPushRelay();
+    startMdrrmoResponderPushRelay();
     startResidentPushRelay();
     console.log(`
     ╔══════════════════════════════════════════════╗

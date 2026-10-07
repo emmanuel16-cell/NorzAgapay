@@ -121,6 +121,37 @@ class ApiService {
     }
   }
 
+  static Future<void> registerMdrrmoResponderPushToken(
+    String token,
+    String fcmToken, {
+    required String platform,
+  }) async {
+    final response = await http.put(
+      Uri.parse('$baseUrl/mdrrmo/reports/push-token'),
+      headers: _headers(token),
+      body: jsonEncode({'fcm_token': fcmToken, 'platform': platform}),
+    );
+    if (response.statusCode != 200 && response.statusCode != 201) {
+      final data = jsonDecode(response.body);
+      throw Exception(data['error'] ?? 'Could not register responder push notifications');
+    }
+  }
+
+  static Future<void> removeMdrrmoResponderPushToken(
+    String token,
+    String fcmToken,
+  ) async {
+    final response = await http.delete(
+      Uri.parse('$baseUrl/mdrrmo/reports/push-token'),
+      headers: _headers(token),
+      body: jsonEncode({'fcm_token': fcmToken}),
+    );
+    if (response.statusCode != 200 && response.statusCode != 204) {
+      final data = jsonDecode(response.body);
+      throw Exception(data['error'] ?? 'Could not unregister responder push notifications');
+    }
+  }
+
   static Future<Map<String, dynamic>> getReportStatistics(String token) async {
     final res = await http.get(
       Uri.parse('$baseUrl/barangay/reports/statistics'),

@@ -44,3 +44,23 @@ in the background or closed. FCM remains inactive until Firebase is configured.
 The backend only targets active dispatcher devices in the report's barangay.
 The lock-screen message does not include reporter contact details or the report
 description. Tapping it opens that report in the authenticated mobile app.
+
+## MDRRMO responder dispatch notifications
+
+The responder workspace shows one red in-app alert for a newly assigned report.
+Android push notifications also arrive when the app is backgrounded or closed.
+Socket and FCM alerts are deduplicated by report, and tapping the push opens the
+assigned report. Push delivery requires the backend Firebase Admin credentials
+and the responder token migration below.
+
+1. In Supabase SQL Editor, run
+   `database/migrations/mdrrmo_responder_push_notifications_migration.sql`
+   after `mdrrmo_report_assignment_canonical_fk_migration.sql`.
+2. Confirm the backend host has `FIREBASE_PROJECT_ID=norzagapay` and its protected
+   `FIREBASE_SERVICE_ACCOUNT_JSON` secret, then redeploy the backend.
+3. Build and install the Android app with the Firebase app values for
+   `ph.gov.mdrrmo.norzagapay_mobile` (the same four `--dart-define` values shown
+   in the dispatcher setup above).
+4. Sign in to the responder account and allow notifications when Android asks.
+5. Dispatch a report to that responder. Verify the Pending list and red alert
+   while the app is open, then repeat with the app in the background and closed.

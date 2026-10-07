@@ -1,10 +1,15 @@
-import 'package:flutter/material.dart';
+import 'dart:async';
 
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../providers/auth_provider.dart';
 import 'mdrrmo_evacuation_screen.dart';
 import 'mdrrmo_home_screen.dart';
 import 'mdrrmo_hotline_screen.dart';
 import 'mdrrmo_profile_screen.dart';
 import 'mdrrmo_reports_screen.dart';
+import '../../services/mdrrmo_responder_push_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -15,6 +20,85 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
+  StreamSubscription<MdrrmoAssignmentAlert>? _assignmentAlertSubscription;
+  StreamSubscription<String>? _openedReportSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    final pushService = MdrrmoResponderPushService.instance;
+    _assignmentAlertSubscription = pushService.assignmentAlerts.listen(
+      _showAssignmentAlert,
+    );
+    _openedReportSubscription = pushService.openedReportIds.listen(
+      _showOpenedReport,
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final auth = context.read<AuthProvider>();
+      final user = auth.user;
+      final token = auth.token;
+      if (user != null && token != null && user.role.name == 'responder') {
+        unawaited(
+          pushService.registerForResponder(
+            authToken: token,
+            responderId: user.id,
+          ),
+        );
+      }
+      final pendingReportId = pushService.takePendingOpenedReportId();
+      if (pendingReportId != null) _showOpenedReport(pendingReportId);
+    });
+  }
+
+  @override
+  void dispose() {
+    _assignmentAlertSubscription?.cancel();
+    _openedReportSubscription?.cancel();
+    super.dispose();
+  }
+
+  void _showAssignmentAlert(MdrrmoAssignmentAlert alert) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    // Replace an older alert immediately so a new assignment is visible even
+    // while the previous red alert is still on screen.
+    messenger.clearSnackBars();
+    messenger.showSnackBar(
+      SnackBar(
+        backgroundColor: const Color(0xFFE74C3C),
+        duration: const Duration(seconds: 6),
+        content: Row(
+          children: [
+            const Icon(Icons.warning_rounded, color: Colors.white),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                alert.title == null || alert.title!.isEmpty
+                    ? 'NEW MDRRMO DISPATCH'
+                    : 'NEW DISPATCH: ${alert.title}',
+              ),
+            ),
+          ],
+        ),
+        action: SnackBarAction(
+          label: 'VIEW',
+          textColor: Colors.white,
+          onPressed: () {
+            setState(() => _currentIndex = 2);
+            MdrrmoResponderPushService.instance.requestOpenReport(
+              alert.reportId,
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  void _showOpenedReport(String reportId) {
+    if (!mounted) return;
+    setState(() => _currentIndex = 2);
+  }
 
   @override
   Widget build(BuildContext context) {

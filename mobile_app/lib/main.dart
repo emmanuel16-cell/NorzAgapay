@@ -19,6 +19,7 @@ import 'mdrrmo/models/user.dart' as global_user;
 import 'services/municipality_boundary_service.dart';
 import 'services/firebase_options.dart';
 import 'services/dispatcher_push_service.dart';
+import 'services/mdrrmo_responder_push_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -28,6 +29,7 @@ void main() async {
     try {
       await Firebase.initializeApp(options: firebaseOptions);
       await DispatcherPushService.instance.initialize();
+      await MdrrmoResponderPushService.instance.initialize();
     } catch (error) {
       debugPrint('Firebase push notifications are not configured: $error');
     }

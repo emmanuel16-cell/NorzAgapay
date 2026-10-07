@@ -97,7 +97,7 @@ async function getAssignments(reportIds: string[]) {
   if (!reportIds.length) return [];
   const { data, error } = await supabaseAdmin
     .from('mdrrmo_report_assignments')
-    .select('report_id, responder_id, status, assigned_at, accepted_at, arrived_at, resolved_at')
+    .select('id, report_id, responder_id, status, assigned_at, accepted_at, arrived_at, resolved_at')
     .in('report_id', reportIds)
     .neq('status', 'removed');
   if (error) throw error;
@@ -207,6 +207,54 @@ const dispatchSchema = z.object({
   notes: z.string().trim().max(1000).optional().default(''),
 });
 
+const responderPushTokenSchema = z.object({
+  fcm_token: z.string().trim().min(1).max(4096),
+  platform: z.literal('android'),
+});
+
+router.put('/push-token', authenticate, authorize('responder'), async (req: AuthRequest, res: Response): Promise<void> => {
+  const parsed = responderPushTokenSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'A valid Android FCM token is required.' });
+    return;
+  }
+  try {
+    const { error } = await supabaseAdmin
+      .from('mdrrmo_responder_push_tokens')
+      .upsert({
+        fcm_token: parsed.data.fcm_token,
+        responder_id: req.user!.userId,
+        platform: parsed.data.platform,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'fcm_token' });
+    if (error) throw error;
+    res.status(200).json({ registered: true });
+  } catch (error) {
+    console.error('MDRRMO responder push-token registration failed:', error);
+    res.status(503).json({ error: 'Push notifications could not be registered.' });
+  }
+});
+
+router.delete('/push-token', authenticate, authorize('responder'), async (req: AuthRequest, res: Response): Promise<void> => {
+  const parsed = z.object({ fcm_token: z.string().trim().min(1).max(4096) }).safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'A valid FCM token is required.' });
+    return;
+  }
+  try {
+    const { error } = await supabaseAdmin
+      .from('mdrrmo_responder_push_tokens')
+      .delete()
+      .eq('fcm_token', parsed.data.fcm_token)
+      .eq('responder_id', req.user!.userId);
+    if (error) throw error;
+    res.status(200).json({ removed: true });
+  } catch (error) {
+    console.error('MDRRMO responder push-token removal failed:', error);
+    res.status(503).json({ error: 'Push notifications could not be unregistered.' });
+  }
+});
+
 router.patch('/:id/dispatch', authenticate, authorize('dispatcher', 'admin'), async (req: AuthRequest, res: Response): Promise<void> => {
   const parsed = dispatchSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -278,8 +326,14 @@ router.patch('/:id/dispatch', authenticate, authorize('dispatcher', 'admin'), as
     io.to('dashboard_staff').emit('incident_report:updated', payload);
     io.to('dashboard_staff').emit('mdrrmo:report_updated', payload);
     for (const responderId of responderIds) {
-      io.to(`user:${responderId}`).emit('mdrrmo:report_assigned', payload);
-      io.to(`user:${responderId}`).emit('mdrrmo:report_updated', payload);
+      const assignment = activeAssignments.find((item: any) => item.responder_id === responderId);
+      const responderPayload = {
+        ...payload,
+        assignment_id: assignment?.id || null,
+        responder_id: responderId,
+      };
+      io.to(`user:${responderId}`).emit('mdrrmo:report_assigned', responderPayload);
+      io.to(`user:${responderId}`).emit('mdrrmo:report_updated', responderPayload);
     }
     if (report.reporter_id) io.to(`user:${report.reporter_id}`).emit('incident_report:updated', payload);
     res.json(payload);
@@ -340,7 +394,11 @@ router.patch('/:id/respond', authenticate, authorize('responder'), async (req: A
       p_report_id: report.id,
       p_responder_id: req.user!.userId,
     });
-    if (acceptV2Error && acceptV2Error.code !== 'P0002') throw acceptV2Error;
+    if (acceptV2Error?.code === 'P0002') {
+      res.status(409).json({ error: 'This assignment was accepted or changed by another responder. Refresh the report.' });
+      return;
+    }
+    if (acceptV2Error) throw acceptV2Error;
 
     // (Legacy accept_mdrrmo_report dual-write removed)
 
@@ -398,9 +456,8 @@ router.patch('/:id/field-assessment', authenticate, authorize('responder'), asyn
     ].filter(Boolean).join('\n\n');
 
     // Write to new mdrrmo_reports table
-    const responseStatusNow = String(report.response_status || report.mdrrmo_response_status || '').toLowerCase();
     if (report._source === 'mdrrmo_reports' || !report._source) {
-      await supabaseAdmin
+      const { data: updatedRow, error: updateError } = await supabaseAdmin
         .from('mdrrmo_reports')
         .update({
           response_notes: responseNotes,
@@ -410,7 +467,14 @@ router.patch('/:id/field-assessment', authenticate, authorize('responder'), asyn
           lifecycle_actor_role: 'responder',
         })
         .eq('id', report.id)
-        .eq('response_status', 'responding');
+        .eq('response_status', 'responding')
+        .select('id')
+        .maybeSingle();
+      if (updateError) throw updateError;
+      if (!updatedRow) {
+        res.status(409).json({ error: 'The response changed. Refresh the report before saving your assessment.' });
+        return;
+      }
     }
 
     // (Legacy incident_reports field assessment dual-write removed)
@@ -466,7 +530,11 @@ router.patch('/:id/arrive', authenticate, authorize('responder'), async (req: Au
       p_responder_id: req.user!.userId,
       p_arrived_at: arrivalAt.toISOString(),
     });
-    if (arrivalV2Error && arrivalV2Error.code !== 'P0002') throw arrivalV2Error;
+    if (arrivalV2Error?.code === 'P0002') {
+      res.status(409).json({ error: 'Arrival was already recorded or the assignment changed. Refresh the report.' });
+      return;
+    }
+    if (arrivalV2Error) throw arrivalV2Error;
 
     // (Legacy record_mdrrmo_arrival dual-write removed)
 
@@ -510,8 +578,12 @@ router.post('/:id/field-media', authenticate, authorize('responder', 'dispatcher
       p_responder_id: req.user!.userId,
       p_media_items: JSON.stringify([mediaItem]),
     });
-    if (mediaV2Error && mediaV2Error.code !== 'P0002') {
+    if (mediaV2Error) {
       await supabaseAdmin.storage.from(config.supabaseBucketName).remove([storagePath]);
+      if (mediaV2Error.code === 'P0002') {
+        res.status(409).json({ error: 'The report changed before the media could be attached. Refresh and try again.' });
+        return;
+      }
       throw mediaV2Error;
     }
 
@@ -543,7 +615,7 @@ router.post('/:id/close', authenticate, authorize('responder', 'dispatcher'), as
       if (!assignment || assignment.status !== 'responding') { res.status(403).json({ error: 'This report is not an active response assigned to your responder account.' }); return; }
       if (!assignment.arrived_at) { res.status(409).json({ error: 'Record your arrival before closing the report.' }); return; }
       mdrrmoArrivalAt = assignment.arrived_at;
-    } else if (report.mdrrmo_response_status !== 'responding' || !mdrrmoArrivalAt) {
+    } else if (responseStatus !== 'responding' || !mdrrmoArrivalAt) {
       res.status(409).json({ error: 'A responder must accept the report and record arrival before it can be closed.' }); return;
     }
     const missingFields = IncidentResolutionPdfService.missingFields(
@@ -571,7 +643,11 @@ router.post('/:id/close', authenticate, authorize('responder', 'dispatcher'), as
       p_actor_role: actorRole,
       p_resolution_notes: parsed.data.resolved_notes,
     });
-    if (closeV2Error && closeV2Error.code !== 'P0002') throw closeV2Error;
+    if (closeV2Error?.code === 'P0002') {
+      res.status(409).json({ error: 'The report was resolved or changed by another user. Refresh its status.' });
+      return;
+    }
+    if (closeV2Error) throw closeV2Error;
 
     // (Legacy close_mdrrmo_report dual-write removed)
     let pdfStatus: 'ready' | 'failed' = 'failed';
