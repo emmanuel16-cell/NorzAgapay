@@ -139,7 +139,9 @@ function parseAssessment(notesValue: unknown, channel: ResolutionCycle): Assessm
 
 function missingForCycle(report: any, cycle: ResolutionCycle, resolutionNotesOverride?: string): string[] {
   const missing: string[] = [];
-  const notes = cycle === 'barangay' ? report.barangay_response_notes : report.mdrrmo_response_notes;
+  const notes = cycle === 'barangay'
+    ? (report.barangay_response_notes || report.response_notes || '')
+    : (report.mdrrmo_response_notes || report.response_notes || '');
   const assessment = parseAssessment(notes, cycle);
   if (!cleanText(report.incident_type)) missing.push('incident classification');
   if (!cleanText(report.severity)) missing.push('severity');
@@ -344,7 +346,9 @@ async function toBuffer(report: any, resident: any, assistance: any[], names: { 
     row('Arrived at incident area', phDate(arrivedAt));
     row('Assigned responder(s)', cycle === 'barangay' ? names.barangay : names.mdrrmo);
     if (cycles.includes(cycle)) {
-      const notes = cycle === 'barangay' ? report.barangay_response_notes : report.mdrrmo_response_notes;
+      const notes = cycle === 'barangay'
+        ? (report.barangay_response_notes || report.response_notes || '')
+        : (report.mdrrmo_response_notes || report.response_notes || '');
       const assessment = parseAssessment(notes, cycle);
       section(`${title} Field Assessment`);
       for (const [key, label] of Object.entries(assessmentLabels)) row(label, assessment[key]);
