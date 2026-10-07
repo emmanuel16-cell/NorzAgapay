@@ -395,59 +395,57 @@ export class IncidentResolutionPdfService {
   }
 
   static async generateAndStore(reportId: string): Promise<{ buffer: Buffer; path: string; generatedAt: string }> {
-    let { data: report, error } = await supabaseAdmin
-      .from('incident_reports')
-      .select('*, barangays(name)')
+    let report: any = null;
+
+    // Try mdrrmo_reports first
+    const { data: mReport, error: mErr } = await supabaseAdmin
+      .from('mdrrmo_reports')
+      .select('*')
       .eq('id', reportId)
       .maybeSingle();
-    if (error) throw error;
+    if (mErr) throw mErr;
+
+    if (mReport) {
+      report = {
+        ...mReport,
+        mdrrmo_response_status: mReport.response_status,
+        mdrrmo_response_notes: mReport.response_notes,
+        mdrrmo_coordination_notes: mReport.coordination_notes,
+        mdrrmo_responder_name: mReport.responder_name,
+        mdrrmo_responded_by: mReport.responded_by,
+        mdrrmo_dispatched_at: mReport.dispatched_at,
+        mdrrmo_accepted_at: mReport.accepted_at,
+        mdrrmo_arrived_at: mReport.arrived_at,
+        mdrrmo_resolved_at: mReport.resolved_at,
+        mdrrmo_resolved_notes: mReport.resolved_notes,
+        status: mReport.response_status,
+        barangays: mReport.barangay_name ? { name: mReport.barangay_name } : null,
+      };
+    }
 
     if (!report) {
-      // Try mdrrmo_reports then barangay_reports
-      const { data: mReport } = await supabaseAdmin
-        .from('mdrrmo_reports')
+      // Try barangay_reports
+      const { data: bReport, error: bErr } = await supabaseAdmin
+        .from('barangay_reports')
         .select('*')
         .eq('id', reportId)
         .maybeSingle();
+      if (bErr) throw bErr;
 
-      if (mReport) {
+      if (bReport) {
         report = {
-          ...mReport,
-          mdrrmo_response_status: mReport.response_status,
-          mdrrmo_response_notes: mReport.response_notes,
-          mdrrmo_coordination_notes: mReport.coordination_notes,
-          mdrrmo_responder_name: mReport.responder_name,
-          mdrrmo_responded_by: mReport.responded_by,
-          mdrrmo_dispatched_at: mReport.dispatched_at,
-          mdrrmo_accepted_at: mReport.accepted_at,
-          mdrrmo_arrived_at: mReport.arrived_at,
-          mdrrmo_resolved_at: mReport.resolved_at,
-          mdrrmo_resolved_notes: mReport.resolved_notes,
-          status: mReport.response_status,
-          barangays: mReport.barangay_name ? { name: mReport.barangay_name } : null,
+          ...bReport,
+          barangay_response_status: bReport.response_status,
+          barangay_response_notes: bReport.response_notes,
+          barangay_responder_name: bReport.responder_name,
+          barangay_responded_by: bReport.responded_by,
+          barangay_dispatched_at: bReport.dispatched_at,
+          barangay_accepted_at: bReport.accepted_at,
+          barangay_arrived_at: bReport.arrived_at,
+          barangay_resolved_at: bReport.resolved_at,
+          barangay_resolved_notes: bReport.resolved_notes,
+          status: bReport.status,
         };
-      } else {
-        const { data: bReport } = await supabaseAdmin
-          .from('barangay_reports')
-          .select('*')
-          .eq('id', reportId)
-          .maybeSingle();
-
-        if (bReport) {
-          report = {
-            ...bReport,
-            barangay_response_status: bReport.response_status,
-            barangay_response_notes: bReport.response_notes,
-            barangay_responder_name: bReport.responder_name,
-            barangay_responded_by: bReport.responded_by,
-            barangay_dispatched_at: bReport.dispatched_at,
-            barangay_accepted_at: bReport.accepted_at,
-            barangay_arrived_at: bReport.arrived_at,
-            barangay_resolved_at: bReport.resolved_at,
-            barangay_resolved_notes: bReport.resolved_notes,
-            status: bReport.status,
-          };
-        }
       }
     }
 
@@ -480,7 +478,6 @@ export class IncidentResolutionPdfService {
     await Promise.all([
       supabaseAdmin.from('barangay_reports').update(pdfUpdate).eq('id', reportId),
       supabaseAdmin.from('mdrrmo_reports').update(pdfUpdate).eq('id', reportId),
-      supabaseAdmin.from('incident_reports').update(pdfUpdate).eq('id', reportId),
     ]);
     return { buffer, path: storagePath, generatedAt };
   }

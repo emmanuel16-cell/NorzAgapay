@@ -138,23 +138,8 @@ router.get('/queue', authenticate, authorize('dispatcher', 'admin', 'responder')
       .order('created_at', { ascending: false });
     if (newError) throw newError;
 
-    // Fallback: also check incident_reports for any reports not yet migrated
-    const { data: legacyData, error: legacyError } = await supabaseAdmin
-      .from('incident_reports')
-      .select('*, barangays(name)')
-      .order('created_at', { ascending: false });
-    if (legacyError) throw legacyError;
-
-    const newIds = new Set((newData || []).map((r: any) => r.id));
-    const legacyVisible = (legacyData || []).filter((r: any) =>
-      !newIds.has(r.id) && !r.review_outcome && isVisibleToMdrrmo(r)
-    );
-
-    // Merge: new table rows use clean column names; legacy rows stay as-is
-    const combined: any[] = [
-      ...(newData || []).map((r: any) => ({ ...r, _source: 'mdrrmo_reports' })),
-      ...legacyVisible.map((r: any) => ({ ...r, _source: 'incident_reports' })),
-    ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    // Use mdrrmo_reports exclusively
+    const combined: any[] = (newData || []).map((r: any) => ({ ...r, _source: 'mdrrmo_reports' }));
 
     let reports = combined;
     const allAssignments = await getAssignments(reports.map((report: any) => report.id));
@@ -278,20 +263,7 @@ router.patch('/:id/dispatch', authenticate, authorize('dispatcher', 'admin'), as
     });
     if (dispatchV2Error && dispatchV2Error.code !== 'P0002') throw dispatchV2Error;
 
-    // --- Dual-write: also update legacy incident_reports ---
-    const legacyUpdate: Record<string, any> = {
-      incident_type: parsed.data.incident_type,
-      severity: parsed.data.severity,
-      mdrrmo_response_status: 'pending',
-      mdrrmo_dispatch_notes: parsed.data.notes?.trim() || null,
-      mdrrmo_responder_name: responderNames,
-      lifecycle_actor_id: req.user!.userId,
-      lifecycle_actor_role: 'dispatcher',
-      mdrrmo_dispatched_by: req.user!.userId,
-      mdrrmo_dispatched_at: now,
-      dispatched_at: now,
-    };
-    await supabaseAdmin.from('incident_reports').update(legacyUpdate).eq('id', report.id);
+    // (Legacy incident_reports dual-write removed)
 
     // --- Also update mdrrmo_report_assignments on the legacy table (for responder push) ---
     await supabaseAdmin
@@ -360,14 +332,7 @@ async function reportForAction(reportId: string) {
   if (newErr) throw newErr;
   if (newRow) return newRow;
 
-  // Fallback: report may only exist in legacy incident_reports
-  const { data, error } = await supabaseAdmin
-    .from('incident_reports')
-    .select('*, barangays(name)')
-    .eq('id', reportId)
-    .maybeSingle();
-  if (error) throw error;
-  return data;
+  return null;
 }
 
 router.patch('/:id/respond', authenticate, authorize('responder'), async (req: AuthRequest, res: Response): Promise<void> => {
@@ -398,13 +363,7 @@ router.patch('/:id/respond', authenticate, authorize('responder'), async (req: A
     });
     if (acceptV2Error && acceptV2Error.code !== 'P0002') throw acceptV2Error;
 
-    // Dual-write: legacy accept_mdrrmo_report updates incident_reports
-    const { error: acceptError } = await supabaseAdmin.rpc('accept_mdrrmo_report', {
-      p_report_id: report.id,
-      p_responder_id: req.user!.userId,
-      p_responder_name: responder?.full_name || '',
-    });
-    if (acceptError && acceptError.code !== 'P0001' && acceptError.code !== 'P0002') throw acceptError;
+    // (Legacy accept_mdrrmo_report dual-write removed)
 
     const data = await reportForAction(report.id);
     if (!data) { res.status(404).json({ error: 'MDRRMO report not found.' }); return; }
@@ -475,17 +434,7 @@ router.patch('/:id/field-assessment', authenticate, authorize('responder'), asyn
         .eq('response_status', 'responding');
     }
 
-    // Dual-write: legacy incident_reports
-    let assessmentUpdate = supabaseAdmin
-      .from('incident_reports')
-      .update({ mdrrmo_response_notes: responseNotes, mdrrmo_responded_at: report.mdrrmo_responded_at || report.responded_at || now, mdrrmo_responded_by: report.mdrrmo_responded_by || report.responded_by || req.user!.userId, lifecycle_actor_id: req.user!.userId, lifecycle_actor_role: 'responder' })
-      .eq('id', report.id)
-      .eq('mdrrmo_response_status', 'responding')
-      .is('mdrrmo_resolved_at', null);
-    if (report.mdrrmo_response_notes == null && report.response_notes == null) {
-      assessmentUpdate = assessmentUpdate.is('mdrrmo_response_notes', null);
-    }
-    await assessmentUpdate;
+    // (Legacy incident_reports field assessment dual-write removed)
 
     const data = await reportForAction(report.id);
     if (!data) { res.status(409).json({ error: 'The response changed. Refresh the report before saving your assessment.' }); return; }
@@ -540,19 +489,7 @@ router.patch('/:id/arrive', authenticate, authorize('responder'), async (req: Au
     });
     if (arrivalV2Error && arrivalV2Error.code !== 'P0002') throw arrivalV2Error;
 
-    // Dual-write: legacy record_mdrrmo_arrival for incident_reports
-    const { error: arrivalError } = await supabaseAdmin.rpc('record_mdrrmo_arrival', {
-      p_report_id: report.id,
-      p_responder_id: req.user!.userId,
-      p_arrival_at: arrivalAt.toISOString(),
-      p_recorded_at: now.toISOString(),
-      p_method: method,
-      p_latitude: latitude ?? null,
-      p_longitude: longitude ?? null,
-      p_accuracy_m: accuracy_m ?? null,
-      p_distance_m: roundedDistance,
-    });
-    if (arrivalError && arrivalError.code !== 'P0001' && arrivalError.code !== 'P0002') throw arrivalError;
+    // (Legacy record_mdrrmo_arrival dual-write removed)
 
     const updatedReport = await reportForAction(report.id);
     if (!updatedReport) { res.status(404).json({ error: 'MDRRMO report not found.' }); return; }
@@ -599,16 +536,7 @@ router.post('/:id/field-media', authenticate, authorize('responder', 'dispatcher
       throw mediaV2Error;
     }
 
-    // Dual-write: legacy append_mdrrmo_field_media for incident_reports
-    const { error: mediaError } = await supabaseAdmin.rpc('append_mdrrmo_field_media', {
-      p_report_id: report.id,
-      p_actor_id: req.user!.userId,
-      p_actor_role: req.user!.role,
-      p_media_item: mediaItem,
-    });
-    if (mediaError && mediaError.code !== 'P0001' && mediaError.code !== 'P0002') {
-      console.warn('MDRRMO field media legacy write failed (non-critical):', mediaError.message);
-    }
+    // (Legacy append_mdrrmo_field_media dual-write removed)
     const data = await reportForAction(report.id);
     if (!data) { res.status(404).json({ error: 'MDRRMO report not found.' }); return; }
     const assignments = await getAssignments([report.id]);
@@ -666,43 +594,14 @@ router.post('/:id/close', authenticate, authorize('responder', 'dispatcher'), as
     });
     if (closeV2Error && closeV2Error.code !== 'P0002') throw closeV2Error;
 
-    // Dual-write: close on legacy incident_reports
-    const { error: closeLegacyError } = await supabaseAdmin.rpc('close_mdrrmo_report', {
-      p_report_id: report.id,
-      p_actor_id: req.user!.userId,
-      p_actor_role: actorRole,
-      p_resolved_notes: parsed.data.resolved_notes,
-    });
-    if (closeLegacyError) {
-      if (closeLegacyError.code === 'P0001') { res.status(409).json({ error: closeLegacyError.message }); return; }
-      if (closeLegacyError.code !== 'P0002' && closeLegacyError.code !== '42703' && !closeLegacyError.message?.includes('is_escalated')) {
-        throw closeLegacyError;
-      }
-      // Fallback: direct update of incident_reports
-      await supabaseAdmin
-        .from('incident_reports')
-        .update({
-          mdrrmo_response_status: 'resolved',
-          mdrrmo_resolved_notes: parsed.data.resolved_notes.trim(),
-          mdrrmo_resolved_at: now,
-          mdrrmo_resolved_by: req.user!.userId,
-          lifecycle_actor_id: req.user!.userId,
-          lifecycle_actor_role: actorRole,
-        })
-        .eq('id', report.id);
-      await supabaseAdmin
-        .from('mdrrmo_report_assignments')
-        .update({ status: 'resolved', resolved_at: now, resolved_by: req.user!.userId, resolved_by_role: actorRole })
-        .eq('report_id', report.id)
-        .neq('status', 'removed');
-    }
+    // (Legacy close_mdrrmo_report dual-write removed)
     let pdfStatus: 'ready' | 'failed' = 'failed';
     try {
       await IncidentResolutionPdfService.generateAndStore(report.id);
       pdfStatus = 'ready';
     } catch (pdfError) {
       console.error('Could not create incident resolution PDF after MDRRMO close:', pdfError);
-      await supabaseAdmin.from('incident_reports')
+      await supabaseAdmin.from('mdrrmo_reports')
         .update({ resolution_pdf_status: 'failed' })
         .eq('id', report.id);
     }

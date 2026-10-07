@@ -83,6 +83,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed && mounted) {
       final auth = Provider.of<AuthService>(context, listen: false);
       if (auth.currentUser != null) auth.checkVerificationStatus();
+      try {
+        final socket = Provider.of<SocketService>(context, listen: false);
+        socket.ensureConnected();
+      } catch (_) {}
     }
   }
 

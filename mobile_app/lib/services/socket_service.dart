@@ -17,9 +17,10 @@ class SocketService extends ChangeNotifier {
     _socket = IO.io(
       _socketUrl,
       IO.OptionBuilder()
-          .setTransports(['websocket'])
+          .setTransports(['websocket', 'polling'])
           .setAuth({'token': token})
           .enableAutoConnect()
+          .enableReconnection()
           .setExtraHeaders({'ngrok-skip-browser-warning': 'true'})
           .build(),
     );
@@ -44,13 +45,30 @@ class SocketService extends ChangeNotifier {
     });
   }
 
+  void ensureConnected() {
+    if (_socket != null && !_socket!.connected) {
+      _socket!.connect();
+    }
+  }
+
   void onNewReport(Function(IncidentReport report) callback) {
-    _socket?.on('barangay:report_received', (data) {
+    void handle(dynamic data) {
       if (data != null) {
-        final report = IncidentReport.fromJson(Map<String, dynamic>.from(data));
-        callback(report);
+        try {
+          final map = data is Map ? Map<String, dynamic>.from(data) : null;
+          if (map != null) {
+            final report = IncidentReport.fromJson(map);
+            callback(report);
+          }
+        } catch (e) {
+          debugPrint('Error parsing report from socket: $e');
+        }
       }
-    });
+    }
+    _socket?.off('barangay:report_received');
+    _socket?.off('incident_report:new');
+    _socket?.on('barangay:report_received', handle);
+    _socket?.on('incident_report:new', handle);
   }
 
   void onTeamMemberAdded(Function(dynamic data) callback) {

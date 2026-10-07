@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
@@ -18,7 +19,7 @@ class ReportsScreen extends StatefulWidget {
 }
 
 class _ReportsScreenState extends State<ReportsScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late TabController _tabController;
   List<IncidentReport> _reports = [];
   bool _isLoading = true;
@@ -30,6 +31,7 @@ class _ReportsScreenState extends State<ReportsScreen>
   final Set<String> _expandedAssistance = {};
   SocketService? _socketService;
   int _reportFetchSequence = 0;
+  Timer? _periodicRefreshTimer;
 
   void _onSocketStateChanged() {
     if (mounted && _socketService?.isConnected == true) _fetchReports();
@@ -39,6 +41,10 @@ class _ReportsScreenState extends State<ReportsScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    WidgetsBinding.instance.addObserver(this);
+    _periodicRefreshTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (mounted) _fetchReports();
+    });
     _fetchReports();
 
     // Listen to real-time incident report notifications & assistance requests
@@ -110,6 +116,17 @@ class _ReportsScreenState extends State<ReportsScreen>
       });
     });
   }
+
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      _socketService?.ensureConnected();
+      _fetchReports();
+    }
+  }
+
+
 
   Future<void> _fetchReports() async {
     final requestSequence = ++_reportFetchSequence;
@@ -1720,6 +1737,8 @@ class _ReportsScreenState extends State<ReportsScreen>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _periodicRefreshTimer?.cancel();
     _socketService?.removeListener(_onSocketStateChanged);
     _tabController.dispose();
     super.dispose();

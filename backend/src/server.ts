@@ -358,14 +358,14 @@ io.on('connection', (socket) => {
     void (async () => {
       if (!await canUseBarangaySocket(socket) || !incident || typeof incident !== 'object' || typeof incident.id !== 'string') return;
       const { data: report, error } = await supabaseAdmin
-        .from('incident_reports')
-        .select('id, type, title, severity, status, barangay_id, barangay_responded_by, barangay_response_notes')
+        .from('barangay_reports')
+        .select('id, type, title, severity, status, barangay_id, responded_by, response_notes')
         .eq('id', incident.id)
         .maybeSingle();
       if (error || !report) return;
       const responderIds = new Set<string>();
-      if (typeof report.barangay_responded_by === 'string') responderIds.add(report.barangay_responded_by);
-      const assigned = String(report.barangay_response_notes || '').match(/^\[ASSIGNED:([^\]]+)\]/);
+      if (typeof report.responded_by === 'string') responderIds.add(report.responded_by);
+      const assigned = String(report.response_notes || '').match(/^\[ASSIGNED:([^\]]+)\]/);
       for (const id of assigned?.[1]?.split(',').map((value: string) => value.trim()) || []) {
         if (id) responderIds.add(id);
       }

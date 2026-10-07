@@ -201,6 +201,23 @@ export function formatIncidentReport(r: any): any {
   };
 }
 
+
+async function fetchReportById(id: string) {
+  const { data: bReport } = await supabaseAdmin
+    .from('barangay_reports')
+    .select('*, barangays(name)')
+    .eq('id', id)
+    .maybeSingle();
+  if (bReport) return { report: bReport, table: 'barangay_reports' as const };
+  const { data: mReport } = await supabaseAdmin
+    .from('mdrrmo_reports')
+    .select('*, barangays(name)')
+    .eq('id', id)
+    .maybeSingle();
+  if (mReport) return { report: mReport, table: 'mdrrmo_reports' as const };
+  return { report: null, table: null };
+}
+
 async function persistIncidentEvidence(
   reportId: string,
   files: Express.Multer.File[],
@@ -232,15 +249,8 @@ async function persistIncidentEvidence(
     proof_types: proofTypes,
     evidence_status: failed ? 'failed' : 'ready',
   };
-  const { error: updateError } = await supabaseAdmin
-    .from('incident_reports')
-    .update(evidenceUpdate)
-    .eq('id', reportId);
-  if (updateError) throw updateError;
   if (failed) console.error(`One or more evidence objects failed for report ${reportId}.`);
-
-  // Dual-write evidence status into separated tables (Phase 2)
-  void Promise.allSettled([
+  await Promise.allSettled([
     supabaseAdmin.from('barangay_reports').update(evidenceUpdate).eq('id', reportId),
     supabaseAdmin.from('mdrrmo_reports').update(evidenceUpdate).eq('id', reportId),
   ]);
@@ -360,12 +370,23 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
     }
 
     if (clientRequestId) {
-      const { data: existing, error: existingError } = await supabaseAdmin
-        .from('incident_reports')
+      let existing: any = null;
+      const { data: bExisting, error: bErr } = await supabaseAdmin
+        .from('barangay_reports')
         .select('*, barangays(name)')
         .eq('client_request_id', clientRequestId)
         .maybeSingle();
-      if (existingError) throw existingError;
+      if (bErr) throw bErr;
+      existing = bExisting;
+      if (!existing) {
+        const { data: mExisting, error: mErr } = await supabaseAdmin
+          .from('mdrrmo_reports')
+          .select('*, barangays(name)')
+          .eq('client_request_id', clientRequestId)
+          .maybeSingle();
+        if (mErr) throw mErr;
+        existing = mExisting;
+      }
       if (existing) {
         const isOwner = existing.reporter_id
           ? req.user?.role === 'resident' && req.user.userId === existing.reporter_id
@@ -483,151 +504,32 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
       client_request_id: clientRequestId,
     };
 
-    let report: any = null;
-    let dbError: any = null;
-
-    try {
-      // Attempt insert with proof_urls, proof_types, and send_to columns
-      const insertResult = await supabaseAdmin
-        .from('incident_reports')
-        .insert({
-          ...insertPayload,
-          proof_urls: proofUrls,
-          proof_types: proofTypes
-        })
-        .select('*, barangays(name)')
-        .single();
-
-      if (insertResult.error) throw insertResult.error;
-      report = insertResult.data;
-    } catch (colErr: any) {
-      if (clientRequestId && colErr?.code === '23505') {
-        const { data: existing, error: existingError } = await supabaseAdmin
-          .from('incident_reports')
-          .select('*, barangays(name)')
-          .eq('client_request_id', clientRequestId)
-          .maybeSingle();
-        if (existingError) throw existingError;
-        if (existing) {
-          const isOwner = existing.reporter_id
-            ? req.user?.role === 'resident' && req.user.userId === existing.reporter_id
-            : String(existing.reporter_phone || '').replace(/\D/g, '') === submittedContact.replace(/\D/g, '');
-          if (!isOwner) {
-            res.status(409).json({ error: 'This request identifier is already in use.' });
-            return;
-          }
-          res.status(200).json({ message: 'Report was already received.', report: formatIncidentReport(existing) });
-          return;
-        }
-      }
-      // Fallback for older schemas without proof_urls, send_to, or reporter_email.
-      const safePayload = { ...insertPayload };
-      // keep send_to intact
-      if (String(colErr?.message || colErr?.details || "").toLowerCase().includes("send_to")) delete safePayload.send_to;
-      delete safePayload.reporter_email;
-      let fallbackResult = await supabaseAdmin
-        .from('incident_reports')
-        .insert(safePayload)
-        .select('*, barangays(name)')
-        .single();
-
-      const fallbackErrorText = [
-        fallbackResult.error?.message,
-        fallbackResult.error?.details,
-        fallbackResult.error?.hint,
-      ].filter(Boolean).join(' ').toLowerCase();
-      const missingIncidentTimeColumn = [
-        'client_submitted_at',
-        'incident_occurred_at',
-        'incident_time_precision',
-      ].some((column) => fallbackErrorText.includes(column));
-
-      // Preserve incident-time metadata when only newer unrelated columns are
-      // missing. Drop it only for a genuinely older database schema.
-      if (fallbackResult.error && missingIncidentTimeColumn) {
-        const legacyPayload = { ...safePayload };
-        delete legacyPayload.client_submitted_at;
-        delete legacyPayload.incident_occurred_at;
-        delete legacyPayload.incident_time_precision;
-        fallbackResult = await supabaseAdmin
-          .from('incident_reports')
-          .insert(legacyPayload)
-          .select('*, barangays(name)')
-          .single();
-      }
-      report = fallbackResult.data;
-      dbError = fallbackResult.error;
+    const targetTable = targetSendTo === 'mdrrmo' ? 'mdrrmo_reports' : 'barangay_reports';
+    const reportInsertPayload: any = {
+      ...insertPayload,
+      proof_urls: proofUrls,
+      proof_types: proofTypes,
+      response_status: 'pending',
+    };
+    if (targetSendTo === 'mdrrmo') {
+      reportInsertPayload.source_type = 'direct';
+    }
+    if (reporterEmail) {
+      reportInsertPayload.reporter_email = reporterEmail;
     }
 
-    if (dbError || !report) {
-      console.error('Database error:', dbError);
+    const { data: insertedReport, error: insertError } = await supabaseAdmin
+      .from(targetTable)
+      .insert(reportInsertPayload)
+      .select('*, barangays(name)')
+      .single();
+
+    if (insertError) {
+      console.error(`Failed to insert report into ${targetTable}:`, insertError);
       res.status(500).json({ error: 'Failed to save report to database.' });
       return;
     }
-
-    // Dual-write into separated dedicated table (Phase 2)
-    try {
-      if (targetSendTo === 'mdrrmo') {
-        await supabaseAdmin.from('mdrrmo_reports').upsert({
-          id: report.id,
-          source_type: 'direct',
-          type: report.type || type,
-          title: report.title || title,
-          specifics: report.specifics || specifics || null,
-          description: report.description || description || null,
-          latitude: report.latitude,
-          longitude: report.longitude,
-          address: report.address || null,
-          barangay_id: resolvedBarangayId,
-          proof_url: encodedProofUrl,
-          proof_urls: proofUrls,
-          proof_type: primaryProofType,
-          proof_types: proofTypes,
-          evidence_status: uploadedFiles.length > 0 || providedProofTypes.length > 0 ? 'pending' : 'ready',
-          reporter_id: req.user?.userId || null,
-          reporter_type: reporter_type || 'resident',
-          reporter_name: reporterName,
-          reporter_phone: reporterPhone,
-          reporter_email: reporterEmail,
-          response_status: 'pending',
-          incident_occurred_at: incidentOccurredAt,
-          incident_time_precision: incidentTimePrecision,
-          client_request_id: clientRequestId,
-          client_submitted_at: clientSubmittedAt,
-          created_at: report.created_at || new Date().toISOString(),
-        });
-      } else {
-        await supabaseAdmin.from('barangay_reports').upsert({
-          id: report.id,
-          type: report.type || type,
-          title: report.title || title,
-          specifics: report.specifics || specifics || null,
-          description: report.description || description || null,
-          latitude: report.latitude,
-          longitude: report.longitude,
-          address: report.address || null,
-          barangay_id: resolvedBarangayId,
-          proof_url: encodedProofUrl,
-          proof_urls: proofUrls,
-          proof_type: primaryProofType,
-          proof_types: proofTypes,
-          evidence_status: uploadedFiles.length > 0 || providedProofTypes.length > 0 ? 'pending' : 'ready',
-          reporter_id: req.user?.userId || null,
-          reporter_type: reporter_type || 'resident',
-          reporter_name: reporterName,
-          reporter_phone: reporterPhone,
-          reporter_email: reporterEmail,
-          response_status: 'pending',
-          incident_occurred_at: incidentOccurredAt,
-          incident_time_precision: incidentTimePrecision,
-          client_request_id: clientRequestId,
-          client_submitted_at: clientSubmittedAt,
-          created_at: report.created_at || new Date().toISOString(),
-        });
-      }
-    } catch (dualWriteErr: any) {
-      console.warn('Dual-write to separated report table warning:', dualWriteErr?.message);
-    }
+    let report: any = insertedReport;
 
     const formattedReport = formatIncidentReport({
       ...report,
@@ -639,11 +541,20 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
     // transactional outbox separately provides durable lifecycle delivery.
     if (targetSendTo !== 'barangay' || type === 'emergency') {
       io.to('dashboard_staff').emit('incident_report:new', formattedReport);
+      io.to('role:dispatcher').emit('incident_report:new', formattedReport);
     }
     // Always notify the local barangay room in real-time if an incident belongs to or resolves to that barangay
     if (resolvedBarangayId) {
       io.to(`barangay:${resolvedBarangayId}`).emit('barangay:report_received', formattedReport);
       io.to(`barangay:${resolvedBarangayId}`).emit('incident_report:new', formattedReport);
+      io.to(`barangay:coordination:${resolvedBarangayId}`).emit('barangay:report_received', formattedReport);
+      io.to(`barangay:coordination:${resolvedBarangayId}`).emit('incident_report:new', formattedReport);
+    }
+    if (barangay_id && barangay_id !== resolvedBarangayId) {
+      io.to(`barangay:${barangay_id}`).emit('barangay:report_received', formattedReport);
+      io.to(`barangay:${barangay_id}`).emit('incident_report:new', formattedReport);
+      io.to(`barangay:coordination:${barangay_id}`).emit('barangay:report_received', formattedReport);
+      io.to(`barangay:coordination:${barangay_id}`).emit('incident_report:new', formattedReport);
     }
     if (formattedReport.reporter_type === 'resident' && formattedReport.reporter_id) {
       io.to(`user:${formattedReport.reporter_id}`).emit('incident_report:updated', formattedReport);
@@ -688,19 +599,14 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
 router.get('/me', authenticate, async (req: AuthRequest, res: Response) => {
     try {
         const userId = req.user!.userId;
-        const { data: reports, error } = await supabaseAdmin
-            .from('incident_reports')
-            .select('*, barangays(name)')
-            .eq('reporter_id', userId)
-            .order('created_at', { ascending: false });
+        const [bRes, mRes] = await Promise.all([
+          supabaseAdmin.from('barangay_reports').select('*, barangays(name)').eq('reporter_id', userId),
+          supabaseAdmin.from('mdrrmo_reports').select('*, barangays(name)').eq('reporter_id', userId),
+        ]);
+        const reports = [...(bRes.data || []), ...(mRes.data || [])];
+        reports.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-        if (error) {
-            console.error('Database error fetching user reports:', error);
-            res.status(500).json({ error: 'Failed to fetch your reports' });
-            return;
-        }
-
-        res.json((reports || []).map(formatIncidentReport));
+        res.json(reports.map(formatIncidentReport));
     } catch (err) {
         console.error('Fetch user reports error:', err);
         res.status(500).json({ error: 'Internal server error' });
@@ -718,26 +624,32 @@ router.get('/resident', optionalAuthenticate, async (req: AuthRequest, res: Resp
       return res.status(400).json({ error: 'Missing required field: contact_number' });
     }
 
-    let query = supabaseAdmin
-      .from('incident_reports')
+    let bQuery = supabaseAdmin
+      .from('barangay_reports')
       .select('*, barangays(name)')
       .eq('reporter_type', 'resident');
-    query = req.user?.role === 'resident'
-      ? query.eq('reporter_id', req.user.userId)
-      : query.eq('reporter_phone', String(contact_number));
-    const { data: reports, error } = await query.order('created_at', { ascending: false });
+    let mQuery = supabaseAdmin
+      .from('mdrrmo_reports')
+      .select('*, barangays(name)')
+      .eq('reporter_type', 'resident');
 
-    if (error) {
-      console.error('Database error fetching resident reports:', error);
-      return res.status(500).json({ error: 'Failed to fetch reports' });
+    if (req.user?.role === 'resident') {
+      bQuery = bQuery.eq('reporter_id', req.user.userId);
+      mQuery = mQuery.eq('reporter_id', req.user.userId);
+    } else {
+      bQuery = bQuery.eq('reporter_phone', String(contact_number));
+      mQuery = mQuery.eq('reporter_phone', String(contact_number));
     }
 
-    const reportRows = reports || [];
+    const [bRes, mRes] = await Promise.all([bQuery, mQuery]);
+    const reportRows = [...(bRes.data || []), ...(mRes.data || [])];
+    reportRows.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
     const barangayIds = [...new Set(reportRows.map((report: any) => report.barangay_id).filter(Boolean))];
     let timingHistory: any[] = [];
     if (barangayIds.length > 0) {
-      const { data: history, error: historyError } = await supabaseAdmin
-        .from('incident_reports')
+      const { data: history } = await supabaseAdmin
+        .from('barangay_reports')
         .select('barangay_id, type, severity, created_at, accepted_at, arrived_at, resolved_at, travel_distance_m')
         .in('barangay_id', barangayIds)
         .not('accepted_at', 'is', null)
@@ -745,7 +657,6 @@ router.get('/resident', optionalAuthenticate, async (req: AuthRequest, res: Resp
         .not('resolved_at', 'is', null)
         .order('created_at', { ascending: false })
         .limit(5000);
-      if (historyError) throw historyError;
       timingHistory = history || [];
     }
 
@@ -793,12 +704,7 @@ router.get('/resident', optionalAuthenticate, async (req: AuthRequest, res: Resp
 
 router.get('/resident/:id', optionalAuthenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { data: report, error } = await supabaseAdmin
-      .from('incident_reports')
-      .select('*, barangays(name)')
-      .eq('id', req.params.id)
-      .maybeSingle();
-    if (error) throw error;
+    const { report } = await fetchReportById(req.params.id);
     if (!report || report.reporter_type !== 'resident') {
       res.status(404).json({ error: 'Incident report not found.' });
       return;
@@ -837,12 +743,7 @@ router.post('/:id/evidence', optionalAuthenticate, upload.any(), async (req: Aut
       return;
     }
 
-    const { data: report, error } = await supabaseAdmin
-      .from('incident_reports')
-      .select('id, reporter_id, reporter_type, reporter_phone')
-      .eq('id', req.params.id)
-      .maybeSingle();
-    if (error) throw error;
+    const { report } = await fetchReportById(req.params.id);
     if (!report || report.reporter_type !== 'resident') {
       res.status(404).json({ error: 'Incident report not found.' });
       return;
@@ -884,13 +785,8 @@ router.post('/:id/evidence', optionalAuthenticate, upload.any(), async (req: Aut
 
 router.patch('/:id/evidence-failed', optionalAuthenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { data: report, error: fetchError } = await supabaseAdmin
-      .from('incident_reports')
-      .select('id, reporter_id, reporter_type, reporter_phone')
-      .eq('id', req.params.id)
-      .maybeSingle();
-    if (fetchError) throw fetchError;
-    if (!report || report.reporter_type !== 'resident') {
+    const { report, table } = await fetchReportById(req.params.id);
+    if (!report || report.reporter_type !== 'resident' || !table) {
       res.status(404).json({ error: 'Incident report not found.' });
       return;
     }
@@ -904,7 +800,7 @@ router.patch('/:id/evidence-failed', optionalAuthenticate, async (req: AuthReque
       return;
     }
     const { error } = await supabaseAdmin
-      .from('incident_reports')
+      .from(table)
       .update({ evidence_status: 'failed' })
       .eq('id', report.id);
     if (error) throw error;
@@ -922,22 +818,15 @@ router.patch('/:id/evidence-failed', optionalAuthenticate, async (req: AuthReque
 router.get('/', optionalAuthenticate, async (req: AuthRequest, res: Response) => {
     try {
         const { type } = req.query;
-        let query = supabaseAdmin
-            .from('incident_reports')
-            .select('*, barangays(name)')
-            .order('created_at', { ascending: false });
-
+        let bQuery = supabaseAdmin.from('barangay_reports').select('*, barangays(name)');
+        let mQuery = supabaseAdmin.from('mdrrmo_reports').select('*, barangays(name)');
         if (type === 'emergency' || type === 'community') {
-            query = query.eq('type', type);
+            bQuery = bQuery.eq('type', type);
+            mQuery = mQuery.eq('type', type);
         }
-
-        const { data: reports, error } = await query;
-
-        if (error) {
-            console.error('Database error fetching reports:', error);
-            res.status(500).json({ error: 'Failed to fetch incident reports' });
-            return;
-        }
+        const [bRes, mRes] = await Promise.all([bQuery, mQuery]);
+        const reports = [...(bRes.data || []), ...(mRes.data || [])];
+        reports.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
         let formatted = (reports || []).map(formatIncidentReport);
         if (req.user && ['dispatcher', 'admin', 'master_admin'].includes(req.user.role)) {
@@ -1043,35 +932,21 @@ router.patch('/:id', optionalAuthenticate, upload.any(), async (req: AuthRequest
     updatePayload.lifecycle_actor_id = req.user?.userId || null;
     updatePayload.lifecycle_actor_role = req.user?.role || null;
 
-    let updatedReport: any = null;
-    try {
-      const { data, error } = await supabaseAdmin
-        .from('incident_reports')
-        .update({
-          ...updatePayload,
-          proof_urls: allUrls,
-        })
-        .eq('id', id)
-        .select('*, barangays(name)')
-        .single();
-      if (error) throw error;
-      updatedReport = data;
-    } catch (_) {
-      const { data, error } = await supabaseAdmin
-        .from('incident_reports')
-        .update(updatePayload)
-        .eq('id', id)
-        .select('*, barangays(name)')
-        .single();
-      if (error) throw error;
-      updatedReport = data;
+    const { report: existingReport, table: targetTable } = await fetchReportById(id);
+    if (!existingReport || !targetTable) {
+      res.status(404).json({ error: 'Incident report not found' });
+      return;
     }
-
-    // Dual-write updates into separated tables
-    void Promise.allSettled([
-      supabaseAdmin.from('barangay_reports').update({ ...updatePayload, proof_urls: allUrls }).eq('id', id),
-      supabaseAdmin.from('mdrrmo_reports').update({ ...updatePayload, proof_urls: allUrls }).eq('id', id),
-    ]);
+    const { data: updatedReport, error: updateError } = await supabaseAdmin
+      .from(targetTable)
+      .update({
+        ...updatePayload,
+        proof_urls: allUrls,
+      })
+      .eq('id', id)
+      .select('*, barangays(name)')
+      .single();
+    if (updateError) throw updateError;
 
     const formatted = formatIncidentReport({
       ...updatedReport,
@@ -1140,13 +1015,8 @@ router.post('/:id/field-media', optionalAuthenticate, upload.single('media'), as
       created_at: new Date().toISOString()
     };
 
-    const { data: currentReport, error: fetchErr } = await supabaseAdmin
-      .from('incident_reports')
-      .select('*')
-      .eq('id', id)
-      .single();
-
-    if (fetchErr || !currentReport) {
+    const { report: currentReport, table: targetTable } = await fetchReportById(id);
+    if (!currentReport || !targetTable) {
       res.status(404).json({ error: 'Incident report not found.' });
       return;
     }
@@ -1155,39 +1025,13 @@ router.post('/:id/field-media', optionalAuthenticate, upload.single('media'), as
     const existingMedia = formattedCurrent.responder_media || [];
     const updatedMedia = [...existingMedia, newMediaItem];
 
-    let updatedReport: any = null;
-    try {
-      const { data, error } = await supabaseAdmin
-        .from('incident_reports')
-        .update({ responder_media: updatedMedia })
-        .eq('id', id)
-        .select('*, barangays(name)')
-        .single();
-      if (error) throw error;
-      updatedReport = data;
-    } catch (colErr) {
-      // Fallback: embed in barangay_response_notes
-      let notes = currentReport.barangay_response_notes || '';
-      if (notes.includes('[RESPONDER_MEDIA:')) {
-        notes = notes.replace(/\[RESPONDER_MEDIA:[\s\S]*?\]/, `[RESPONDER_MEDIA:${JSON.stringify(updatedMedia)}]`);
-      } else {
-        notes = notes ? `${notes} [RESPONDER_MEDIA:${JSON.stringify(updatedMedia)}]` : `[RESPONDER_MEDIA:${JSON.stringify(updatedMedia)}]`;
-      }
-      const { data, error } = await supabaseAdmin
-        .from('incident_reports')
-        .update({ barangay_response_notes: notes })
-        .eq('id', id)
-        .select('*, barangays(name)')
-        .single();
-      if (error) throw error;
-      updatedReport = data;
-    }
-
-    // Dual-write responder_media into separated tables
-    void Promise.allSettled([
-      supabaseAdmin.from('barangay_reports').update({ responder_media: updatedMedia }).eq('id', id),
-      supabaseAdmin.from('mdrrmo_reports').update({ responder_media: updatedMedia }).eq('id', id),
-    ]);
+    const { data: updatedReport, error: updateError } = await supabaseAdmin
+      .from(targetTable)
+      .update({ responder_media: updatedMedia })
+      .eq('id', id)
+      .select('*, barangays(name)')
+      .single();
+    if (updateError) throw updateError;
 
     const formatted = formatIncidentReport(updatedReport);
 

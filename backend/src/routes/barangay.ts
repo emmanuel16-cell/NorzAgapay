@@ -1302,26 +1302,13 @@ router.get('/reports/statistics', authenticateBarangay, requireRole(['admin']), 
     }
 
     // Primary: read from dedicated barangay_reports table
-    const { data: newData, error: newError } = await supabaseAdmin
+    const { data: allData, error: newError } = await supabaseAdmin
       .from('barangay_reports')
       .select('*')
       .eq('barangay_id', req.barangayUser.barangayId)
       .order('created_at', { ascending: false })
       .limit(5000);
     if (newError) throw newError;
-
-    // Fallback: legacy incident_reports not yet migrated
-    const { data: legacyData, error: legacyError } = await supabaseAdmin
-      .from('incident_reports')
-      .select('*, barangays(name)')
-      .eq('barangay_id', req.barangayUser.barangayId)
-      .order('created_at', { ascending: false })
-      .limit(5000);
-    if (legacyError) throw legacyError;
-
-    const newIds = new Set((newData || []).map((r: any) => r.id));
-    const legacyOnly = (legacyData || []).filter((r: any) => !newIds.has(r.id));
-    const allData = [...(newData || []), ...legacyOnly];
 
     const mdrrmoHandled = (report: any) => {
       const routeText = `${report.specifics || ''}\n${report.description || ''}`;
@@ -1440,28 +1427,13 @@ router.get('/reports/statistics', authenticateBarangay, requireRole(['admin']), 
 router.get('/reports/resolved', authenticateBarangay, requireRole(['admin', 'staff', 'dispatcher', 'responder']), async (req: any, res: Response): Promise<void> => {
   try {
     // Primary: barangay_reports
-    const { data: newData, error: newError } = await supabaseAdmin
+    const { data: combined, error: newError } = await supabaseAdmin
       .from('barangay_reports')
       .select('*')
       .eq('barangay_id', req.barangayUser.barangayId)
       .order('resolved_at', { ascending: false, nullsFirst: false })
       .limit(5000);
     if (newError) throw newError;
-
-    // Fallback: legacy
-    const { data: legacyData, error: legacyError } = await supabaseAdmin
-      .from('incident_reports')
-      .select('*, barangays(name)')
-      .eq('barangay_id', req.barangayUser.barangayId)
-      .order('resolved_at', { ascending: false, nullsFirst: false })
-      .limit(5000);
-    if (legacyError) throw legacyError;
-
-    const newIds = new Set((newData || []).map((r: any) => r.id));
-    const combined = [
-      ...(newData || []),
-      ...(legacyData || []).filter((r: any) => !newIds.has(r.id)),
-    ];
 
     const resolvedReports = combined.filter((report: any) =>
       report.response_status === 'resolved' ||
@@ -1495,38 +1467,14 @@ router.get('/reports', authenticateBarangay, requireRole(['admin', 'dispatcher',
   try {
     const { status } = req.query;
 
-    // Primary: read from dedicated barangay_reports
-    let newQuery = supabaseAdmin
+    let query = supabaseAdmin
       .from('barangay_reports')
       .select('*')
       .eq('barangay_id', req.barangayUser.barangayId)
       .order('created_at', { ascending: false });
-    if (status) newQuery = (newQuery as any).eq('response_status', status);
-    const { data: newData, error: newError } = await newQuery;
+    if (status) query = (query as any).eq('response_status', status);
+    const { data, error: newError } = await query;
     if (newError) throw newError;
-
-    // Fallback: legacy incident_reports not yet in barangay_reports
-    let legacyQuery = supabaseAdmin
-      .from('incident_reports')
-      .select('*')
-      .eq('barangay_id', req.barangayUser.barangayId)
-      .order('created_at', { ascending: false });
-    if (status) legacyQuery = (legacyQuery as any).eq('barangay_response_status', status);
-    const { data: legacyData, error: legacyError } = await legacyQuery;
-    if (legacyError) throw legacyError;
-
-    const newIds = new Set((newData || []).map((r: any) => r.id));
-    const legacyForBarangay = (legacyData || []).filter((r: any) => {
-      if (newIds.has(r.id)) return false;
-      if (r.send_to === 'mdrrmo') return false;
-      if (r.specifics && r.specifics.includes('[SEND_TO:mdrrmo]')) return false;
-      if (r.description && r.description.includes('[SEND_TO:mdrrmo]')) return false;
-      return true;
-    });
-    const data = [
-      ...(newData || []),
-      ...legacyForBarangay,
-    ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
     // Some older resident profiles used their login email as a fallback contact.
     // Prefer the resident profile's actual phone when formatting contact details.
@@ -1625,15 +1573,15 @@ router.post('/reports/:id/field-media', authenticateBarangay, requireRole(['disp
       return;
     }
     const { data: reportAccess, error: accessError } = await supabaseAdmin
-      .from('incident_reports').select('barangay_response_notes, barangay_responded_by, barangay_response_status')
+      .from('barangay_reports').select('response_notes, responded_by, response_status')
       .eq('id', id).eq('barangay_id', req.barangayUser.barangayId).maybeSingle();
     if (accessError) throw accessError;
     if (!reportAccess) { res.status(404).json({ error: 'Incident report not found.' }); return; }
-    if (reportAccess.barangay_response_status === 'resolved') { res.status(409).json({ error: 'Resolved incidents cannot receive new field media.' }); return; }
+    if (reportAccess.response_status === 'resolved') { res.status(409).json({ error: 'Resolved incidents cannot receive new field media.' }); return; }
     if (req.barangayUser.role === 'responder') {
-      const assigned = (reportAccess.barangay_response_notes || '').match(/^\[ASSIGNED:([^\]]+)\]/)?.[1]
+      const assigned = (reportAccess.response_notes || '').match(/^\[ASSIGNED:([^\]]+)\]/)?.[1]
         ?.split(',').map((value: string) => value.trim()) || [];
-      if (reportAccess.barangay_responded_by !== req.barangayUser.userId && !assigned.includes(req.barangayUser.userId)) {
+      if (reportAccess.responded_by !== req.barangayUser.userId && !assigned.includes(req.barangayUser.userId)) {
         res.status(403).json({ error: 'This incident has not been assigned to your responder account.' });
         return;
       }
@@ -1690,9 +1638,10 @@ router.post('/reports/:id/field-media', authenticateBarangay, requireRole(['disp
     };
 
     const { data: currentReport, error: fetchErr } = await supabaseAdmin
-      .from('incident_reports')
+      .from('barangay_reports')
       .select('*')
       .eq('id', id)
+      .eq('barangay_id', req.barangayUser.barangayId)
       .single();
 
     if (fetchErr || !currentReport) {
@@ -1704,41 +1653,18 @@ router.post('/reports/:id/field-media', authenticateBarangay, requireRole(['disp
     const existingMedia = formattedCurrent.responder_media || [];
     const updatedMedia = [...existingMedia, newMediaItem];
 
-    let updatedReport: any = null;
-    try {
-      const { data, error } = await supabaseAdmin
-        .from('incident_reports')
-        .update({
-          responder_media: updatedMedia,
-          lifecycle_actor_id: req.barangayUser.userId,
-          lifecycle_actor_role: req.barangayUser.role === 'dispatcher' ? 'barangay_dispatcher' : 'barangay_responder',
-        })
-        .eq('id', id)
-        .select('*, barangays(name)')
-        .single();
-      if (error) throw error;
-      updatedReport = data;
-    } catch (colErr) {
-      // Fallback: embed in barangay_response_notes
-      let notes = currentReport.barangay_response_notes || '';
-      if (notes.includes('[RESPONDER_MEDIA:')) {
-        notes = notes.replace(/\[RESPONDER_MEDIA:[\s\S]*?\]/, `[RESPONDER_MEDIA:${JSON.stringify(updatedMedia)}]`);
-      } else {
-        notes = notes ? `${notes} [RESPONDER_MEDIA:${JSON.stringify(updatedMedia)}]` : `[RESPONDER_MEDIA:${JSON.stringify(updatedMedia)}]`;
-      }
-      const { data, error } = await supabaseAdmin
-        .from('incident_reports')
-        .update({
-          barangay_response_notes: notes,
-          lifecycle_actor_id: req.barangayUser.userId,
-          lifecycle_actor_role: req.barangayUser.role === 'dispatcher' ? 'barangay_dispatcher' : 'barangay_responder',
-        })
-        .eq('id', id)
-        .select('*, barangays(name)')
-        .single();
-      if (error) throw error;
-      updatedReport = data;
-    }
+    const { data: updatedReport, error: updateErr } = await supabaseAdmin
+      .from('barangay_reports')
+      .update({
+        responder_media: updatedMedia,
+        lifecycle_actor_id: req.barangayUser.userId,
+        lifecycle_actor_role: req.barangayUser.role === 'dispatcher' ? 'barangay_dispatcher' : 'barangay_responder',
+      })
+      .eq('id', id)
+      .eq('barangay_id', req.barangayUser.barangayId)
+      .select('*')
+      .single();
+    if (updateErr) throw updateErr;
 
     const formatted = formatIncidentReport(updatedReport);
 
@@ -1795,8 +1721,8 @@ router.patch('/reports/:id/dispatch', authenticateBarangay, requireRole(['dispat
       ? `[ASSIGNED:${ids.join(',')}] ${cleanUserNotes}`.trim()
       : (cleanUserNotes || null);
 
-    // Write to new barangay_reports table
-    await supabaseAdmin
+    // Update barangay_reports table
+    const { data, error } = await supabaseAdmin
       .from('barangay_reports')
       .update({
         incident_type,
@@ -1806,26 +1732,6 @@ router.patch('/reports/:id/dispatch', authenticateBarangay, requireRole(['dispat
         responded_by: primaryLeaderId,
         responded_at: reviewedAndDispatchedAt,
         dispatched_at: reviewedAndDispatchedAt,
-        lifecycle_actor_id: req.barangayUser.userId,
-        lifecycle_actor_role: 'barangay_dispatcher',
-      })
-      .eq('id', req.params.id)
-      .eq('barangay_id', req.barangayUser.barangayId);
-
-    // Dual-write: legacy incident_reports
-    const { data, error } = await supabaseAdmin
-      .from('incident_reports')
-      .update({
-        incident_type,
-        severity,
-        barangay_response_status: 'pending',
-        barangay_response_notes: encodedNotes,
-        barangay_responded_by: primaryLeaderId,
-        barangay_responded_at: reviewedAndDispatchedAt,
-        dispatcher_reviewed_at: reviewedAndDispatchedAt,
-        barangay_dispatcher_reviewed_at: reviewedAndDispatchedAt,
-        dispatched_at: reviewedAndDispatchedAt,
-        barangay_dispatched_at: reviewedAndDispatchedAt,
         lifecycle_actor_id: req.barangayUser.userId,
         lifecycle_actor_role: 'barangay_dispatcher',
       })
@@ -1876,11 +1782,11 @@ router.patch('/reports/:id/escalate', authenticateBarangay, requireRole(['dispat
       return;
     }
 
-    // Fetch from barangay_reports first, fallback to incident_reports
+    // Fetch from barangay_reports
     let assignedReport: any = null;
     const { data: newRow, error: newRowErr } = await supabaseAdmin
       .from('barangay_reports')
-      .select('id, status, response_status, incident_type, severity, resolved_at, responded_by, response_notes, coordination_notes, dispatched_at')
+      .select('id, status, response_status, incident_type, severity, resolved_at, responded_by, response_notes, coordination_notes, dispatched_at, accepted_at')
       .eq('id', req.params.id)
       .eq('barangay_id', req.barangayUser.barangayId)
       .maybeSingle();
@@ -1896,15 +1802,6 @@ router.patch('/reports/:id/escalate', authenticateBarangay, requireRole(['dispat
         mdrrmo_dispatched_at: null, mdrrmo_accepted_at: null, mdrrmo_arrived_at: null, mdrrmo_resolved_at: null,
         mdrrmo_response_status: null,
       };
-    } else {
-      const { data: legacyRow, error: legacyErr } = await supabaseAdmin
-        .from('incident_reports')
-        .select('id, status, review_outcome, incident_type, severity, barangay_response_status, barangay_resolved_at, barangay_responded_by, barangay_response_notes, mdrrmo_response_status, mdrrmo_dispatched_at, mdrrmo_accepted_at, mdrrmo_arrived_at, mdrrmo_resolved_at')
-        .eq('id', req.params.id)
-        .eq('barangay_id', req.barangayUser.barangayId)
-        .maybeSingle();
-      if (legacyErr) throw legacyErr;
-      assignedReport = legacyRow;
     }
     if (!assignedReport) {
       res.status(404).json({ error: 'Incident report not found in this barangay.' });
@@ -1960,11 +1857,16 @@ router.patch('/reports/:id/escalate', authenticateBarangay, requireRole(['dispat
     }
 
     // Write escalation status to barangay_reports
-    await supabaseAdmin
+    const { data, error } = await supabaseAdmin
       .from('barangay_reports')
       .update(barangayReportsUpdate)
       .eq('id', req.params.id)
-      .eq('barangay_id', req.barangayUser.barangayId);
+      .eq('barangay_id', req.barangayUser.barangayId)
+      .select()
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) { res.status(409).json({ error: 'The report lifecycle changed. Refresh before escalating.' }); return; }
 
     // Upsert into mdrrmo_reports so MDRRMO can pick it up
     const { data: barangayRow } = await supabaseAdmin
@@ -2001,41 +1903,6 @@ router.patch('/reports/:id/escalate', authenticateBarangay, requireRole(['dispat
           created_at: barangayRow.created_at,
         }, { onConflict: 'id', ignoreDuplicates: false });
     }
-
-    // Dual-write: escalate on legacy incident_reports
-    let escalateQuery = supabaseAdmin
-      .from('incident_reports')
-      .update({
-        mdrrmo_coordination_notes: escalationNotes,
-        mdrrmo_response_notes: escalationNotes,
-        status: 'escalated',
-        mdrrmo_response_status: 'pending',
-        lifecycle_actor_id: req.barangayUser.userId,
-        lifecycle_actor_role: 'barangay_dispatcher',
-      })
-      .eq('id', req.params.id)
-      .eq('barangay_id', req.barangayUser.barangayId)
-      .is('barangay_resolved_at', null)
-      .is('mdrrmo_dispatched_at', null)
-      .is('mdrrmo_accepted_at', null)
-      .is('mdrrmo_arrived_at', null)
-      .is('mdrrmo_resolved_at', null)
-      .is('review_outcome', null)
-      .eq('status', assignedReport.status);
-    if (assignedReport.barangay_response_status == null) {
-      escalateQuery = escalateQuery.is('barangay_response_status', null);
-    } else {
-      escalateQuery = escalateQuery.eq('barangay_response_status', assignedReport.barangay_response_status);
-    }
-    if (assignedReport.mdrrmo_response_status == null) {
-      escalateQuery = escalateQuery.is('mdrrmo_response_status', null);
-    } else {
-      escalateQuery = escalateQuery.eq('mdrrmo_response_status', assignedReport.mdrrmo_response_status);
-    }
-    const { data, error } = await escalateQuery.select().maybeSingle();
-
-    if (error) throw error;
-    if (!data) { res.status(409).json({ error: 'The report lifecycle changed. Refresh before escalating.' }); return; }
 
     const { data: bData } = await supabaseAdmin
       .from('barangays')
@@ -2104,15 +1971,17 @@ router.patch('/reports/:id/respond', authenticateBarangay, requireRole(['dispatc
       return;
     }
     const { data: currentReport, error: currentError } = await supabaseAdmin
-      .from('incident_reports')
-      .select('status, latitude, longitude, barangay_response_notes, barangay_responded_by, accepted_at, barangay_accepted_at, mdrrmo_accepted_at')
+      .from('barangay_reports')
+      .select('*')
       .eq('id', req.params.id).eq('barangay_id', req.barangayUser.barangayId).maybeSingle();
     if (currentError) throw currentError;
     if (!currentReport) { res.status(404).json({ error: 'Incident report not found' }); return; }
+    const currentNotes = currentReport.response_notes || currentReport.barangay_response_notes || '';
+    const assignedMatch = currentNotes.match(/^\[ASSIGNED:([^\]]+)\]/);
+    const assignedIds = assignedMatch ? assignedMatch[1].split(',').map((id: string) => id.trim()) : [];
     if (req.barangayUser.role === 'responder') {
-      const assignedMatch = (currentReport.barangay_response_notes || '').match(/^\[ASSIGNED:([^\]]+)\]/);
-      const assignedIds = assignedMatch ? assignedMatch[1].split(',').map((id: string) => id.trim()) : [];
-      if (currentReport.barangay_responded_by !== req.barangayUser.userId && !assignedIds.includes(req.barangayUser.userId)) {
+      const respondedBy = currentReport.responded_by || currentReport.barangay_responded_by;
+      if (respondedBy !== req.barangayUser.userId && !assignedIds.includes(req.barangayUser.userId)) {
         res.status(403).json({ error: 'This incident has not been assigned to your responder account' }); return;
       }
     }
@@ -2126,7 +1995,7 @@ router.patch('/reports/:id/respond', authenticateBarangay, requireRole(['dispatc
     };
     if (req.barangayUser.role === 'responder') {
       updatePayload.accepted_at = currentReport.accepted_at || actionAt;
-      updatePayload.barangay_accepted_at = currentReport.barangay_accepted_at || currentReport.accepted_at || actionAt;
+      updatePayload.barangay_accepted_at = currentReport.accepted_at || actionAt;
     }
     if (req.barangayUser.role === 'responder' && !currentReport.accepted_at &&
         latitude !== undefined && longitude !== undefined && accuracy_m !== undefined && fix_at) {
@@ -2142,14 +2011,14 @@ router.patch('/reports/:id/respond', authenticateBarangay, requireRole(['dispatc
       }
     }
     if (notes !== undefined && notes !== null) {
-      const assignmentMarker = (currentReport.barangay_response_notes || '').match(/^\[ASSIGNED:[^\]]+\]/)?.[0];
+      const assignmentMarker = currentNotes.match(/^\[ASSIGNED:[^\]]+\]/)?.[0];
       updatePayload.barangay_response_notes = [assignmentMarker, notes].filter(Boolean).join(' ');
     }
     if (mdrrmo_notes !== undefined && mdrrmo_notes !== null) {
       updatePayload.mdrrmo_coordination_notes = mdrrmo_notes;
     }
 
-    // Dual-write: barangay_reports
+    // Update barangay_reports
     const isEscalatedReport = String(currentReport.status || '').toLowerCase() === 'escalated' ||
       Boolean((currentReport as any).is_escalated);
 
@@ -2168,15 +2037,9 @@ router.patch('/reports/:id/respond', authenticateBarangay, requireRole(['dispatc
       barangayReportsUpdate.resolved_notes = 'Escalated to MDRRMO and received by barangay responder';
     }
 
-    await supabaseAdmin
+    const { data, error } = await supabaseAdmin
       .from('barangay_reports')
       .update(barangayReportsUpdate)
-      .eq('id', req.params.id)
-      .eq('barangay_id', req.barangayUser.barangayId);
-
-    const { data, error } = await supabaseAdmin
-      .from('incident_reports')
-      .update(updatePayload)
       .eq('id', req.params.id)
       .eq('barangay_id', req.barangayUser.barangayId)
       .select()
@@ -2250,8 +2113,8 @@ router.patch('/reports/:id/arrive', authenticateBarangay, requireRole(['responde
     }
 
     const { data: currentReport, error: fetchError } = await supabaseAdmin
-      .from('incident_reports')
-      .select('id, latitude, longitude, barangay_response_status, barangay_responded_by, barangay_response_notes, accepted_at, arrived_at, resolved_at, barangay_accepted_at, barangay_arrived_at, barangay_resolved_at, mdrrmo_accepted_at, mdrrmo_arrived_at')
+      .from('barangay_reports')
+      .select('*')
       .eq('id', req.params.id)
       .eq('barangay_id', req.barangayUser.barangayId)
       .maybeSingle();
@@ -2261,18 +2124,21 @@ router.patch('/reports/:id/arrive', authenticateBarangay, requireRole(['responde
       return;
     }
 
-    const assignedMatch = (currentReport.barangay_response_notes || '').match(/^\[ASSIGNED:([^\]]+)\]/);
+    const currentNotes = currentReport.response_notes || currentReport.barangay_response_notes || '';
+    const assignedMatch = currentNotes.match(/^\[ASSIGNED:([^\]]+)\]/);
     const assignedIds = assignedMatch ? assignedMatch[1].split(',').map((id: string) => id.trim()) : [];
-    if (currentReport.barangay_responded_by !== req.barangayUser.userId && !assignedIds.includes(req.barangayUser.userId)) {
+    const respondedBy = currentReport.responded_by || currentReport.barangay_responded_by;
+    if (respondedBy !== req.barangayUser.userId && !assignedIds.includes(req.barangayUser.userId)) {
       res.status(403).json({ error: 'This incident has not been assigned to your responder account.' });
       return;
     }
-    if (currentReport.barangay_resolved_at || currentReport.barangay_response_status !== 'responding') {
+    const currentStatus = currentReport.response_status || currentReport.barangay_response_status;
+    if (currentReport.resolved_at || currentStatus !== 'responding') {
       res.status(409).json({ error: 'Accept the dispatch before marking arrival.' });
       return;
     }
-    if (currentReport.barangay_arrived_at || (!currentReport.mdrrmo_arrived_at && currentReport.arrived_at)) {
-      res.json({ ...currentReport, arrived_at: currentReport.barangay_arrived_at || currentReport.arrived_at });
+    if (currentReport.arrived_at) {
+      res.json({ ...currentReport, arrived_at: currentReport.arrived_at });
       return;
     }
 
@@ -2321,9 +2187,6 @@ router.patch('/reports/:id/arrive', authenticateBarangay, requireRole(['responde
     const updatePayload = {
       accepted_at: currentReport.accepted_at || now.toISOString(),
       arrived_at: fixAt.toISOString(),
-      barangay_accepted_at: currentReport.barangay_accepted_at ||
-        (currentReport.mdrrmo_accepted_at ? now.toISOString() : currentReport.accepted_at || now.toISOString()),
-      barangay_arrived_at: fixAt.toISOString(),
       arrival_recorded_at: now.toISOString(),
       arrival_method: parsed.data.method,
       arrival_latitude: latitude,
@@ -2334,38 +2197,16 @@ router.patch('/reports/:id/arrive', authenticateBarangay, requireRole(['responde
       lifecycle_actor_role: 'barangay_responder',
     };
 
-    // Dual-write: barangay_reports
-    await supabaseAdmin
+    // Update barangay_reports
+    const { data: updated, error } = await supabaseAdmin
       .from('barangay_reports')
-      .update({
-        accepted_at: updatePayload.barangay_accepted_at,
-        arrived_at: updatePayload.barangay_arrived_at,
-        lifecycle_actor_id: req.barangayUser.userId,
-        lifecycle_actor_role: 'barangay_responder',
-      })
-      .eq('id', req.params.id)
-      .eq('barangay_id', req.barangayUser.barangayId);
-
-    const { data, error } = await supabaseAdmin
-      .from('incident_reports')
       .update(updatePayload)
       .eq('id', req.params.id)
       .eq('barangay_id', req.barangayUser.barangayId)
-      .is('arrived_at', null)
       .select()
-      .maybeSingle();
-    if (error) throw error;
+      .single();
 
-    let updated = data;
-    if (!updated) {
-      const { data: latestReport, error: latestError } = await supabaseAdmin
-        .from('incident_reports').select('*')
-        .eq('id', req.params.id)
-        .eq('barangay_id', req.barangayUser.barangayId)
-        .single();
-      if (latestError) throw latestError;
-      updated = latestReport;
-    }
+    if (error) throw error;
     const formatted = formatIncidentReport(updated);
     io.to('dashboard_staff').emit('incident_report:updated', formatted);
     io.to(`barangay:${req.barangayUser.barangayId}`).emit('barangay:report_updated', formatted);
@@ -2389,7 +2230,7 @@ router.post('/reports/:id/close', authenticateBarangay, requireRole(['dispatcher
     }
 
     const { data: currentReport, error: accessError } = await supabaseAdmin
-      .from('incident_reports')
+      .from('barangay_reports')
       .select('*')
       .eq('id', req.params.id)
       .eq('barangay_id', req.barangayUser.barangayId)
@@ -2400,30 +2241,33 @@ router.post('/reports/:id/close', authenticateBarangay, requireRole(['dispatcher
       return;
     }
 
-    const assignedMatch = (currentReport.barangay_response_notes || '').match(/^\[ASSIGNED:([^\]]+)\]/);
+    const currentNotes = currentReport.response_notes || currentReport.barangay_response_notes || '';
+    const assignedMatch = currentNotes.match(/^\[ASSIGNED:([^\]]+)\]/);
     const assignedIds = assignedMatch ? assignedMatch[1].split(',').map((id: string) => id.trim()) : [];
-    const hasBarangayCycle = currentReport.barangay_response_status === 'responding' ||
-      currentReport.barangay_response_status === 'resolved' ||
-      Boolean(currentReport.barangay_responded_by) || assignedIds.length > 0 ||
-      Boolean(currentReport.barangay_resolved_at);
+    const currentStatus = currentReport.response_status || currentReport.barangay_response_status;
+    const respondedBy = currentReport.responded_by || currentReport.barangay_responded_by;
+    const resolvedAtOld = currentReport.resolved_at || currentReport.barangay_resolved_at;
+    const hasBarangayCycle = currentStatus === 'responding' ||
+      currentStatus === 'resolved' ||
+      Boolean(respondedBy) || assignedIds.length > 0 ||
+      Boolean(resolvedAtOld);
     if (!hasBarangayCycle) {
       res.status(403).json({ error: 'This report is being handled by MDRRMO and must be resolved by its dispatcher or responder.' });
       return;
     }
-    if (currentReport.barangay_response_status === 'resolved') {
+    if (currentStatus === 'resolved' || resolvedAtOld) {
       res.status(409).json({ error: 'The Barangay response cycle is already resolved.' });
       return;
     }
 
-    const barangayArrivalAt = currentReport.barangay_arrived_at ||
-      (!currentReport.mdrrmo_arrived_at ? currentReport.arrived_at : null);
+    const barangayArrivalAt = currentReport.arrived_at || currentReport.barangay_arrived_at;
     if (!barangayArrivalAt) {
       res.status(409).json({ error: 'Mark the responder as arrived before resolving the incident.' });
       return;
     }
 
     if (req.barangayUser.role === 'responder') {
-      if (currentReport.barangay_responded_by !== req.barangayUser.userId && !assignedIds.includes(req.barangayUser.userId)) {
+      if (respondedBy !== req.barangayUser.userId && !assignedIds.includes(req.barangayUser.userId)) {
         res.status(403).json({ error: 'Only an assigned responder can close this incident' }); return;
       }
     }
@@ -2442,7 +2286,7 @@ router.post('/reports/:id/close', authenticateBarangay, requireRole(['dispatcher
       });
       return;
     }
-    const resolvedAt = currentReport.barangay_resolved_at || new Date().toISOString();
+    const resolvedAt = currentReport.resolved_at || currentReport.barangay_resolved_at || new Date().toISOString();
     const mdrrmoChannelEngaged = isDirectMdrrmoReport(currentReport) ||
       currentReport.status === 'escalated' || currentReport.is_escalated === true ||
       currentReport.beyond_barangay_capability === true ||
@@ -2460,8 +2304,8 @@ router.post('/reports/:id/close', authenticateBarangay, requireRole(['dispatcher
             ? (currentReport.mdrrmo_dispatched_at ? 'verified' : 'pending')
             : currentReport.status;
 
-    // Dual-write: mark resolved in barangay_reports
-    await supabaseAdmin
+    // Update barangay_reports
+    const { data, error } = await supabaseAdmin
       .from('barangay_reports')
       .update({
         response_status: 'resolved',
@@ -2472,35 +2316,9 @@ router.post('/reports/:id/close', authenticateBarangay, requireRole(['dispatcher
         lifecycle_actor_role: req.barangayUser.role === 'dispatcher' ? 'barangay_dispatcher' : 'barangay_responder',
       })
       .eq('id', req.params.id)
-      .eq('barangay_id', req.barangayUser.barangayId);
-
-    let closeQuery = supabaseAdmin
-      .from('incident_reports')
-      .update({
-        barangay_response_status: 'resolved',
-        barangay_resolved_notes: resolved_notes.trim(),
-        barangay_resolved_at: resolvedAt,
-        status: overallStatus,
-        resolved_notes: allChannelsResolved ? resolved_notes.trim() : null,
-        resolved_at: allChannelsResolved ? resolvedAt : null,
-        lifecycle_actor_id: req.barangayUser.userId,
-        lifecycle_actor_role: req.barangayUser.role === 'dispatcher' ? 'barangay_dispatcher' : 'barangay_responder',
-      })
-      .eq('id', req.params.id)
       .eq('barangay_id', req.barangayUser.barangayId)
-      .is('barangay_resolved_at', null);
-    if (currentReport.barangay_response_status == null) {
-      closeQuery = closeQuery.is('barangay_response_status', null);
-    } else {
-      closeQuery = closeQuery.eq('barangay_response_status', currentReport.barangay_response_status);
-    }
-    if (currentReport.mdrrmo_response_status == null) {
-      closeQuery = closeQuery.is('mdrrmo_response_status', null);
-    } else {
-      closeQuery = closeQuery.eq('mdrrmo_response_status', currentReport.mdrrmo_response_status);
-    }
-    closeQuery = closeQuery.eq('status', currentReport.status);
-    const { data, error } = await closeQuery.select().maybeSingle();
+      .select()
+      .maybeSingle();
 
     if (error) throw error;
     if (!data) {
@@ -2515,9 +2333,6 @@ router.post('/reports/:id/close', authenticateBarangay, requireRole(['dispatcher
     } catch (pdfError) {
       console.error('Could not create incident resolution PDF after Barangay close:', pdfError);
       await supabaseAdmin.from('barangay_reports').update({ resolution_pdf_status: 'failed' }).eq('id', req.params.id);
-      await supabaseAdmin.from('incident_reports')
-        .update({ resolution_pdf_status: 'failed' })
-        .eq('id', req.params.id);
     }
 
     io.to('dashboard_staff').emit('barangay:incident_closed', {
@@ -2540,14 +2355,14 @@ router.post('/reports/:id/close', authenticateBarangay, requireRole(['dispatcher
 router.get('/reports/:id/resolution-pdf', authenticateBarangay, requireRole(['admin', 'staff', 'dispatcher', 'responder']), async (req: any, res: Response) => {
   try {
     const { data: report, error } = await supabaseAdmin
-      .from('incident_reports')
-      .select('id, barangay_id, barangay_response_status, status')
+      .from('barangay_reports')
+      .select('id, barangay_id, response_status, status')
       .eq('id', req.params.id)
       .eq('barangay_id', req.barangayUser.barangayId)
       .maybeSingle();
     if (error) throw error;
     if (!report) { res.status(404).json({ error: 'Incident report not found.' }); return; }
-    if (report.barangay_response_status !== 'resolved' && !['resolved', 'closed'].includes(String(report.status).toLowerCase())) {
+    if (report.response_status !== 'resolved' && !['resolved', 'closed'].includes(String(report.status).toLowerCase())) {
       res.status(409).json({ error: 'This report has not been resolved yet.' }); return;
     }
     const pdf = await IncidentResolutionPdfService.generateAndStore(req.params.id);
@@ -2594,8 +2409,8 @@ router.post('/assistance-requests', authenticateBarangay, requireRole(['responde
     let linkedReportTitle = parsed.data.incident_title || null;
     if (linkedReportId) {
       const { data: linkedReport, error: linkedReportError } = await supabaseAdmin
-        .from('incident_reports')
-        .select('id, title, barangay_responded_by, barangay_response_notes')
+        .from('barangay_reports')
+        .select('id, title, responded_by, response_notes')
         .eq('id', linkedReportId)
         .eq('barangay_id', req.barangayUser.barangayId)
         .maybeSingle();
@@ -2604,9 +2419,10 @@ router.post('/assistance-requests', authenticateBarangay, requireRole(['responde
         res.status(404).json({ error: 'Linked incident report was not found in this barangay.' });
         return;
       }
-      const assignedMatch = linkedReport.barangay_response_notes?.match(/^\[ASSIGNED:([^\]]+)\]/);
+      const currentNotes = linkedReport.response_notes || '';
+      const assignedMatch = currentNotes.match(/^\[ASSIGNED:([^\]]+)\]/);
       const assignedIds = assignedMatch ? assignedMatch[1].split(',').map((id: string) => id.trim()) : [];
-      if (linkedReport.barangay_responded_by !== req.barangayUser.userId && !assignedIds.includes(req.barangayUser.userId)) {
+      if (linkedReport.responded_by !== req.barangayUser.userId && !assignedIds.includes(req.barangayUser.userId)) {
         res.status(403).json({ error: 'You can only request escalation for an incident assigned to your responder account.' });
         return;
       }
@@ -2763,8 +2579,8 @@ router.patch('/assistance-requests/:id/decide', authenticateBarangay, requireRol
     let linkedReport: any = null;
     if (decision === 'coordinate_mdrrmo' && assistanceRequest.incident_report_id) {
       const { data, error } = await supabaseAdmin
-        .from('incident_reports')
-        .select('id, title, incident_type, severity, barangay_responded_by, barangay_response_notes')
+        .from('barangay_reports')
+        .select('id, title, incident_type, severity, responded_by, response_notes')
         .eq('id', assistanceRequest.incident_report_id)
         .eq('barangay_id', req.barangayUser.barangayId)
         .maybeSingle();
@@ -2773,8 +2589,9 @@ router.patch('/assistance-requests/:id/decide', authenticateBarangay, requireRol
         res.status(404).json({ error: 'The incident linked to this assistance request was not found.' });
         return;
       }
-      const hasAssignedResponder = Boolean(data.barangay_responded_by) ||
-        Boolean(data.barangay_response_notes?.match(/^\[ASSIGNED:[^\]]+\]/));
+      const currentNotes = data.response_notes || '';
+      const hasAssignedResponder = Boolean(data.responded_by) ||
+        Boolean(currentNotes.match(/^\[ASSIGNED:[^\]]+\]/));
       if (!data.incident_type || !data.severity || !hasAssignedResponder) {
         res.status(409).json({ error: 'Classify and dispatch a responder to the linked incident before escalating it.' });
         return;
@@ -2808,19 +2625,50 @@ router.patch('/assistance-requests/:id/decide', authenticateBarangay, requireRol
     let escalatedReport: any = null;
     if (linkedReport) {
       const escalationNotes = (dispatcher_notes || assistanceRequest.explanation || 'MDRRMO support requested by the barangay response team').trim();
+      const now = new Date().toISOString();
       const { data: reportData, error: reportError } = await supabaseAdmin
-        .from('incident_reports')
+        .from('barangay_reports')
         .update({
-          mdrrmo_coordination_notes: escalationNotes,
-          mdrrmo_response_notes: escalationNotes,
+          coordination_notes: escalationNotes,
           status: 'escalated',
-          mdrrmo_response_status: 'pending',
+          escalated_to_mdrrmo: true,
+          escalated_at: now,
+          response_status: 'resolved',
+          resolved_at: now,
+          resolved_notes: `Escalated to MDRRMO: ${escalationNotes}`,
         })
         .eq('id', linkedReport.id)
         .eq('barangay_id', req.barangayUser.barangayId)
-        .select('*, barangays(name)')
+        .select('*')
         .single();
       if (reportError) throw reportError;
+
+      // Upsert into mdrrmo_reports
+      await supabaseAdmin
+        .from('mdrrmo_reports')
+        .upsert({
+          id: reportData.id,
+          source_type: 'escalated',
+          type: reportData.type,
+          title: reportData.title,
+          specifics: reportData.specifics,
+          description: reportData.description,
+          latitude: reportData.latitude,
+          longitude: reportData.longitude,
+          address: reportData.address,
+          incident_occurred_at: reportData.incident_occurred_at,
+          incident_type: reportData.incident_type,
+          severity: reportData.severity,
+          reporter_id: reportData.reporter_id,
+          reporter_type: reportData.reporter_type,
+          reporter_name: reportData.reporter_name,
+          reporter_phone: reportData.reporter_phone,
+          reporter_email: reportData.reporter_email,
+          barangay_id: reportData.barangay_id,
+          coordination_notes: escalationNotes,
+          response_status: 'pending',
+          created_at: reportData.created_at,
+        }, { onConflict: 'id', ignoreDuplicates: false });
 
       const barangayName = reportData.barangays?.name || null;
       escalatedReport = {

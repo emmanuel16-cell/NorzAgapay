@@ -3,7 +3,6 @@ import { z } from 'zod';
 import { supabaseAdmin } from '../config/supabase';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth';
 import { io } from '../server';
-import { isDirectMdrrmoReport, isVisibleToMdrrmo } from '../services/mdrrmoReportVisibility';
 import {
   ARRIVAL_RADIUS_METERS,
   distanceMeters,
@@ -19,17 +18,13 @@ async function updateLinkedIncidentReport(
   onlyIfMissing?: 'accepted_at' | 'arrived_at' | 'resolved_at',
 ): Promise<void> {
   const { data: linkedReports, error: lookupError } = await supabaseAdmin
-    .from('incident_reports')
+    .from('mdrrmo_reports')
     .select('*')
     .eq('dispatch_incident_id', incidentId);
   if (lookupError) throw lookupError;
 
   for (const linkedReport of linkedReports || []) {
-    const mdrrmoOwned = isDirectMdrrmoReport(linkedReport) ||
-      String(linkedReport.status || '').toLowerCase() === 'escalated' ||
-      linkedReport.is_escalated === true || linkedReport.beyond_barangay_capability === true;
-    if (mdrrmoOwned || isVisibleToMdrrmo(linkedReport)) continue;
-    let update = supabaseAdmin.from('incident_reports').update(patch).eq('id', linkedReport.id);
+    let update = supabaseAdmin.from('mdrrmo_reports').update(patch).eq('id', linkedReport.id);
     if (onlyIfMissing) update = update.is(onlyIfMissing, null);
     const { data: reports, error } = await update.select('*');
     if (error) throw error;

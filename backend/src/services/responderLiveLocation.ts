@@ -1,6 +1,5 @@
 import { supabaseAdmin } from '../config/supabase';
 import { getResponderGpsLocation, RESPONDER_GPS_TTL_SECONDS } from '../config/redis';
-import { isVisibleToMdrrmo } from './mdrrmoReportVisibility';
 
 export interface ResponderIncidentTarget {
   incidentId: string;
@@ -37,19 +36,14 @@ export async function getActiveResponderTargets(responderId?: string): Promise<M
   if (!assignmentRows.length) return new Map();
 
   const reportIds = [...new Set(assignmentRows.map((row: any) => row.report_id))];
-  const [newReportsRes, legacyReportsRes] = await Promise.all([
-    supabaseAdmin
-      .from('mdrrmo_reports')
-      .select('id, title, latitude, longitude, response_status')
-      .in('id', reportIds),
-    supabaseAdmin
-      .from('incident_reports')
-      .select('id, title, latitude, longitude, reporter_type, send_to, specifics, description, status, mdrrmo_response_status, is_escalated, beyond_barangay_capability, barangay_response_notes, review_outcome')
-      .in('id', reportIds),
-  ]);
+  const { data: mdrrmoRows, error: mdrrmoErr } = await supabaseAdmin
+    .from('mdrrmo_reports')
+    .select('id, title, latitude, longitude, response_status')
+    .in('id', reportIds);
+  if (mdrrmoErr) throw mdrrmoErr;
 
   const reportById = new Map<string, ResponderIncidentTarget>();
-  for (const r of newReportsRes.data || []) {
+  for (const r of mdrrmoRows || []) {
     if (String(r.response_status || '').toLowerCase() === 'resolved') continue;
     const latitude = coordinate(r.latitude);
     const longitude = coordinate(r.longitude);
@@ -57,22 +51,6 @@ export async function getActiveResponderTargets(responderId?: string): Promise<M
     reportById.set(r.id, {
       incidentId: r.id,
       title: r.title || 'Emergency Incident',
-      latitude,
-      longitude,
-    });
-  }
-
-  for (const report of legacyReportsRes.data || []) {
-    if (reportById.has(report.id)) continue;
-    if (!isVisibleToMdrrmo(report)) continue;
-    if (['resolved', 'closed'].includes(String(report.status || '').toLowerCase()) ||
-        String(report.mdrrmo_response_status || '').toLowerCase() === 'resolved') continue;
-    const latitude = coordinate(report.latitude);
-    const longitude = coordinate(report.longitude);
-    if (latitude === null || longitude === null || latitude === 0 || longitude === 0) continue;
-    reportById.set(report.id, {
-      incidentId: report.id,
-      title: report.title || 'Emergency Incident',
       latitude,
       longitude,
     });
