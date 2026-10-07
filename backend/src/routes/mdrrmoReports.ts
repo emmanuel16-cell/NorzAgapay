@@ -239,7 +239,62 @@ router.patch('/:id/dispatch', authenticate, authorize('dispatcher', 'admin'), as
     });
     if (dispatchError) {
       if (dispatchError.code === 'P0001') { res.status(409).json({ error: dispatchError.message }); return; }
-      throw dispatchError;
+      if (dispatchError.code === '42703' || dispatchError.message?.includes('is_escalated')) {
+        const now = new Date().toISOString();
+        await supabaseAdmin
+          .from('mdrrmo_report_assignments')
+          .update({ status: 'removed', removed_by: req.user!.userId, removed_at: now })
+          .eq('report_id', report.id)
+          .eq('status', 'assigned');
+
+        for (const responderId of responderIds) {
+          await supabaseAdmin
+            .from('mdrrmo_report_assignments')
+            .upsert({
+              report_id: report.id,
+              responder_id: responderId,
+              assigned_by: req.user!.userId,
+              status: 'assigned',
+              assigned_at: now,
+              accepted_at: null,
+              arrived_at: null,
+              resolved_at: null,
+              accepted_by: null,
+              arrived_by: null,
+              resolved_by: null,
+              resolved_by_role: null,
+              removed_by: null,
+              removed_at: null,
+            }, { onConflict: 'report_id,responder_id' });
+        }
+
+        const nextStatus = report.status === 'escalated' ? 'escalated' : 'verified';
+        const { error: updateError } = await supabaseAdmin
+          .from('incident_reports')
+          .update({
+            incident_type: parsed.data.incident_type,
+            severity: parsed.data.severity,
+            status: nextStatus,
+            mdrrmo_response_status: 'pending',
+            mdrrmo_dispatch_notes: parsed.data.notes?.trim() || null,
+            mdrrmo_responded_by: null,
+            mdrrmo_responded_at: null,
+            mdrrmo_accepted_by: null,
+            mdrrmo_responder_name: responders.map((responder: any) => responder.full_name).join(', '),
+            lifecycle_actor_id: req.user!.userId,
+            lifecycle_actor_role: 'dispatcher',
+            mdrrmo_dispatcher_reviewed_by: req.user!.userId,
+            mdrrmo_dispatched_by: req.user!.userId,
+            dispatcher_reviewed_at: report.dispatcher_reviewed_at || now,
+            mdrrmo_dispatcher_reviewed_at: now,
+            dispatched_at: report.dispatched_at || now,
+            mdrrmo_dispatched_at: now,
+          })
+          .eq('id', report.id);
+        if (updateError) throw updateError;
+      } else {
+        throw dispatchError;
+      }
     }
     const { data: updated, error: refreshError } = await supabaseAdmin
       .from('incident_reports').select('*, barangays(name)').eq('id', report.id).single();
@@ -533,7 +588,60 @@ router.post('/:id/close', authenticate, authorize('responder', 'dispatcher'), as
     if (closeError) {
       if (closeError.code === 'P0001') { res.status(409).json({ error: closeError.message }); return; }
       if (closeError.code === 'P0002') { res.status(404).json({ error: closeError.message }); return; }
-      throw closeError;
+      if (closeError.code === '42703' || closeError.message?.includes('is_escalated')) {
+        const now = new Date().toISOString();
+        const actorRole = req.user!.role === 'responder' ? 'responder' : 'dispatcher';
+        const isEscalated = report.status === 'escalated';
+        const isDirectMdrrmo = (report.send_to && report.send_to.toLowerCase().trim() === 'mdrrmo') ||
+          (report.specifics && report.specifics.toLowerCase().includes('[send_to:mdrrmo]')) ||
+          (report.description && report.description.toLowerCase().includes('[send_to:mdrrmo]'));
+        const barangayEngaged = !isDirectMdrrmo && (
+          isEscalated || !!report.barangay_dispatched_at || !!report.barangay_responded_by ||
+          ['pending', 'responding', 'resolved'].includes(report.barangay_response_status || '')
+        );
+        const barangayOpen = barangayEngaged && report.barangay_response_status !== 'resolved';
+        let overallStatus = 'resolved';
+        if (barangayOpen) {
+          if (report.barangay_response_status === 'responding') {
+            overallStatus = 'responding';
+          } else if (isEscalated) {
+            overallStatus = 'escalated';
+          } else if (['resolved', 'closed'].includes(report.status)) {
+            overallStatus = report.barangay_dispatched_at ? 'verified' : 'pending';
+          } else {
+            overallStatus = report.status;
+          }
+        }
+        const { error: updateCloseError } = await supabaseAdmin
+          .from('incident_reports')
+          .update({
+            status: overallStatus,
+            mdrrmo_response_status: 'resolved',
+            mdrrmo_resolved_notes: parsed.data.resolved_notes.trim(),
+            mdrrmo_resolved_at: now,
+            mdrrmo_resolved_by: req.user!.userId,
+            lifecycle_actor_id: req.user!.userId,
+            lifecycle_actor_role: actorRole,
+            resolved_notes: overallStatus === 'resolved' ? parsed.data.resolved_notes.trim() : null,
+            resolved_at: overallStatus === 'resolved' ? (report.resolved_at || now) : report.resolved_at,
+            resolved_by: overallStatus === 'resolved' ? (report.resolved_by || req.user!.userId) : report.resolved_by,
+          })
+          .eq('id', report.id);
+        if (updateCloseError) throw updateCloseError;
+
+        await supabaseAdmin
+          .from('mdrrmo_report_assignments')
+          .update({
+            status: 'resolved',
+            resolved_at: now,
+            resolved_by: req.user!.userId,
+            resolved_by_role: actorRole,
+          })
+          .eq('report_id', report.id)
+          .neq('status', 'removed');
+      } else {
+        throw closeError;
+      }
     }
     let pdfStatus: 'ready' | 'failed' = 'failed';
     try {

@@ -352,7 +352,7 @@ BEGIN
   SET incident_type = p_incident_type,
       severity = p_severity,
       status = (CASE
-        WHEN status::TEXT = 'escalated' OR COALESCE(is_escalated, false) OR COALESCE(beyond_barangay_capability, false)
+        WHEN status::TEXT = 'escalated'
           THEN 'escalated'
         ELSE 'verified'
       END)::public.report_status,
@@ -568,9 +568,7 @@ BEGIN
     RAISE EXCEPTION 'A responder must record MDRRMO arrival before closing' USING ERRCODE = 'P0001';
   END IF;
 
-  v_is_escalated := v_report.status::TEXT = 'escalated'
-    OR COALESCE(v_report.is_escalated, false)
-    OR COALESCE(v_report.beyond_barangay_capability, false);
+  v_is_escalated := v_report.status::TEXT = 'escalated';
   v_direct_to_mdrrmo := COALESCE(LOWER(BTRIM(v_report.send_to)), '') = 'mdrrmo'
     OR LOWER(COALESCE(v_report.specifics, '') || ' ' || COALESCE(v_report.description, '')) ~ '\[send_to:mdrrmo\]';
   v_barangay_engaged := NOT v_direct_to_mdrrmo AND (
