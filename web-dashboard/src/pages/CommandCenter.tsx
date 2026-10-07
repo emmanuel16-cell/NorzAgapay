@@ -8,9 +8,9 @@ import { reportAPI, requestAPI, respondUnitAPI, socket } from '../lib/api';
 import { getMdrrmoReportGroup, isVisibleToMdrrmo } from '../lib/mdrrmoReportVisibility';
 import { useAuth } from '../context/AuthContext';
 import { useMunicipalityBoundary } from '../context/MunicipalityBoundaryContext';
-import MunicipalityBoundaryMapLayer, { MunicipalityBoundaryViewport } from '../components/MunicipalityBoundaryMapLayer';
+import MunicipalityBoundaryMapLayer from '../components/MunicipalityBoundaryMapLayer';
 import CurrentWeatherPanel from '../components/CurrentWeatherPanel';
-import { isCoordinateInsideBoundary } from '../lib/municipalityBoundary';
+import { boundaryRings, isCoordinateInsideBoundary, type MunicipalityBoundary } from '../lib/municipalityBoundary';
 import toast from 'react-hot-toast';
 import { AlertTriangle, Siren, Users, CheckCircle2, X } from 'lucide-react';
 
@@ -474,79 +474,70 @@ const createLiveResponderBadge = (selected = false) => {
 function MapResizer() {
   const map = useMap();
   useEffect(() => {
-    map.invalidateSize();
-    const timer = setTimeout(() => map.invalidateSize(), 300);
+    map.invalidateSize({ pan: false });
+    const timer = setTimeout(() => map.invalidateSize({ pan: false }), 300);
     return () => clearTimeout(timer);
   }, [map]);
   return null;
 }
 
-function FocusMapController({ position }: { position: [number, number] | null }) {
+function CommandCenterViewportController({
+  points,
+  fitKey,
+  boundary,
+  selectionKey,
+  selectedPosition,
+}: {
+  points: [number, number][];
+  fitKey: string;
+  boundary: MunicipalityBoundary;
+  selectionKey: string | null;
+  selectedPosition: [number, number] | null;
+}) {
   const map = useMap();
-  const lastPositionRef = useRef<string>('');
+  const lastSelectionRef = useRef<string | null>(null);
+  const lastOverviewKeyRef = useRef<string>('');
 
   useEffect(() => {
-    if (!position) {
-      lastPositionRef.current = '';
+    if (selectionKey && selectedPosition &&
+        Number.isFinite(selectedPosition[0]) && Number.isFinite(selectedPosition[1])) {
+      // Selection takes priority over automatic fitting. Focus only when the
+      // selected dot changes, so live GPS updates and incoming reports cannot
+      // pull the map away after it has centered on the user's selection.
+      if (lastSelectionRef.current !== selectionKey) {
+        lastSelectionRef.current = selectionKey;
+        lastOverviewKeyRef.current = '';
+        map.stop();
+        map.flyTo(selectedPosition, Math.max(map.getZoom(), 15), {
+          animate: true,
+          duration: 0.9,
+        });
+      }
       return;
     }
-    const positionKey = `${position[0].toFixed(5)},${position[1].toFixed(5)}`;
-    if (positionKey === lastPositionRef.current) return;
-    lastPositionRef.current = positionKey;
-    map.flyTo(position, Math.max(map.getZoom(), 15), { animate: true, duration: 1 });
-  }, [map, position]);
-
-  return null;
-}
-
-// Auto-fits the map to show all visible pins
-function FitBoundsController({ points, fitKey }: { points: [number, number][]; fitKey?: string }) {
-  const map = useMap();
-  const prevHashRef = useRef<string>('');
-
-  useEffect(() => {
-    if (points.length === 0) return;
-
     const validPoints = points.filter(([lat, lng]) => lat !== 0 && lng !== 0);
-    if (validPoints.length === 0) return;
-
-    const currentHash = fitKey || validPoints
-      .map(([lat, lng]) => `${lat.toFixed(5)},${lng.toFixed(5)}`)
-      .sort()
-      .join(';');
-    if (currentHash === prevHashRef.current) return;
-    prevHashRef.current = currentHash;
+    lastSelectionRef.current = null;
+    const boundaryKey = `${boundary.revision}:${boundary.enabled}:${Boolean(boundary.geometry)}`;
+    const currentHash = `${fitKey}|${boundaryKey}|${validPoints.length}`;
+    if (currentHash === lastOverviewKeyRef.current) return;
+    lastOverviewKeyRef.current = currentHash;
 
     if (validPoints.length === 1) {
       map.flyTo(validPoints[0], 14, { animate: true, duration: 1.2 });
-    } else {
+    } else if (validPoints.length > 1) {
       const bounds = L.latLngBounds(validPoints.map(([lat, lng]) => L.latLng(lat, lng)));
       map.flyToBounds(bounds, { padding: [60, 60], animate: true, duration: 1.2, maxZoom: 15 });
+    } else {
+      const boundaryPoints = boundaryRings(boundary.geometry)
+        .flat()
+        .map(([longitude, latitude]) => L.latLng(latitude, longitude));
+      if (boundaryPoints.length > 0) {
+        map.fitBounds(L.latLngBounds(boundaryPoints), { padding: [24, 24], maxZoom: 13 });
+      } else {
+        map.setView([14.9055, 121.045], 13);
+      }
     }
-  }, [fitKey, map, points]);
-
-  return null;
-}
-
-function FocusSelectedResponderController({
-  responderId,
-  position,
-}: {
-  responderId: string | null;
-  position: [number, number] | null;
-}) {
-  const map = useMap();
-  const lastResponderIdRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (!responderId || !position) {
-      lastResponderIdRef.current = null;
-      return;
-    }
-    if (responderId === lastResponderIdRef.current) return;
-    lastResponderIdRef.current = responderId;
-    map.flyTo(position, Math.max(map.getZoom(), 15), { animate: true, duration: 1 });
-  }, [map, position, responderId]);
+  }, [boundary, fitKey, map, points, selectedPosition, selectionKey]);
 
   return null;
 }
@@ -1021,6 +1012,13 @@ export default function CommandCenter() {
   }, [visibleIncidents, dispatchUnits, visibleLiveResponders, filters.responding, boundary]);
 
   const selectedResponder = visibleLiveResponders.find((responder) => responder.responderId === selectedResponderId) || null;
+  const selectedMapDot = selectedIncident
+    ? { key: `incident:${selectedIncident.id}`, position: [selectedIncident.latitude, selectedIncident.longitude] as [number, number] }
+    : selectedUnit
+      ? { key: `unit:${selectedUnit.id}`, position: [selectedUnit.latitude, selectedUnit.longitude] as [number, number] }
+      : selectedResponder
+        ? { key: `responder:${selectedResponder.responderId}`, position: [selectedResponder.latitude, selectedResponder.longitude] as [number, number] }
+        : null;
 
   const mapFitKey = useMemo(() => [
     ...visibleIncidents.map((incident) => `report:${incident.id}:${incident.latitude}:${incident.longitude}`),
@@ -1333,15 +1331,13 @@ export default function CommandCenter() {
           style={{ width: '100%', height: '100%', background: '#ffffff' }}
         >
           <TileLayer url={CARTO_DARK_MAP_URL} attribution={CARTO_ATTRIBUTION} />
-          <MunicipalityBoundaryViewport boundary={boundary} />
           <MapResizer />
-          <FitBoundsController points={visiblePinPoints} fitKey={mapFitKey} />
-          <FocusMapController position={selectedIncident
-            ? [selectedIncident.latitude, selectedIncident.longitude] as [number, number]
-            : selectedUnit ? [selectedUnit.latitude, selectedUnit.longitude] as [number, number] : null} />
-          <FocusSelectedResponderController
-            responderId={selectedResponder?.responderId || null}
-            position={selectedResponder ? [selectedResponder.latitude, selectedResponder.longitude] : null}
+          <CommandCenterViewportController
+            points={visiblePinPoints}
+            fitKey={mapFitKey}
+            boundary={boundary}
+            selectionKey={selectedMapDot?.key || null}
+            selectedPosition={selectedMapDot?.position || null}
           />
 
           <ClusteredIncidentMarkers incidents={visibleIncidents} selectedId={selectedIncident?.id} onSelect={handleOpenIncidentPin} />

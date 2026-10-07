@@ -249,8 +249,6 @@ router.patch('/:id/dispatch', authenticate, authorize('dispatcher', 'admin'), as
     }
 
     const responderNames = responders.map((r: any) => r.full_name).join(', ');
-    const now = new Date().toISOString();
-
     // --- Write to new mdrrmo_reports table (V2 RPC) ---
     const { error: dispatchV2Error } = await supabaseAdmin.rpc('dispatch_mdrrmo_report_v2', {
       p_report_id: report.id,
@@ -261,30 +259,11 @@ router.patch('/:id/dispatch', authenticate, authorize('dispatcher', 'admin'), as
       p_responder_ids: responderIds,
       p_responder_names: responderNames,
     });
-    if (dispatchV2Error && dispatchV2Error.code !== 'P0002') throw dispatchV2Error;
-
-    // (Legacy incident_reports dual-write removed)
-
-    // --- Also update mdrrmo_report_assignments on the legacy table (for responder push) ---
-    await supabaseAdmin
-      .from('mdrrmo_report_assignments')
-      .update({ status: 'removed', removed_by: req.user!.userId, removed_at: now })
-      .eq('report_id', report.id)
-      .eq('status', 'assigned');
-    for (const responderId of responderIds) {
-      await supabaseAdmin
-        .from('mdrrmo_report_assignments')
-        .upsert({
-          report_id: report.id,
-          responder_id: responderId,
-          assigned_by: req.user!.userId,
-          status: 'assigned',
-          assigned_at: now,
-          accepted_at: null, arrived_at: null, resolved_at: null,
-          accepted_by: null, arrived_by: null, resolved_by: null,
-          resolved_by_role: null, removed_by: null, removed_at: null,
-        }, { onConflict: 'report_id,responder_id' });
-    }
+    // The RPC updates the canonical MDRRMO report and inserts its responder
+    // assignments atomically. Do not ignore a missing report/RPC error or
+    // attempt a second legacy-table write: responders read these same
+    // assignments from the canonical queue.
+    if (dispatchV2Error) throw dispatchV2Error;
 
     const updatedReport = await reportForAction(report.id);
     const updatedAssignments = await getAssignments([report.id]);
