@@ -58,11 +58,35 @@ const optionalAuthenticate = async (req: AuthRequest, res: Response, next: NextF
   next();
 };
 
+let barangayNameCache: Map<string, string> | null = null;
+let lastBarangayCacheFetch = 0;
+
+export async function getBarangayNameMap(): Promise<Map<string, string>> {
+  const now = Date.now();
+  if (barangayNameCache && now - lastBarangayCacheFetch < 60000) {
+    return barangayNameCache;
+  }
+  try {
+    const { data } = await supabaseAdmin.from('barangays').select('id, name');
+    const map = new Map<string, string>();
+    if (data) {
+      for (const b of data) {
+        if (b.id && b.name) map.set(b.id, b.name);
+      }
+    }
+    barangayNameCache = map;
+    lastBarangayCacheFetch = now;
+    return map;
+  } catch (_) {
+    return barangayNameCache || new Map();
+  }
+}
+
 /**
  * Universal Formatter for Incident Reports
  * Ensures proof_url, proof_urls, proof_types, and responder_media are always present and normalized.
  */
-export function formatIncidentReport(r: any): any {
+export function formatIncidentReport(r: any, nameMap?: Map<string, string>): any {
   if (!r) return r;
 
   let proofUrls: string[] = [];
@@ -197,7 +221,7 @@ export function formatIncidentReport(r: any): any {
     proof_urls: proofUrls,
     proof_types: proofTypes,
     responder_media: responderMedia,
-    barangay_name: r.barangays?.name || r.barangay_name || null,
+    barangay_name: r.barangay_name || (r.barangay_id && (nameMap || barangayNameCache) ? (nameMap || barangayNameCache)!.get(r.barangay_id) : null) || r.barangays?.name || null,
   };
 }
 
@@ -205,13 +229,13 @@ export function formatIncidentReport(r: any): any {
 async function fetchReportById(id: string) {
   const { data: bReport } = await supabaseAdmin
     .from('barangay_reports')
-    .select('*, barangays(name)')
+    .select('*')
     .eq('id', id)
     .maybeSingle();
   if (bReport) return { report: bReport, table: 'barangay_reports' as const };
   const { data: mReport } = await supabaseAdmin
     .from('mdrrmo_reports')
-    .select('*, barangays(name)')
+    .select('*')
     .eq('id', id)
     .maybeSingle();
   if (mReport) return { report: mReport, table: 'mdrrmo_reports' as const };
@@ -373,7 +397,7 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
       let existing: any = null;
       const { data: bExisting, error: bErr } = await supabaseAdmin
         .from('barangay_reports')
-        .select('*, barangays(name)')
+        .select('*')
         .eq('client_request_id', clientRequestId)
         .maybeSingle();
       if (bErr) throw bErr;
@@ -381,7 +405,7 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
       if (!existing) {
         const { data: mExisting, error: mErr } = await supabaseAdmin
           .from('mdrrmo_reports')
-          .select('*, barangays(name)')
+          .select('*')
           .eq('client_request_id', clientRequestId)
           .maybeSingle();
         if (mErr) throw mErr;
@@ -395,7 +419,8 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
           res.status(409).json({ error: 'This request identifier is already in use.' });
           return;
         }
-        res.status(200).json({ message: 'Report was already received.', report: formatIncidentReport(existing) });
+        const bMap = await getBarangayNameMap();
+        res.status(200).json({ message: 'Report was already received.', report: formatIncidentReport(existing, bMap) });
         return;
       }
     }
@@ -478,7 +503,8 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
       ? `${specifics} [SEND_TO:${targetSendTo}]` 
       : `[SEND_TO:${targetSendTo}]`;
 
-    const insertPayload: any = {
+    const targetTable = targetSendTo === 'mdrrmo' ? 'mdrrmo_reports' : 'barangay_reports';
+    const reportInsertPayload: any = {
       type,
       title,
       specifics: encodedSpecifics,
@@ -487,32 +513,25 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
       longitude: parseFloat(longitude),
       proof_url: encodedProofUrl,
       proof_type: primaryProofType,
+      proof_urls: proofUrls,
+      proof_types: proofTypes,
       reporter_type: reporter_type || 'resident',
       reporter_id: req.user?.userId || null,
       reporter_name: reporterName,
       reporter_phone: reporterPhone,
-      // reporter_email is omitted from direct insert because column does not exist in schema
-      // reporter_email: reporterEmail,
       barangay_id: resolvedBarangayId,
-      status: 'pending',
-      send_to: targetSendTo,
-      // Informational client-clock time; created_at remains server receipt time.
+      status: targetSendTo === 'mdrrmo' ? 'open' : 'pending',
+      response_status: 'pending',
       client_submitted_at: clientSubmittedAt,
       incident_occurred_at: incidentOccurredAt,
       incident_time_precision: incidentTimePrecision,
       evidence_status: uploadedFiles.length > 0 || providedProofTypes.length > 0 ? 'pending' : 'ready',
       client_request_id: clientRequestId,
     };
-
-    const targetTable = targetSendTo === 'mdrrmo' ? 'mdrrmo_reports' : 'barangay_reports';
-    const reportInsertPayload: any = {
-      ...insertPayload,
-      proof_urls: proofUrls,
-      proof_types: proofTypes,
-      response_status: 'pending',
-    };
     if (targetSendTo === 'mdrrmo') {
       reportInsertPayload.source_type = 'direct';
+      reportInsertPayload.severity = req.body.severity || 'moderate';
+      reportInsertPayload.incident_type = req.body.incident_type || 'other';
     }
     if (reporterEmail) {
       reportInsertPayload.reporter_email = reporterEmail;
@@ -521,7 +540,7 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
     const { data: insertedReport, error: insertError } = await supabaseAdmin
       .from(targetTable)
       .insert(reportInsertPayload)
-      .select('*, barangays(name)')
+      .select('*')
       .single();
 
     if (insertError) {
@@ -531,11 +550,12 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
     }
     let report: any = insertedReport;
 
+    const bMap = await getBarangayNameMap();
     const formattedReport = formatIncidentReport({
       ...report,
       proof_urls: proofUrls.length > 0 ? proofUrls : ((report as any)?.proof_urls || []),
       proof_types: proofTypes.length > 0 ? proofTypes : ((report as any)?.proof_types || []),
-    });
+    }, bMap);
 
     // Preserve the immediate queue notification for installed clients. The
     // transactional outbox separately provides durable lifecycle delivery.
@@ -599,14 +619,15 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
 router.get('/me', authenticate, async (req: AuthRequest, res: Response) => {
     try {
         const userId = req.user!.userId;
-        const [bRes, mRes] = await Promise.all([
-          supabaseAdmin.from('barangay_reports').select('*, barangays(name)').eq('reporter_id', userId),
-          supabaseAdmin.from('mdrrmo_reports').select('*, barangays(name)').eq('reporter_id', userId),
+        const [bRes, mRes, bMap] = await Promise.all([
+          supabaseAdmin.from('barangay_reports').select('*').eq('reporter_id', userId),
+          supabaseAdmin.from('mdrrmo_reports').select('*').eq('reporter_id', userId),
+          getBarangayNameMap(),
         ]);
         const reports = [...(bRes.data || []), ...(mRes.data || [])];
         reports.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-        res.json(reports.map(formatIncidentReport));
+        res.json(reports.map((r: any) => formatIncidentReport(r, bMap)));
     } catch (err) {
         console.error('Fetch user reports error:', err);
         res.status(500).json({ error: 'Internal server error' });
@@ -626,11 +647,11 @@ router.get('/resident', optionalAuthenticate, async (req: AuthRequest, res: Resp
 
     let bQuery = supabaseAdmin
       .from('barangay_reports')
-      .select('*, barangays(name)')
+      .select('*')
       .eq('reporter_type', 'resident');
     let mQuery = supabaseAdmin
       .from('mdrrmo_reports')
-      .select('*, barangays(name)')
+      .select('*')
       .eq('reporter_type', 'resident');
 
     if (req.user?.role === 'resident') {
@@ -641,7 +662,7 @@ router.get('/resident', optionalAuthenticate, async (req: AuthRequest, res: Resp
       mQuery = mQuery.eq('reporter_phone', String(contact_number));
     }
 
-    const [bRes, mRes] = await Promise.all([bQuery, mQuery]);
+    const [bRes, mRes, bMap] = await Promise.all([bQuery, mQuery, getBarangayNameMap()]);
     const reportRows = [...(bRes.data || []), ...(mRes.data || [])];
     reportRows.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
@@ -694,7 +715,7 @@ router.get('/resident', optionalAuthenticate, async (req: AuthRequest, res: Resp
         ...report,
         barangay_responder_name: names.join(', ') || null,
         expected_timings: estimateReportTimings(report, relevantHistory),
-      });
+      }, bMap);
     }));
   } catch (err) {
     console.error('Fetch resident reports error:', err);
@@ -723,7 +744,8 @@ router.get('/resident/:id', optionalAuthenticate, async (req: AuthRequest, res: 
         return;
       }
     }
-    res.json(formatIncidentReport(report));
+    const bMap = await getBarangayNameMap();
+    res.json(formatIncidentReport(report, bMap));
   } catch (error) {
     console.error('Fetch resident incident report error:', error);
     res.status(500).json({ error: 'Could not refresh incident status.' });
@@ -818,17 +840,17 @@ router.patch('/:id/evidence-failed', optionalAuthenticate, async (req: AuthReque
 router.get('/', optionalAuthenticate, async (req: AuthRequest, res: Response) => {
     try {
         const { type } = req.query;
-        let bQuery = supabaseAdmin.from('barangay_reports').select('*, barangays(name)');
-        let mQuery = supabaseAdmin.from('mdrrmo_reports').select('*, barangays(name)');
+        let bQuery = supabaseAdmin.from('barangay_reports').select('*');
+        let mQuery = supabaseAdmin.from('mdrrmo_reports').select('*');
         if (type === 'emergency' || type === 'community') {
             bQuery = bQuery.eq('type', type);
             mQuery = mQuery.eq('type', type);
         }
-        const [bRes, mRes] = await Promise.all([bQuery, mQuery]);
+        const [bRes, mRes, bMap] = await Promise.all([bQuery, mQuery, getBarangayNameMap()]);
         const reports = [...(bRes.data || []), ...(mRes.data || [])];
         reports.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-        let formatted = (reports || []).map(formatIncidentReport);
+        let formatted = (reports || []).map((r: any) => formatIncidentReport(r, bMap));
         if (req.user && ['dispatcher', 'admin', 'master_admin'].includes(req.user.role)) {
           const residentIds = [...new Set(formatted
             .filter((report) => report.reporter_type === 'resident' && report.reporter_id)
@@ -944,14 +966,15 @@ router.patch('/:id', optionalAuthenticate, upload.any(), async (req: AuthRequest
         proof_urls: allUrls,
       })
       .eq('id', id)
-      .select('*, barangays(name)')
+      .select('*')
       .single();
     if (updateError) throw updateError;
 
+    const bMap = await getBarangayNameMap();
     const formatted = formatIncidentReport({
       ...updatedReport,
       proof_urls: allUrls,
-    });
+    }, bMap);
 
     io.to('dashboard_staff').emit('incident_report:updated', formatted);
     if (formatted.barangay_id) {
@@ -1029,11 +1052,12 @@ router.post('/:id/field-media', optionalAuthenticate, upload.single('media'), as
       .from(targetTable)
       .update({ responder_media: updatedMedia })
       .eq('id', id)
-      .select('*, barangays(name)')
+      .select('*')
       .single();
     if (updateError) throw updateError;
 
-    const formatted = formatIncidentReport(updatedReport);
+    const bMap = await getBarangayNameMap();
+    const formatted = formatIncidentReport(updatedReport, bMap);
 
     io.to('dashboard_staff').emit('incident_report:updated', formatted);
     if (formatted.barangay_id) {
