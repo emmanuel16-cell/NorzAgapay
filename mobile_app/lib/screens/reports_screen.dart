@@ -51,6 +51,7 @@ class _ReportsScreenState extends State<ReportsScreen>
       socket.onNewReport((newReport) {
         if (mounted) {
           setState(() {
+            _reports.removeWhere((r) => r.id == newReport.id);
             _reports.insert(0, newReport);
           });
           ScaffoldMessenger.of(context).showSnackBar(
@@ -75,8 +76,23 @@ class _ReportsScreenState extends State<ReportsScreen>
           );
         }
       });
-      socket.onReportUpdated((_) {
-        if (mounted && auth.token != null) _fetchReports();
+      socket.onReportUpdated((data) {
+        if (mounted) {
+          if (data is Map) {
+            try {
+              final updated = IncidentReport.fromJson(Map<String, dynamic>.from(data));
+              setState(() {
+                final idx = _reports.indexWhere((r) => r.id == updated.id);
+                if (idx != -1) {
+                  _reports[idx] = updated;
+                } else {
+                  _reports.insert(0, updated);
+                }
+              });
+            } catch (_) {}
+          }
+          if (auth.token != null) _fetchReports();
+        }
       });
 
       // Real-time socket events for assistance requests

@@ -120,10 +120,12 @@ class IncidentReport {
         responderMedia = responderMedia ?? const [];
 
   bool get isEmergency => type == 'emergency';
-  bool get isResponding => barangayResponseStatus == 'responding';
+  bool get isResponding =>
+      barangayResponseStatus == 'responding' || status == 'responding';
   // The shared report status can reflect the other agency's closeout. Keep
   // Barangay report lists bound to the Barangay response cycle.
-  bool get isResolved => barangayResponseStatus == 'resolved';
+  bool get isResolved =>
+      barangayResponseStatus == 'resolved' || status == 'resolved';
   bool get isPending => !isResponding && !isResolved;
   bool get isMdrrmoResponding => mdrrmoResponseStatus == 'responding';
   bool get isArrived => arrivedAt != null;
@@ -235,9 +237,14 @@ class IncidentReport {
       reporterPhone: json['reporter_phone'],
       reporterEmail: json['reporter_email'],
       barangayId: json['barangay_id'],
-      barangayResponseStatus: json['barangay_response_status'] ?? 'pending',
-      barangayResponseNotes: json['barangay_response_notes'],
-      barangayRespondedBy: json['barangay_responded_by'],
+      barangayResponseStatus: json['barangay_response_status'] ??
+          json['response_status'] ??
+          json['status'] ??
+          'pending',
+      barangayResponseNotes:
+          json['barangay_response_notes'] ?? json['response_notes'],
+      barangayRespondedBy:
+          json['barangay_responded_by'] ?? json['responded_by'],
       barangayResponderName: json['barangay_responder_name'],
       assignedTeamLeaderIds: assignedIds,
       mdrrmoCoordinationNotes: json['mdrrmo_coordination_notes'],

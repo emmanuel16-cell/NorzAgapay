@@ -5,6 +5,7 @@ import '../core/phone_number_utils.dart';
 import '../services/socket_service.dart';
 import '../services/api_service.dart';
 import 'reports_screen.dart';
+import 'report_detail_screen.dart';
 import 'evac_centers_screen.dart';
 import 'public_alerts_screen.dart';
 import 'team_screen.dart';
@@ -40,6 +41,39 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           userId: auth.currentUser!.id,
         );
         socket.onCoordinationAccessChanged(auth.onCoordinationAccessUpdate);
+        if (auth.currentUser?.canViewReports == true) {
+          socket.onNewReport((newReport) {
+            if (mounted && _currentIndex != 2) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Row(
+                    children: [
+                      const Icon(Icons.warning, color: Colors.white),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text('NEW INCIDENT: ${newReport.title}'),
+                      ),
+                    ],
+                  ),
+                  backgroundColor: const Color(0xFFE74C3C),
+                  duration: const Duration(seconds: 6),
+                  action: SnackBarAction(
+                    label: 'VIEW',
+                    textColor: Colors.white,
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ReportDetailScreen(report: newReport),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              );
+            }
+          });
+        }
       }
     });
   }

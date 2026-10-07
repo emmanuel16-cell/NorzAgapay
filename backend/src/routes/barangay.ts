@@ -2208,11 +2208,20 @@ router.patch('/reports/:id/respond', authenticateBarangay, requireRole(['dispatc
       notes: updatePayload.barangay_response_notes,
     });
 
-    res.json({
+    const responseStatus = isEscalatedReport ? 'resolved' : 'responding';
+    const payload = formatIncidentReport({
       ...data,
       barangay_name: barangayName,
       barangay_responder_name: responderName,
+      barangay_response_status: responseStatus,
+      response_status: responseStatus,
     });
+
+    io.to('dashboard_staff').emit('incident_report:updated', payload);
+    io.to(`barangay:${req.barangayUser.barangayId}`).emit('barangay:report_updated', payload);
+    io.to(`barangay:${req.barangayUser.barangayId}`).emit('incident:lifecycle', payload);
+
+    res.json(payload);
   } catch (err) {
     console.error('Respond to report error:', err);
     res.status(500).json({ error: 'Failed to update report' });
@@ -2357,9 +2366,11 @@ router.patch('/reports/:id/arrive', authenticateBarangay, requireRole(['responde
       if (latestError) throw latestError;
       updated = latestReport;
     }
-    io.to('dashboard_staff').emit('incident_report:updated', updated);
-    io.to(`barangay:${req.barangayUser.barangayId}`).emit('barangay:report_updated', updated);
-    res.json(updated);
+    const formatted = formatIncidentReport(updated);
+    io.to('dashboard_staff').emit('incident_report:updated', formatted);
+    io.to(`barangay:${req.barangayUser.barangayId}`).emit('barangay:report_updated', formatted);
+    io.to(`barangay:${req.barangayUser.barangayId}`).emit('incident:lifecycle', formatted);
+    res.json(formatted);
   } catch (err) {
     console.error('Mark report arrival error:', err);
     res.status(500).json({ error: 'Failed to record arrival.' });
@@ -2514,10 +2525,12 @@ router.post('/reports/:id/close', authenticateBarangay, requireRole(['dispatcher
       barangayId: req.barangayUser.barangayId,
       resolvedAt: data.resolved_at,
     });
-    io.to('dashboard_staff').emit('incident_report:updated', data);
-    io.to(`barangay:${req.barangayUser.barangayId}`).emit('barangay:report_updated', data);
+    const formattedClose = formatIncidentReport(data);
+    io.to('dashboard_staff').emit('incident_report:updated', formattedClose);
+    io.to(`barangay:${req.barangayUser.barangayId}`).emit('barangay:report_updated', formattedClose);
+    io.to(`barangay:${req.barangayUser.barangayId}`).emit('incident:lifecycle', formattedClose);
 
-    res.json({ ...data, resolution_pdf_status: pdfReady ? 'ready' : 'failed' });
+    res.json({ ...formattedClose, resolution_pdf_status: pdfReady ? 'ready' : 'failed' });
   } catch (err) {
     console.error('Close report error:', err);
     res.status(500).json({ error: 'Failed to close report' });

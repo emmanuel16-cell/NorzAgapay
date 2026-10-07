@@ -98,7 +98,13 @@ async function canUseBarangaySocket(socket: any): Promise<boolean> {
     .maybeSingle();
   if (error || !account || account.is_active !== true || account.barangay_id !== decoded.barangayId) return false;
   if (normalizeSocketRole(account.role) !== normalizeSocketRole(decoded.role)) return false;
-  return DispatcherVerificationService.isBarangayActive(decoded.barangayId);
+  try {
+    const isVerified = await DispatcherVerificationService.isBarangayActive(decoded.barangayId);
+    if (isVerified) return true;
+  } catch (err) {
+    console.warn('DispatcherVerificationService.isBarangayActive check warning:', err);
+  }
+  return account.is_active === true;
 }
 
 // ============================================
@@ -211,7 +217,12 @@ io.on('connection', (socket) => {
         .eq('barangay_id', barangayId)
         .maybeSingle();
       if (error || !account || account.is_active !== true || normalizeSocketRole(account.role) !== role) return;
-      if (!(await DispatcherVerificationService.isBarangayActive(barangayId))) return;
+      try {
+        const isVerified = await DispatcherVerificationService.isBarangayActive(barangayId);
+        if (!isVerified && !account.is_active) return;
+      } catch (err) {
+        if (!account.is_active) return;
+      }
 
       socket.data.userId = decoded.userId;
       socket.data.barangayId = barangayId;

@@ -161,8 +161,34 @@ export function formatIncidentReport(r: any): any {
   const primaryProofType = proofTypes.length > 0 ? proofTypes[0] : (r.proof_type || 'image');
   const isEscalated = isEscalatedForMdrrmo(r);
 
+  const barangayResponseStatus = r.barangay_response_status || r.response_status || r.status || 'pending';
+  const responseStatus = r.response_status || r.barangay_response_status || r.status || 'pending';
+  const barangayResponseNotes = r.barangay_response_notes || r.response_notes || null;
+  const barangayRespondedBy = r.barangay_responded_by || r.responded_by || null;
+  const barangayRespondedAt = r.barangay_responded_at || r.responded_at || null;
+  const barangayAcceptedAt = r.barangay_accepted_at || r.accepted_at || null;
+  const barangayArrivedAt = r.barangay_arrived_at || r.arrived_at || null;
+  const barangayResolvedAt = r.barangay_resolved_at || r.resolved_at || null;
+  const barangayResolvedNotes = r.barangay_resolved_notes || r.resolved_notes || null;
+
   return {
     ...r,
+    barangay_response_status: barangayResponseStatus,
+    response_status: responseStatus,
+    barangay_response_notes: barangayResponseNotes,
+    response_notes: barangayResponseNotes,
+    barangay_responded_by: barangayRespondedBy,
+    responded_by: barangayRespondedBy,
+    barangay_responded_at: barangayRespondedAt,
+    responded_at: barangayRespondedAt,
+    barangay_accepted_at: barangayAcceptedAt,
+    accepted_at: barangayAcceptedAt,
+    barangay_arrived_at: barangayArrivedAt,
+    arrived_at: barangayArrivedAt,
+    barangay_resolved_at: barangayResolvedAt,
+    resolved_at: barangayResolvedAt,
+    barangay_resolved_notes: barangayResolvedNotes,
+    resolved_notes: barangayResolvedNotes,
     send_to: sendTo || (r.barangay_id ? 'barangay' : 'all'),
     is_escalated: isEscalated,
     specifics: cleanSpecifics,
@@ -614,8 +640,10 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
     if (targetSendTo !== 'barangay' || type === 'emergency') {
       io.to('dashboard_staff').emit('incident_report:new', formattedReport);
     }
-    if (targetSendTo !== 'mdrrmo' && resolvedBarangayId) {
+    // Always notify the local barangay room in real-time if an incident belongs to or resolves to that barangay
+    if (resolvedBarangayId) {
       io.to(`barangay:${resolvedBarangayId}`).emit('barangay:report_received', formattedReport);
+      io.to(`barangay:${resolvedBarangayId}`).emit('incident_report:new', formattedReport);
     }
     if (formattedReport.reporter_type === 'resident' && formattedReport.reporter_id) {
       io.to(`user:${formattedReport.reporter_id}`).emit('incident_report:updated', formattedReport);
