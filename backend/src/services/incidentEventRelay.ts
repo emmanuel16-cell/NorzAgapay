@@ -1,5 +1,6 @@
 import type { Server as SocketIOServer } from 'socket.io';
 import { supabaseAdmin } from '../config/supabase';
+import { isEscalatedForMdrrmo, isVisibleToMdrrmo } from './mdrrmoReportVisibility';
 
 type OutboxEvent = {
   id: number;
@@ -36,10 +37,8 @@ async function publishEvent(io: SocketIOServer, event: OutboxEvent): Promise<voi
   const rooms = new Set<string>();
   if (report.reporter_type === 'resident') addUserRoom(rooms, report.reporter_id);
 
-  const routedToMdrrmo = report.type === 'emergency' || report.send_to === 'mdrrmo' ||
-    report.status === 'escalated' ||
-    ['responding', 'resolved'].includes(report.mdrrmo_response_status || '');
-  const routedToBarangay = report.send_to !== 'mdrrmo' || report.status === 'escalated';
+  const routedToMdrrmo = isVisibleToMdrrmo(report);
+  const routedToBarangay = report.send_to !== 'mdrrmo' || isEscalatedForMdrrmo(report);
   if (report.barangay_id && routedToBarangay) {
     rooms.add(`barangay:${report.barangay_id}`);
   }
@@ -164,4 +163,3 @@ export function startIncidentEventRelay(io: SocketIOServer): void {
   relayTimer = setInterval(() => void relayBatch(io), 30000);
   relayTimer.unref?.();
 }
-

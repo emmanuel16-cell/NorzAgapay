@@ -6,7 +6,6 @@ type MdrrmoReportVisibilityFields = {
   status?: unknown;
   is_escalated?: unknown;
   beyond_barangay_capability?: unknown;
-  barangay_response_notes?: unknown;
   review_outcome?: unknown;
 };
 
@@ -21,8 +20,7 @@ function isTrue(value: unknown): boolean {
 export function isEscalatedForMdrrmo(report: MdrrmoReportVisibilityFields): boolean {
   return text(report.status) === 'escalated' ||
     isTrue(report.is_escalated) ||
-    isTrue(report.beyond_barangay_capability) ||
-    text(report.barangay_response_notes).includes('escalated');
+    isTrue(report.beyond_barangay_capability);
 }
 
 export function isVisibleToMdrrmo(report: MdrrmoReportVisibilityFields): boolean {
@@ -32,5 +30,5 @@ export function isVisibleToMdrrmo(report: MdrrmoReportVisibilityFields): boolean
   const routeMarker = `${text(report.specifics)}\n${text(report.description)}`
     .match(/\[send_to:([^\]]+)\]/i)?.[1];
   const route = text(report.send_to) || text(routeMarker);
-  return text(report.reporter_type) === 'resident' && route === 'mdrrmo';
+  return route === 'mdrrmo';
 }

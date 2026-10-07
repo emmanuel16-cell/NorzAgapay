@@ -1830,6 +1830,7 @@ router.patch('/reports/:id/escalate', authenticateBarangay, requireRole(['dispat
       .update({
         mdrrmo_coordination_notes: escalationNotes,
         mdrrmo_response_notes: escalationNotes,
+        is_escalated: true,
         status: 'escalated',
         mdrrmo_response_status: 'pending',
       })
@@ -2515,6 +2516,7 @@ router.patch('/assistance-requests/:id/decide', authenticateBarangay, requireRol
         .update({
           mdrrmo_coordination_notes: escalationNotes,
           mdrrmo_response_notes: escalationNotes,
+          is_escalated: true,
           status: 'escalated',
           mdrrmo_response_status: 'pending',
         })

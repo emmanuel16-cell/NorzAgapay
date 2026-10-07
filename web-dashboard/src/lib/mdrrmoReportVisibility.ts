@@ -8,7 +8,6 @@ export interface MdrrmoReportVisibilityFields {
   status?: string | null;
   is_escalated?: boolean | string | null;
   beyond_barangay_capability?: boolean | string | null;
-  barangay_response_notes?: string | null;
   review_outcome?: string | null;
 }
 
@@ -17,8 +16,7 @@ const isTrue = (value?: boolean | string | null) => value === true || String(val
 export function isEscalatedMdrrmoReport(report: MdrrmoReportVisibilityFields): boolean {
   return String(report.status || '').toLowerCase() === 'escalated' ||
     isTrue(report.is_escalated) ||
-    isTrue(report.beyond_barangay_capability) ||
-    String(report.barangay_response_notes || '').toLowerCase().includes('escalated');
+    isTrue(report.beyond_barangay_capability);
 }
 
 export function isVisibleToMdrrmo(report: MdrrmoReportVisibilityFields): boolean {
@@ -28,7 +26,7 @@ export function isVisibleToMdrrmo(report: MdrrmoReportVisibilityFields): boolean
   const routeMarker = `${report.specifics || ''}\n${report.description || ''}`
     .match(/\[send_to:([^\]]+)\]/i)?.[1];
   const sendTo = String(report.send_to || routeMarker || '').trim().toLowerCase();
-  return report.reporter_type?.toLowerCase() === 'resident' && sendTo === 'mdrrmo';
+  return sendTo === 'mdrrmo';
 }
 
 export function getMdrrmoReportGroup(report: MdrrmoReportVisibilityFields): MdrrmoReportGroup {

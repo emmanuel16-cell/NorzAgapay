@@ -810,12 +810,18 @@ export default function CommandCenter() {
           const barangayStatus = String(r.barangay_response_status || '').toLowerCase();
           const mdrrmoStatus = String(r.mdrrmo_response_status || '').toLowerCase();
           const reportGroup = getMdrrmoReportGroup(r);
-          const isResolved = ['resolved', 'closed'].includes(reportStatus) ||
-            barangayStatus === 'resolved' || mdrrmoStatus === 'resolved';
-          const isResponding = reportStatus === 'responding' ||
-            barangayStatus === 'responding' || mdrrmoStatus === 'responding';
-          const isArrived = reportStatus === 'arrived' || barangayStatus === 'arrived' ||
-            mdrrmoStatus === 'arrived' || Boolean(r.arrived_at);
+          const isEscalated = reportGroup === 'escalated';
+          const mdrrmoCycleStatus = mdrrmoStatus || reportStatus;
+          const barangayCycleStatus = barangayStatus || reportStatus;
+          const applicableCycleStatuses = isEscalated
+            ? [barangayCycleStatus, mdrrmoCycleStatus]
+            : [mdrrmoCycleStatus];
+          const isCycleResolved = (status: string) => ['resolved', 'closed'].includes(status);
+          const isResolved = applicableCycleStatuses.every(isCycleResolved);
+          const isResponding = applicableCycleStatuses.some((status) => status === 'responding');
+          const isArrived = applicableCycleStatuses.some((status) => status === 'arrived') ||
+            (isEscalated && Boolean(r.barangay_arrived_at)) || Boolean(r.mdrrmo_arrived_at) ||
+            (!r.mdrrmo_response_status && Boolean(r.arrived_at));
           const stage: ReportStage = isResolved
             ? 'resolved'
             : isArrived
