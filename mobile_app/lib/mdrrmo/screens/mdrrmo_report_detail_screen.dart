@@ -498,9 +498,11 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
         .replaceAll(RegExp(r'\[SEND_TO:[^\]]+\]'), '')
         .trim();
     final hasLocation = _report.latitude != 0 && _report.longitude != 0;
+    final user = context.read<AuthProvider>().user;
+    final isResponding = _report.isRespondingFor(user?.id);
     final statusColor = _report.isResolved
         ? const Color(0xFF10B981)
-        : _report.isResponding
+        : isResponding
         ? const Color(0xFFF59E0B)
         : const Color(0xFFEF4444);
     return ListView(
@@ -527,7 +529,7 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
               child: Text(
                 _report.isResolved
                     ? 'RESOLVED'
-                    : _report.isResponding
+                    : isResponding
                     ? 'RESPONDING'
                     : 'PENDING',
                 style: TextStyle(

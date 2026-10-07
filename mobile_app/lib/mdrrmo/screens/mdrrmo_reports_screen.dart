@@ -116,15 +116,18 @@ class _MdrrmoReportsScreenState extends State<MdrrmoReportsScreen>
     }
   }
 
-  List<MdrrmoReport> _forTab(int index) => _reports
-      .where(
-        (report) => index == 0
-            ? report.isPending
-            : index == 1
-            ? report.isResponding
-            : report.isResolved,
-      )
-      .toList();
+  List<MdrrmoReport> _forTab(int index) {
+    final userId = context.read<AuthProvider>().user?.id;
+    return _reports
+        .where(
+          (report) => index == 0
+              ? report.isPendingFor(userId)
+              : index == 1
+              ? report.isRespondingFor(userId)
+              : report.isResolved,
+        )
+        .toList();
+  }
 
   Future<void> _open(MdrrmoReport report) async {
     await Navigator.of(context).push(
@@ -135,11 +138,11 @@ class _MdrrmoReportsScreenState extends State<MdrrmoReportsScreen>
     _load(silent: true);
   }
 
-  Color _color(MdrrmoReport report) => report.isResolved
-      ? const Color(0xFF10B981)
-      : report.isResponding
-      ? const Color(0xFFF59E0B)
-      : const Color(0xFFEF4444);
+  Color _color(MdrrmoReport report, {String? userId}) {
+    if (report.isResolved) return const Color(0xFF10B981);
+    if (report.isRespondingFor(userId)) return const Color(0xFFF59E0B);
+    return const Color(0xFFEF4444);
+  }
 
   Widget _badge(int count, Color color) => count == 0
       ? const SizedBox.shrink()
@@ -162,13 +165,15 @@ class _MdrrmoReportsScreenState extends State<MdrrmoReportsScreen>
         );
 
   Widget _card(MdrrmoReport report) {
+    final userId = context.read<AuthProvider>().user?.id;
+    final isResponding = report.isRespondingFor(userId);
     final typeColor = report.type.toLowerCase().contains('emergency')
         ? const Color(0xFFEF4444)
         : const Color(0xFFF59E0B);
-    final statusColor = _color(report);
+    final statusColor = _color(report, userId: userId);
     final statusLabel = report.isResolved
         ? 'RESOLVED'
-        : report.isResponding
+        : isResponding
         ? 'RESPONDING'
         : report.dispatchedAt == null
         ? 'PENDING DISPATCH'
@@ -436,7 +441,6 @@ class _MdrrmoReportsScreenState extends State<MdrrmoReportsScreen>
 
   @override
   Widget build(BuildContext context) {
-    final user = context.watch<AuthProvider>().user;
     final statusTabs = TabBar(
       controller: _tabs,
       indicatorColor: const Color(0xFF64D2B4),

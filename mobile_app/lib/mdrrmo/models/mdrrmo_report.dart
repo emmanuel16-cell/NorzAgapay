@@ -82,6 +82,30 @@ class MdrrmoReport {
   bool get isResponding => responseStatus == 'responding';
   bool get isPending => !isResolved && !isResponding;
 
+  Map<String, dynamic>? assignmentFor(String? responderId) {
+    if (responderId == null) return null;
+    for (final assignment in assignments) {
+      if (assignment['responder_id']?.toString() == responderId) {
+        return assignment;
+      }
+    }
+    return null;
+  }
+
+  bool isRespondingFor(String? responderId) {
+    if (isResolved) return false;
+    final assignment = assignmentFor(responderId);
+    if (assignment != null) {
+      return assignment['status']?.toString() == 'responding';
+    }
+    return isResponding;
+  }
+
+  bool isPendingFor(String? responderId) {
+    if (isResolved) return false;
+    return !isRespondingFor(responderId);
+  }
+
   static List<String> _stringList(dynamic value) {
     if (value is List)
       return value
