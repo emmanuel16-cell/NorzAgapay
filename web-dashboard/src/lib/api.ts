@@ -123,11 +123,6 @@ export const requestAPI = {
     api.patch(`/requests/${id}/status`, { status }),
 };
 
-// Routing for responder navigation
-export const matchingAPI = {
-  getRoute: (data: any) => api.post('/matching/route', data),
-};
-
 // Analytics
 export const analyticsAPI = {
   overview: () => api.get('/reports/overview'),
@@ -207,6 +202,7 @@ export const evacuationAPI = {
 export const municipalityBoundaryAPI = {
   get: () => api.get('/municipality-boundary'),
   history: () => api.get('/municipality-boundary/history'),
+  deleteVersion: (revision: number) => api.delete(`/municipality-boundary/history/${revision}`),
   save: (data: { geometry: unknown; enabled: boolean; expectedRevision: number }) =>
     api.put('/municipality-boundary', data),
 };

@@ -5,7 +5,7 @@ Unified Flutter app for MDRRMO and barangay operations.
 ## Account workspaces
 
 - MDRRMO Dispatcher: incident review and dispatch, responder locations, and weather.
-- MDRRMO Responder: assigned response tasks, status updates, GPS, navigation, and field documentation.
+- MDRRMO Responder: assigned response tasks, status updates, GPS location, and field documentation.
 - Barangay Admin, Dispatcher, Responder, and Staff: barangay-scoped operations, gated by the barangay coordination activation.
 
 MDRRMO mobile access is limited to dispatcher and responder accounts. MDRRMO administration and logistics remain in the web dashboard. Dispatcher and responder workflows are role-specific and use the same light, navy-and-teal visual style as the barangay app.

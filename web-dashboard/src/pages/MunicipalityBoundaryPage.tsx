@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { MapContainer, Marker, Polygon, TileLayer, Tooltip, useMap, useMapEvents } from 'react-leaflet';
 import L, { type LatLngExpression } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { Check, CircleHelp, LoaderCircle, MapPin, Plus, RotateCcw, Save, Trash2 } from 'lucide-react';
+import { Check, CircleHelp, LoaderCircle, MapPin, Pencil, Plus, RotateCcw, Save, Trash2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { municipalityBoundaryAPI } from '../lib/api';
 import { boundaryPolygons, type BoundaryGeometry, type MunicipalityBoundary } from '../lib/municipalityBoundary';
@@ -98,6 +98,7 @@ export default function MunicipalityBoundaryPage() {
   const [savedGeometryLoaded, setSavedGeometryLoaded] = useState(false);
   const [editRevision, setEditRevision] = useState(0);
   const [history, setHistory] = useState<MunicipalityBoundary[]>([]);
+  const [selectedVersion, setSelectedVersion] = useState<MunicipalityBoundary | null>(null);
 
   const loadHistory = useCallback(async () => {
     try {
@@ -139,6 +140,7 @@ export default function MunicipalityBoundaryPage() {
       setDirty(false);
       setEditing(false);
       setSelectedVertex(null);
+      setSelectedVersion(null);
       toast.success(enabled ? 'Boundary saved and enabled across all app maps.' : 'Boundary saved and disabled across all app maps.');
       return true;
     } catch (error: any) {
@@ -221,12 +223,50 @@ export default function MunicipalityBoundaryPage() {
   };
 
   const startNewBoundary = () => {
+    setSelectedVersion(null);
     setEditing(true);
     setParts([[]]);
     setActivePart(0);
     setSelectedVertex(null);
     setDirty(true);
     setEditRevision(boundary.revision);
+  };
+
+  const editVersion = (version: MunicipalityBoundary) => {
+    if (!version.geometry) return;
+    setParts(geometryToParts(version.geometry));
+    setActivePart(0);
+    setSelectedVertex(null);
+    setEditing(true);
+    setDirty(false);
+    setEditRevision(boundary.revision);
+    setSelectedVersion(null);
+  };
+
+  const useVersion = async (version: MunicipalityBoundary) => {
+    if (!version.geometry) return;
+    await save(
+      version.geometry,
+      true,
+      `Use boundary version ${version.revision} across the web dashboard, mobile app, and resident app? This will create a new active revision.`,
+    );
+  };
+
+  const deleteVersion = async (version: MunicipalityBoundary) => {
+    if (version.revision === boundary.revision) return;
+    if (!window.confirm(`Delete saved boundary version ${version.revision}? This cannot be undone.`)) return;
+    setSaving(true);
+    try {
+      await municipalityBoundaryAPI.deleteVersion(version.revision);
+      await loadHistory();
+      setSelectedVersion(null);
+      toast.success(`Boundary version ${version.revision} deleted.`);
+    } catch (error: any) {
+      const message = error?.response?.data?.error;
+      toast.error(typeof message === 'string' ? message : 'Could not delete this boundary version.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const displayedVersions = [...history]
@@ -254,7 +294,7 @@ export default function MunicipalityBoundaryPage() {
       <section className="card municipality-boundary-toolbar" aria-label="Boundary editing actions">
         <div className="municipality-boundary-actions">
           <button className="btn btn-outline" type="button" onClick={startNewBoundary} disabled={saving || loading}>
-            <Plus size={16} /> Start new boundary
+            <Plus size={16} /> Add boundary
           </button>
           {!editing ? <>
             <button className="btn btn-outline" type="button" onClick={() => { setEditing(true); setDirty(false); setEditRevision(boundary.revision); }} disabled={loading || saving}>
@@ -290,7 +330,14 @@ export default function MunicipalityBoundaryPage() {
       <section className="municipality-boundary-workspace">
         <aside className="card municipality-boundary-version-panel" aria-label="Saved boundaries">
           <div className="municipality-boundary-version-heading">Boundaries</div>
-          <button type="button" className="municipality-boundary-version active" aria-pressed="true" disabled>
+          <button
+            type="button"
+            className={`municipality-boundary-version active${selectedVersion?.revision === boundary.revision ? ' selected' : ''}`}
+            aria-pressed={selectedVersion?.revision === boundary.revision}
+            onClick={() => setSelectedVersion(boundary)}
+            disabled={saving || editing || !boundary.geometry}
+            title="Boundary currently selected for all apps"
+          >
             <strong>Boundary {Math.max(1, boundary.revision)}</strong>
             <span>Current · {boundary.enabled ? 'Enabled' : 'Disabled'}</span>
           </button>
@@ -298,14 +345,11 @@ export default function MunicipalityBoundaryPage() {
             <button
               key={version.revision}
               type="button"
-              className="municipality-boundary-version"
+              className={`municipality-boundary-version${selectedVersion?.revision === version.revision ? ' selected' : ''}`}
+              aria-pressed={selectedVersion?.revision === version.revision}
               disabled={saving || editing || !version.geometry}
-              title={`Restore saved version ${version.revision}`}
-              onClick={() => save(
-                version.geometry!,
-                version.enabled,
-                `Restore boundary version ${version.revision}? This will create a new saved revision.`,
-              )}
+              title={`View actions for boundary version ${version.revision}`}
+              onClick={() => setSelectedVersion(version)}
             >
               <strong>Boundary {version.revision}</strong>
               <span>Saved version · {version.enabled ? 'Enabled' : 'Disabled'}</span>
@@ -316,8 +360,8 @@ export default function MunicipalityBoundaryPage() {
             className="municipality-boundary-add-version"
             onClick={editing ? addPart : startNewBoundary}
             disabled={saving || loading || (editing && parts.some((part) => part.length < 3))}
-            aria-label={editing ? 'Add polygon part' : 'Start a new boundary'}
-            title={editing ? 'Add polygon part' : 'Start a new boundary'}
+            aria-label={editing ? 'Add polygon part' : 'Add boundary'}
+            title={editing ? 'Add polygon part' : 'Add boundary'}
           >
             <Plus size={24} />
           </button>
@@ -360,5 +404,43 @@ export default function MunicipalityBoundaryPage() {
         </section>
       </section>
     </div>
+    {selectedVersion && <div className="modal-backdrop" onClick={() => { if (!saving) setSelectedVersion(null); }}>
+      <section className="modal municipality-boundary-modal" role="dialog" aria-modal="true" aria-labelledby="boundary-version-modal-title" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-header">
+          <div>
+            <h2 className="modal-title" id="boundary-version-modal-title">Boundary {selectedVersion.revision}</h2>
+            <p className="municipality-boundary-modal-subtitle">
+              {selectedVersion.revision === boundary.revision ? 'Currently selected for the system' : 'Saved boundary version'}
+            </p>
+          </div>
+          <button className="modal-close" type="button" aria-label="Close" onClick={() => setSelectedVersion(null)} disabled={saving}><X size={20} /></button>
+        </div>
+        <div className="municipality-boundary-modal-details">
+          <span className={`boundary-status-pill ${selectedVersion.enabled ? 'enabled' : 'disabled'}`}>
+            <span className="boundary-status-dot" />
+            {selectedVersion.revision === boundary.revision && selectedVersion.enabled ? 'In use' : selectedVersion.enabled ? 'Enabled when saved' : 'Disabled when saved'}
+          </span>
+          {selectedVersion.updated_at && <span>Saved {new Date(selectedVersion.updated_at).toLocaleString()}</span>}
+          <span>{geometryToParts(selectedVersion.geometry).reduce((total, part) => total + part.length, 0)} boundary points</span>
+        </div>
+        <p className="municipality-boundary-modal-copy">
+          Choose what to do with this boundary. Editing creates a new saved revision when you save; using it applies its shape across all apps.
+        </p>
+        <div className="municipality-boundary-modal-actions">
+          <button className="btn btn-outline" type="button" onClick={() => editVersion(selectedVersion)} disabled={!selectedVersion.geometry || saving}>
+            <Pencil size={16} /> Edit
+          </button>
+          <button className="btn btn-primary" type="button" onClick={() => void useVersion(selectedVersion)} disabled={!selectedVersion.geometry || saving || (selectedVersion.revision === boundary.revision && boundary.enabled)}>
+            {saving ? <LoaderCircle className="boundary-spinner" size={16} /> : <Check size={16} />}
+            {selectedVersion.revision === boundary.revision && boundary.enabled ? 'Already in use' : 'Use boundary'}
+          </button>
+          <button className="btn btn-danger" type="button" onClick={() => void deleteVersion(selectedVersion)} disabled={saving || selectedVersion.revision === boundary.revision}>
+            {saving ? <LoaderCircle className="boundary-spinner" size={16} /> : <Trash2 size={16} />}
+            Delete
+          </button>
+        </div>
+        {selectedVersion.revision === boundary.revision && <p className="municipality-boundary-delete-note">The boundary currently selected for the system cannot be deleted. Use another saved version first.</p>}
+      </section>
+    </div>}
   </>;
 }

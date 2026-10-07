@@ -26,7 +26,6 @@ The system replaces fragmented phone calls, radio-based coordination, and physic
 | **Realtime** | Supabase Realtime + Socket.IO (role/barangay/user rooms) |
 | **File Storage** | Supabase Storage (bucket: `norzagapay-files`) |
 | **Temporary Verification Data** | Upstash Redis (OTP caching) |
-| **Routing/Navigation** | Project OSRM (OpenStreetMap Routing Machine) |
 | **PDF Generation** | PDFKit (server-side, for dispatcher accreditation documents) |
 | **Validation** | Zod (backend schema validation) |
 | **Weather Data** | Open-Meteo API (with PAGASA simulation layer) |
@@ -135,7 +134,6 @@ Node.js + Express.js + TypeScript server. Handles authentication, data access, s
 | `/api/users` | `users.ts` | User management, account status, profile updates |
 | `/api/verification` | `verification.ts` | Dispatcher accreditation: document upload, review queue, PDF reference management, status transitions |
 | `/api/weather` | `weather.ts` | Weather data fetch (Open-Meteo), forecast storage, river station levels and alerts |
-| `/api/matching` | `matching.ts` | Responder availability matching engine queries |
 | `/api/respond-units` | `respondUnits.ts` | Professional emergency unit management (PNP, BFP, MDRRMO rescue) |
 | `/api/dispatch-units` | `dispatchUnits.ts` | Dispatch unit CRUD and assignment |
 | `/api/officers` | `officers.ts` | MDRRMO officer account data |
@@ -182,7 +180,6 @@ Runs automatically on server start and every **5 minutes** thereafter:
 | Service | File | Function |
 |---|---|---|
 | Dispatcher Verification | `dispatcherVerificationService.ts` | Prefilled PDF generation (PDFKit), document lifecycle, audit history in JSONB |
-| Matching Engine | `matchingEngine.ts` | Responder availability and proximity scoring for incident dispatch suggestions |
 
 ---
 
@@ -265,7 +262,7 @@ Real-time alert feed and system activity log, subscribed to Supabase Realtime.
 3. Dispatcher selects an active responder and sends the classified assignment through the backend.
 4. The updated classified report is sent to the authorized barangay room and the municipal command room; the responder's report list refreshes from the assigned report data.
 5. Tanod reviews the assignment in the Dispatches tab and accepts it.
-6. Tanod navigates to the incident using OSRM turn-by-turn routing and updates operational status: **En Route → On Scene → Resolved**.
+6. Tanod checks the incident location and coordinates, then updates operational status: **En Route → On Scene → Resolved**.
 7. At resolution, the Tanod uploads photo proof and submits closing remarks through `task_detail_screen.dart`.
 
 ### MDRRMO Co-Response
@@ -379,7 +376,6 @@ Combines barangay screens with the responder client under `mobile_app/`. MDRRMO 
 - **Offline resilience**: Unsent incident reports and attached media are queued locally in the resident app and synchronized when connection returns. Previously loaded advisories are cached for offline viewing.
 - **Maps**: Leaflet + OpenStreetMap on web and Flutter Map for mobile response. Incident markers and evacuation station pins.
 - **Heatmap**: Incident severity/frequency heatmap on MDRRMO Command Center with filter support by severity, status, date, and barangay.
-- **Navigation**: OSRM routing engine provides turn-by-turn guidance for dispatched Tanods in `task_detail_screen.dart`.
 - **Offline state UI**: Clear connection-required indicators shown when real-time dispatch, arrival verification, or notifications cannot function without internet connectivity.
 
 ---
@@ -418,13 +414,13 @@ The following are **explicitly excluded** from NorzAgapay and must not be added:
 
 1. ✅ React web dashboard (`web-dashboard/`) — MDRRMO and barangay workspaces, Leaflet maps, and Socket.IO updates
 2. ✅ Flutter unified operations app (`mobile_app/`) — barangay operations and MDRRMO role workspaces
-3. ✅ Responder workflows integrated under `mobile_app/lib/mdrrmo/` — arrival verification, routing, dispatch updates, and field documentation
+3. ✅ Responder workflows integrated under `mobile_app/lib/mdrrmo/` — arrival verification, dispatch updates, and field documentation
 4. ✅ Flutter Resident app (`resident_app/`) — 7 screens, incident reporting, report tracking, offline-capable
 5. ✅ Node.js + Express backend (`backend/`) — 21 API route files, Socket.IO server, background weather/river sync, PDF generation
 6. ✅ Supabase database migrations (`database/migrations/`) — schema, classification, RLS, indexes, and Realtime setup
 7. ✅ Authentication and RBAC — 5-role permission system with JWT, bcrypt, and Supabase RLS
 8. ✅ Real-time workflows — incident alerts, dispatch notifications, escalation events, evacuation center sync
-9. ✅ Maps and navigation — Leaflet/OpenStreetMap incident maps, severity heatmaps, and OSRM routing
+9. ✅ Maps and heatmaps — Leaflet/OpenStreetMap incident maps and severity heatmaps
 10. ✅ PDF document service — Dispatcher authorization form generation via PDFKit
 11. ✅ Tunnel URL sync utility (`update-tunnel-url.js`) — one-command propagation of ngrok/tunnel URLs across all apps
 12. ⬜ API documentation and environment template — pending

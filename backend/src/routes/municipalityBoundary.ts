@@ -33,6 +33,45 @@ router.get('/history', authenticate, authorize('logistics'), async (_req: AuthRe
   }
 });
 
+router.delete('/history/:revision', authenticate, authorize('logistics'), async (req: AuthRequest, res: Response): Promise<void> => {
+  const revision = Number(req.params.revision);
+  if (!Number.isSafeInteger(revision) || revision < 1) {
+    res.status(400).json({ error: 'A valid boundary revision is required.' });
+    return;
+  }
+
+  try {
+    const { data: current, error: readError } = await supabaseAdmin
+      .from('municipality_boundary_config')
+      .select('revision')
+      .eq('municipality_key', 'norzagaray')
+      .maybeSingle();
+    if (readError) throw readError;
+    if (Number(current?.revision ?? 0) === revision) {
+      res.status(409).json({ error: 'The boundary currently in use cannot be deleted. Use another version first.' });
+      return;
+    }
+
+    const { data: deleted, error: deleteError } = await supabaseAdmin
+      .from('municipality_boundary_history')
+      .delete()
+      .eq('municipality_key', 'norzagaray')
+      .eq('revision', revision)
+      .select('revision')
+      .maybeSingle();
+    if (deleteError) throw deleteError;
+    if (!deleted) {
+      res.status(404).json({ error: 'That saved boundary version was not found.' });
+      return;
+    }
+
+    res.json({ success: true, revision });
+  } catch (error) {
+    console.error('Delete municipality boundary version error:', error);
+    res.status(500).json({ error: 'Failed to delete municipality boundary version' });
+  }
+});
+
 router.get('/', async (_req, res: Response): Promise<void> => {
   try {
     res.json(await getMunicipalityBoundaryConfiguration());

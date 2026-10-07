@@ -67,7 +67,7 @@ NorzAgapay is composed of five tightly integrated subsystems designed for specif
   - **Role-specific mobile workspace**: A compact set of mobile screens exposes each account’s permitted operations; backend role and barangay scope checks remain authoritative.
   - **Barangay operations**: Own-barangay incident queue, local dispatch and escalation, assistance requests, team, broadcasts, hotlines, analytics, coordination request, and add-station workflow.
   - **MDRRMO operations**: Incident verification/dispatch, barangay coordination review, responder verification, account creation, resource requests, response units, a searchable barangay evacuation-station map, advisories, weather, and situation summaries according to role.
-  - **Responder field workflow**: Dispatch alerts, accept/status updates, GPS tracking, route navigation, unit membership, resource requests, and field documentation.
+  - **Responder field workflow**: Dispatch alerts, accept/status updates, GPS tracking, incident-location access, unit membership, resource requests, and field documentation.
 
 ### 3. 📱 Resident Mobile Emergency App (`resident_app/`)
 * **Technology**: Flutter, Dart, Hive, Image Picker, Location Service, Flutter Map.
@@ -115,7 +115,7 @@ NorzAgapay/
 ├── mobile_app/               # Unified MDRRMO / Barangay Flutter Mobile App
 │   ├── lib/
 │   │   ├── screens/          # Barangay operations and MDRRMO mobile workspace
-│   │   ├── mdrrmo/           # Responder dispatch, GPS, routing, and task workflows
+│   │   ├── mdrrmo/           # Responder dispatch, GPS, and task workflows
 │   │   └── main.dart
 │   └── pubspec.yaml
 │
@@ -141,7 +141,7 @@ NorzAgapay/
 1. **Resident Submission**: A resident submits an incident report via `resident_app` with high-accuracy GPS coordinates, category, description, and attached camera photos.
 2. **Barangay Triage & Verification**: The report appears in the barangay’s scoped workspace in `mobile_app`. The BDRRMC dispatcher reviews and verifies its legitimacy.
 3. **Tanod Dispatch**: The barangay dispatcher assigns an active responder. A dispatch alert appears in the responder area of `mobile_app`.
-4. **Field Response**: The Tanod accepts the dispatch and follows the OSRM GPS navigation route to the scene. The Tanod updates status to `En Route`, then `On Scene`.
+4. **Field Response**: The Tanod accepts the dispatch, checks the incident location and coordinates, and updates status to `En Route`, then `On Scene`.
 5. **Resolution & Documentation**: Upon resolving the incident, the Tanod uploads proof media and remarks. The status transitions to `Resolved`, immediately updating the resident's tracking timeline and the MDRRMO Command Center.
 
 ### 2. Multi-Tier Escalation Pipeline

@@ -2612,6 +2612,10 @@ tbody tr:last-child td { border-bottom: none; }
   background: #36598f;
 }
 
+.municipality-boundary-version.selected {
+  box-shadow: 0 0 0 2px rgba(50, 199, 235, .2);
+}
+
 .municipality-boundary-version:disabled:not(.active) {
   opacity: .8;
   cursor: default;
@@ -2697,6 +2701,56 @@ tbody tr:last-child td { border-bottom: none; }
 
 .boundary-spinner {
   animation: boundary-spin .9s linear infinite;
+}
+
+.municipality-boundary-modal {
+  width: min(92vw, 480px);
+}
+
+.municipality-boundary-modal .modal-header {
+  margin-bottom: 16px;
+}
+
+.municipality-boundary-modal-subtitle {
+  margin: 4px 0 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.municipality-boundary-modal-details {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.municipality-boundary-modal-details .boundary-status-pill {
+  padding: 5px 9px;
+  font-size: 11px;
+}
+
+.municipality-boundary-modal-copy,
+.municipality-boundary-delete-note {
+  margin: 16px 0 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.municipality-boundary-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.municipality-boundary-delete-note {
+  margin-top: 12px;
+  color: var(--warning);
+  font-size: 12px;
 }
 
 @keyframes boundary-spin {
