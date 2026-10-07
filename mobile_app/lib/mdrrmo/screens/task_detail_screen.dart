@@ -813,7 +813,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                           ],
                         ),
 
-                        // Dispatcher classification from the incident record.
+                        // Incident classification recorded in the web dashboard.
                         if (task.incidentType != null ||
                             task.incidentSeverity != null) ...[
                           const SizedBox(height: 14),
@@ -830,7 +830,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                               ),
                             ),
                             child: Text(
-                              'Dispatcher classification: ${(task.incidentType ?? 'Unclassified').replaceAll('_', ' ')} · ${(task.incidentSeverity ?? 'Unclassified').toUpperCase()}',
+                              'Incident classification: ${(task.incidentType ?? 'Unclassified').replaceAll('_', ' ')} · ${(task.incidentSeverity ?? 'Unclassified').toUpperCase()}',
                               style: const TextStyle(
                                 color: Color(0xFF0D9488),
                                 fontWeight: FontWeight.w700,

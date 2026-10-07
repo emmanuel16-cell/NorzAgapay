@@ -157,7 +157,7 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 6),
               const Text(
-                'MDRRMO Dispatcher / Responder Portal',
+                'MDRRMO Responder Portal',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.grey, fontSize: 14),
               ),

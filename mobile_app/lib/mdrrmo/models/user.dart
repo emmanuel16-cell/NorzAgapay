@@ -3,7 +3,6 @@ enum UserRole {
   master_admin,
   admin,
   logistics,
-  dispatcher,
   responder,
 }
 

@@ -522,10 +522,13 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
       ),
       (
         'MDRRMO coordination',
-        _report.mdrrmoCoordinationNotes?.trim().isNotEmpty == true
+        _report.sendTo == 'mdrrmo'
+            ? 'Your report was routed directly to MDRRMO.'
+            : _report.mdrrmoCoordinationNotes?.trim().isNotEmpty == true
             ? _report.mdrrmoCoordinationNotes!
             : 'No MDRRMO escalation recorded.',
-        _report.mdrrmoResponseStatus?.toLowerCase() == 'responding' ||
+        _report.sendTo == 'mdrrmo' ||
+            _report.mdrrmoResponseStatus?.toLowerCase() == 'responding' ||
             _report.mdrrmoCoordinationNotes?.trim().isNotEmpty == true,
       ),
       (

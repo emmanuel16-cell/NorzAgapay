@@ -811,8 +811,12 @@ export default function CommandCenter() {
           const mdrrmoStatus = String(r.mdrrmo_response_status || '').toLowerCase();
           const reportGroup = getMdrrmoReportGroup(r);
           const isEscalated = reportGroup === 'escalated';
-          const mdrrmoCycleStatus = mdrrmoStatus || reportStatus;
-          const barangayCycleStatus = barangayStatus || reportStatus;
+          const mdrrmoCycleStatus = mdrrmoStatus || (isEscalated
+            ? r.mdrrmo_resolved_at ? 'resolved' : r.mdrrmo_accepted_at || r.mdrrmo_arrived_at ? 'responding' : 'pending'
+            : reportStatus);
+          const barangayCycleStatus = barangayStatus || (isEscalated
+            ? r.barangay_resolved_at ? 'resolved' : r.barangay_accepted_at || r.barangay_arrived_at ? 'responding' : 'pending'
+            : reportStatus);
           const applicableCycleStatuses = isEscalated
             ? [barangayCycleStatus, mdrrmoCycleStatus]
             : [mdrrmoCycleStatus];

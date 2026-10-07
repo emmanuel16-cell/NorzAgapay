@@ -23,8 +23,7 @@ class AuthProvider with ChangeNotifier {
   List<Map<String, dynamic>> get unitMembers => _unitMembers;
   bool get isTeamLeader => _isTeamLeader;
 
-  bool _isAllowedMobileRole(UserRole role) =>
-      role == UserRole.dispatcher || role == UserRole.responder;
+  bool _isAllowedMobileRole(UserRole role) => role == UserRole.responder;
 
   Future<void> fetchMyUnit() async {
     if (_token == null) return;
@@ -97,7 +96,12 @@ class AuthProvider with ChangeNotifier {
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        final user = User.fromJson(data['user']);
+        final userData = Map<String, dynamic>.from(data['user'] as Map);
+        if (userData['role'] != UserRole.responder.name) {
+          await logout();
+          return;
+        }
+        final user = User.fromJson(userData);
         if (!_isAllowedMobileRole(user.role)) {
           await logout();
           return;
@@ -129,9 +133,13 @@ class AuthProvider with ChangeNotifier {
 
       final data = json.decode(response.body);
       if (response.statusCode == 200) {
-        final user = User.fromJson(data['user']);
+        final userData = Map<String, dynamic>.from(data['user'] as Map);
+        if (userData['role'] != UserRole.responder.name) {
+          throw 'Only MDRRMO responder accounts can sign in to this app.';
+        }
+        final user = User.fromJson(userData);
         if (!_isAllowedMobileRole(user.role)) {
-          throw 'MDRRMO mobile access is limited to Dispatcher and Responder accounts.';
+          throw 'Only MDRRMO responder accounts can sign in to this app.';
         }
         _token = data['token'];
         _user = user;
@@ -155,7 +163,7 @@ class AuthProvider with ChangeNotifier {
     if (response.statusCode == 200) {
       return (data['accounts'] as List)
           .map((account) => Map<String, dynamic>.from(account))
-          .where((account) => account['role'] == 'dispatcher' || account['role'] == 'responder')
+          .where((account) => account['role'] == 'responder')
           .toList();
     }
     throw data['error'] ?? 'Debug quick login is unavailable';
@@ -175,9 +183,13 @@ class AuthProvider with ChangeNotifier {
       );
       final data = json.decode(response.body);
       if (response.statusCode != 200) throw data['error'] ?? 'Quick login failed';
-      final user = User.fromJson(data['user']);
+      final userData = Map<String, dynamic>.from(data['user'] as Map);
+      if (userData['role'] != UserRole.responder.name) {
+        throw 'Only MDRRMO responder accounts can sign in to this app.';
+      }
+      final user = User.fromJson(userData);
       if (!_isAllowedMobileRole(user.role)) {
-        throw 'MDRRMO mobile access is limited to Dispatcher and Responder accounts.';
+        throw 'Only MDRRMO responder accounts can sign in to this app.';
       }
       _token = data['token'];
       _user = user;

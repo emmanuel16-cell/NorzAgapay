@@ -62,12 +62,11 @@ NorzAgapay is composed of five tightly integrated subsystems designed for specif
 
 ### 2. 📱 Unified MDRRMO and Barangay App (`mobile_app/`)
 * **Technology**: Flutter, Dart, Provider, Hive, Flutter Map, Location Service, Socket.IO.
-* **Target Users**: MDRRMO Master Admins, Admins, Dispatchers, Logistics staff, and responders; barangay Admins, Dispatchers, Responders, and Staff.
+* **Target Users**: MDRRMO responders and barangay Admins, Dispatchers, Responders, and Staff.
 * **Key Capabilities**:
   - **Role-specific mobile workspace**: A compact set of mobile screens exposes each account’s permitted operations; backend role and barangay scope checks remain authoritative.
   - **Barangay operations**: Own-barangay incident queue, local dispatch and escalation, assistance requests, team, broadcasts, hotlines, analytics, coordination request, and add-station workflow.
-  - **MDRRMO operations**: Incident verification/dispatch, barangay coordination review, responder verification, account creation, resource requests, response units, a searchable barangay evacuation-station map, advisories, weather, and situation summaries according to role.
-  - **Responder field workflow**: Dispatch alerts, accept/status updates, GPS tracking, incident-location access, unit membership, resource requests, and field documentation.
+  - **MDRRMO responder workflow**: Assigned dispatch alerts, accept/status updates, GPS tracking, incident-location access, unit membership, resource requests, and field documentation.
 
 ### 3. 📱 Resident Mobile Emergency App (`resident_app/`)
 * **Technology**: Flutter, Dart, Hive, Image Picker, Location Service, Flutter Map.
@@ -139,8 +138,8 @@ NorzAgapay/
 
 ### 1. Incident Reporting to Resolution
 1. **Resident Submission**: A resident submits an incident report via `resident_app` with high-accuracy GPS coordinates, category, description, and attached camera photos.
-2. **Barangay Triage & Verification**: The report appears in the barangay’s scoped workspace in `mobile_app`. The BDRRMC dispatcher reviews and verifies its legitimacy.
-3. **Tanod Dispatch**: The barangay dispatcher assigns an active responder. A dispatch alert appears in the responder area of `mobile_app`.
+2. **Triage & Verification**: Barangay-routed reports appear in the barangay’s scoped workspace in `mobile_app`; MDRRMO-routed reports appear in the MDRRMO web dashboard. The appropriate dispatcher reviews the report.
+3. **Responder Dispatch**: The dispatcher assigns an active responder. A dispatch alert appears in the responder area of `mobile_app`.
 4. **Field Response**: The Tanod accepts the dispatch, checks the incident location and coordinates, and updates status to `En Route`, then `On Scene`.
 5. **Resolution & Documentation**: Upon resolving the incident, the Tanod uploads proof media and remarks. The status transitions to `Resolved`, immediately updating the resident's tracking timeline and the MDRRMO Command Center.
 

@@ -34,6 +34,7 @@ class IncidentReport {
   final String? barangayName;
   final String? barangayResponderName;
   final String? sendTo;
+  final bool isEscalated;
   final String? barangayResponseStatus;
   final String? barangayResponseNotes;
   final String? mdrrmoResponseStatus;
@@ -94,6 +95,7 @@ class IncidentReport {
     this.barangayName,
     this.barangayResponderName,
     this.sendTo,
+    this.isEscalated = false,
     this.barangayResponseStatus,
     this.barangayResponseNotes,
     this.mdrrmoResponseStatus,
@@ -118,10 +120,7 @@ class IncidentReport {
        proofTypes = proofTypes ?? [proofType],
        responderMedia = responderMedia ?? const [];
 
-  /// Normalized display status:
-  /// - 'resolved' if resolved by any responder or marked resolved
-  /// - 'responding' if team leader or mdrrmo is responding
-  /// - 'pending' if no one is responding
+  /// Normalized display status from the applicable response channels.
   String get displayStatus {
     final outcome = (reviewOutcome ?? '').toLowerCase().trim();
     if (outcome == 'inconclusive' || outcome == 'false_report') return outcome;
@@ -129,17 +128,29 @@ class IncidentReport {
     final m = (mdrrmoResponseStatus ?? '').toLowerCase().trim();
     final b = (barangayResponseStatus ?? '').toLowerCase().trim();
 
-    if (s == 'resolved' || b == 'resolved') {
-      return 'resolved';
+    if (isEscalated) {
+      if (m == 'responding' || b == 'responding') return 'responding';
+      if ((m == 'resolved' || m == 'closed') && (b == 'resolved' || b == 'closed')) {
+        return 'resolved';
+      }
+      return 'pending';
     }
-    if (s == 'responding' || m == 'responding' || b == 'responding') {
-      return 'responding';
-    }
+    final channelStatus = sendTo == 'mdrrmo'
+        ? m
+        : b.isNotEmpty
+            ? b
+            : m;
+    if (channelStatus == 'responding') return 'responding';
+    if (channelStatus == 'resolved' || channelStatus == 'closed') return 'resolved';
+    if (channelStatus.isNotEmpty) return 'pending';
+    if (s == 'responding') return 'responding';
+    if (s == 'resolved' || s == 'closed') return 'resolved';
     return 'pending';
   }
 
   bool get isMdrrmoHandled =>
       sendTo == 'mdrrmo' ||
+      isEscalated ||
       status == 'escalated' ||
       mdrrmoResponseStatus == 'responding' ||
       mdrrmoResponseStatus == 'resolved';
@@ -195,6 +206,7 @@ class IncidentReport {
       'barangay_name': barangayName,
       'barangay_responder_name': barangayResponderName,
       'send_to': sendTo,
+      'is_escalated': isEscalated,
       'barangay_response_status': barangayResponseStatus,
       'barangay_response_notes': barangayResponseNotes,
       'mdrrmo_response_status': mdrrmoResponseStatus,
@@ -322,6 +334,9 @@ class IncidentReport {
       barangayName: json['barangay_name']?.toString(),
       barangayResponderName: json['barangay_responder_name']?.toString(),
       sendTo: json['send_to']?.toString(),
+      isEscalated: json['is_escalated'] == true ||
+          json['beyond_barangay_capability'] == true ||
+          json['status']?.toString().toLowerCase() == 'escalated',
       barangayResponseStatus: json['barangay_response_status'],
       barangayResponseNotes: json['barangay_response_notes'],
       mdrrmoResponseStatus: json['mdrrmo_response_status'],
@@ -400,6 +415,7 @@ class IncidentReport {
       barangayName: barangayName,
       barangayResponderName: barangayResponderName,
       sendTo: sendTo,
+      isEscalated: isEscalated,
       barangayResponseStatus: barangayResponseStatus,
       barangayResponseNotes: barangayResponseNotes,
       mdrrmoResponseStatus: mdrrmoResponseStatus,

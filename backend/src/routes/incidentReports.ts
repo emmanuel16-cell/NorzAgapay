@@ -933,6 +933,8 @@ router.patch('/:id', optionalAuthenticate, upload.any(), async (req: AuthRequest
     if (allUrls.length > 0) {
       updatePayload.proof_url = allUrls.length > 1 ? JSON.stringify(allUrls) : allUrls[0];
     }
+    updatePayload.lifecycle_actor_id = req.user?.userId || null;
+    updatePayload.lifecycle_actor_role = req.user?.role || null;
 
     let updatedReport: any = null;
     try {

@@ -492,11 +492,9 @@ class _MdrrmoReportsScreenState extends State<MdrrmoReportsScreen>
                     'Incident Reports',
                     style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
                   ),
-                  Text(
-                    user?.role.name == 'dispatcher'
-                        ? 'MDRRMO Dispatcher'
-                        : 'MDRRMO Responder',
-                    style: const TextStyle(fontSize: 11, color: Colors.white70),
+                  const Text(
+                    'MDRRMO Responder',
+                    style: TextStyle(fontSize: 11, color: Colors.white70),
                   ),
                 ],
               ),

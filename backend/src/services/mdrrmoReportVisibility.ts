@@ -23,12 +23,15 @@ export function isEscalatedForMdrrmo(report: MdrrmoReportVisibilityFields): bool
     isTrue(report.beyond_barangay_capability);
 }
 
-export function isVisibleToMdrrmo(report: MdrrmoReportVisibilityFields): boolean {
-  if (text(report.review_outcome)) return false;
-  if (isEscalatedForMdrrmo(report)) return true;
-
+export function isDirectMdrrmoReport(report: MdrrmoReportVisibilityFields): boolean {
   const routeMarker = `${text(report.specifics)}\n${text(report.description)}`
     .match(/\[send_to:([^\]]+)\]/i)?.[1];
   const route = text(report.send_to) || text(routeMarker);
   return route === 'mdrrmo';
+}
+
+export function isVisibleToMdrrmo(report: MdrrmoReportVisibilityFields): boolean {
+  if (text(report.review_outcome)) return false;
+  if (isEscalatedForMdrrmo(report)) return true;
+  return isDirectMdrrmoReport(report);
 }

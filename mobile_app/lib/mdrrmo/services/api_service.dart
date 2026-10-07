@@ -90,44 +90,6 @@ class ApiService {
     }
   }
 
-  static Future<List<Map<String, dynamic>>> getActiveMdrrmoResponders(String token) async {
-    final response = await http.get(
-      Uri.parse('$baseUrl/mdrrmo/reports/responders'),
-      headers: _headers(token),
-    );
-    final body = response.body.isEmpty ? <String, dynamic>{} : jsonDecode(response.body);
-    if (response.statusCode == 200 && body is Map) {
-      return (body['responders'] as List? ?? const [])
-          .whereType<Map>()
-          .map((item) => Map<String, dynamic>.from(item))
-          .toList();
-    }
-    throw Exception(body is Map ? body['error'] ?? 'Failed to fetch responders' : 'Failed to fetch responders');
-  }
-
-  static Future<MdrrmoReport> dispatchMdrrmoReport(
-    String token,
-    String reportId, {
-    required String incidentType,
-    required String severity,
-    required List<String> responderIds,
-    String? notes,
-  }) async {
-    final response = await http.patch(
-      Uri.parse('$baseUrl/mdrrmo/reports/$reportId/dispatch'),
-      headers: _headers(token),
-      body: jsonEncode({
-        'incident_type': incidentType,
-        'severity': severity,
-        'responder_ids': responderIds,
-        'notes': notes?.trim() ?? '',
-      }),
-    );
-    final body = response.body.isEmpty ? <String, dynamic>{} : jsonDecode(response.body);
-    if (response.statusCode == 200 && body is Map) return MdrrmoReport.fromJson(Map<String, dynamic>.from(body));
-    throw Exception(body is Map ? body['error'] ?? 'Failed to dispatch report' : 'Failed to dispatch report');
-  }
-
   static Future<MdrrmoReport> respondToMdrrmoReport(String token, String reportId) async {
     return _mdrrmoMutation(token, reportId, 'respond', method: 'PATCH');
   }

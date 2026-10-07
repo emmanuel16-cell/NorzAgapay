@@ -210,271 +210,6 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
     return DateTime.fromMillisecondsSinceEpoch(timestamp.round(), isUtc: true);
   }
 
-  Future<void> _dispatch() async {
-    final auth = context.read<AuthProvider>();
-    if (auth.token == null) return;
-    setState(() => _busy = true);
-    List<Map<String, dynamic>> responders;
-    try {
-      responders = await ApiService.getActiveMdrrmoResponders(auth.token!);
-    } catch (error) {
-      if (mounted)
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$error'), backgroundColor: Colors.red),
-        );
-      setState(() => _busy = false);
-      return;
-    }
-    setState(() => _busy = false);
-    if (!mounted) return;
-    if (responders.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No active MDRRMO responders are available.'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
-
-    const types = <String, String>{
-      'flash_flood': 'Flood / Flash Flood',
-      'fire': 'Fire',
-      'earthquake': 'Earthquake',
-      'medical_emergency': 'Medical Emergency',
-      'typhoon': 'Typhoon / Severe Weather',
-      'other': 'Other Emergency',
-    };
-    const severities = <String, String>{
-      'low': 'Low',
-      'moderate': 'Moderate',
-      'high': 'High',
-      'critical': 'Critical',
-    };
-    String? incidentType = types.containsKey(_report.incidentType)
-        ? _report.incidentType
-        : null;
-    String? severity = severities.containsKey(_report.severity)
-        ? _report.severity
-        : null;
-    final notes = TextEditingController(text: _report.dispatchNotes ?? '');
-    final selected = <String>{};
-    final result = await showDialog<Map<String, dynamic>>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          backgroundColor: const Color(0xFF1E293B),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          title: const Row(
-            children: [
-              Icon(Icons.groups_rounded, color: Color(0xFF38BDF8), size: 22),
-              SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Dispatch MDRRMO Responders',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 17,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Classify the report, choose one or more active responders, and add optional instructions.',
-                    style: TextStyle(color: Color(0xFFCBD5E1), fontSize: 13),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    _report.title,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    value: incidentType,
-                    dropdownColor: const Color(0xFF0F172A),
-                    decoration: const InputDecoration(
-                      labelText: 'Incident type',
-                    ),
-                    items: types.entries
-                        .map(
-                          (entry) => DropdownMenuItem(
-                            value: entry.key,
-                            child: Text(entry.value),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (value) =>
-                        setDialogState(() => incidentType = value),
-                  ),
-                  const SizedBox(height: 8),
-                  DropdownButtonFormField<String>(
-                    value: severity,
-                    dropdownColor: const Color(0xFF0F172A),
-                    decoration: const InputDecoration(labelText: 'Severity'),
-                    items: severities.entries
-                        .map(
-                          (entry) => DropdownMenuItem(
-                            value: entry.key,
-                            child: Text(entry.value),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (value) =>
-                        setDialogState(() => severity = value),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      const Expanded(
-                        child: Text(
-                          'Active responders',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: () => setDialogState(() {
-                          if (selected.length == responders.length) {
-                            selected.clear();
-                          } else {
-                            selected.addAll(
-                              responders.map((r) => r['id'].toString()),
-                            );
-                          }
-                        }),
-                        child: Text(
-                          selected.length == responders.length
-                              ? 'Clear'
-                              : 'Select all',
-                        ),
-                      ),
-                    ],
-                  ),
-                  Container(
-                    constraints: const BoxConstraints(maxHeight: 200),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF0F172A),
-                      borderRadius: BorderRadius.circular(9),
-                      border: Border.all(color: const Color(0xFF334155)),
-                    ),
-                    child: ListView(
-                      shrinkWrap: true,
-                      children: responders.map((responder) {
-                        final id = responder['id'].toString();
-                        final name =
-                            responder['full_name']?.toString() ?? 'Responder';
-                        final specialty = responder['unit_type']?.toString();
-                        return CheckboxListTile(
-                          dense: true,
-                          activeColor: _detailTeal,
-                          checkColor: Colors.white,
-                          title: Text(
-                            name,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 13,
-                            ),
-                          ),
-                          subtitle: specialty == null || specialty.isEmpty
-                              ? null
-                              : Text(
-                                  specialty,
-                                  style: const TextStyle(
-                                    color: Color(0xFF94A3B8),
-                                    fontSize: 11,
-                                  ),
-                                ),
-                          value: selected.contains(id),
-                          onChanged: (checked) => setDialogState(() {
-                            if (checked == true)
-                              selected.add(id);
-                            else
-                              selected.remove(id);
-                          }),
-                        );
-                      }).toList(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: notes,
-                    style: const TextStyle(color: Colors.white),
-                    maxLength: 1000,
-                    maxLines: 3,
-                    decoration: const InputDecoration(
-                      labelText: 'Dispatcher notes (optional)',
-                      hintText: 'Add response instructions…',
-                      filled: true,
-                      fillColor: Color(0xFF0F172A),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text(
-                'Cancel',
-                style: TextStyle(color: Color(0xFF94A3B8)),
-              ),
-            ),
-            ElevatedButton(
-              onPressed:
-                  incidentType == null || severity == null || selected.isEmpty
-                  ? null
-                  : () => Navigator.pop(dialogContext, {
-                      'incident_type': incidentType,
-                      'severity': severity,
-                      'responder_ids': selected.toList(),
-                      'notes': notes.text.trim(),
-                    }),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF35C5DF),
-              ),
-              child: const Text(
-                'Dispatch',
-                style: TextStyle(
-                  color: Color(0xFF06213A),
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-    notes.dispose();
-    if (result == null || !mounted) return;
-    await _run(() async {
-      _report = await ApiService.dispatchMdrrmoReport(
-        auth.token!,
-        _report.id,
-        incidentType: result['incident_type'],
-        severity: result['severity'],
-        responderIds: List<String>.from(result['responder_ids']),
-        notes: result['notes'],
-      );
-    }, 'Report assigned to MDRRMO responders.');
-  }
-
   Future<void> _accept() async {
     final auth = context.read<AuthProvider>();
     final token = auth.token;
@@ -815,7 +550,7 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
               border: Border.all(color: const Color(0xFFBFDBFE)),
             ),
             child: Text(
-              'Dispatcher classification: ${_label(_report.incidentType).isEmpty ? 'Unclassified' : _label(_report.incidentType)} · ${_report.severity?.toUpperCase() ?? 'UNCLASSIFIED'}',
+              'Incident classification: ${_label(_report.incidentType).isEmpty ? 'Unclassified' : _label(_report.incidentType)} · ${_report.severity?.toUpperCase() ?? 'UNCLASSIFIED'}',
               style: const TextStyle(
                 color: Color(0xFF1E3A8A),
                 fontSize: 13,
@@ -929,7 +664,7 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
         ),
         if (_report.dispatchNotes?.isNotEmpty == true)
           _section(
-            'Dispatcher Notes',
+            'Dispatch Notes',
             Text(
               _report.dispatchNotes!,
               style: const TextStyle(color: Color(0xFF334155), height: 1.4),
@@ -1733,15 +1468,7 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
 
   Widget? _bottomAction() {
     final user = context.watch<AuthProvider>().user;
-    final isDispatcher = user?.role.name == 'dispatcher';
     final isResponder = user?.role.name == 'responder';
-    if (_report.isPending && isDispatcher)
-      return _action(
-        'Classify & Dispatch Responders',
-        Icons.send_rounded,
-        _detailTeal,
-        _dispatch,
-      );
     final assignment = _myAssignment(user?.id);
     final assignmentStatus = assignment?['status']?.toString();
     final myArrival = _assignmentArrival(assignment);
@@ -1756,13 +1483,6 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
         !_report.isResolved &&
         assignmentStatus == 'responding' &&
         myArrival != null)
-      return _action(
-        'Close & Record Incident',
-        Icons.check_circle,
-        const Color(0xFF10B981),
-        _closeReport,
-      );
-    if (_report.isResponding && isDispatcher && _report.arrivedAt != null)
       return _action(
         'Close & Record Incident',
         Icons.check_circle,

@@ -621,7 +621,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         OutlinedButton.icon(
                           onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const mdrrmo.LoginScreen())),
                           icon: const Icon(Icons.admin_panel_settings_outlined),
-                          label: const Text('MDRRMO account sign in'),
+                          label: const Text('MDRRMO responder sign in'),
                         ),
                       ],
                     ],

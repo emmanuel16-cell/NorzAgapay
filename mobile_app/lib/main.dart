@@ -14,7 +14,6 @@ import 'mdrrmo/providers/task_provider.dart' as global_tasks;
 import 'mdrrmo/services/gps_service.dart' as global_gps;
 import 'mdrrmo/services/offline_service.dart' as global_offline;
 import 'mdrrmo/screens/home_screen.dart' as global_home;
-import 'mdrrmo/screens/mdrrmo_reports_screen.dart' as global_reports;
 import 'mdrrmo/models/user.dart' as global_user;
 import 'services/municipality_boundary_service.dart';
 
@@ -120,9 +119,6 @@ class _AuthGateState extends State<AuthGate> {
     if (mdrrmoAuth.isAuthenticated && mdrrmoAuth.user != null) {
       if (mdrrmoAuth.user!.role == global_user.UserRole.responder) {
         return const global_home.HomeScreen();
-      }
-      if (mdrrmoAuth.user!.role == global_user.UserRole.dispatcher) {
-        return const global_reports.MdrrmoReportsScreen();
       }
       return const LoginScreen();
     }

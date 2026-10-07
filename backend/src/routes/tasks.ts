@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { supabaseAdmin } from '../config/supabase';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth';
 import { io } from '../server';
+import { isDirectMdrrmoReport, isVisibleToMdrrmo } from '../services/mdrrmoReportVisibility';
 import {
   ARRIVAL_RADIUS_METERS,
   distanceMeters,
@@ -17,16 +18,26 @@ async function updateLinkedIncidentReport(
   patch: Record<string, unknown>,
   onlyIfMissing?: 'accepted_at' | 'arrived_at' | 'resolved_at',
 ): Promise<void> {
-  const result = onlyIfMissing
-    ? await supabaseAdmin.from('incident_reports').update(patch)
-      .eq('dispatch_incident_id', incidentId).is(onlyIfMissing, null).select('*')
-    : await supabaseAdmin.from('incident_reports').update(patch)
-      .eq('dispatch_incident_id', incidentId).select('*');
-  if (result.error) throw result.error;
-  for (const report of result.data || []) {
-    io.to('dashboard_staff').emit('incident_report:updated', report);
-    if (report.barangay_id) {
-      io.to(`barangay:${report.barangay_id}`).emit('barangay:report_updated', report);
+  const { data: linkedReports, error: lookupError } = await supabaseAdmin
+    .from('incident_reports')
+    .select('*')
+    .eq('dispatch_incident_id', incidentId);
+  if (lookupError) throw lookupError;
+
+  for (const linkedReport of linkedReports || []) {
+    const mdrrmoOwned = isDirectMdrrmoReport(linkedReport) ||
+      String(linkedReport.status || '').toLowerCase() === 'escalated' ||
+      linkedReport.is_escalated === true || linkedReport.beyond_barangay_capability === true;
+    if (mdrrmoOwned || isVisibleToMdrrmo(linkedReport)) continue;
+    let update = supabaseAdmin.from('incident_reports').update(patch).eq('id', linkedReport.id);
+    if (onlyIfMissing) update = update.is(onlyIfMissing, null);
+    const { data: reports, error } = await update.select('*');
+    if (error) throw error;
+    for (const report of reports || []) {
+      io.to('dashboard_staff').emit('incident_report:updated', report);
+      if (report.barangay_id) {
+        io.to(`barangay:${report.barangay_id}`).emit('barangay:report_updated', report);
+      }
     }
   }
 }
@@ -406,7 +417,6 @@ router.patch('/:id/status', authenticate, async (req: AuthRequest, res: Response
         if (responderUpdateError) throw responderUpdateError;
         await updateLinkedIncidentReport(existingTask.incident_id, {
           status: 'resolved',
-          mdrrmo_response_status: 'resolved',
           resolved_at: stageTime.toISOString(),
         }, 'resolved_at');
 
@@ -547,7 +557,6 @@ router.patch('/:id/status', authenticate, async (req: AuthRequest, res: Response
 
       await updateLinkedIncidentReport(existingTask.incident_id, {
         status: 'resolved',
-        mdrrmo_response_status: 'resolved',
         resolved_at: stageTime.toISOString(),
       }, 'resolved_at');
     } else if (status === 'completed') {

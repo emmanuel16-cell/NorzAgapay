@@ -25,8 +25,9 @@ function parseList(value: unknown): string[] {
 }
 
 function isResolved(report: any): boolean {
-  return report.mdrrmo_response_status === 'resolved' ||
-    (!report.mdrrmo_response_status && ['resolved', 'closed'].includes(String(report.status).toLowerCase()));
+  const responseStatus = String(report.mdrrmo_response_status || '').toLowerCase();
+  return responseStatus === 'resolved' ||
+    (!responseStatus && !isEscalatedForMdrrmo(report) && ['resolved', 'closed'].includes(String(report.status).toLowerCase()));
 }
 
 function formatReport(report: any): any {
@@ -178,7 +179,19 @@ router.patch('/:id/dispatch', authenticate, authorize('dispatcher', 'admin'), as
     if (!isMdrrmoReport(report)) { res.status(403).json({ error: 'This report has not been routed to MDRRMO.' }); return; }
     if (report.review_outcome) { res.status(409).json({ error: 'This report has already received an invalid-report decision.' }); return; }
     if (isResolved(report)) { res.status(409).json({ error: 'Resolved reports cannot be dispatched.' }); return; }
-    if (report.mdrrmo_response_status === 'responding') { res.status(409).json({ error: 'A responder has already accepted this report.' }); return; }
+    if (report.mdrrmo_response_status && report.mdrrmo_response_status !== 'pending') {
+      res.status(409).json({ error: 'Only a pending MDRRMO report can be dispatched.' });
+      return;
+    }
+    if (report.mdrrmo_accepted_at || report.mdrrmo_arrived_at || report.mdrrmo_resolved_at) {
+      res.status(409).json({ error: 'Dispatch can only be changed before a responder accepts the report.' });
+      return;
+    }
+    const currentAssignments = await getAssignments([report.id]);
+    if (currentAssignments.some((assignment: any) => assignment.status === 'responding')) {
+      res.status(409).json({ error: 'Dispatch cannot be changed after a responder accepts the report.' });
+      return;
+    }
 
     const responderIds = [...new Set(parsed.data.responder_ids)];
     const { data: responders, error: respondersError } = await supabaseAdmin
@@ -193,61 +206,30 @@ router.patch('/:id/dispatch', authenticate, authorize('dispatcher', 'admin'), as
       return;
     }
 
-    const now = new Date().toISOString();
-    const { data: updated, error: updateError } = await supabaseAdmin
-      .from('incident_reports')
-      .update({
-        incident_type: parsed.data.incident_type,
-        severity: parsed.data.severity,
-        status: 'verified',
-        mdrrmo_response_status: 'pending',
-        mdrrmo_dispatch_notes: parsed.data.notes || null,
-        mdrrmo_responded_by: null,
-        mdrrmo_responder_name: responders.map((responder: any) => responder.full_name).join(', '),
-        mdrrmo_responded_at: now,
-        dispatcher_reviewed_at: now,
-        mdrrmo_dispatcher_reviewed_at: now,
-        dispatched_at: now,
-        mdrrmo_dispatched_at: now,
-      })
-      .eq('id', req.params.id)
-      .is('review_outcome', null)
-      .select('*, barangays(name)')
-      .single();
-    if (updateError) throw updateError;
-
-    const { error: removeError } = await supabaseAdmin
-      .from('mdrrmo_report_assignments')
-      .update({ status: 'removed' })
-      .eq('report_id', report.id)
-      .in('status', ['assigned', 'responding']);
-    if (removeError) throw removeError;
-
-    const { error: assignmentError } = await supabaseAdmin
-      .from('mdrrmo_report_assignments')
-      .upsert(responderIds.map((responderId) => ({
-        report_id: report.id,
-        responder_id: responderId,
-        assigned_by: req.user!.userId,
-        status: 'assigned',
-        assigned_at: now,
-        accepted_at: null,
-        arrived_at: null,
-        resolved_at: null,
-      })), { onConflict: 'report_id,responder_id' });
-    if (assignmentError) throw assignmentError;
+    const { error: dispatchError } = await supabaseAdmin.rpc('dispatch_mdrrmo_report', {
+      p_report_id: report.id,
+      p_actor_id: req.user!.userId,
+      p_incident_type: parsed.data.incident_type,
+      p_severity: parsed.data.severity,
+      p_notes: parsed.data.notes || '',
+      p_responder_ids: responderIds,
+      p_responder_names: responders.map((responder: any) => responder.full_name).join(', '),
+    });
+    if (dispatchError) {
+      if (dispatchError.code === 'P0001') { res.status(409).json({ error: dispatchError.message }); return; }
+      throw dispatchError;
+    }
+    const { data: updated, error: refreshError } = await supabaseAdmin
+      .from('incident_reports').select('*, barangays(name)').eq('id', report.id).single();
+    if (refreshError) throw refreshError;
+    const updatedAssignments = await getAssignments([report.id]);
 
     const payload = formatReport({
       ...updated,
-      mdrrmo_assignments: responders.map((responder: any) => ({
-        report_id: report.id,
-        responder_id: responder.id,
-        status: 'assigned',
-        assigned_at: now,
-        responder,
-      })),
+      mdrrmo_assignments: updatedAssignments.filter((assignment: any) => assignment.status !== 'removed'),
       assigned_responder_ids: responderIds,
-      mdrrmo_responder_name: responders.map((responder: any) => responder.full_name).join(', '),
+      mdrrmo_responder_name: updatedAssignments.filter((assignment: any) => assignment.status !== 'removed')
+        .map((assignment: any) => assignment.responder?.full_name).filter(Boolean).join(', '),
     });
     io.to('dashboard_staff').emit('incident_report:updated', payload);
     io.to('dashboard_staff').emit('mdrrmo:report_updated', payload);
@@ -290,32 +272,30 @@ router.patch('/:id/respond', authenticate, authorize('responder'), async (req: A
     const report = await reportForAction(req.params.id);
     if (!report || !isMdrrmoReport(report)) { res.status(404).json({ error: 'MDRRMO report not found.' }); return; }
     if (isResolved(report)) { res.status(409).json({ error: 'This report is already resolved.' }); return; }
+    if (!['pending', 'responding'].includes(report.mdrrmo_response_status) || !report.mdrrmo_dispatched_at) {
+      res.status(409).json({ error: 'A dispatcher must review and assign this report before a responder can accept it.' });
+      return;
+    }
     const assignment = await findAssignment(report.id, req.user!.userId);
     if (!assignment) { res.status(403).json({ error: 'This report is not assigned to your responder account.' }); return; }
+    if (assignment.status !== 'assigned') {
+      res.status(409).json({ error: 'Only an assigned report can be accepted.' });
+      return;
+    }
     const { data: responder, error: responderError } = await supabaseAdmin
       .from('users').select('full_name').eq('id', req.user!.userId).maybeSingle();
     if (responderError) throw responderError;
-    const now = new Date().toISOString();
-    const { data, error } = await supabaseAdmin
-      .from('incident_reports')
-      .update({
-        status: 'responding',
-        mdrrmo_response_status: 'responding',
-        mdrrmo_responded_by: report.mdrrmo_responded_by || req.user!.userId,
-        mdrrmo_responder_name: report.mdrrmo_responder_name || responder?.full_name,
-        accepted_at: report.accepted_at || now,
-        mdrrmo_accepted_at: report.mdrrmo_accepted_at || report.accepted_at || now,
-      })
-      .eq('id', report.id)
-      .select('*, barangays(name)')
-      .single();
-    if (error) throw error;
-    const { error: assignmentError } = await supabaseAdmin
-      .from('mdrrmo_report_assignments')
-      .update({ status: 'responding', accepted_at: assignment.accepted_at || now })
-      .eq('report_id', report.id)
-      .eq('responder_id', req.user!.userId);
-    if (assignmentError) throw assignmentError;
+    const { error: acceptError } = await supabaseAdmin.rpc('accept_mdrrmo_report', {
+      p_report_id: report.id,
+      p_responder_id: req.user!.userId,
+      p_responder_name: responder?.full_name || '',
+    });
+    if (acceptError) {
+      if (acceptError.code === 'P0001') { res.status(409).json({ error: acceptError.message }); return; }
+      throw acceptError;
+    }
+    const data = await reportForAction(report.id);
+    if (!data) { res.status(404).json({ error: 'MDRRMO report not found.' }); return; }
     const assignments = await getAssignments([report.id]);
     res.json(await emitReportUpdate(data, assignments));
   } catch (err) {
@@ -348,7 +328,7 @@ router.patch('/:id/field-assessment', authenticate, authorize('responder'), asyn
     if (!report || !isMdrrmoReport(report)) { res.status(404).json({ error: 'MDRRMO report not found.' }); return; }
     if (isResolved(report)) { res.status(409).json({ error: 'This report is already resolved.' }); return; }
     const assignment = await findAssignment(report.id, req.user!.userId);
-    if (!assignment) { res.status(403).json({ error: 'This report is not assigned to your responder account.' }); return; }
+    if (!assignment || assignment.status !== 'responding') { res.status(403).json({ error: 'Field assessment is available only during your active response.' }); return; }
 
     const now = new Date().toISOString();
     const previousResponseNotes = String(report.mdrrmo_response_notes || '').trim();
@@ -366,13 +346,18 @@ router.patch('/:id/field-assessment', authenticate, authorize('responder'), asyn
       parsed.data.actions_taken ? `Actions taken: ${parsed.data.actions_taken}` : '',
       parsed.data.risks_resources ? `Risks / resources: ${parsed.data.risks_resources}` : '',
     ].filter(Boolean).join('\n\n');
-    const { data, error } = await supabaseAdmin
+    let assessmentUpdate = supabaseAdmin
       .from('incident_reports')
-      .update({ mdrrmo_response_notes: responseNotes, mdrrmo_responded_at: now, mdrrmo_responded_by: req.user!.userId })
+      .update({ mdrrmo_response_notes: responseNotes, mdrrmo_responded_at: report.mdrrmo_responded_at || now, mdrrmo_responded_by: report.mdrrmo_responded_by || req.user!.userId, lifecycle_actor_id: req.user!.userId, lifecycle_actor_role: 'responder' })
       .eq('id', report.id)
-      .select('*, barangays(name)')
-      .single();
+      .eq('mdrrmo_response_status', 'responding')
+      .is('mdrrmo_resolved_at', null);
+    assessmentUpdate = report.mdrrmo_response_notes == null
+      ? assessmentUpdate.is('mdrrmo_response_notes', null)
+      : assessmentUpdate.eq('mdrrmo_response_notes', report.mdrrmo_response_notes);
+    const { data, error } = await assessmentUpdate.select('*, barangays(name)').maybeSingle();
     if (error) throw error;
+    if (!data) { res.status(409).json({ error: 'The response changed. Refresh the report before saving your assessment.' }); return; }
     const assignments = await getAssignments([report.id]);
     res.json(await emitReportUpdate(data, assignments));
   } catch (err) {
@@ -390,6 +375,10 @@ router.patch('/:id/arrive', authenticate, authorize('responder'), async (req: Au
     if (report.mdrrmo_response_status !== 'responding') { res.status(409).json({ error: 'Accept the report before recording arrival.' }); return; }
     const assignment = await findAssignment(report.id, req.user!.userId);
     if (!assignment || assignment.status !== 'responding') { res.status(403).json({ error: 'This report is not assigned to your responder account.' }); return; }
+    if (assignment.arrived_at) {
+      res.status(409).json({ error: 'Arrival has already been recorded for this response.' });
+      return;
+    }
     const { method, latitude, longitude, accuracy_m, fix_at } = parsed.data;
     const now = new Date();
     let arrivalAt = now;
@@ -409,30 +398,26 @@ router.patch('/:id/arrive', authenticate, authorize('responder'), async (req: Au
       const validation = validateRecentGpsFix({ latitude, longitude, accuracyM: accuracy_m, fixAt }, now);
       if (validation.valid) distance = distanceMeters(Number(report.latitude), Number(report.longitude), latitude, longitude);
     }
-    const { data, error } = await supabaseAdmin
-      .from('incident_reports')
-      .update({
-        arrived_at: arrivalAt.toISOString(),
-        mdrrmo_arrived_at: arrivalAt.toISOString(),
-        arrival_recorded_at: now.toISOString(),
-        arrival_method: method,
-        arrival_latitude: latitude ?? null,
-        arrival_longitude: longitude ?? null,
-        arrival_accuracy_m: accuracy_m ?? null,
-        arrival_distance_m: distance === null ? null : Math.round(distance * 10) / 10,
-      })
-      .eq('id', report.id)
-      .select('*, barangays(name)')
-      .single();
-    if (error) throw error;
-    const { error: assignmentError } = await supabaseAdmin
-      .from('mdrrmo_report_assignments')
-      .update({ arrived_at: arrivalAt.toISOString() })
-      .eq('report_id', report.id)
-      .eq('responder_id', req.user!.userId);
-    if (assignmentError) throw assignmentError;
+    const roundedDistance = distance === null ? null : Math.round(distance * 10) / 10;
+    const { error: arrivalError } = await supabaseAdmin.rpc('record_mdrrmo_arrival', {
+      p_report_id: report.id,
+      p_responder_id: req.user!.userId,
+      p_arrival_at: arrivalAt.toISOString(),
+      p_recorded_at: now.toISOString(),
+      p_method: method,
+      p_latitude: latitude ?? null,
+      p_longitude: longitude ?? null,
+      p_accuracy_m: accuracy_m ?? null,
+      p_distance_m: roundedDistance,
+    });
+    if (arrivalError) {
+      if (arrivalError.code === 'P0001') { res.status(409).json({ error: arrivalError.message }); return; }
+      throw arrivalError;
+    }
+    const updatedReport = await reportForAction(report.id);
+    if (!updatedReport) { res.status(404).json({ error: 'MDRRMO report not found.' }); return; }
     const assignments = await getAssignments([report.id]);
-    res.json(await emitReportUpdate(data, assignments));
+    res.json(await emitReportUpdate(updatedReport, assignments));
   } catch (err) {
     console.error('MDRRMO report arrival error:', err);
     res.status(500).json({ error: 'Could not record arrival.' });
@@ -443,8 +428,14 @@ router.post('/:id/field-media', authenticate, authorize('responder', 'dispatcher
   try {
     const report = await reportForAction(req.params.id);
     if (!report || !isMdrrmoReport(report)) { res.status(404).json({ error: 'MDRRMO report not found.' }); return; }
-    if (req.user!.role === 'responder' && !await findAssignment(report.id, req.user!.userId)) {
-      res.status(403).json({ error: 'This report is not assigned to your responder account.' }); return;
+    if (report.mdrrmo_response_status !== 'responding' || isResolved(report)) {
+      res.status(409).json({ error: 'Field media can only be added during an active MDRRMO response.' }); return;
+    }
+    if (req.user!.role === 'responder') {
+      const assignment = await findAssignment(report.id, req.user!.userId);
+      if (!assignment || assignment.status !== 'responding') {
+        res.status(403).json({ error: 'Field media can only be added during your active response.' }); return;
+      }
     }
     const file = req.file;
     if (!file) { res.status(400).json({ error: 'Choose a photo or video to upload.' }); return; }
@@ -456,9 +447,19 @@ router.post('/:id/field-media', authenticate, authorize('responder', 'dispatcher
     if (uploadError) throw uploadError;
     const { data: urlData } = supabaseAdmin.storage.from(config.supabaseBucketName).getPublicUrl(storagePath);
     const mediaItem = { id: `mdrrmo_${timestamp}`, url: urlData.publicUrl, type: isVideo ? 'video' : 'image', uploader_id: req.user!.userId, uploader_name: req.user!.email, role: req.user!.role, created_at: new Date().toISOString() };
-    const existing = Array.isArray(report.responder_media) ? report.responder_media : [];
-    const { data, error } = await supabaseAdmin.from('incident_reports').update({ responder_media: [...existing, mediaItem] }).eq('id', report.id).select('*, barangays(name)').single();
-    if (error) throw error;
+    const { error: mediaError } = await supabaseAdmin.rpc('append_mdrrmo_field_media', {
+      p_report_id: report.id,
+      p_actor_id: req.user!.userId,
+      p_actor_role: req.user!.role,
+      p_media_item: mediaItem,
+    });
+    if (mediaError) {
+      await supabaseAdmin.storage.from(config.supabaseBucketName).remove([storagePath]);
+      if (mediaError.code === 'P0001') { res.status(409).json({ error: mediaError.message }); return; }
+      throw mediaError;
+    }
+    const data = await reportForAction(report.id);
+    if (!data) { res.status(404).json({ error: 'MDRRMO report not found.' }); return; }
     const assignments = await getAssignments([report.id]);
     res.json(await emitReportUpdate(data, assignments));
   } catch (err) {
@@ -475,11 +476,12 @@ router.post('/:id/close', authenticate, authorize('responder', 'dispatcher'), as
     const report = await reportForAction(req.params.id);
     if (!report || !isMdrrmoReport(report)) { res.status(404).json({ error: 'MDRRMO report not found.' }); return; }
     if (report.mdrrmo_response_status === 'resolved') { res.status(409).json({ error: 'The MDRRMO response cycle is already resolved.' }); return; }
+    if (report.mdrrmo_response_status !== 'responding') { res.status(409).json({ error: 'The MDRRMO response must be accepted before it can be resolved.' }); return; }
     let mdrrmoArrivalAt = report.mdrrmo_arrived_at ||
       (!report.barangay_arrived_at ? report.arrived_at : null);
     if (req.user!.role === 'responder') {
       const assignment = await findAssignment(report.id, req.user!.userId);
-      if (!assignment) { res.status(403).json({ error: 'This report is not assigned to your responder account.' }); return; }
+      if (!assignment || assignment.status !== 'responding') { res.status(403).json({ error: 'This report is not an active response assigned to your responder account.' }); return; }
       if (!assignment.arrived_at) { res.status(409).json({ error: 'Record your arrival before closing the report.' }); return; }
       mdrrmoArrivalAt = assignment.arrived_at;
     } else if (report.mdrrmo_response_status !== 'responding' || !mdrrmoArrivalAt) {
@@ -500,27 +502,17 @@ router.post('/:id/close', authenticate, authorize('responder', 'dispatcher'), as
       });
       return;
     }
-    const now = new Date().toISOString();
-    const { data, error } = await supabaseAdmin
-      .from('incident_reports')
-      .update({
-        status: 'resolved',
-        mdrrmo_response_status: 'resolved',
-        mdrrmo_resolved_notes: parsed.data.resolved_notes,
-        mdrrmo_resolved_at: now,
-        resolved_notes: parsed.data.resolved_notes,
-        resolved_at: now,
-      })
-      .eq('id', report.id)
-      .select('*, barangays(name)')
-      .single();
-    if (error) throw error;
-    const { error: assignmentError } = await supabaseAdmin
-      .from('mdrrmo_report_assignments')
-      .update({ status: 'resolved', resolved_at: now })
-      .eq('report_id', report.id)
-      .neq('status', 'removed');
-    if (assignmentError) throw assignmentError;
+    const { error: closeError } = await supabaseAdmin.rpc('close_mdrrmo_report', {
+      p_report_id: report.id,
+      p_actor_id: req.user!.userId,
+      p_actor_role: req.user!.role,
+      p_resolved_notes: parsed.data.resolved_notes,
+    });
+    if (closeError) {
+      if (closeError.code === 'P0001') { res.status(409).json({ error: closeError.message }); return; }
+      if (closeError.code === 'P0002') { res.status(404).json({ error: closeError.message }); return; }
+      throw closeError;
+    }
     let pdfStatus: 'ready' | 'failed' = 'failed';
     try {
       await IncidentResolutionPdfService.generateAndStore(report.id);
@@ -532,9 +524,9 @@ router.post('/:id/close', authenticate, authorize('responder', 'dispatcher'), as
         .eq('id', report.id);
     }
     const assignments = await getAssignments([report.id]);
-    const { data: latest } = await supabaseAdmin.from('incident_reports')
-      .select('*, barangays(name)').eq('id', report.id).maybeSingle();
-    res.json({ ...(await emitReportUpdate(latest || data, assignments)), resolution_pdf_status: pdfStatus });
+    const latest = await reportForAction(report.id);
+    if (!latest) { res.status(404).json({ error: 'MDRRMO report not found.' }); return; }
+    res.json({ ...(await emitReportUpdate(latest, assignments)), resolution_pdf_status: pdfStatus });
   } catch (err) {
     console.error('MDRRMO report close error:', err);
     res.status(500).json({ error: 'Could not close this MDRRMO report.' });

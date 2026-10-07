@@ -14,7 +14,10 @@ type FieldAssessment = { situation: string; people: string; actions: string; ris
 
 interface IncidentReport {
   id: string; type: string; title?: string; specifics?: string; description?: string; status: string;
-  send_to?: string; is_escalated?: boolean; beyond_barangay_capability?: boolean; mdrrmo_response_status?: string;
+  send_to?: string; is_escalated?: boolean; beyond_barangay_capability?: boolean;
+  mdrrmo_response_status?: string; barangay_response_status?: string;
+  mdrrmo_dispatched_at?: string | null; mdrrmo_accepted_at?: string | null; mdrrmo_arrived_at?: string | null; mdrrmo_resolved_at?: string | null;
+  barangay_dispatched_at?: string | null; barangay_accepted_at?: string | null; barangay_arrived_at?: string | null; barangay_resolved_at?: string | null;
   severity?: string; incident_type?: string; latitude?: number | string | null; longitude?: number | string | null;
   address?: string | null; location_name?: string | null; barangay_name?: string | null;
   proof_url?: string | null; proof_type?: string | null; proof_urls?: string[]; proof_types?: string[];
@@ -33,9 +36,22 @@ type ResponderOption = { id: string; full_name: string; phone?: string | null; u
 const isVideo = (url?: string | null, type?: string | null) => type === 'video' || Boolean(url && /\.(mp4|mov|webm|3gp|mkv|avi)(\?.*)?$/i.test(url));
 const getStage = (report: IncidentReport): ReportStage => {
   const status = String(report.status || '').toLowerCase();
-  const response = String(report.mdrrmo_response_status || '').toLowerCase();
-  if (['resolved', 'closed'].includes(status) || ['resolved', 'closed'].includes(response)) return 'resolved';
-  if (status === 'responding' || response === 'responding') return 'responding';
+  const isEscalated = getGroup(report) === 'escalated';
+  const mdrrmoResponse = String(report.mdrrmo_response_status || (
+    report.mdrrmo_resolved_at ? 'resolved' : report.mdrrmo_accepted_at || report.mdrrmo_arrived_at ? 'responding' :
+      isEscalated ? 'pending' : status
+  )).toLowerCase();
+  if (isEscalated) {
+    const barangayResponse = String(report.barangay_response_status || (
+      report.barangay_resolved_at ? 'resolved' : report.barangay_accepted_at || report.barangay_arrived_at ? 'responding' : 'pending'
+    )).toLowerCase();
+    const resolved = (value: string) => ['resolved', 'closed'].includes(value);
+    if (resolved(mdrrmoResponse) && resolved(barangayResponse)) return 'resolved';
+    if (mdrrmoResponse === 'responding' || barangayResponse === 'responding') return 'responding';
+    return 'pending';
+  }
+  if (['resolved', 'closed'].includes(mdrrmoResponse)) return 'resolved';
+  if (mdrrmoResponse === 'responding') return 'responding';
   return 'pending';
 };
 const getGroup = (report: IncidentReport): ReportGroup => getMdrrmoReportGroup(report);
@@ -285,7 +301,7 @@ export default function ReportsPage() {
                   <div className="reports-assignee-card-v2"><strong>{assignment?.responder?.full_name || selected.mdrrmo_responder_name || 'Assigned responder'}</strong><span>MDRRMO response unit</span><em>{stage === 'resolved' ? 'Resolved' : assignment?.status === 'responding' ? 'Accepted' : 'Assigned'}</em></div>
                   <div className="reports-timeline-card-v2">{([
                     ['Report received', selected.created_at],
-                    ['Dispatched to MDRRMO', selected.dispatched_at],
+                      ['Dispatched to MDRRMO', selected.mdrrmo_dispatched_at || (getGroup(selected) === 'resident' ? selected.dispatched_at : null)],
                     ['Accepted by responder', selected.accepted_at || assignment?.accepted_at],
                     ['Arrived at incident area', selected.arrived_at || assignment?.arrived_at],
                     ['Incident resolved', selected.resolved_at || assignment?.resolved_at],
@@ -305,8 +321,8 @@ export default function ReportsPage() {
               </>}
             </div>
             {stage === 'pending' && <footer className="reports-detail-actions-v2">
-              <button type="button" className="reports-invalid-button-v2" onClick={() => void markInvalid(selected)}>Mark invalid</button>
-              <button type="button" className="reports-dispatch-button-v2" onClick={() => void openDispatch(selected)} disabled={saving}><Send size={17} /> {selected.dispatched_at ? 'Update dispatch' : 'Dispatch to MDRRMO'}</button>
+                {getGroup(selected) === 'resident' && !selected.mdrrmo_dispatched_at && <button type="button" className="reports-invalid-button-v2" onClick={() => void markInvalid(selected)}>Mark invalid</button>}
+                <button type="button" className="reports-dispatch-button-v2" onClick={() => void openDispatch(selected)} disabled={saving}><Send size={17} /> {selected.mdrrmo_dispatched_at ? 'Update dispatch' : 'Dispatch to MDRRMO'}</button>
             </footer>}
           </>}
         </section>
@@ -314,7 +330,7 @@ export default function ReportsPage() {
 
       {dispatchReport && <div className="reports-modal-backdrop-v2" onClick={() => setDispatchReport(null)}>
         <section className="reports-dispatch-modal-v2" role="dialog" aria-modal="true" aria-labelledby="dispatch-title-v2" onClick={(event) => event.stopPropagation()}>
-          <header><div><span className="reports-eyebrow-v2">Dispatcher review</span><h2 id="dispatch-title-v2">{dispatchReport.dispatched_at ? 'Update dispatch' : 'Classify and dispatch'}</h2></div><button type="button" aria-label="Close" onClick={() => setDispatchReport(null)}><X size={19} /></button></header>
+          <header><div><span className="reports-eyebrow-v2">Dispatcher review</span><h2 id="dispatch-title-v2">{dispatchReport.mdrrmo_dispatched_at ? 'Update dispatch' : 'Classify and dispatch'}</h2></div><button type="button" aria-label="Close" onClick={() => setDispatchReport(null)}><X size={19} /></button></header>
           <div className="reports-modal-report-v2">{dispatchReport.description?.trim() || 'No details provided.'}</div>
           {getProofs(dispatchReport).length > 0 && <div className="reports-modal-proof-links-v2"><strong>Submitted evidence</strong>{getProofs(dispatchReport).map((url, index) => <a key={url + index} href={url} target="_blank" rel="noreferrer">Open attachment {index + 1}</a>)}</div>}
           <label htmlFor="report-category-v2">Incident category</label><select id="report-category-v2" value={incidentType} onChange={(event) => setIncidentType(event.target.value)}><option value="">Select incident category</option>{INCIDENT_TYPE_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>
