@@ -14,22 +14,42 @@ const router = Router();
 router.get('/', authenticate, authorize('dispatcher'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const incidentId = typeof req.query.incident_id === 'string' ? req.query.incident_id : null;
-    let reportQuery = supabaseAdmin
+    let newQuery = supabaseAdmin
+      .from('mdrrmo_reports')
+      .select('id, type, title, description, specifics, response_status, reporter_type, reporter_name, reporter_phone, address, barangay_id, barangay_name, created_at, coordination_notes')
+      .order('created_at', { ascending: false });
+    if (incidentId) newQuery = newQuery.eq('id', incidentId);
+
+    let legacyQuery = supabaseAdmin
       .from('incident_reports')
       .select('id, type, title, description, specifics, status, send_to, reporter_type, reporter_name, reporter_phone, address, barangay_id, barangays(name), created_at, barangay_response_status, barangay_response_notes, mdrrmo_response_status, mdrrmo_coordination_notes, review_outcome')
       .order('created_at', { ascending: false });
-    if (incidentId) reportQuery = reportQuery.eq('id', incidentId);
+    if (incidentId) legacyQuery = legacyQuery.eq('id', incidentId);
 
-    const { data: reportRows, error: reportError } = await reportQuery;
-    if (reportError) throw reportError;
+    const [{ data: newRows, error: newError }, { data: legacyRows, error: legacyError }] = await Promise.all([
+      newQuery,
+      legacyQuery,
+    ]);
+    if (newError && !legacyRows) throw newError;
 
-    const formattedReports = (reportRows || []).map(formatIncidentReport);
-    const eligibleReports = formattedReports.filter((report) =>
-      !report.review_outcome && isVisibleToMdrrmo(report));
-    const reportById = new Map(eligibleReports.map((report) => [report.id, {
-      ...report,
-      barangay_name: (report.barangays as { name?: string } | null)?.name || null,
-    }]));
+    const newFormatted = (newRows || []).map((r: any) => ({
+      ...formatIncidentReport(r),
+      mdrrmo_response_status: r.response_status,
+      mdrrmo_coordination_notes: r.coordination_notes,
+      barangay_name: r.barangay_name || null,
+    }));
+    const newIds = new Set(newFormatted.map((r: any) => r.id));
+
+    const legacyFormatted = (legacyRows || [])
+      .map(formatIncidentReport)
+      .filter((report) => !newIds.has(report.id) && !report.review_outcome && isVisibleToMdrrmo(report))
+      .map((report) => ({
+        ...report,
+        barangay_name: (report.barangays as { name?: string } | null)?.name || null,
+      }));
+
+    const eligibleReports = [...newFormatted, ...legacyFormatted];
+    const reportById = new Map(eligibleReports.map((report) => [report.id, report]));
     const reportIds = [...reportById.keys()];
 
     // 1. Fetch MDRRMO responder assistance requests
@@ -219,11 +239,19 @@ router.post('/', authenticate, authorize('responder', 'logistics'), async (req: 
         res.status(403).json({ error: 'You can request assistance only for an incident assigned to you.' });
         return;
       }
-      const { data: report, error: reportError } = await supabaseAdmin
-        .from('incident_reports')
-        .select('status, mdrrmo_response_status')
+      const { data: newReport } = await supabaseAdmin
+        .from('mdrrmo_reports')
+        .select('response_status')
         .eq('id', parsed.data.incident_id)
         .maybeSingle();
+
+      const { data: report, error: reportError } = newReport
+        ? { data: { status: newReport.response_status, mdrrmo_response_status: newReport.response_status }, error: null }
+        : await supabaseAdmin
+            .from('incident_reports')
+            .select('status, mdrrmo_response_status')
+            .eq('id', parsed.data.incident_id)
+            .maybeSingle();
       if (reportError) throw reportError;
       if (!report || report.mdrrmo_response_status === 'resolved' || ['resolved', 'closed'].includes(report.status)) {
         res.status(409).json({ error: 'Assistance cannot be requested for a resolved incident.' });
@@ -304,6 +332,13 @@ router.patch('/:id/status', authenticate, authorize('dispatcher'), async (req: A
         : req.params.id;
 
     const mdrrmoStatus = status === 'approved' ? 'responding' : status === 'fulfilled' ? 'resolved' : 'pending';
+
+    // Dual-write: update mdrrmo_reports
+    await supabaseAdmin
+      .from('mdrrmo_reports')
+      .update({ response_status: mdrrmoStatus })
+      .eq('id', targetIncidentId);
+
     const { data: updatedIncident } = await supabaseAdmin
       .from('incident_reports')
       .update({ mdrrmo_response_status: mdrrmoStatus })

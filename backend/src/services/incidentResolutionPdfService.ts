@@ -395,12 +395,62 @@ export class IncidentResolutionPdfService {
   }
 
   static async generateAndStore(reportId: string): Promise<{ buffer: Buffer; path: string; generatedAt: string }> {
-    const { data: report, error } = await supabaseAdmin
+    let { data: report, error } = await supabaseAdmin
       .from('incident_reports')
       .select('*, barangays(name)')
       .eq('id', reportId)
       .maybeSingle();
     if (error) throw error;
+
+    if (!report) {
+      // Try mdrrmo_reports then barangay_reports
+      const { data: mReport } = await supabaseAdmin
+        .from('mdrrmo_reports')
+        .select('*')
+        .eq('id', reportId)
+        .maybeSingle();
+
+      if (mReport) {
+        report = {
+          ...mReport,
+          mdrrmo_response_status: mReport.response_status,
+          mdrrmo_response_notes: mReport.response_notes,
+          mdrrmo_coordination_notes: mReport.coordination_notes,
+          mdrrmo_responder_name: mReport.responder_name,
+          mdrrmo_responded_by: mReport.responded_by,
+          mdrrmo_dispatched_at: mReport.dispatched_at,
+          mdrrmo_accepted_at: mReport.accepted_at,
+          mdrrmo_arrived_at: mReport.arrived_at,
+          mdrrmo_resolved_at: mReport.resolved_at,
+          mdrrmo_resolved_notes: mReport.resolved_notes,
+          status: mReport.response_status,
+          barangays: mReport.barangay_name ? { name: mReport.barangay_name } : null,
+        };
+      } else {
+        const { data: bReport } = await supabaseAdmin
+          .from('barangay_reports')
+          .select('*')
+          .eq('id', reportId)
+          .maybeSingle();
+
+        if (bReport) {
+          report = {
+            ...bReport,
+            barangay_response_status: bReport.response_status,
+            barangay_response_notes: bReport.response_notes,
+            barangay_responder_name: bReport.responder_name,
+            barangay_responded_by: bReport.responded_by,
+            barangay_dispatched_at: bReport.dispatched_at,
+            barangay_accepted_at: bReport.accepted_at,
+            barangay_arrived_at: bReport.arrived_at,
+            barangay_resolved_at: bReport.resolved_at,
+            barangay_resolved_notes: bReport.resolved_notes,
+            status: bReport.status,
+          };
+        }
+      }
+    }
+
     if (!report) throw new Error('Incident report not found.');
     const mdrrmoTimes = await mdrrmoCycleTimes(reportId);
     report.mdrrmo_accepted_at = report.mdrrmo_accepted_at || mdrrmoTimes.mdrrmo_accepted_at;
@@ -426,11 +476,12 @@ export class IncidentResolutionPdfService {
       .upload(storagePath, buffer, { contentType: 'application/pdf', upsert: true });
     if (uploadError) throw uploadError;
     const generatedAt = new Date().toISOString();
-    const { error: updateError } = await supabaseAdmin
-      .from('incident_reports')
-      .update({ resolution_pdf_path: storagePath, resolution_pdf_generated_at: generatedAt, resolution_pdf_status: 'ready' })
-      .eq('id', reportId);
-    if (updateError) throw updateError;
+    const pdfUpdate = { resolution_pdf_path: storagePath, resolution_pdf_generated_at: generatedAt, resolution_pdf_status: 'ready' };
+    await Promise.all([
+      supabaseAdmin.from('barangay_reports').update(pdfUpdate).eq('id', reportId),
+      supabaseAdmin.from('mdrrmo_reports').update(pdfUpdate).eq('id', reportId),
+      supabaseAdmin.from('incident_reports').update(pdfUpdate).eq('id', reportId),
+    ]);
     return { buffer, path: storagePath, generatedAt };
   }
 }

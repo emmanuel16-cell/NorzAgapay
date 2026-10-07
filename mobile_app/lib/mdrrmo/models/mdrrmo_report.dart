@@ -153,6 +153,8 @@ class MdrrmoReport {
     String event,
     String legacyField,
   ) {
+    final direct = json[event];
+    if (direct != null && json['barangay_$event'] == null) return _date(direct);
     final own = json['mdrrmo_$event'];
     if (own != null) return _date(own);
     if (json['barangay_$event'] != null) return null;
@@ -195,21 +197,22 @@ class MdrrmoReport {
           ? json['incident_time_precision'].toString()
           : 'unknown',
       status: (json['status'] ?? 'pending').toString(),
-      responseStatus: (json['mdrrmo_response_status'] ?? 'pending').toString(),
+      responseStatus: (json['response_status'] ?? json['mdrrmo_response_status'] ?? 'pending').toString(),
       incidentType: json['incident_type']?.toString(),
       severity: json['severity']?.toString(),
-      dispatchNotes: json['mdrrmo_dispatch_notes']?.toString(),
-      resolutionNotes: (json['mdrrmo_resolved_notes'] ?? json['resolved_notes'])?.toString(),
+      dispatchNotes: (json['dispatch_notes'] ?? json['mdrrmo_dispatch_notes'])?.toString(),
+      resolutionNotes: (json['resolved_notes'] ?? json['mdrrmo_resolved_notes'])?.toString(),
       barangayResponseNotes: json['barangay_response_notes']?.toString(),
-      mdrrmoResponseNotes: json['mdrrmo_response_notes']?.toString(),
-      isEscalated: json['is_escalated'] == true ||
+      mdrrmoResponseNotes: (json['response_notes'] ?? json['mdrrmo_response_notes'] ?? json['coordination_notes'])?.toString(),
+      isEscalated: json['source_type'] == 'escalated' ||
+          json['is_escalated'] == true ||
           json['status'] == 'escalated' ||
           (json['barangay_response_notes']?.toString().toLowerCase().contains('escalated') ?? false),
       barangayName:
           (json['barangay_name'] ??
                   (json['barangays'] is Map ? json['barangays']['name'] : null))
               ?.toString(),
-      responderName: json['mdrrmo_responder_name']?.toString(),
+      responderName: (json['responder_name'] ?? json['mdrrmo_responder_name'])?.toString(),
       dispatchedAt: _channelDate(json, 'dispatched_at', 'dispatched_at'),
       acceptedAt: _channelDate(json, 'accepted_at', 'accepted_at'),
       arrivedAt: _channelDate(json, 'arrived_at', 'arrived_at'),

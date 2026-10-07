@@ -22,12 +22,17 @@ function addUserRoom(roomIds: Set<string>, value: unknown): void {
 }
 
 async function publishEvent(io: SocketIOServer, event: OutboxEvent): Promise<void> {
-  const { data: report, error } = await supabaseAdmin
+  let { data: report, error } = await supabaseAdmin
     .from('incident_reports')
     .select('*')
     .eq('id', event.report_id)
     .maybeSingle();
   if (error) throw error;
+  if (!report) {
+    const { data: bReport } = await supabaseAdmin.from('barangay_reports').select('*').eq('id', event.report_id).maybeSingle();
+    const { data: mReport } = await supabaseAdmin.from('mdrrmo_reports').select('*').eq('id', event.report_id).maybeSingle();
+    report = (bReport || mReport) as any;
+  }
   if (!report) {
     // The report was deleted after its event was queued; there is no audience
     // left to notify, so acknowledge this outbox row.

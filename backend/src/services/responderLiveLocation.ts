@@ -37,14 +37,33 @@ export async function getActiveResponderTargets(responderId?: string): Promise<M
   if (!assignmentRows.length) return new Map();
 
   const reportIds = [...new Set(assignmentRows.map((row: any) => row.report_id))];
-  const { data: reports, error: reportError } = await supabaseAdmin
-    .from('incident_reports')
-    .select('id, title, latitude, longitude, reporter_type, send_to, specifics, description, status, mdrrmo_response_status, is_escalated, beyond_barangay_capability, barangay_response_notes, review_outcome')
-    .in('id', reportIds);
-  if (reportError) throw reportError;
+  const [newReportsRes, legacyReportsRes] = await Promise.all([
+    supabaseAdmin
+      .from('mdrrmo_reports')
+      .select('id, title, latitude, longitude, response_status')
+      .in('id', reportIds),
+    supabaseAdmin
+      .from('incident_reports')
+      .select('id, title, latitude, longitude, reporter_type, send_to, specifics, description, status, mdrrmo_response_status, is_escalated, beyond_barangay_capability, barangay_response_notes, review_outcome')
+      .in('id', reportIds),
+  ]);
 
   const reportById = new Map<string, ResponderIncidentTarget>();
-  for (const report of reports || []) {
+  for (const r of newReportsRes.data || []) {
+    if (String(r.response_status || '').toLowerCase() === 'resolved') continue;
+    const latitude = coordinate(r.latitude);
+    const longitude = coordinate(r.longitude);
+    if (latitude === null || longitude === null || latitude === 0 || longitude === 0) continue;
+    reportById.set(r.id, {
+      incidentId: r.id,
+      title: r.title || 'Emergency Incident',
+      latitude,
+      longitude,
+    });
+  }
+
+  for (const report of legacyReportsRes.data || []) {
+    if (reportById.has(report.id)) continue;
     if (!isVisibleToMdrrmo(report)) continue;
     if (['resolved', 'closed'].includes(String(report.status || '').toLowerCase()) ||
         String(report.mdrrmo_response_status || '').toLowerCase() === 'resolved') continue;
