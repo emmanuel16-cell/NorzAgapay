@@ -275,9 +275,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final otpController = TextEditingController();
     final passwordController = TextEditingController();
     final confirmPasswordController = TextEditingController();
+    var deliveryMethod = 'email';
     var otpSent = false;
     var isSubmitting = false;
     String? errorMessage;
+    String? deliveryMessage;
 
     try {
       final reset = await showDialog<bool>(
@@ -290,7 +292,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const Text(
-                    'We will send a one-time code to your resident account email.',
+                    'Choose email or mobile. We will send a one-time code to the contact saved on your resident account.',
                     style: TextStyle(color: Color(0xFF64748B)),
                   ),
                   const SizedBox(height: 14),
@@ -303,14 +305,78 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       prefixIcon: Icon(Icons.email_outlined),
                     ),
                   ),
+                  if (!otpSent) ...[
+                    const SizedBox(height: 12),
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Send the code to',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 8,
+                      children: [
+                        ChoiceChip(
+                          label: const Text('Email / Gmail'),
+                          selected: deliveryMethod == 'email',
+                          onSelected: isSubmitting
+                              ? null
+                              : (_) => setDialogState(
+                                  () => deliveryMethod = 'email',
+                                ),
+                        ),
+                        ChoiceChip(
+                          label: const Text('Mobile SMS'),
+                          selected: deliveryMethod == 'sms',
+                          onSelected: isSubmitting
+                              ? null
+                              : (_) => setDialogState(
+                                  () => deliveryMethod = 'sms',
+                                ),
+                        ),
+                      ],
+                    ),
+                    if (deliveryMethod == 'sms')
+                      const Padding(
+                        padding: EdgeInsets.only(top: 4),
+                        child: Text(
+                          'The code goes to the mobile number saved on your resident account.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFF64748B),
+                          ),
+                        ),
+                      ),
+                  ],
                   if (otpSent) ...[
                     const SizedBox(height: 12),
+                    Text(
+                      deliveryMessage ??
+                          'Check your selected delivery method for the code.',
+                      style: const TextStyle(color: Color(0xFF15803D)),
+                    ),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton(
+                        onPressed: isSubmitting
+                            ? null
+                            : () => setDialogState(() {
+                                otpSent = false;
+                                otpController.clear();
+                                deliveryMessage = null;
+                                errorMessage = null;
+                              }),
+                        child: const Text('Change delivery method / resend'),
+                      ),
+                    ),
                     TextField(
                       controller: otpController,
                       keyboardType: TextInputType.number,
                       maxLength: 6,
                       decoration: const InputDecoration(
-                        labelText: '6-Digit Email Code',
+                        labelText: '6-Digit Verification Code',
                         prefixIcon: Icon(Icons.pin_outlined),
                       ),
                     ),
@@ -331,13 +397,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         labelText: 'Confirm New Password',
                         prefixIcon: Icon(Icons.lock_outline),
                       ),
-                    ),
-                  ],
-                  if (otpSent && errorMessage == null) ...[
-                    const SizedBox(height: 10),
-                    Text(
-                      'A verification code was sent to ${emailController.text.trim()}.',
-                      style: const TextStyle(color: Color(0xFF15803D)),
                     ),
                   ],
                   if (errorMessage != null) ...[
@@ -375,13 +434,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             final response = await http
                                 .post(
                                   Uri.parse(
-                                    '${AppConstants.apiBaseUrl}/auth/resident/password-otp',
+                                    '${AppConstants.apiBaseUrl}/auth/resident/forgot-password-otp',
                                   ),
                                   headers: {
                                     'Content-Type': 'application/json',
                                     'ngrok-skip-browser-warning': 'true',
                                   },
-                                  body: jsonEncode({'email': email}),
+                                  body: jsonEncode({
+                                    'email': email,
+                                    'delivery_method': deliveryMethod,
+                                  }),
                                 )
                                 .timeout(const Duration(seconds: 30));
                             final data = Map<String, dynamic>.from(
@@ -390,12 +452,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             if (response.statusCode != 200) {
                               throw data['error'] ?? 'Could not send the code.';
                             }
-                            setDialogState(() => otpSent = true);
+                            setDialogState(() {
+                              otpSent = true;
+                              deliveryMessage =
+                                  data['message']?.toString() ??
+                                  'Check your selected delivery method for the code.';
+                            });
                           } else {
                             final otp = otpController.text.trim();
                             final password = passwordController.text;
                             if (otp.length != 6) {
-                              throw 'Enter the 6-digit email code.';
+                              throw 'Enter the 6-digit verification code.';
                             }
                             if (password.length < 6) {
                               throw 'Password must be at least 6 characters.';
@@ -406,7 +473,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             final response = await http
                                 .post(
                                   Uri.parse(
-                                    '${AppConstants.apiBaseUrl}/auth/resident/change-password',
+                                    '${AppConstants.apiBaseUrl}/auth/resident/forgot-password',
                                   ),
                                   headers: {
                                     'Content-Type': 'application/json',
@@ -423,7 +490,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               jsonDecode(response.body) as Map,
                             );
                             if (response.statusCode != 200) {
-                              throw data['error'] ?? 'Could not reset password.';
+                              throw data['error'] ??
+                                  'Could not reset password.';
                             }
                             completed = true;
                           }

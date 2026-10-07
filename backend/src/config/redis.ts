@@ -99,7 +99,14 @@ export interface ResidentOtpRecord {
   barangayId?: string;
   deliveryMethod?: 'email' | 'sms';
   positionDesignation?: string;
-  purpose: 'registration' | 'password_change' | 'barangay_password_change' | 'barangay_registration';
+  purpose:
+    | 'registration'
+    | 'password_change'
+    | 'barangay_password_change'
+    | 'barangay_registration'
+    | 'resident_password_reset'
+    | 'barangay_password_reset'
+    | 'responder_password_reset';
 }
 
 /**

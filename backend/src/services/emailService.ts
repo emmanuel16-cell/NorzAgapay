@@ -41,23 +41,40 @@ async function sendEmail(toEmail: string, subject: string, html: string, text: s
 
 export const emailService = {
   /**
-   * Send 6-digit OTP email for registration or password change
+   * Send a 6-digit OTP email for registration, password change, or password reset.
    */
-  async sendOtpEmail(toEmail: string, otp: string, purpose: 'registration' | 'password_change' | 'barangay_password_change' | 'barangay_registration'): Promise<boolean> {
+  async sendOtpEmail(
+    toEmail: string,
+    otp: string,
+    purpose:
+      | 'registration'
+      | 'password_change'
+      | 'barangay_password_change'
+      | 'barangay_registration'
+      | 'resident_password_reset'
+      | 'barangay_password_reset'
+      | 'responder_password_reset',
+  ): Promise<boolean> {
     const isRegistration = purpose === 'registration' || purpose === 'barangay_registration';
-    const isBarangayRegistration = purpose === 'barangay_registration';
-    const isBarangayPasswordChange = purpose === 'barangay_password_change';
+    const isPasswordReset = purpose === 'resident_password_reset'
+      || purpose === 'barangay_password_reset'
+      || purpose === 'responder_password_reset';
     const subject = isRegistration
       ? 'Your NorzAgapay verification code'
-      : 'Your NorzAgapay password change code';
+      : isPasswordReset
+        ? 'Your NorzAgapay password reset code'
+        : 'Your NorzAgapay password change code';
 
-    const actionText = isBarangayRegistration
-      ? 'complete your NorzAgapay Barangay Administrator registration'
-      : isRegistration
-      ? 'complete your NorzAgapay citizen registration'
-      : isBarangayPasswordChange
-        ? 'update your NorzAgapay barangay account password'
-        : 'update your resident account password';
+    const actionTextByPurpose = {
+      registration: 'complete your NorzAgapay citizen registration',
+      barangay_registration: 'complete your NorzAgapay Barangay Administrator registration',
+      password_change: 'update your resident account password',
+      barangay_password_change: 'update your NorzAgapay barangay account password',
+      resident_password_reset: 'reset your resident account password',
+      barangay_password_reset: 'reset your NorzAgapay barangay account password',
+      responder_password_reset: 'reset your NorzAgapay responder account password',
+    } as const;
+    const actionText = actionTextByPurpose[purpose];
 
     const html = `
       <div style="margin: 0; padding: 24px; background: #f5f7fa; color: #1f2937; font-family: Arial, Helvetica, sans-serif;">

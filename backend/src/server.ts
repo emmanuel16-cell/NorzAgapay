@@ -133,6 +133,21 @@ const loginLimiter = rateLimit({
 
 app.use('/api/auth/login', loginLimiter);
 
+const passwordResetLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { error: 'Too many password reset requests. Please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use('/api/auth/resident/forgot-password-otp', passwordResetLimiter);
+app.use('/api/auth/resident/forgot-password', passwordResetLimiter);
+app.use('/api/auth/barangay/forgot-password-otp', passwordResetLimiter);
+app.use('/api/auth/barangay/forgot-password', passwordResetLimiter);
+app.use('/api/auth/responder/forgot-password-otp', passwordResetLimiter);
+app.use('/api/auth/responder/forgot-password', passwordResetLimiter);
+
 // ============================================
 // API Routes
 // ============================================

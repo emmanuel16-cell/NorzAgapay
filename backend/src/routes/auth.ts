@@ -36,6 +36,28 @@ const masterAdminSetupSchema = z.object({
   password: z.string().min(12).max(128),
 });
 
+const passwordResetOtpSchema = z.object({
+  email: z.string().trim().email('A valid account email address is required.').transform((value) => value.toLowerCase()),
+  delivery_method: z.enum(['email', 'sms']).default('email'),
+});
+
+const passwordResetSchema = z.object({
+  email: z.string().trim().email('A valid account email address is required.').transform((value) => value.toLowerCase()),
+  otp: z.string().trim().regex(/^\d{6}$/, 'Enter the 6-digit verification code.'),
+  new_password: z.string().min(6, 'New password must be at least 6 characters long.').max(128),
+});
+
+function maskEmailAddress(email: string): string {
+  const [localPart, domain] = email.split('@');
+  if (!localPart || !domain) return 'your registered email';
+  return `${localPart.slice(0, 1)}***@${domain}`;
+}
+
+function maskMobileNumber(phone: string): string {
+  const digits = phone.replace(/\D/g, '');
+  return digits.length >= 4 ? `****${digits.slice(-4)}` : 'your registered mobile';
+}
+
 async function hasMasterAdmin() {
   const { data, error } = await supabaseAdmin
     .from('users')
@@ -986,6 +1008,120 @@ router.post('/resident/change-password', async (req: Request, res: Response): Pr
   }
 });
 
+// Forgot-password OTP flow, kept separate from the signed-in password-change flow.
+router.post('/resident/forgot-password-otp', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const parsed = passwordResetOtpSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message || 'Enter a valid email and delivery method.' });
+      return;
+    }
+
+    const { email, delivery_method: deliveryMethod } = parsed.data;
+    if (deliveryMethod === 'sms' && !config.textBeeApiKey) {
+      res.status(503).json({ error: 'SMS verification is not configured. Choose email or contact the administrator.' });
+      return;
+    }
+
+    const { data: user, error: lookupError } = await supabaseAdmin
+      .from('resident_user')
+      .select('id, full_name, email, phone')
+      .eq('email', email)
+      .maybeSingle();
+    if (lookupError) throw lookupError;
+    if (!user) {
+      res.status(404).json({ error: 'No resident account found with this email address.' });
+      return;
+    }
+
+    const mobile = typeof user.phone === 'string' ? user.phone.trim() : '';
+    if (deliveryMethod === 'sms' && !mobile) {
+      res.status(400).json({ error: 'No mobile number is linked to this resident account. Choose email instead.' });
+      return;
+    }
+
+    const otp = randomInt(100000, 1000000).toString();
+    const otpKey = `resident-password-reset:${email}`;
+    await setOtp(otpKey, {
+      otp,
+      fullName: user.full_name,
+      deliveryMethod,
+      purpose: 'resident_password_reset',
+    });
+
+    const sent = deliveryMethod === 'sms'
+      ? await smsService.sendPasswordResetOtp(mobile, otp, 'resident')
+      : await emailService.sendOtpEmail(email, otp, 'resident_password_reset');
+    if (!sent) {
+      await deleteOtp(otpKey);
+      res.status(503).json({
+        error: deliveryMethod === 'sms'
+          ? 'We could not send the verification SMS. Check the saved mobile number or choose email.'
+          : 'We could not send the verification email. Please try again later.',
+      });
+      return;
+    }
+
+    const destination = deliveryMethod === 'sms' ? maskMobileNumber(mobile) : maskEmailAddress(email);
+    res.json({
+      success: true,
+      deliveryMethod,
+      message: `Password reset code sent to ${destination}. The code expires in 10 minutes.`,
+      expiresInMinutes: 10,
+    });
+  } catch (err: any) {
+    console.error('Resident forgot-password OTP error:', err);
+    res.status(500).json({ error: 'Could not start password recovery. Please try again later.' });
+  }
+});
+
+router.post('/resident/forgot-password', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const parsed = passwordResetSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message || 'Enter the email, code, and a valid new password.' });
+      return;
+    }
+
+    const { email, otp, new_password: newPassword } = parsed.data;
+    const otpKey = `resident-password-reset:${email}`;
+    const record = await getOtp(otpKey);
+    if (!record || record.purpose !== 'resident_password_reset') {
+      res.status(400).json({ error: 'No password reset request was found or the code has expired. Request a new code.' });
+      return;
+    }
+    if (record.otp !== otp) {
+      res.status(400).json({ error: 'Invalid verification code.' });
+      return;
+    }
+
+    const { data: user, error: lookupError } = await supabaseAdmin
+      .from('resident_user')
+      .select('id')
+      .eq('email', email)
+      .maybeSingle();
+    if (lookupError) throw lookupError;
+    if (!user) {
+      await deleteOtp(otpKey);
+      res.status(400).json({ error: 'The account for this reset request is no longer available.' });
+      return;
+    }
+
+    const password_hash = await bcrypt.hash(newPassword, 12);
+    const { error: updateError } = await supabaseAdmin
+      .from('resident_user')
+      .update({ password_hash, updated_at: new Date().toISOString() })
+      .eq('id', user.id);
+    if (updateError) throw updateError;
+
+    await deleteOtp(otpKey);
+    res.json({ success: true, message: 'Password reset successfully. Sign in with your new password.' });
+  } catch (err: any) {
+    console.error('Resident forgot-password completion error:', err);
+    res.status(500).json({ error: 'Could not reset the password. Please try again later.' });
+  }
+});
+
 router.post('/barangay/password-otp', async (req: Request, res: Response): Promise<void> => {
   try {
     const email = typeof req.body?.email === 'string' ? req.body.email.toLowerCase().trim() : '';
@@ -1064,6 +1200,236 @@ router.post('/barangay/change-password', async (req: Request, res: Response): Pr
   } catch (err: any) {
     console.error('Barangay change-password error:', err);
     res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+// Barangay login forgot-password flow. Existing signed-in password changes above
+// continue to require the current password as an additional check.
+router.post('/barangay/forgot-password-otp', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const parsed = passwordResetOtpSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message || 'Enter a valid email and delivery method.' });
+      return;
+    }
+
+    const { email, delivery_method: deliveryMethod } = parsed.data;
+    if (deliveryMethod === 'sms' && !config.textBeeApiKey) {
+      res.status(503).json({ error: 'SMS verification is not configured. Choose email or contact the administrator.' });
+      return;
+    }
+
+    const { data: user, error: lookupError } = await supabaseAdmin
+      .from('barangay_users')
+      .select('id, full_name, email, phone')
+      .eq('email', email)
+      .maybeSingle();
+    if (lookupError) throw lookupError;
+    if (!user) {
+      res.status(404).json({ error: 'No Barangay account found with this email address.' });
+      return;
+    }
+
+    const mobile = typeof user.phone === 'string' ? user.phone.trim() : '';
+    if (deliveryMethod === 'sms' && !mobile) {
+      res.status(400).json({ error: 'No mobile number is linked to this Barangay account. Choose email instead.' });
+      return;
+    }
+
+    const otp = randomInt(100000, 1000000).toString();
+    const otpKey = `barangay-password-reset:${email}`;
+    await setOtp(otpKey, {
+      otp,
+      fullName: user.full_name,
+      deliveryMethod,
+      purpose: 'barangay_password_reset',
+    });
+
+    const sent = deliveryMethod === 'sms'
+      ? await smsService.sendPasswordResetOtp(mobile, otp, 'barangay')
+      : await emailService.sendOtpEmail(email, otp, 'barangay_password_reset');
+    if (!sent) {
+      await deleteOtp(otpKey);
+      res.status(503).json({
+        error: deliveryMethod === 'sms'
+          ? 'We could not send the verification SMS. Check the saved mobile number or choose email.'
+          : 'We could not send the verification email. Please try again later.',
+      });
+      return;
+    }
+
+    const destination = deliveryMethod === 'sms' ? maskMobileNumber(mobile) : maskEmailAddress(email);
+    res.json({
+      success: true,
+      deliveryMethod,
+      message: `Password reset code sent to ${destination}. The code expires in 10 minutes.`,
+      expiresInMinutes: 10,
+    });
+  } catch (err: any) {
+    console.error('Barangay forgot-password OTP error:', err);
+    res.status(500).json({ error: 'Could not start password recovery. Please try again later.' });
+  }
+});
+
+router.post('/barangay/forgot-password', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const parsed = passwordResetSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message || 'Enter the email, code, and a valid new password.' });
+      return;
+    }
+
+    const { email, otp, new_password: newPassword } = parsed.data;
+    const otpKey = `barangay-password-reset:${email}`;
+    const record = await getOtp(otpKey);
+    if (!record || record.purpose !== 'barangay_password_reset') {
+      res.status(400).json({ error: 'No password reset request was found or the code has expired. Request a new code.' });
+      return;
+    }
+    if (record.otp !== otp) {
+      res.status(400).json({ error: 'Invalid verification code.' });
+      return;
+    }
+
+    const { data: user, error: lookupError } = await supabaseAdmin
+      .from('barangay_users')
+      .select('id')
+      .eq('email', email)
+      .maybeSingle();
+    if (lookupError) throw lookupError;
+    if (!user) {
+      await deleteOtp(otpKey);
+      res.status(400).json({ error: 'The account for this reset request is no longer available.' });
+      return;
+    }
+
+    const password_hash = await bcrypt.hash(newPassword, 12);
+    const { error: updateError } = await supabaseAdmin
+      .from('barangay_users')
+      .update({ password_hash })
+      .eq('id', user.id);
+    if (updateError) throw updateError;
+
+    await deleteOtp(otpKey);
+    res.json({ success: true, message: 'Password reset successfully. Sign in with your new password.' });
+  } catch (err: any) {
+    console.error('Barangay forgot-password completion error:', err);
+    res.status(500).json({ error: 'Could not reset the password. Please try again later.' });
+  }
+});
+
+router.post('/responder/forgot-password-otp', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const parsed = passwordResetOtpSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message || 'Enter a valid email and delivery method.' });
+      return;
+    }
+
+    const { email, delivery_method: deliveryMethod } = parsed.data;
+    if (deliveryMethod === 'sms' && !config.textBeeApiKey) {
+      res.status(503).json({ error: 'SMS verification is not configured. Choose email or contact the administrator.' });
+      return;
+    }
+
+    const { data: user, error: lookupError } = await supabaseAdmin
+      .from('users')
+      .select('id, full_name, email, phone, role')
+      .eq('email', email)
+      .eq('role', 'responder')
+      .maybeSingle();
+    if (lookupError) throw lookupError;
+    if (!user) {
+      res.status(404).json({ error: 'No MDRRMO responder account found with this email address.' });
+      return;
+    }
+
+    const mobile = typeof user.phone === 'string' ? user.phone.trim() : '';
+    if (deliveryMethod === 'sms' && !mobile) {
+      res.status(400).json({ error: 'No mobile number is linked to this responder account. Choose email instead.' });
+      return;
+    }
+
+    const otp = randomInt(100000, 1000000).toString();
+    const otpKey = `responder-password-reset:${email}`;
+    await setOtp(otpKey, {
+      otp,
+      fullName: user.full_name,
+      deliveryMethod,
+      purpose: 'responder_password_reset',
+    });
+
+    const sent = deliveryMethod === 'sms'
+      ? await smsService.sendPasswordResetOtp(mobile, otp, 'responder')
+      : await emailService.sendOtpEmail(email, otp, 'responder_password_reset');
+    if (!sent) {
+      await deleteOtp(otpKey);
+      res.status(503).json({
+        error: deliveryMethod === 'sms'
+          ? 'We could not send the verification SMS. Check the saved mobile number or choose email.'
+          : 'We could not send the verification email. Please try again later.',
+      });
+      return;
+    }
+
+    const destination = deliveryMethod === 'sms' ? maskMobileNumber(mobile) : maskEmailAddress(email);
+    res.json({
+      success: true,
+      deliveryMethod,
+      message: `Password reset code sent to ${destination}. The code expires in 10 minutes.`,
+      expiresInMinutes: 10,
+    });
+  } catch (err: any) {
+    console.error('Responder forgot-password OTP error:', err);
+    res.status(500).json({ error: 'Could not start password recovery. Please try again later.' });
+  }
+});
+
+router.post('/responder/forgot-password', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const parsed = passwordResetSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message || 'Enter the email, code, and a valid new password.' });
+      return;
+    }
+
+    const { email, otp, new_password: newPassword } = parsed.data;
+    const otpKey = `responder-password-reset:${email}`;
+    const record = await getOtp(otpKey);
+    if (!record || record.purpose !== 'responder_password_reset') {
+      res.status(400).json({ error: 'No password reset request was found or the code has expired. Request a new code.' });
+      return;
+    }
+    if (record.otp !== otp) {
+      res.status(400).json({ error: 'Invalid verification code.' });
+      return;
+    }
+
+    const { data: user, error: lookupError } = await supabaseAdmin
+      .from('users')
+      .select('id')
+      .eq('email', email)
+      .eq('role', 'responder')
+      .maybeSingle();
+    if (lookupError) throw lookupError;
+    if (!user) {
+      await deleteOtp(otpKey);
+      res.status(400).json({ error: 'The responder account for this reset request is no longer available.' });
+      return;
+    }
+
+    const password_hash = await bcrypt.hash(newPassword, 12);
+    const { error: updateError } = await supabaseAdmin
+      .from('users')
+      .update({ password_hash, updated_at: new Date().toISOString() })
+      .eq('id', user.id);
+    if (updateError) throw updateError;
+
+    await deleteOtp(otpKey);
+    res.json({ success: true, message: 'Password reset successfully. Sign in with your new password.' });
+  } catch (err: any) {
+    console.error('Responder forgot-password completion error:', err);
+    res.status(500).json({ error: 'Could not reset the password. Please try again later.' });
   }
 });
 

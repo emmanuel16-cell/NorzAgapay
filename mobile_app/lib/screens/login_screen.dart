@@ -218,6 +218,237 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<void> _showForgotPasswordDialog() async {
+    final emailController = TextEditingController(
+      text: _emailController.text.trim(),
+    );
+    final otpController = TextEditingController();
+    final newPasswordController = TextEditingController();
+    final confirmPasswordController = TextEditingController();
+    var deliveryMethod = 'email';
+    var otpSent = false;
+    var isBusy = false;
+    String? errorMessage;
+    String? infoMessage;
+
+    try {
+      final reset = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (dialogContext, setDialogState) => AlertDialog(
+            title: const Text('Forgot Password'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Enter the email on your Barangay account, then choose where to receive the one-time code.',
+                    style: TextStyle(color: Color(0xFF64748B)),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: emailController,
+                    keyboardType: TextInputType.emailAddress,
+                    enabled: !otpSent,
+                    decoration: _inputDecoration(
+                      'Account Email',
+                      Icons.email_outlined,
+                    ),
+                  ),
+                  if (!otpSent) ...[
+                    const SizedBox(height: 14),
+                    const Text(
+                      'Send code by',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      children: [
+                        ChoiceChip(
+                          label: const Text('Email / Gmail'),
+                          selected: deliveryMethod == 'email',
+                          onSelected: isBusy
+                              ? null
+                              : (_) => setDialogState(
+                                  () => deliveryMethod = 'email',
+                                ),
+                        ),
+                        ChoiceChip(
+                          label: const Text('Mobile SMS'),
+                          selected: deliveryMethod == 'sms',
+                          onSelected: isBusy
+                              ? null
+                              : (_) => setDialogState(
+                                  () => deliveryMethod = 'sms',
+                                ),
+                        ),
+                      ],
+                    ),
+                    if (deliveryMethod == 'sms')
+                      const Padding(
+                        padding: EdgeInsets.only(top: 4),
+                        child: Text(
+                          'The code goes to the mobile number saved on your account.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFF64748B),
+                          ),
+                        ),
+                      ),
+                  ],
+                  if (otpSent) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      infoMessage ??
+                          'Check your selected delivery method for the code.',
+                      style: const TextStyle(color: Color(0xFF15803D)),
+                    ),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton(
+                        onPressed: isBusy
+                            ? null
+                            : () => setDialogState(() {
+                                otpSent = false;
+                                otpController.clear();
+                                infoMessage = null;
+                                errorMessage = null;
+                              }),
+                        child: const Text('Change delivery method / resend'),
+                      ),
+                    ),
+                    TextField(
+                      controller: otpController,
+                      keyboardType: TextInputType.number,
+                      maxLength: 6,
+                      decoration: const InputDecoration(
+                        labelText: '6-Digit Verification Code',
+                        prefixIcon: Icon(Icons.pin_outlined),
+                      ),
+                    ),
+                    TextField(
+                      controller: newPasswordController,
+                      obscureText: true,
+                      decoration: const InputDecoration(
+                        labelText: 'New Password',
+                        helperText: 'At least 6 characters',
+                        prefixIcon: Icon(Icons.lock_outline),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: confirmPasswordController,
+                      obscureText: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Confirm New Password',
+                        prefixIcon: Icon(Icons.lock_outline),
+                      ),
+                    ),
+                  ],
+                  if (errorMessage != null) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      errorMessage!,
+                      style: const TextStyle(color: Color(0xFFDC2626)),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: isBusy
+                    ? null
+                    : () => Navigator.pop(dialogContext, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: isBusy
+                    ? null
+                    : () async {
+                        final email = emailController.text.trim().toLowerCase();
+                        setDialogState(() {
+                          isBusy = true;
+                          errorMessage = null;
+                        });
+                        try {
+                          if (!otpSent) {
+                            if (!email.contains('@') || !email.contains('.')) {
+                              throw 'Enter a valid email address.';
+                            }
+                            final message =
+                                await ApiService.sendBarangayForgotPasswordOtp(
+                                  email: email,
+                                  deliveryMethod: deliveryMethod,
+                                );
+                            if (!dialogContext.mounted) return;
+                            setDialogState(() {
+                              otpSent = true;
+                              infoMessage = message;
+                            });
+                          } else {
+                            final otp = otpController.text.trim();
+                            final password = newPasswordController.text;
+                            if (otp.length != 6)
+                              throw 'Enter the 6-digit verification code.';
+                            if (password.length < 6)
+                              throw 'Password must be at least 6 characters.';
+                            if (password != confirmPasswordController.text)
+                              throw 'The passwords do not match.';
+                            await ApiService.resetBarangayPassword(
+                              email: email,
+                              otp: otp,
+                              newPassword: password,
+                            );
+                            if (!dialogContext.mounted) return;
+                            Navigator.pop(dialogContext, true);
+                          }
+                        } catch (error) {
+                          if (dialogContext.mounted) {
+                            setDialogState(
+                              () => errorMessage = error
+                                  .toString()
+                                  .replaceFirst('Exception: ', ''),
+                            );
+                          }
+                        } finally {
+                          if (dialogContext.mounted)
+                            setDialogState(() => isBusy = false);
+                        }
+                      },
+                child: isBusy
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Text(otpSent ? 'Reset Password' : 'Send Code'),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      if (reset == true && mounted) {
+        _emailController.text = emailController.text.trim();
+        _passwordController.clear();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Password reset. Sign in with your new password.'),
+          ),
+        );
+      }
+    } finally {
+      emailController.dispose();
+      otpController.dispose();
+      newPasswordController.dispose();
+      confirmPasswordController.dispose();
+    }
+  }
+
+
   Future<Map<String, dynamic>?> _showRegistrationOtpDialog(AuthService auth) async {
     final otpController = TextEditingController();
     var verifying = false;
@@ -644,6 +875,15 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                       const SizedBox(height: 16),
+
+                      if (!_isRegisterMode)
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton(
+                            onPressed: auth.isLoading ? null : _showForgotPasswordDialog,
+                            child: const Text('Forgot password?'),
+                          ),
+                        ),
 
                       TextButton(
                         onPressed: () {

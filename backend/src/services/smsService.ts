@@ -17,6 +17,15 @@ export const smsService = {
     );
   },
 
+  async sendPasswordResetOtp(phoneNumber: string, otp: string, audience: 'resident' | 'barangay' | 'responder'): Promise<boolean> {
+    const accountType = audience;
+    return sendSms(
+      phoneNumber,
+      `Your NorzAgapay ${accountType} password reset code is ${otp}. It expires in 10 minutes. Do not share this code.`,
+      `${accountType} password reset OTP`,
+    );
+  },
+
   async sendTemporaryPasswordSms(phoneNumber: string, temporaryPassword: string): Promise<boolean> {
     return sendSms(
       phoneNumber,

@@ -480,6 +480,88 @@ class ApiService {
     throw Exception(data['error'] ?? 'Failed to change password');
   }
 
+  static Future<String> sendBarangayForgotPasswordOtp({
+    required String email,
+    required String deliveryMethod,
+  }) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/auth/barangay/forgot-password-otp'),
+      headers: {
+        'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': 'true',
+      },
+      body: jsonEncode({'email': email, 'delivery_method': deliveryMethod}),
+    );
+    final data = jsonDecode(res.body);
+    if (res.statusCode == 200) {
+      return data['message']?.toString() ?? 'Verification code sent.';
+    }
+    throw Exception(data['error'] ?? 'Failed to send verification code');
+  }
+
+  static Future<void> resetBarangayPassword({
+    required String email,
+    required String otp,
+    required String newPassword,
+  }) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/auth/barangay/forgot-password'),
+      headers: {
+        'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': 'true',
+      },
+      body: jsonEncode({
+        'email': email,
+        'otp': otp,
+        'new_password': newPassword,
+      }),
+    );
+    final data = jsonDecode(res.body);
+    if (res.statusCode == 200) return;
+    throw Exception(data['error'] ?? 'Failed to reset password');
+  }
+
+  static Future<String> sendResponderForgotPasswordOtp({
+    required String email,
+    required String deliveryMethod,
+  }) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/auth/responder/forgot-password-otp'),
+      headers: {
+        'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': 'true',
+      },
+      body: jsonEncode({'email': email, 'delivery_method': deliveryMethod}),
+    );
+    final data = jsonDecode(res.body);
+    if (res.statusCode == 200) {
+      return data['message']?.toString() ?? 'Verification code sent.';
+    }
+    throw Exception(data['error'] ?? 'Failed to send verification code');
+  }
+
+  static Future<void> resetResponderPassword({
+    required String email,
+    required String otp,
+    required String newPassword,
+  }) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/auth/responder/forgot-password'),
+      headers: {
+        'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': 'true',
+      },
+      body: jsonEncode({
+        'email': email,
+        'otp': otp,
+        'new_password': newPassword,
+      }),
+    );
+    final data = jsonDecode(res.body);
+    if (res.statusCode == 200) return;
+    throw Exception(data['error'] ?? 'Failed to reset password');
+  }
+
   // ── Evacuation Centers ─────────────────────────────────────────────────────
   static Future<List<EvacuationCenter>> getMyBarangayEvacuationCenters(
     String token,
