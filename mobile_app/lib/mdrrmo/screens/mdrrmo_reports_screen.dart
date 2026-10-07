@@ -67,27 +67,45 @@ class _MdrrmoReportsScreenState extends State<MdrrmoReportsScreen>
   Future<void> _load({bool silent = false}) async {
     final loadSequence = ++_loadSequence;
     final token = context.read<AuthProvider>().token;
-    if (token == null) return;
-    if (!silent && mounted)
+    if (token == null) {
+      if (!silent && mounted) setState(() => _loading = false);
+      return;
+    }
+    final bool ownsSpinner = !silent;
+    if (ownsSpinner && mounted)
       setState(() {
         _loading = true;
         _error = null;
       });
     try {
-      final reports = await ApiService.getMdrrmoReports(token);
-      if (mounted && loadSequence == _loadSequence) {
-        _syncResponderGpsTracking(reports);
-        setState(() {
-          _reports = reports;
-          _error = null;
-        });
+      final reports = await ApiService.getMdrrmoReports(token)
+          .timeout(const Duration(seconds: 20));
+      if (mounted) {
+        // Always apply the latest fetch result even if a newer silent load
+        // is in-flight — it is still better than stale data.
+        if (loadSequence == _loadSequence || ownsSpinner) {
+          _syncResponderGpsTracking(reports);
+          setState(() {
+            _reports = reports;
+            _error = null;
+            if (ownsSpinner) _loading = false;
+          });
+        }
       }
     } catch (error) {
-      if (mounted && loadSequence == _loadSequence)
-        setState(() => _error = error.toString());
+      if (mounted) {
+        if (loadSequence == _loadSequence || ownsSpinner) {
+          setState(() {
+            if (_reports.isEmpty) _error = error.toString();
+            if (ownsSpinner) _loading = false;
+          });
+        }
+      }
     } finally {
-      if (mounted && loadSequence == _loadSequence && !silent)
+      // Safety net: always clear the spinner if we own it.
+      if (ownsSpinner && mounted && _loading) {
         setState(() => _loading = false);
+      }
     }
   }
 
