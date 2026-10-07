@@ -41,15 +41,6 @@ const getStage = (report: IncidentReport): ReportStage => {
     report.mdrrmo_resolved_at ? 'resolved' : report.mdrrmo_accepted_at || report.mdrrmo_arrived_at ? 'responding' :
       isEscalated ? 'pending' : status
   )).toLowerCase();
-  if (isEscalated) {
-    const barangayResponse = String(report.barangay_response_status || (
-      report.barangay_resolved_at ? 'resolved' : report.barangay_accepted_at || report.barangay_arrived_at ? 'responding' : 'pending'
-    )).toLowerCase();
-    const resolved = (value: string) => ['resolved', 'closed'].includes(value);
-    if (resolved(mdrrmoResponse) && resolved(barangayResponse)) return 'resolved';
-    if (mdrrmoResponse === 'responding' || barangayResponse === 'responding') return 'responding';
-    return 'pending';
-  }
   if (['resolved', 'closed'].includes(mdrrmoResponse)) return 'resolved';
   if (mdrrmoResponse === 'responding') return 'responding';
   return 'pending';
@@ -136,11 +127,13 @@ export default function ReportsPage() {
     socket.on('connect', handleLifecycle);
     socket.on('incident:lifecycle', handleLifecycle);
     socket.on('incident_report:new', handleLifecycle);
+    socket.on('barangay:escalated', handleLifecycle);
     return () => {
       socket.off('connect', handleLifecycle);
       socket.off('incident_report:updated', handleUpdate);
       socket.off('incident:lifecycle', handleLifecycle);
       socket.off('incident_report:new', handleLifecycle);
+      socket.off('barangay:escalated', handleLifecycle);
     };
   }, []);
   useEffect(() => {

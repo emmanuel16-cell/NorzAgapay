@@ -1854,7 +1854,6 @@ router.patch('/reports/:id/escalate', authenticateBarangay, requireRole(['dispat
       .update({
         mdrrmo_coordination_notes: escalationNotes,
         mdrrmo_response_notes: escalationNotes,
-        is_escalated: true,
         status: 'escalated',
         mdrrmo_response_status: 'pending',
         lifecycle_actor_id: req.barangayUser.userId,
@@ -1903,6 +1902,7 @@ router.patch('/reports/:id/escalate', authenticateBarangay, requireRole(['dispat
 
     const updatePayload = {
       ...data,
+      is_escalated: true,
       barangay_name: barangayName,
       mdrrmo_coordination_notes: escalationNotes,
       mdrrmo_response_status: 'pending',
@@ -2592,7 +2592,6 @@ router.patch('/assistance-requests/:id/decide', authenticateBarangay, requireRol
         .update({
           mdrrmo_coordination_notes: escalationNotes,
           mdrrmo_response_notes: escalationNotes,
-          is_escalated: true,
           status: 'escalated',
           mdrrmo_response_status: 'pending',
         })
@@ -2605,6 +2604,7 @@ router.patch('/assistance-requests/:id/decide', authenticateBarangay, requireRol
       const barangayName = reportData.barangays?.name || null;
       escalatedReport = {
         ...reportData,
+        is_escalated: true,
         barangay_name: barangayName,
         incident_type: linkedReport.incident_type,
         severity: linkedReport.severity,

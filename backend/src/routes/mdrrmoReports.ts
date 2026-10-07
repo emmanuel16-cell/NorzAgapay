@@ -40,10 +40,32 @@ function formatReport(report: any): any {
   if (typeof responderMedia === 'string') {
     try { responderMedia = JSON.parse(responderMedia); } catch { responderMedia = []; }
   }
+
+  let sendTo = String(report.send_to || '').trim().toLowerCase();
+  let cleanSpecifics = report.specifics || '';
+  if (cleanSpecifics.includes('[SEND_TO:')) {
+    const match = cleanSpecifics.match(/\[SEND_TO:([^\]]+)\]/i);
+    if (match && match[1]) {
+      const explicitSendTo = match[1].trim().toLowerCase();
+      if (!sendTo || sendTo === 'all') {
+        sendTo = explicitSendTo;
+      }
+      cleanSpecifics = cleanSpecifics.replace(/\[SEND_TO:[^\]]+\]/i, '').trim();
+    }
+  }
+  if ((!sendTo || sendTo === 'all') && report.description && /\[SEND_TO:[^\]]+\]/i.test(report.description)) {
+    const match = report.description.match(/\[SEND_TO:([^\]]+)\]/i);
+    if (match && match[1]) {
+      sendTo = match[1].trim().toLowerCase();
+    }
+  }
+
   return {
     ...report,
     barangay_name: report.barangays?.name || report.barangay_name || null,
+    send_to: sendTo || (isEscalatedForMdrrmo(report) ? 'mdrrmo' : report.barangay_id ? 'barangay' : 'all'),
     is_escalated: isEscalatedForMdrrmo(report),
+    specifics: cleanSpecifics,
     proof_urls: proofUrls,
     proof_types: proofTypes,
     proof_url: proofUrls[0] || null,

@@ -24,6 +24,8 @@ interface LinkedReport {
   specifics?: string | null;
   mdrrmo_coordination_notes?: string | null;
   barangay_response_notes?: string | null;
+  is_escalated?: boolean | string | null;
+  beyond_barangay_capability?: boolean | string | null;
 }
 
 interface AssistanceRequest {
@@ -66,6 +68,9 @@ function requestTypeLabel(type?: string, subType?: string | null): string {
 }
 
 function requestReportGroup(request: AssistanceRequest): MdrrmoReportGroup {
+  if (request.sub_type === 'escalation' || request.request_type === 'escalation') {
+    return 'escalated';
+  }
   return getMdrrmoReportGroup(request.incident_report || {});
 }
 
@@ -106,10 +111,14 @@ export default function ResourceRequestsPage() {
     socket.on('connect', refresh);
     socket.on('resource:request', refresh);
     socket.on('incident_report:updated', refresh);
+    socket.on('incident_report:new', refresh);
+    socket.on('barangay:escalated', refresh);
     return () => {
       socket.off('connect', refresh);
       socket.off('resource:request', refresh);
       socket.off('incident_report:updated', refresh);
+      socket.off('incident_report:new', refresh);
+      socket.off('barangay:escalated', refresh);
     };
   }, [fetchRequests]);
 

@@ -6,7 +6,7 @@ import { config } from '../config';
 import { supabaseAdmin } from '../config/supabase';
 import { AuthPayload, AuthRequest, authenticate, authorize } from '../middleware/auth';
 import { io } from '../server';
-import { isVisibleToMdrrmo } from '../services/mdrrmoReportVisibility';
+import { isEscalatedForMdrrmo, isVisibleToMdrrmo } from '../services/mdrrmoReportVisibility';
 import { isBarangayVerified } from '../services/verifiedBarangayService';
 import { estimateReportTimings } from '../services/reportTiming';
 import {
@@ -138,28 +138,33 @@ export function formatIncidentReport(r: any): any {
     }
   }
 
-  let sendTo = r.send_to;
+  let sendTo = String(r.send_to || '').trim().toLowerCase();
   let cleanSpecifics = r.specifics || '';
   if (cleanSpecifics.includes('[SEND_TO:')) {
-    const match = cleanSpecifics.match(/\[SEND_TO:([^\]]+)\]/);
+    const match = cleanSpecifics.match(/\[SEND_TO:([^\]]+)\]/i);
     if (match && match[1]) {
-      if (!sendTo) sendTo = match[1].trim();
-      cleanSpecifics = cleanSpecifics.replace(/\[SEND_TO:[^\]]+\]/, '').trim();
+      const explicitSendTo = match[1].trim().toLowerCase();
+      if (!sendTo || sendTo === 'all') {
+        sendTo = explicitSendTo;
+      }
+      cleanSpecifics = cleanSpecifics.replace(/\[SEND_TO:[^\]]+\]/i, '').trim();
     }
   }
-  if (!sendTo && r.description && r.description.includes('[SEND_TO:')) {
-    const match = r.description.match(/\[SEND_TO:([^\]]+)\]/);
+  if ((!sendTo || sendTo === 'all') && r.description && /\[SEND_TO:[^\]]+\]/i.test(r.description)) {
+    const match = r.description.match(/\[SEND_TO:([^\]]+)\]/i);
     if (match && match[1]) {
-      sendTo = match[1].trim();
+      sendTo = match[1].trim().toLowerCase();
     }
   }
 
   const primaryProofUrl = proofUrls.length > 0 ? proofUrls[0] : (r.proof_url || null);
   const primaryProofType = proofTypes.length > 0 ? proofTypes[0] : (r.proof_type || 'image');
+  const isEscalated = isEscalatedForMdrrmo(r);
 
   return {
     ...r,
     send_to: sendTo || (r.barangay_id ? 'barangay' : 'all'),
+    is_escalated: isEscalated,
     specifics: cleanSpecifics,
     proof_url: primaryProofUrl,
     proof_type: primaryProofType,
@@ -431,7 +436,8 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
       reporter_id: req.user?.userId || null,
       reporter_name: reporterName,
       reporter_phone: reporterPhone,
-      reporter_email: reporterEmail,
+      // reporter_email is omitted from direct insert because column does not exist in schema
+      // reporter_email: reporterEmail,
       barangay_id: resolvedBarangayId,
       status: 'pending',
       send_to: targetSendTo,
@@ -482,7 +488,8 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
       }
       // Fallback for older schemas without proof_urls, send_to, or reporter_email.
       const safePayload = { ...insertPayload };
-      delete safePayload.send_to;
+      // keep send_to intact
+      if (String(colErr?.message || colErr?.details || "").toLowerCase().includes("send_to")) delete safePayload.send_to;
       delete safePayload.reporter_email;
       let fallbackResult = await supabaseAdmin
         .from('incident_reports')

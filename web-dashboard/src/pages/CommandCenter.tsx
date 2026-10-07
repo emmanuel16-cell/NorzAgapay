@@ -817,15 +817,10 @@ export default function CommandCenter() {
           const barangayCycleStatus = barangayStatus || (isEscalated
             ? r.barangay_resolved_at ? 'resolved' : r.barangay_accepted_at || r.barangay_arrived_at ? 'responding' : 'pending'
             : reportStatus);
-          const applicableCycleStatuses = isEscalated
-            ? [barangayCycleStatus, mdrrmoCycleStatus]
-            : [mdrrmoCycleStatus];
-          const isCycleResolved = (status: string) => ['resolved', 'closed'].includes(status);
-          const isResolved = applicableCycleStatuses.every(isCycleResolved);
-          const isResponding = applicableCycleStatuses.some((status) => status === 'responding');
-          const isArrived = applicableCycleStatuses.some((status) => status === 'arrived') ||
-            (isEscalated && Boolean(r.barangay_arrived_at)) || Boolean(r.mdrrmo_arrived_at) ||
-            (!r.mdrrmo_response_status && Boolean(r.arrived_at));
+          const isResolved = ['resolved', 'closed'].includes(mdrrmoCycleStatus) &&
+            (!isEscalated || ['resolved', 'closed'].includes(barangayCycleStatus));
+          const isResponding = mdrrmoCycleStatus === 'responding';
+          const isArrived = Boolean(r.mdrrmo_arrived_at) || (!r.mdrrmo_response_status && Boolean(r.arrived_at));
           const stage: ReportStage = isResolved
             ? 'resolved'
             : isArrived
@@ -953,6 +948,7 @@ export default function CommandCenter() {
     socket.on('connect', handleRefresh);
     socket.on('barangay:responding', handleRefresh);
     socket.on('incident_report:new', handleRefresh);
+    socket.on('barangay:escalated', handleRefresh);
     socket.on('incident_report:mdrrmo_responding', handleRefresh);
     socket.on('incident_report:updated', handleRefresh);
     socket.on('incident:lifecycle', handleRefresh);
@@ -966,6 +962,7 @@ export default function CommandCenter() {
       socket.off('connect', handleRefresh);
       socket.off('barangay:responding', handleRefresh);
       socket.off('incident_report:new', handleRefresh);
+      socket.off('barangay:escalated', handleRefresh);
       socket.off('incident_report:mdrrmo_responding', handleRefresh);
       socket.off('incident_report:updated', handleRefresh);
       socket.off('incident:lifecycle', handleRefresh);

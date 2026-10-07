@@ -43,12 +43,14 @@ router.get('/incidents', authenticate, authorize('admin', 'master_admin'), async
     const since = new Date();
     since.setMonth(since.getMonth() - 5, 1);
 
-    const { data: incidents } = await supabaseAdmin
+    const { data: incidents, error: incidentsError } = await supabaseAdmin
       .from('incident_reports')
       .select('id, title, type, incident_type, severity, status, send_to, reporter_type, specifics, description, mdrrmo_response_status, barangay_response_status, barangay_id, barangays(name), created_at, mdrrmo_coordination_notes, barangay_response_notes, review_outcome')
       .gte('created_at', since.toISOString())
       .order('created_at', { ascending: false })
       .limit(2000);
+
+    if (incidentsError) throw incidentsError;
 
     res.json({ incidents: (incidents || []).filter((incident) =>
       !incident.review_outcome && isVisibleToMdrrmo(incident)) });
