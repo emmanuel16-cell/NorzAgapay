@@ -203,6 +203,8 @@ export const municipalityBoundaryAPI = {
   get: () => api.get('/municipality-boundary'),
   history: () => api.get('/municipality-boundary/history'),
   deleteVersion: (revision: number) => api.delete(`/municipality-boundary/history/${revision}`),
-  save: (data: { geometry: unknown; enabled: boolean; expectedRevision: number }) =>
+  useVersion: (revision: number, data: { expectedRevision: number; expectedUpdatedAt: string | null }) =>
+    api.post(`/municipality-boundary/history/${revision}/use`, data),
+  save: (data: { geometry: unknown; enabled: boolean; expectedRevision: number; expectedUpdatedAt: string | null }) =>
     api.put('/municipality-boundary', data),
 };

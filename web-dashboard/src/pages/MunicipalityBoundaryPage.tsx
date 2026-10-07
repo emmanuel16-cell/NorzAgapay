@@ -139,6 +139,7 @@ export default function MunicipalityBoundaryPage() {
         geometry,
         enabled,
         expectedRevision,
+        expectedUpdatedAt: boundary.updated_at ?? null,
       });
       const next = responseConfig(response.data);
       setBoundary(next);
@@ -280,12 +281,36 @@ export default function MunicipalityBoundaryPage() {
 
   const useVersion = (version: MunicipalityBoundary) => {
     if (!version.geometry) return;
-    requestSaveConfirmation(
-      version.geometry,
-      true,
-      `Use boundary version ${version.revision} across the web dashboard, mobile app, and resident app? This will create a new active revision.`,
-      { title: `Use boundary ${version.revision}?`, confirmLabel: 'Use boundary' },
-    );
+    setConfirmation({
+      title: `Use boundary ${version.revision}?`,
+      message: `Use this saved boundary across the web dashboard, mobile app, and resident app? It will activate revision ${version.revision} without creating a new revision.`,
+      confirmLabel: 'Use boundary',
+      action: async () => {
+        setSaving(true);
+        try {
+          const response = await municipalityBoundaryAPI.useVersion(version.revision, {
+            expectedRevision: boundary.revision,
+            expectedUpdatedAt: boundary.updated_at ?? null,
+          });
+          const next = responseConfig(response.data);
+          setBoundary(next);
+          void loadHistory();
+          setParts(geometryToParts(next.geometry));
+          setDirty(false);
+          setEditing(false);
+          setSelectedVertex(null);
+          setSelectedVersion(null);
+          toast.success(`Boundary ${version.revision} is now in use across all app maps.`);
+          return true;
+        } catch (error: any) {
+          const message = error?.response?.data?.error;
+          toast.error(typeof message === 'string' ? message : 'Could not use this boundary version.');
+          return false;
+        } finally {
+          setSaving(false);
+        }
+      },
+    });
   };
 
   const deleteVersion = async (version: MunicipalityBoundary) => {

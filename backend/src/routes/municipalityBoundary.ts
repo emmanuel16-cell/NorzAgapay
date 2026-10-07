@@ -33,6 +33,101 @@ router.get('/history', authenticate, authorize('logistics'), async (_req: AuthRe
   }
 });
 
+const activateSchema = z.object({
+  expectedRevision: z.number().int().nonnegative(),
+  expectedUpdatedAt: z.string().nullable(),
+});
+
+router.post('/history/:revision/use', authenticate, authorize('logistics'), async (req: AuthRequest, res: Response): Promise<void> => {
+  const selectedRevision = Number(req.params.revision);
+  if (!Number.isSafeInteger(selectedRevision) || selectedRevision < 1) {
+    res.status(400).json({ error: 'A valid boundary revision is required.' });
+    return;
+  }
+
+  try {
+    const body = activateSchema.parse(req.body);
+    const { data: current, error: readError } = await supabaseAdmin
+      .from('municipality_boundary_config')
+      .select('geometry, revision, updated_at')
+      .eq('municipality_key', 'norzagaray')
+      .maybeSingle();
+    if (readError) throw readError;
+
+    const currentRevision = Number(current?.revision ?? 0);
+    const currentUpdatedAt = current?.updated_at ?? null;
+    if (currentRevision !== body.expectedRevision || currentUpdatedAt !== body.expectedUpdatedAt) {
+      res.status(409).json({
+        error: 'The municipality boundary changed. Reload it before using another version.',
+        currentRevision,
+      });
+      return;
+    }
+
+    let selectedGeometry = selectedRevision === currentRevision ? current?.geometry : null;
+    if (selectedRevision !== currentRevision) {
+      const { data: selected, error: selectedError } = await supabaseAdmin
+        .from('municipality_boundary_history')
+        .select('geometry')
+        .eq('municipality_key', 'norzagaray')
+        .eq('revision', selectedRevision)
+        .maybeSingle();
+      if (selectedError) throw selectedError;
+      if (!selected) {
+        res.status(404).json({ error: 'That saved boundary version was not found.' });
+        return;
+      }
+      selectedGeometry = selected.geometry;
+    }
+
+    const geometry = normalizeBoundaryGeometry(selectedGeometry);
+    const validationError = validateBoundaryGeometry(geometry);
+    if (validationError) {
+      res.status(400).json({ error: validationError });
+      return;
+    }
+
+    const { data: activated, error: activateError } = await supabaseAdmin
+      .from('municipality_boundary_config')
+      .update({
+        geometry,
+        is_enabled: true,
+        revision: selectedRevision,
+        updated_by: req.user?.userId ?? null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('municipality_key', 'norzagaray')
+      .eq('revision', body.expectedRevision)
+      .eq('updated_at', body.expectedUpdatedAt ?? '')
+      .select('geometry, is_enabled, revision, updated_by, updated_at')
+      .maybeSingle();
+    if (activateError) throw activateError;
+    if (!activated) {
+      res.status(409).json({ error: 'The municipality boundary changed. Reload it before using another version.' });
+      return;
+    }
+
+    res.json({
+      geometry: activated.geometry,
+      enabled: activated.is_enabled,
+      revision: activated.revision,
+      updated_by: activated.updated_by,
+      updated_at: activated.updated_at,
+    });
+  } catch (error: any) {
+    if (error?.name === 'ZodError') {
+      res.status(400).json({ error: error.errors });
+      return;
+    }
+    if (error instanceof Error && error.message.startsWith('Boundary must be a GeoJSON')) {
+      res.status(400).json({ error: error.message });
+      return;
+    }
+    console.error('Activate municipality boundary version error:', error);
+    res.status(500).json({ error: 'Failed to use municipality boundary version' });
+  }
+});
+
 router.delete('/history/:revision', authenticate, authorize('logistics'), async (req: AuthRequest, res: Response): Promise<void> => {
   const revision = Number(req.params.revision);
   if (!Number.isSafeInteger(revision) || revision < 1) {
@@ -85,6 +180,7 @@ const updateSchema = z.object({
   geometry: z.unknown(),
   enabled: z.boolean(),
   expectedRevision: z.number().int().nonnegative(),
+  expectedUpdatedAt: z.string().nullable(),
 });
 
 router.put('/', authenticate, authorize('logistics'), async (req: AuthRequest, res: Response): Promise<void> => {
@@ -105,7 +201,8 @@ router.put('/', authenticate, authorize('logistics'), async (req: AuthRequest, r
     if (readError) throw readError;
 
     const revision = Number(current?.revision ?? 0);
-    if (revision !== body.expectedRevision) {
+    const currentUpdatedAt = current?.updated_at ?? null;
+    if (revision !== body.expectedRevision || currentUpdatedAt !== body.expectedUpdatedAt) {
       res.status(409).json({
         error: 'The municipality boundary changed. Reload it before saving again.',
         currentRevision: revision,
@@ -113,7 +210,15 @@ router.put('/', authenticate, authorize('logistics'), async (req: AuthRequest, r
       return;
     }
 
-    const nextRevision = revision + 1;
+    const { data: latestHistory, error: historyReadError } = await supabaseAdmin
+      .from('municipality_boundary_history')
+      .select('revision')
+      .eq('municipality_key', 'norzagaray')
+      .order('revision', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (historyReadError) throw historyReadError;
+    const nextRevision = Math.max(revision, Number(latestHistory?.revision ?? 0)) + 1;
     const savedAt = new Date().toISOString();
     const { data: updated, error: updateError } = await supabaseAdmin
       .from('municipality_boundary_config')
@@ -126,6 +231,7 @@ router.put('/', authenticate, authorize('logistics'), async (req: AuthRequest, r
       })
       .eq('municipality_key', 'norzagaray')
       .eq('revision', revision)
+      .eq('updated_at', body.expectedUpdatedAt ?? '')
       .select('geometry, is_enabled, revision, updated_by, updated_at')
       .maybeSingle();
     if (updateError) throw updateError;
