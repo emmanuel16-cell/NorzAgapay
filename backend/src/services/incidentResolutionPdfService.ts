@@ -103,6 +103,18 @@ function elapsedLabel(startValue: unknown, endValue: unknown, stage: string): st
   return `${elapsed} after ${stage}`;
 }
 
+function completionDuration(startValue: unknown, endValue: unknown): string {
+  if (!startValue) return 'Not recorded';
+  if (!endValue) return 'In progress';
+  const seconds = Math.floor((new Date(String(endValue)).getTime() - new Date(String(startValue)).getTime()) / 1000);
+  if (!Number.isFinite(seconds) || seconds < 0) return 'Not recorded';
+  if (seconds < 60) return `${seconds} sec${seconds === 1 ? '' : 's'}`;
+  const totalMinutes = Math.floor(seconds / 60);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return hours > 0 ? `${hours} hr${hours === 1 ? '' : 's'}${minutes ? ` ${minutes} min` : ''}` : `${minutes} min`;
+}
+
 function parseAssessment(notesValue: unknown, channel: ResolutionCycle): Assessment {
   const notes = typeof notesValue === 'string' ? notesValue : '';
   const upper = notes.toUpperCase();
@@ -263,14 +275,12 @@ function assistanceDetail(request: any): string {
     request.needs_equipment ? 'Equipment' : '',
     request.beyond_barangay_capability ? 'MDRRMO coordination' : '',
   ].filter(Boolean);
-  const typeLabel = request.request_type === 'responders' ? 'Responders'
-    : request.request_type === 'goods' ? 'Goods'
-    : cleanText(request.request_type);
   const requestLabel = barangayNeeds.length
     ? barangayNeeds.join(', ')
-    : [typeLabel, cleanText(request.sub_type)].filter(Boolean).join(' · ');
+    : cleanText(request.sub_type) || (request.request_type === 'goods' ? 'Goods' : 'Assistance');
   const explanation = cleanText(request.explanation);
-  return [requestLabel, explanation, cleanText(request.dispatcher_notes)]
+  const requestDetails = [requestLabel, explanation].filter(Boolean).join(': ');
+  return [requestDetails, cleanText(request.dispatcher_notes)]
     .filter(Boolean).join(' - ') || 'Assistance request';
 }
 
@@ -345,6 +355,42 @@ async function toBuffer(report: any, resident: any, assistance: any[], names: { 
     doc.moveTo(left, doc.y).lineTo(doc.page.width - doc.page.margins.right, doc.y).lineWidth(0.25).strokeColor('#dbe3ec').stroke();
     doc.y += 4;
   };
+  const timelineColumnWidths = {
+    label: labelWidth,
+    recorded: 190,
+    completion: width - labelWidth - 190 - 20,
+  };
+  const timelineHeader = () => {
+    const left = doc.page.margins.left;
+    const recordedX = left + timelineColumnWidths.label + 10;
+    const completionX = recordedX + timelineColumnWidths.recorded + 10;
+    const headerY = doc.y;
+    doc.font(bold).fontSize(8.5).fillColor(muted)
+      .text('Milestone', left, headerY, { width: timelineColumnWidths.label })
+      .text('Recorded at', recordedX, headerY, { width: timelineColumnWidths.recorded })
+      .text('Completion time', completionX, headerY, { width: timelineColumnWidths.completion });
+    doc.y = headerY + 14;
+  };
+  const timelineRow = (label: string, recordedAt: unknown, duration: string) => {
+    const left = doc.page.margins.left;
+    const recordedX = left + timelineColumnWidths.label + 10;
+    const completionX = recordedX + timelineColumnWidths.recorded + 10;
+    const recordedText = phDate(recordedAt);
+    doc.font(regular).fontSize(9.5);
+    const rowHeight = Math.max(
+      doc.heightOfString(label, { width: timelineColumnWidths.label }),
+      doc.heightOfString(recordedText, { width: timelineColumnWidths.recorded }),
+      doc.heightOfString(duration, { width: timelineColumnWidths.completion }),
+    );
+    if (doc.y + rowHeight + 9 > doc.page.height - doc.page.margins.bottom) doc.addPage();
+    const rowY = doc.y;
+    doc.font(bold).fillColor(ink).text(label, left, rowY, { width: timelineColumnWidths.label });
+    doc.font(regular).fillColor(ink).text(recordedText, recordedX, rowY, { width: timelineColumnWidths.recorded });
+    doc.fillColor(muted).text(duration, completionX, rowY, { width: timelineColumnWidths.completion });
+    doc.y = rowY + rowHeight + 5;
+    doc.moveTo(left, doc.y).lineTo(doc.page.width - doc.page.margins.right, doc.y).lineWidth(0.25).strokeColor('#dbe3ec').stroke();
+    doc.y += 4;
+  };
 
   const reporterName = cleanText(report.reporter_name || resident?.full_name) || 'Not provided';
   const reporterPhone = cleanText(report.reporter_phone || resident?.phone);
@@ -374,10 +420,18 @@ async function toBuffer(report: any, resident: any, assistance: any[], names: { 
     const dispatchedAt = cycleTimestamp(report, cycle, 'dispatched_at', 'dispatched_at');
     const acceptedAt = cycleTimestamp(report, cycle, 'accepted_at', 'accepted_at');
     const arrivedAt = cycleTimestamp(report, cycle, 'arrived_at', 'arrived_at');
-    row('Dispatcher review', phDate(reviewedAt));
-    row('Responder dispatched', phDate(dispatchedAt));
-    row('Responder accepted', phDate(acceptedAt));
-    row('Arrived at incident area', phDate(arrivedAt));
+    const dispatchReviewAt = reviewedAt || dispatchedAt;
+    const receivedAt = cycle === 'mdrrmo'
+      ? report.mdrrmo_received_at || report.created_at
+      : report.created_at;
+    const cycleResolvedAt = cycle === 'barangay'
+      ? report.barangay_resolved_at
+      : report.mdrrmo_resolved_at;
+    timelineHeader();
+    timelineRow('Dispatcher review', dispatchReviewAt, completionDuration(receivedAt, dispatchedAt || dispatchReviewAt));
+    timelineRow('Responder dispatched', dispatchedAt, completionDuration(dispatchedAt, acceptedAt));
+    timelineRow('Responder accepted', acceptedAt, completionDuration(acceptedAt, arrivedAt));
+    timelineRow('Arrived at incident area', arrivedAt, completionDuration(arrivedAt, cycleResolvedAt));
     row('Assigned responder(s)', cycle === 'barangay' ? names.barangay : names.mdrrmo);
     if (cycles.includes(cycle)) {
       const notes = cycle === 'barangay'
@@ -476,6 +530,7 @@ export class IncidentResolutionPdfService {
             ...report,
             barangay_response_status: barangayReport.response_status,
             barangay_response_notes: barangayReport.response_notes,
+            mdrrmo_received_at: barangayReport.escalated_at || report.created_at,
             barangay_responded_by: barangayReport.responded_by,
             barangay_dispatcher_reviewed_at: barangayReport.dispatcher_reviewed_at,
             barangay_dispatched_at: barangayReport.dispatched_at,
