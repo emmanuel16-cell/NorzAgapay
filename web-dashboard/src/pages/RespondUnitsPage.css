@@ -88,6 +88,7 @@
 .ru-add-member-fields .btn { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .ru-unit-modal { width: min(540px, calc(100vw - 28px)); }
 .ru-form-hint { display: block; margin-top: 6px; color: #91add9; font-size: 11px; }
+.ru-form-warning { display: block; margin-top: 8px; padding: 9px 10px; border: 1px solid #654e36; border-radius: 7px; color: #f0c990; background: #352a24; font-size: 11px; line-height: 1.5; }
 :root[data-theme='light'] .ru-page { color: #17253b; background: #f5f7fb; }
 :root[data-theme='light'] .ru-page-header { border-color: #dce4f1; background: #fff; }
 :root[data-theme='light'] .ru-title-group h1, :root[data-theme='light'] .ru-detail-header h2 { color: #17253b; }
@@ -115,6 +116,7 @@
 :root[data-theme='light'] .ru-readiness-note { border-color: #efd6a8; color: #82551b; background: #fff8e8; }
 :root[data-theme='light'] .ru-add-member-title { color: #17253b; }
 :root[data-theme='light'] .ru-form-hint { color: #61728d; }
+:root[data-theme='light'] .ru-form-warning { border-color: #efd6a8; color: #82551b; background: #fff8e8; }
 @media (max-width: 1050px) {
   .ru-split-view { grid-template-columns: minmax(250px, 34%) minmax(0, 1fr); }
   .ru-unit-detail { padding: 22px 20px 28px; }

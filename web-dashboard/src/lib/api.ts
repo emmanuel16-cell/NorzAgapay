@@ -32,10 +32,10 @@ api.interceptors.response.use(
   (err) => {
     const url = String(err.config?.url || '');
     const isLoginRequest = /\/auth\/login(?:$|\?)/.test(url);
-    if (err.response?.status === 401 && localStorage.getItem('norzagapay_token') && !isLoginRequest) {
+    if (err.response?.status === 401 && !isLoginRequest) {
       localStorage.removeItem('norzagapay_token');
       localStorage.removeItem('norzagapay_user');
-      window.location.href = '/login';
+      if (window.location.pathname !== '/login') window.location.replace('/login');
     }
     return Promise.reject(err);
   }

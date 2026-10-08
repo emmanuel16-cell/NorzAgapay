@@ -71,6 +71,9 @@ export default function RespondUnitsPage() {
   const canManageRoster = isMasterAdmin || user?.role === 'logistics';
   const canActivateUnits = canManageRoster || user?.role === 'dispatcher';
   const isDispatcher = user?.role === 'dispatcher';
+  const noLeaderAccountsMessage = isMasterAdmin
+    ? 'No available active responder accounts. Create or activate a Responder in User Management, or release an existing Team Leader assignment.'
+    : 'No available active responder accounts. Ask a Master Admin to create or activate a Responder in User Management, or release an existing Team Leader assignment.';
   const [units, setUnits] = useState<RespondUnit[]>([]);
   const [selectedId, setSelectedId] = useState('');
   const [leaderAccounts, setLeaderAccounts] = useState<ResponderAccount[]>([]);
@@ -424,8 +427,10 @@ export default function RespondUnitsPage() {
             <div className="form-group"><label className="form-label">Unit name *</label><input className="form-input" required minLength={2} maxLength={100} placeholder="e.g. Alpha Rescue Team" value={unitForm.unit_name} onChange={(event) => setUnitForm({ ...unitForm, unit_name: event.target.value })} /></div>
             <div className="form-group"><label className="form-label">Specialization *</label><input className="form-input" required maxLength={120} value={unitForm.specialization} onChange={(event) => setUnitForm({ ...unitForm, specialization: event.target.value })} /></div>
             {editingUnit && <div className="form-group"><label className="form-label">Status</label><select className="form-select" value={unitForm.status} onChange={(event) => setUnitForm({ ...unitForm, status: event.target.value })}><option value="available">Available</option><option value="unavailable">Unavailable</option><option value="maintenance">Maintenance</option></select></div>}
-            <div className="form-group"><label className="form-label">Team Leader responder account *</label><select className="form-select" required value={unitForm.team_leader_user_id} onChange={(event) => setUnitForm({ ...unitForm, team_leader_user_id: event.target.value })}><option value="">Choose an active responder</option>{leaderAccounts.map((account) => <option key={account.id} value={account.id}>{account.full_name} · {account.email}</option>)}</select><small className="ru-form-hint">Each Team Leader account can lead one active response unit.</small></div>
-            <div className="modal-footer"><button type="button" className="btn btn-outline" onClick={() => { setShowUnitForm(false); setEditingUnit(null); }}>Cancel</button><button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : editingUnit ? 'Save Unit' : 'Create Unit'}</button></div>
+            <div className="form-group"><label className="form-label">Team Leader responder account *</label><select className="form-select" required value={unitForm.team_leader_user_id} onChange={(event) => setUnitForm({ ...unitForm, team_leader_user_id: event.target.value })}><option value="">Choose an active responder</option>{leaderAccounts.map((account) => <option key={account.id} value={account.id}>{account.full_name} · {account.email}</option>)}</select>
+              {leaderAccounts.length === 0 ? <small className="ru-form-warning" role="status">{noLeaderAccountsMessage}</small> : <small className="ru-form-hint">Each active Team Leader account can lead one response unit. Add at least one Driver Responder and one First Aider after creating this unit, then activate it for dispatch.</small>}
+            </div>
+            <div className="modal-footer"><button type="button" className="btn btn-outline" onClick={() => { setShowUnitForm(false); setEditingUnit(null); }}>Cancel</button><button type="submit" className="btn btn-primary" disabled={saving || (!editingUnit && leaderAccounts.length === 0)}>{saving ? 'Saving…' : editingUnit ? 'Save Unit' : 'Create Unit'}</button></div>
           </form>
         </div>
       )}
