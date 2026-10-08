@@ -6,6 +6,12 @@ export interface ResponderIncidentTarget {
   title: string;
   latitude: number;
   longitude: number;
+  crew: ResponderCrewMember[];
+}
+
+export interface ResponderCrewMember {
+  name: string;
+  memberRole: string;
 }
 
 export interface ResponderLiveLocation {
@@ -25,8 +31,8 @@ function coordinate(value: unknown): number | null {
 export async function getActiveResponderTargets(responderId?: string): Promise<Map<string, ResponderIncidentTarget[]>> {
   let assignmentQuery = supabaseAdmin
     .from('mdrrmo_report_assignments')
-    .select('report_id, responder_id')
-    .in('status', ['assigned', 'responding'])
+    .select('id, report_id, responder_id')
+    .eq('status', 'responding')
     .is('arrived_at', null);
   if (responderId) assignmentQuery = assignmentQuery.eq('responder_id', responderId);
 
@@ -34,6 +40,24 @@ export async function getActiveResponderTargets(responderId?: string): Promise<M
   if (assignmentError) throw assignmentError;
   const assignmentRows = assignments || [];
   if (!assignmentRows.length) return new Map();
+
+  const assignmentIds = [...new Set(assignmentRows.map((row: any) => row.id))];
+  const { data: crewRows, error: crewError } = await supabaseAdmin
+    .from('mdrrmo_assignment_crew_members')
+    .select('assignment_id, member_name_snapshot, member_role_snapshot, selected_at')
+    .in('assignment_id', assignmentIds)
+    .order('selected_at', { ascending: true });
+  if (crewError) throw crewError;
+
+  const crewByAssignment = new Map<string, ResponderCrewMember[]>();
+  for (const row of crewRows || []) {
+    const crew = crewByAssignment.get(row.assignment_id) || [];
+    crew.push({
+      name: row.member_name_snapshot || 'Crew member',
+      memberRole: row.member_role_snapshot || 'responder',
+    });
+    crewByAssignment.set(row.assignment_id, crew);
+  }
 
   const reportIds = [...new Set(assignmentRows.map((row: any) => row.report_id))];
   const { data: mdrrmoRows, error: mdrrmoErr } = await supabaseAdmin
@@ -53,6 +77,7 @@ export async function getActiveResponderTargets(responderId?: string): Promise<M
       title: r.title || 'Emergency Incident',
       latitude,
       longitude,
+      crew: [],
     });
   }
 
@@ -61,7 +86,12 @@ export async function getActiveResponderTargets(responderId?: string): Promise<M
     const target = reportById.get(assignment.report_id);
     if (!target) continue;
     const current = targetsByResponder.get(assignment.responder_id) || [];
-    if (!current.some((item) => item.incidentId === target.incidentId)) current.push(target);
+    if (!current.some((item) => item.incidentId === target.incidentId)) {
+      current.push({
+        ...target,
+        crew: crewByAssignment.get(assignment.id) || [],
+      });
+    }
     targetsByResponder.set(assignment.responder_id, current);
   }
   return targetsByResponder;

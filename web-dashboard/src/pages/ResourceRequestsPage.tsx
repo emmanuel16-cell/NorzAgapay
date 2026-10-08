@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { format, formatDistanceToNowStrict } from 'date-fns';
-import { AlertTriangle, ClipboardList, MapPin, Phone, UserRound } from 'lucide-react';
+import { AlertTriangle, ClipboardList, Phone, UserRound } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { requestAPI, socket } from '../lib/api';
 import { getMdrrmoReportGroup, type MdrrmoReportGroup } from '../lib/mdrrmoReportVisibility';
@@ -144,11 +144,7 @@ export default function ResourceRequestsPage() {
   const escalatedCount = useMemo(() => requests.filter((request) => requestReportGroup(request) === 'escalated').length, [requests]);
   const visibleRequests = useMemo(() => requests.filter((request) => requestReportGroup(request) === group), [requests, group]);
   const selected = visibleRequests.find((request) => request.id === selectedId) || visibleRequests[0] || null;
-  const selectedHistory = useMemo(() => selected
-    ? requests
-      .filter((request) => request.incident_id === selected.incident_id)
-      .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
-    : [], [requests, selected?.incident_id]);
+  const selectedHistory = selected ? [selected] : [];
 
   useEffect(() => {
     if (!requests.length) return;
@@ -194,12 +190,12 @@ export default function ResourceRequestsPage() {
         <div className="reports-live-indicator"><i /> Live <span>·</span> {currentTime}</div>
       </header>
 
-      <nav className="reports-group-tabs-v2" aria-label="Assistance request report group">
+      <nav className="reports-group-tabs-v2" aria-label="Assistance request group">
         <button type="button" className={group === 'resident' ? 'active' : ''} onClick={() => selectGroup('resident')}>
-          Resident Reports <span>{residentCount}</span>
+          Resident Requests <span>{residentCount}</span>
         </button>
         <button type="button" className={group === 'escalated' ? 'active' : ''} onClick={() => selectGroup('escalated')}>
-          Escalate Reports <span>{escalatedCount}</span>
+          Escalated Requests <span>{escalatedCount}</span>
         </button>
       </nav>
 
@@ -217,16 +213,14 @@ export default function ResourceRequestsPage() {
             <div className="reports-queue-list-v2">
               {visibleRequests.map((request) => {
                 const active = selected?.id === request.id;
-                const report = request.incident_report;
                 return (
                   <button key={request.id} type="button" className={`reports-queue-item-v2 assistance-request-item ${active ? 'selected' : ''}`} onClick={() => selectRequest(request)}>
                     <span className="reports-queue-item-top">
-                      <strong>{report?.description?.trim() || report?.title || 'Assistance requested'}</strong>
+                      <strong>{requestTypeLabel(request.request_type, request.sub_type)}</strong>
                       <span className={`assistance-status-chip ${request.status}`}>{statusLabel(request.status)}</span>
                     </span>
                     <span className="reports-queue-time">{request.requested_by_user?.full_name || 'Responder'} · {timeAgo(request.created_at)}</span>
-                    <span className="reports-queue-time">{requestTypeLabel(request.request_type, request.sub_type)}</span>
-                    <span className="reports-queue-meta"><span><MapPin size={14} /> {report?.barangay_name || report?.address || 'Location not provided'}</span></span>
+                    <span className="reports-queue-time assistance-request-preview">{request.details || 'No request details provided.'}</span>
                   </button>
                 );
               })}
@@ -243,8 +237,8 @@ export default function ResourceRequestsPage() {
                 <header className="reports-detail-heading-v2">
                   <div>
                     <span className="reports-eyebrow-v2">Selected assistance request</span>
-                    <h2>{selected.incident_report?.title || 'Incident assistance'}</h2>
-                    <p>Request received {timeAgo(selected.created_at)} · {selected.incident_report?.barangay_name || 'Norzagaray'}</p>
+                    <h2>{requestTypeLabel(selected.request_type, selected.sub_type)}</h2>
+                    <p>Requested by {selected.requested_by_user?.full_name || 'Responder'} · {timeAgo(selected.created_at)}</p>
                   </div>
                   <span className={`assistance-status-chip detail ${selected.status}`}>{statusLabel(selected.status)}</span>
                 </header>
@@ -266,22 +260,8 @@ export default function ResourceRequestsPage() {
                   <div className="reports-text-card-v2 assistance-request-detail-text">{selected.details}</div>
                 </section>
 
-                {selected.incident_report && (
-                  <>
-                    <section className="reports-detail-section-v2"><h3>Linked report</h3><div className="reports-text-card-v2">{selected.incident_report.description?.trim() || selected.incident_report.title || 'No report details provided.'}</div></section>
-                    <section className="reports-detail-section-v2"><h3>Report details</h3><div className="reports-info-grid-v2">
-                      <div className="reports-info-card-v2"><span>Report type</span><strong>{statusLabel(selected.incident_report.type)}</strong></div>
-                      <div className="reports-info-card-v2"><span>Report received</span><strong>{dateTime(selected.incident_report.created_at)}</strong></div>
-                    </div></section>
-                    <section className="reports-detail-section-v2"><h3>Location</h3><div className="reports-location-card-v2"><MapPin size={20} /><div><strong>{selected.incident_report.barangay_name || selected.incident_report.address || 'Location not provided'}</strong><span>{selected.incident_report.address || selected.incident_report.title || 'Linked incident report'}</span></div></div></section>
-                  </>
-                )}
-
                 <section className="reports-detail-section-v2 assistance-history-section">
-                  <div className="reports-section-heading-v2">
-                    <h3>Request &amp; coordination log</h3>
-                    <span>{selectedHistory.length} {selectedHistory.length === 1 ? 'request' : 'requests'}</span>
-                  </div>
+                  <div className="reports-section-heading-v2"><h3>Request &amp; coordination log</h3></div>
                   {selectedHistory.length ? (
                     <div className="assistance-history-list">
                       {selectedHistory.map((request) => {

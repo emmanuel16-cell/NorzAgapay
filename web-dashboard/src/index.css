@@ -3032,6 +3032,8 @@ tbody tr:last-child td { border-bottom: none; }
 .command-map-cluster-list button:hover { border-color: #4770a8; background: #1a355e; }
 .command-map-cluster-list button i { width: 10px; height: 10px; flex: 0 0 10px; border: 1px solid #fff; border-radius: 50%; }
 .command-map-cluster-list button span { text-transform: capitalize; }
+.command-map-live-target-details { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
+.command-map-live-target-details small { color: #a9bbd6; font-size: 10px; line-height: 1.35; text-transform: none; }
 
 .report-selection-overlay {
   display: block;
@@ -3696,6 +3698,7 @@ tbody tr:last-child td { border-bottom: none; }
 .assistance-status-chip.rejected { color: #ffaaaa; background: #4a1c2b; }
 .assistance-status-chip.detail { padding: 8px 14px; font-size: 13px; }
 .assistance-request-detail-text { margin-top: 11px; }
+.assistance-request-preview { display: -webkit-box; overflow: hidden; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .assistance-request-actions { flex: 0 0 auto; }
 .assistance-history-list { display: flex; flex-direction: column; gap: 10px; }
 .assistance-history-card { overflow: hidden; border: 1px solid #263f6a; border-radius: 10px; background: #f8fafc; color: #0f172a; }

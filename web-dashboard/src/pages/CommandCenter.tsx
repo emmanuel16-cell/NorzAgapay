@@ -114,6 +114,12 @@ interface LiveResponderAssignment {
   title: string;
   latitude: number;
   longitude: number;
+  crew: LiveResponderCrewMember[];
+}
+
+interface LiveResponderCrewMember {
+  name: string;
+  memberRole: string;
 }
 
 interface LiveResponderLocation {
@@ -136,7 +142,15 @@ function normalizeLiveResponderLocation(value: any): LiveResponderLocation | nul
   if (!Number.isFinite(timestamp) || Date.now() - timestamp > LIVE_LOCATION_MAX_AGE_MS) return null;
   const assignments = Array.isArray(value.assignments) ? value.assignments.filter((assignment: any) =>
     typeof assignment?.incidentId === 'string' && typeof assignment?.title === 'string' &&
-    Number.isFinite(assignment.latitude) && Number.isFinite(assignment.longitude)) : [];
+    Number.isFinite(assignment.latitude) && Number.isFinite(assignment.longitude)).map((assignment: any) => ({
+      incidentId: assignment.incidentId,
+      title: assignment.title,
+      latitude: assignment.latitude,
+      longitude: assignment.longitude,
+      crew: Array.isArray(assignment.crew) ? assignment.crew
+        .filter((member: any) => typeof member?.name === 'string' && typeof member?.memberRole === 'string')
+        .map((member: any) => ({ name: member.name, memberRole: member.memberRole })) : [],
+    })) : [];
   if (!assignments.length) return null;
   return {
     responderId: value.responderId,
@@ -472,7 +486,7 @@ const createLiveResponderBadge = (selected = false) => {
   const size = 56;
   return L.divIcon({
     html: `
-      <div class="command-map-dot ${selected ? 'selected' : ''}" style="width:${size}px;height:${size}px;background:#818cf8">
+      <div class="command-map-dot ${selected ? 'selected' : ''}" style="width:${size}px;height:${size}px;background:#1478f8">
         <svg width="27" height="27" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
           <circle cx="12" cy="7" r="4"></circle>
@@ -704,12 +718,25 @@ function LiveResponderOverlays({
           <Popup className="command-map-cluster-popup" minWidth={220} maxWidth={320}>
             <div className="command-map-cluster-list">
               <strong>{location.responderName}<span>Live</span></strong>
-              {targets.map((target) => (
-                <button key={target.id} type="button" onClick={(event) => { event.stopPropagation(); onSelectIncident(target); }}>
-                  <i style={{ backgroundColor: target.report_kind === 'escalated' ? '#ff3c43' : '#ff7838' }} />
-                  <span>En route · {target.title}</span>
-                </button>
-              ))}
+              {targets.map((target) => {
+                const assignment = location.assignments.find((item) => item.incidentId === target.id);
+                const crew = assignment?.crew || [];
+                return (
+                  <button key={target.id} type="button" onClick={(event) => { event.stopPropagation(); onSelectIncident(target); }}>
+                    <i style={{ backgroundColor: target.report_kind === 'escalated' ? '#ff3c43' : '#ff7838' }} />
+                    <div className="command-map-live-target-details">
+                      <span>En route · {target.title}</span>
+                      {crew.length > 0 && (
+                        <small>
+                          Crew · {crew
+                            .map((member) => `${member.name} (${member.memberRole.split('_').map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ')})`)
+                            .join(', ')}
+                        </small>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </Popup>
         </Marker>,
@@ -741,7 +768,9 @@ export default function CommandCenter() {
 
   // Data lists
   const [incidents, setIncidents] = useState<IncidentItem[]>([]);
+  const [reportMetrics, setReportMetrics] = useState<Array<Pick<IncidentItem, 'report_kind' | 'status'>>>([]);
   const [dispatchUnits, setDispatchUnits] = useState<DispatchUnitItem[]>([]);
+  const [activeDispatchCount, setActiveDispatchCount] = useState(0);
   const [liveResponderLocations, setLiveResponderLocations] = useState<LiveResponderLocation[]>([]);
   const [selectedResponderId, setSelectedResponderId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -799,22 +828,23 @@ export default function CommandCenter() {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [reportsRes, unitsRes] = await Promise.allSettled([
+      const [reportsRes, unitsRes, queueRes] = await Promise.allSettled([
         reportAPI.list(),
         respondUnitAPI.list(),
+        reportAPI.mdrrmoQueue(),
       ]);
 
       const items: IncidentItem[] = [];
+      const metrics: Array<Pick<IncidentItem, 'report_kind' | 'status'>> = [];
 
       if (reportsRes.status === 'fulfilled' && Array.isArray(reportsRes.value.data)) {
         reportsRes.value.data.forEach((r: any) => {
           if (!isVisibleToMdrrmo(r)) return;
           const lat = parseFloat(r.latitude);
           const lng = parseFloat(r.longitude);
-          if (!lat || !lng) return; // skip if no valid coordinates
           const reportStatus = String(r.status || '').toLowerCase();
           const barangayStatus = String(r.barangay_response_status || '').toLowerCase();
-          const mdrrmoStatus = String(r.mdrrmo_response_status || '').toLowerCase();
+          const mdrrmoStatus = String(r.mdrrmo_response_status || r.response_status || '').toLowerCase();
           const reportGroup = getMdrrmoReportGroup(r);
           const isEscalated = reportGroup === 'escalated';
           const mdrrmoCycleStatus = mdrrmoStatus || (isEscalated
@@ -835,6 +865,9 @@ export default function CommandCenter() {
               : isResponding
                 ? 'responding'
                 : 'pending';
+
+          metrics.push({ report_kind: reportGroup, status: stage });
+          if (!lat || !lng) return; // keep coordinate-less reports in the metrics, but not on the map
 
           items.push({
             id: r.id,
@@ -888,6 +921,20 @@ export default function CommandCenter() {
       }
 
       setIncidents(items);
+      setReportMetrics(metrics);
+
+      if (queueRes.status === 'fulfilled' && Array.isArray(queueRes.value.data)) {
+        const enRouteResponderIds = new Set<string>();
+        queueRes.value.data.forEach((report: any) => {
+          if (!Array.isArray(report?.mdrrmo_assignments)) return;
+          report.mdrrmo_assignments.forEach((assignment: any) => {
+            if (assignment?.status === 'responding' && !assignment?.arrived_at && typeof assignment?.responder_id === 'string') {
+              enRouteResponderIds.add(assignment.responder_id);
+            }
+          });
+        });
+        setActiveDispatchCount(enRouteResponderIds.size);
+      }
 
       // Real dispatch units from API
       const unitItems: DispatchUnitItem[] = [];
@@ -983,17 +1030,16 @@ export default function CommandCenter() {
 
   // Stats calculation — real counts, no demo padding
   const stats = useMemo(() => {
-    const incCount = incidents.filter(i => i.report_kind === 'resident' && i.status === 'pending').length;
-    const escCount = incidents.filter(i => i.report_kind === 'escalated' && i.status === 'pending').length;
-    const unitCount = dispatchUnits.length;
-    const resCount = incidents.filter(i => i.status === 'resolved').length;
+    const incCount = reportMetrics.filter(i => i.report_kind === 'resident' && i.status !== 'resolved').length;
+    const escCount = reportMetrics.filter(i => i.report_kind === 'escalated' && i.status !== 'resolved').length;
+    const resCount = reportMetrics.filter(i => i.status === 'resolved').length;
     return {
       incident: incCount,
       escalated: escCount,
-      dispatch: unitCount,
+      dispatch: activeDispatchCount,
       resolved: resCount,
     };
-  }, [incidents, dispatchUnits]);
+  }, [reportMetrics, activeDispatchCount]);
 
   const visibleIncidents = useMemo(() => incidents.filter((incident) => {
     if (incident.report_kind === 'resident' && !filters.incidents) return false;

@@ -2489,7 +2489,7 @@ BEGIN
     RETURN NEW;
   END IF;
 
-  INSERT INTO public.incident_report_lifecycle_history
+  INSERT INTO public.mdrrmo_report_lifecycle_history
     (report_id, event_type, actor_id, actor_role, details)
   VALUES
     (NEW.report_id, v_event_type, v_actor_id, v_actor_role,
