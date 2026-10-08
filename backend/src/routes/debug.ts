@@ -35,11 +35,19 @@ router.get('/accounts', debugOnly, async (req: Request, res: Response) => {
     if (audience === 'barangay') {
       const { data, error } = await supabaseAdmin
         .from('barangay_users')
-        .select('id, full_name, email, role, barangay_id, is_active')
+        .select('id, full_name, email, role, barangay_id, is_active, barangays!barangay_id(name)')
         .eq('is_active', true)
         .order('full_name');
       if (error) throw error;
-      res.json({ accounts: data.map((user) => ({ ...user, audience })) });
+      res.json({
+        accounts: data.map((user: any) => ({
+          ...user,
+          audience,
+          // Flatten so the Flutter client sees `barangay_name` directly
+          barangay_name: (user.barangays as any)?.name ?? null,
+          barangays: undefined,
+        })),
+      });
       return;
     }
     const { data, error } = await supabaseAdmin
