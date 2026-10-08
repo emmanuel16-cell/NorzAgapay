@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Activity, HeartPulse, MapPin, Pencil, Plus, Power, Radio, Search, Shield, Trash2, Users, X, Zap } from 'lucide-react';
-import { respondUnitAPI } from '../lib/api';
+import { officerAPI, respondUnitAPI } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 import './RespondUnitsPage.css';
@@ -27,6 +27,18 @@ interface ResponderAccount {
   full_name: string;
   email: string;
   phone?: string | null;
+  officer_id?: string | null;
+  officer_name?: string | null;
+  officer_specialization?: string | null;
+}
+
+interface OfficerProfile {
+  id: string;
+  name: string;
+  email?: string | null;
+  phone?: string | null;
+  specialization?: string | null;
+  status?: string;
 }
 
 interface RespondUnit {
@@ -77,6 +89,7 @@ export default function RespondUnitsPage() {
   const [units, setUnits] = useState<RespondUnit[]>([]);
   const [selectedId, setSelectedId] = useState('');
   const [leaderAccounts, setLeaderAccounts] = useState<ResponderAccount[]>([]);
+  const [officerProfiles, setOfficerProfiles] = useState<OfficerProfile[]>([]);
   const [leaderAccountsError, setLeaderAccountsError] = useState('');
   const [loading, setLoading] = useState(true);
   const [unitsLoadError, setUnitsLoadError] = useState('');
@@ -122,19 +135,35 @@ export default function RespondUnitsPage() {
 
   useEffect(() => { void fetchUnits(); }, []);
 
-  const openCreate = async () => {
-    setUnitForm({ unit_name: '', specialization: 'mixed', status: 'available', team_leader_user_id: '' });
-    setEditingUnit(null);
+  const loadLeaderAccounts = async (unitId?: string) => {
     setLeaderAccounts([]);
+    setOfficerProfiles([]);
     setLeaderAccountsError('');
-    setSaving(true);
     try {
-      const response = await respondUnitAPI.leaderAccounts();
+      const response = await respondUnitAPI.leaderAccounts(unitId);
       setLeaderAccounts(Array.isArray(response.data.responders) ? response.data.responders : []);
+      setOfficerProfiles(Array.isArray(response.data.officers_without_responder_account)
+        ? response.data.officers_without_responder_account
+        : []);
     } catch (error: any) {
       const message = error.response?.data?.error || 'Could not load active responder accounts.';
       setLeaderAccountsError(message);
+      try {
+        const fallback = await officerAPI.list();
+        setOfficerProfiles((fallback.data.officers || []).filter((officer: OfficerProfile) => officer.status === 'active'));
+      } catch {
+        setOfficerProfiles([]);
+      }
       toast.error(`${message} You can still create the unit and assign a Team Leader later.`);
+    }
+  };
+
+  const openCreate = async () => {
+    setUnitForm({ unit_name: '', specialization: 'mixed', status: 'available', team_leader_user_id: '' });
+    setEditingUnit(null);
+    setSaving(true);
+    try {
+      await loadLeaderAccounts();
     } finally {
       setShowUnitForm(true);
       setSaving(false);
@@ -149,16 +178,9 @@ export default function RespondUnitsPage() {
       status: unit.status || 'available',
       team_leader_user_id: unit.team_leader_user_id || '',
     });
-    setLeaderAccounts([]);
-    setLeaderAccountsError('');
     setSaving(true);
     try {
-      const response = await respondUnitAPI.leaderAccounts(unit.id);
-      setLeaderAccounts(Array.isArray(response.data.responders) ? response.data.responders : []);
-    } catch (error: any) {
-      const message = error.response?.data?.error || 'Could not load active responder accounts.';
-      setLeaderAccountsError(message);
-      toast.error(`${message} Unit details can still be updated.`);
+      await loadLeaderAccounts(unit.id);
     } finally {
       setShowUnitForm(true);
       setSaving(false);
@@ -438,8 +460,8 @@ export default function RespondUnitsPage() {
             <div className="form-group"><label className="form-label">Unit name *</label><input className="form-input" required minLength={2} maxLength={100} placeholder="e.g. Alpha Rescue Team" value={unitForm.unit_name} onChange={(event) => setUnitForm({ ...unitForm, unit_name: event.target.value })} /></div>
             <div className="form-group"><label className="form-label">Specialization *</label><input className="form-input" required maxLength={120} value={unitForm.specialization} onChange={(event) => setUnitForm({ ...unitForm, specialization: event.target.value })} /></div>
             {editingUnit && <div className="form-group"><label className="form-label">Status</label><select className="form-select" value={unitForm.status} onChange={(event) => setUnitForm({ ...unitForm, status: event.target.value })}><option value="available">Available</option><option value="unavailable">Unavailable</option><option value="maintenance">Maintenance</option></select></div>}
-            <div className="form-group"><label className="form-label">Team Leader responder account</label><select className="form-select" value={unitForm.team_leader_user_id} onChange={(event) => setUnitForm({ ...unitForm, team_leader_user_id: event.target.value })}><option value="">Assign a Team Leader later</option>{editingUnit?.team_leader_user_id && !leaderAccounts.some((account) => account.id === editingUnit.team_leader_user_id) && <option value={editingUnit.team_leader_user_id}>{editingUnit.team_leader?.full_name || 'Current Team Leader'}</option>}{leaderAccounts.map((account) => <option key={account.id} value={account.id}>{account.full_name} · {account.email}</option>)}</select>
-              {leaderAccountsError ? <small className="ru-form-warning" role="status">{leaderAccountsError} You can still save the unit and assign the Team Leader later.</small> : leaderAccounts.length === 0 ? <small className="ru-form-warning" role="status">{noLeaderAccountsMessage}</small> : <small className="ru-form-hint">Assign a Team Leader now or later. The unit becomes dispatch-ready after it also has a Driver Responder, a First Aider Responder, and today’s activation.</small>}
+            <div className="form-group"><label className="form-label">Team Leader · MDRRMO mobile responder</label><select className="form-select" value={unitForm.team_leader_user_id} onChange={(event) => setUnitForm({ ...unitForm, team_leader_user_id: event.target.value })}><option value="">Assign a Team Leader later</option>{editingUnit?.team_leader_user_id && !leaderAccounts.some((account) => account.id === editingUnit.team_leader_user_id) && <option value={editingUnit.team_leader_user_id}>{editingUnit.team_leader?.full_name || 'Current Team Leader'}</option>}{leaderAccounts.length > 0 && <optgroup label="Active MDRRMO mobile responder accounts">{leaderAccounts.map((account) => <option key={account.id} value={account.id}>{account.officer_name || account.full_name} · {account.email}</option>)}</optgroup>}{officerProfiles.length > 0 && <optgroup label="MDRRMO Officers without an active mobile account">{officerProfiles.map((officer) => <option key={officer.id} value={`officer-${officer.id}`} disabled>{officer.name}{officer.email ? ` · ${officer.email}` : ''} · account needed</option>)}</optgroup>}</select>
+              {leaderAccountsError ? <small className="ru-form-warning" role="status">{leaderAccountsError} {officerProfiles.length > 0 ? 'Officer profiles are shown below, but they need an active mobile responder account to be assigned as Team Leader.' : ''} You can still create the unit and assign the Team Leader later.</small> : leaderAccounts.length === 0 ? <small className="ru-form-warning" role="status">{officerProfiles.length > 0 ? `Found ${officerProfiles.length} active MDRRMO Officer profile(s), but none has a matching active mobile responder account. Create or activate a responder account with the same email, then retry.` : noLeaderAccountsMessage}</small> : <small className="ru-form-hint">Officer profiles are matched to MDRRMO mobile responder accounts by email. Assign one now or later; the unit also needs a Driver Responder, a First Aider Responder, and today’s activation before dispatch.</small>}
             </div>
             <div className="modal-footer"><button type="button" className="btn btn-outline" onClick={() => { setShowUnitForm(false); setEditingUnit(null); }}>Cancel</button><button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : editingUnit ? 'Save Unit' : 'Create Unit'}</button></div>
           </form>

@@ -141,7 +141,7 @@ async function ensureOfficerForResponder(user: any, specialization: string) {
   const { data: existing, error: lookupError } = await supabaseAdmin
     .from('officers')
     .select('id')
-    .eq('email', user.email)
+    .ilike('email', user.email.trim())
     .limit(1)
     .maybeSingle();
   if (lookupError) throw lookupError;
@@ -244,7 +244,7 @@ router.get('/my-unit', authenticate, authorize('responder'), async (req: AuthReq
 router.get('/leader-accounts', authenticate, authorize('logistics', 'master_admin'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const currentUnitId = typeof req.query.unit_id === 'string' ? req.query.unit_id : '';
-    const [{ data: users, error: usersError }, { data: leaders, error: leadersError }] = await Promise.all([
+    const [{ data: users, error: usersError }, { data: leaders, error: leadersError }, { data: officers, error: officersError }] = await Promise.all([
       supabaseAdmin.from('users')
         .select('id, full_name, email, phone, status')
         .eq('role', 'responder')
@@ -254,16 +254,45 @@ router.get('/leader-accounts', authenticate, authorize('logistics', 'master_admi
         .select('responder_user_id, unit_id')
         .eq('member_role', 'team_leader')
         .eq('is_active', true),
+      supabaseAdmin.from('officers')
+        .select('id, name, email, phone, specialization, status')
+        .eq('status', 'active')
+        .order('name', { ascending: true }),
     ]);
     if (usersError) throw usersError;
     if (leadersError) throw leadersError;
+    if (officersError) throw officersError;
+
     const leaderUnit = new Map((leaders || []).map((row: any) => [row.responder_user_id, row.unit_id]));
+    const officerByEmail = new Map<string, any>();
+    for (const officer of officers || []) {
+      if (officer.email?.trim()) officerByEmail.set(officer.email.trim().toLowerCase(), officer);
+    }
+    const activeResponderEmails = new Set((users || []).map((user: any) => user.email?.trim().toLowerCase()).filter(Boolean));
     const available = (users || []).filter((user: any) => {
       const assignedUnit = leaderUnit.get(user.id);
       return !assignedUnit || assignedUnit === currentUnitId;
+    }).map((user: any) => {
+      const officer = officerByEmail.get(user.email?.trim().toLowerCase());
+      return {
+        ...user,
+        officer_id: officer?.id || null,
+        officer_name: officer?.name || null,
+        officer_specialization: officer?.specialization || null,
+      };
     });
-    res.json({ responders: available });
+    const officersWithoutResponderAccount = (officers || []).filter((officer: any) =>
+      !officer.email?.trim() || !activeResponderEmails.has(officer.email.trim().toLowerCase()),
+    );
+    res.json({ responders: available, officers_without_responder_account: officersWithoutResponderAccount });
   } catch (error: any) {
+    if (['42P01', '42703', 'PGRST204', 'PGRST205', 'PGRST200'].includes(error?.code)) {
+      res.status(503).json({
+        error: 'The Respond Units roster database objects are missing. Apply database/migrations/20261008_respond_units_roster.sql, then retry.',
+        code: 'RESPOND_UNITS_SCHEMA_MISSING',
+      });
+      return;
+    }
     reportDbError(res, error, 'Could not load active responder accounts.');
   }
 });

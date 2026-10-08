@@ -78,16 +78,16 @@ router.get(
           .select('email, specialization');
         const officerSpecMap = new Map<string, string>();
         for (const off of officersList || []) {
-          if (off.email && off.specialization) {
-            officerSpecMap.set(off.email, off.specialization);
+          if (off.email?.trim() && off.specialization) {
+            officerSpecMap.set(off.email.trim().toLowerCase(), off.specialization);
           }
         }
 
         for (const u of userList) {
           if (specMap.has(u.id)) {
             u.unit_type = specMap.get(u.id)!.join(', ');
-          } else if (u.email && officerSpecMap.has(u.email)) {
-            u.unit_type = officerSpecMap.get(u.email);
+          } else if (u.email && officerSpecMap.has(u.email.trim().toLowerCase())) {
+            u.unit_type = officerSpecMap.get(u.email.trim().toLowerCase());
           }
         }
       }
@@ -162,7 +162,7 @@ router.post('/', authenticate, authorize('admin', 'master_admin'), async (req: A
       const { data: existingOfficer, error: officerLookupError } = await supabaseAdmin
         .from('officers')
         .select('id')
-        .eq('email', email)
+        .ilike('email', email)
         .limit(1)
         .maybeSingle();
       if (officerLookupError) throw officerLookupError;
@@ -264,7 +264,7 @@ router.patch('/me/profile', authenticate, async (req: AuthRequest, res: Response
           ...(parsed.data.phone !== undefined ? { phone: user.phone } : {}),
           specialization: user.unit_type || '',
         })
-        .eq('email', user.email);
+        .ilike('email', user.email);
     } else if (parsed.data.full_name !== undefined || parsed.data.phone !== undefined) {
       await supabaseAdmin
         .from('officers')
@@ -272,7 +272,7 @@ router.patch('/me/profile', authenticate, async (req: AuthRequest, res: Response
           ...(parsed.data.full_name !== undefined ? { name: user.full_name } : {}),
           ...(parsed.data.phone !== undefined ? { phone: user.phone } : {}),
         })
-        .eq('email', user.email);
+        .ilike('email', user.email);
     }
 
     res.json({ user });
@@ -366,7 +366,8 @@ router.get('/:id', authenticate, async (req: AuthRequest, res: Response): Promis
         const { data: off } = await supabaseAdmin
           .from('officers')
           .select('specialization')
-          .eq('email', data.email)
+          .ilike('email', data.email)
+          .limit(1)
           .maybeSingle();
         if (off?.specialization) {
           data.unit_type = off.specialization;

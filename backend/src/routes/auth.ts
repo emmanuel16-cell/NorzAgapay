@@ -272,7 +272,8 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
         const { data: off } = await supabaseAdmin
           .from('officers')
           .select('specialization')
-          .eq('email', user.email)
+          .ilike('email', user.email)
+          .limit(1)
           .maybeSingle();
         if (off?.specialization) {
           unitType = off.specialization;
@@ -437,7 +438,8 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response): Promise
         const { data: off } = await supabaseAdmin
           .from('officers')
           .select('specialization')
-          .eq('email', user.email)
+          .ilike('email', user.email)
+          .limit(1)
           .maybeSingle();
         if (off?.specialization) {
           user.unit_type = off.specialization;
