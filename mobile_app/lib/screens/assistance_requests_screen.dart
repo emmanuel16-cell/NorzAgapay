@@ -5,7 +5,12 @@ import '../services/api_service.dart';
 import '../services/socket_service.dart';
 
 class AssistanceRequestsScreen extends StatefulWidget {
-  const AssistanceRequestsScreen({super.key});
+  final String initialFilter;
+
+  const AssistanceRequestsScreen({
+    super.key,
+    this.initialFilter = 'all',
+  });
 
   @override
   State<AssistanceRequestsScreen> createState() => _AssistanceRequestsScreenState();
@@ -20,6 +25,7 @@ class _AssistanceRequestsScreenState extends State<AssistanceRequestsScreen> {
   @override
   void initState() {
     super.initState();
+    _filter = widget.initialFilter;
     _fetchRequests();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -395,10 +401,21 @@ class _AssistanceRequestsScreenState extends State<AssistanceRequestsScreen> {
         statusLabel = _actionedLabel(decision);
         statusIcon = Icons.check_circle;
         break;
+      case 'rejected':
       case 'dismissed':
         statusColor = const Color(0xFF94A3B8);
         statusLabel = 'DISMISSED';
         statusIcon = Icons.cancel;
+        break;
+      case 'cancelled':
+        statusColor = const Color(0xFF64748B);
+        statusLabel = 'CANCELLED';
+        statusIcon = Icons.cancel_outlined;
+        break;
+      case 'fulfilled':
+        statusColor = const Color(0xFF10B981);
+        statusLabel = 'FULFILLED';
+        statusIcon = Icons.check_circle;
         break;
       default:
         statusColor = const Color(0xFFF59E0B);
@@ -547,7 +564,7 @@ class _AssistanceRequestsScreenState extends State<AssistanceRequestsScreen> {
                     child: ElevatedButton.icon(
                       onPressed: () => _handleDecide(req),
                       icon: const Icon(Icons.gavel, size: 18),
-                      label: const Text('Decide / Respond',
+                      label: const Text('Decide Now',
                           style: TextStyle(fontWeight: FontWeight.bold)),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF0284C7),

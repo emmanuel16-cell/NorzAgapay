@@ -28,10 +28,9 @@ class _ReportsScreenState extends State<ReportsScreen>
   bool _isLoading = true;
   String? _errorMessage;
 
-  // Assistance requests map keyed by incident_report_id (for Dispatcher & Responder)
+  // One request per incident card; the complete list is available from the queue.
   Map<String, Map<String, dynamic>> _assistanceMap = {};
-  int get _pendingAssistanceCount =>
-      _assistanceMap.values.where((r) => r['status'] == 'pending').length;
+  int _pendingAssistanceCount = 0;
   // Track which cards are expanded for assistance details
   final Set<String> _expandedAssistance = {};
   SocketService? _socketService;
@@ -164,7 +163,8 @@ class _ReportsScreenState extends State<ReportsScreen>
           );
         }
         if (auth.currentUser?.isDispatcher == true ||
-            auth.currentUser?.isResponder == true) {
+            auth.currentUser?.isResponder == true ||
+            auth.currentUser?.isBarangayAdmin == true) {
           _fetchAssistanceRequests(auth.token!);
         }
       }
@@ -197,10 +197,11 @@ class _ReportsScreenState extends State<ReportsScreen>
     final auth = Provider.of<AuthService>(context, listen: false);
     final isDispatcher = auth.currentUser?.isDispatcher == true;
     final isResponder = auth.currentUser?.isResponder == true;
+    final isBarangayAdmin = auth.currentUser?.isBarangayAdmin == true;
 
     try {
       List<Map<String, dynamic>> list = [];
-      if (isDispatcher) {
+      if (isDispatcher || isBarangayAdmin) {
         list = await ApiService.getAssistanceRequests(token);
       } else if (isResponder) {
         list = await ApiService.getMyAssistanceRequests(token);
@@ -219,11 +220,21 @@ class _ReportsScreenState extends State<ReportsScreen>
       final Map<String, Map<String, dynamic>> map = {};
       for (final req in list) {
         final incidentId = req['incident_report_id'] as String?;
-        if (incidentId != null) {
-          map.putIfAbsent(incidentId, () => req);
+        if (incidentId == null) continue;
+
+        final current = map[incidentId];
+        if (current == null ||
+            (current['status'] != 'pending' && req['status'] == 'pending')) {
+          map[incidentId] = req;
         }
       }
-      if (mounted) setState(() => _assistanceMap = map);
+      final pendingCount = list.where((req) => req['status'] == 'pending').length;
+      if (mounted) {
+        setState(() {
+          _assistanceMap = map;
+          _pendingAssistanceCount = pendingCount;
+        });
+      }
     } catch (_) {}
   }
 
@@ -311,10 +322,19 @@ class _ReportsScreenState extends State<ReportsScreen>
               ],
             ),
             onPressed: () {
+              final currentAuth = Provider.of<AuthService>(
+                context,
+                listen: false,
+              );
+              final canReview =
+                  currentAuth.currentUser?.isDispatcher == true ||
+                  currentAuth.currentUser?.isBarangayAdmin == true;
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => const AssistanceRequestsScreen(),
+                  builder: (_) => AssistanceRequestsScreen(
+                    initialFilter: canReview ? 'pending' : 'all',
+                  ),
                 ),
               ).then((_) {
                 final auth = Provider.of<AuthService>(context, listen: false);
@@ -520,6 +540,8 @@ class _ReportsScreenState extends State<ReportsScreen>
 
   Widget _buildReportCard(IncidentReport report, AuthService auth) {
     final isDispatcher = auth.currentUser?.isDispatcher == true;
+    final canReviewAssistance =
+        isDispatcher || auth.currentUser?.isBarangayAdmin == true;
     final isResponder = auth.currentUser?.isResponder == true;
     final typeColor = report.isEmergency
         ? const Color(0xFFEF4444)
@@ -536,7 +558,7 @@ class _ReportsScreenState extends State<ReportsScreen>
     }
 
     // Check if there's an assistance request for this report (Dispatcher or Responder)
-    final assistanceReq = (isDispatcher || isResponder)
+    final assistanceReq = (canReviewAssistance || isResponder)
         ? _assistanceMap[report.id]
         : null;
     final hasAssistance = assistanceReq != null;
@@ -570,7 +592,7 @@ class _ReportsScreenState extends State<ReportsScreen>
                 report.id,
                 assistanceData,
                 isExpanded,
-                isDispatcher,
+                canReviewAssistance,
                 isResponder,
               )
             : null,
@@ -802,7 +824,7 @@ class _ReportsScreenState extends State<ReportsScreen>
               report.id,
               assistanceData,
               isExpanded,
-              isDispatcher,
+              canReviewAssistance,
               isResponder,
             ),
         ],
