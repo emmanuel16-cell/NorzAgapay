@@ -3697,6 +3697,27 @@ tbody tr:last-child td { border-bottom: none; }
 .assistance-status-chip.detail { padding: 8px 14px; font-size: 13px; }
 .assistance-request-detail-text { margin-top: 11px; }
 .assistance-request-actions { flex: 0 0 auto; }
+.assistance-history-list { display: flex; flex-direction: column; gap: 10px; }
+.assistance-history-card { overflow: hidden; border: 1px solid #263f6a; border-radius: 10px; background: #f8fafc; color: #0f172a; }
+.assistance-history-card > header { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 13px; border-bottom: 1px solid #dbe4f0; }
+.assistance-history-card > header > div { display: flex; align-items: center; gap: 8px; }
+.assistance-history-card > header strong { color: #1e293b; font-size: 14px; }
+.assistance-history-sos { color: #d97706; font-size: 12px; font-weight: 900; }
+.assistance-history-card .assistance-status-chip { color: #0f766e; background: #d1fae5; border-color: #6ee7b7; }
+.assistance-history-card .assistance-status-chip.pending { color: #b45309; background: #fef3c7; border-color: #fcd34d; }
+.assistance-history-card .assistance-status-chip.rejected { color: #b91c1c; background: #fee2e2; border-color: #fca5a5; }
+.assistance-history-entry { display: flex; flex-direction: column; align-items: flex-start; gap: 7px; padding: 12px 14px; }
+.assistance-history-entry + .assistance-history-entry { border-top: 1px solid #dbe4f0; }
+.assistance-history-entry > strong { color: #1b4f72; font-size: 13px; }
+.assistance-history-meta { display: flex; flex-wrap: wrap; justify-content: space-between; width: 100%; gap: 5px 12px; color: #64748b; font-size: 12px; }
+.assistance-history-entry p { margin: 0; color: #475569; font-size: 13px; line-height: 1.5; white-space: pre-wrap; }
+.assistance-history-entry time { color: #64748b; font-size: 11px; }
+.assistance-history-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.assistance-history-tags span, .assistance-decision-badge { padding: 4px 8px; border: 1px solid #fca5a5; border-radius: 6px; color: #dc2626; background: #fee2e2; font-size: 11px; font-weight: 700; }
+.assistance-decision-badge.provided { border-color: #6ee7b7; color: #047857; background: #d1fae5; }
+.assistance-decision-badge.coordination { border-color: #fca5a5; color: #dc2626; background: #fee2e2; }
+.assistance-decision-badge.rejected { border-color: #fca5a5; color: #b91c1c; background: #fee2e2; }
+.assistance-request-history-count { color: #91add9; text-align: center; }
 .reports-page-header-v2 {
   flex: 0 0 var(--header-height);
   display: flex;

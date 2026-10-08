@@ -155,7 +155,14 @@ interface AssistanceRequestItem {
   details: string;
   status: string;
   created_at: string;
+  decision?: string | null;
+  dispatcher_notes?: string | null;
   requested_by_user?: { full_name?: string; role?: string; unit_type?: string | null; phone?: string | null } | null;
+}
+
+function requestTimestamp(request: AssistanceRequestItem): number {
+  const timestamp = Date.parse(request.created_at);
+  return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
 const MDRRMO_DISPATCH_INCIDENT_TYPES = [
@@ -286,6 +293,10 @@ function ResponderAssessmentPanel({
   showTitle?: boolean;
 }) {
   const navigate = useNavigate();
+  const latestAssistanceRequest = assistanceRequests.reduce<AssistanceRequestItem | null>(
+    (latest, request) => !latest || requestTimestamp(request) > requestTimestamp(latest) ? request : latest,
+    null,
+  );
 
   return (
     <div className="responder-detail-panel">
@@ -320,19 +331,22 @@ function ResponderAssessmentPanel({
         </div>
       ) : (
         <div className="assistance-request-list">
-          {assistanceRequestLoading ? <div className="assistance-request-card"><strong>Assistance Request</strong><span>Loading assistance requests…</span></div> : assistanceRequests.length ? assistanceRequests.map((request) => (
+          {assistanceRequestLoading ? <div className="assistance-request-card"><strong>Assistance Request</strong><span>Loading assistance requests…</span></div> : latestAssistanceRequest ? [latestAssistanceRequest].map((request) => (
             <div className="assistance-request-card" key={request.id}>
-              <strong>Assistance Request</strong>
+              <strong>Latest Assistance Request</strong>
               <div className="assistance-request-card-facts">
                 <span><small>Type</small><b>{request.request_type === 'responders' ? 'Responders' : request.request_type.replaceAll('_', ' ')}</b></span>
                 {request.sub_type && <span><small>Category</small><b>{request.sub_type.replaceAll('_', ' ')}</b></span>}
                 <span><small>Status</small><b>{request.status.replaceAll('_', ' ')}</b></span>
+                {request.decision && <span><small>Decision</small><b>{request.decision.replaceAll('_', ' ')}</b></span>}
                 <span><small>Requested</small><b>{new Date(request.created_at).toLocaleString()}</b></span>
               </div>
               <p>{request.details}</p>
+              {request.dispatcher_notes && <p><b>Dispatcher notes:</b> {request.dispatcher_notes}</p>}
               {request.requested_by_user && <small>Requested by {request.requested_by_user.full_name || 'Responder'}{request.requested_by_user.phone ? ` · ${request.requested_by_user.phone}` : ''}</small>}
             </div>
           )) : <div className="assistance-request-card"><strong>Assistance Request</strong><span>No assistance request details provided.</span></div>}
+          {assistanceRequests.length > 1 && <small className="assistance-request-history-count">Showing the latest of {assistanceRequests.length} requests.</small>}
           <button type="button" className="assistance-request-view-all" onClick={() => navigate(`/requests?incident_id=${encodeURIComponent(incident.id)}`)}>
             View all assistance requests
           </button>

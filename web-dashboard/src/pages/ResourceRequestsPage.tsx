@@ -37,6 +37,15 @@ interface AssistanceRequest {
   incident_id: string;
   requested_by: string;
   created_at: string;
+  source?: 'mdrrmo' | 'barangay' | 'resident';
+  explanation?: string | null;
+  decision?: string | null;
+  dispatcher_notes?: string | null;
+  decided_at?: string | null;
+  needs_more_manpower?: boolean;
+  needs_resources?: boolean;
+  needs_equipment?: boolean;
+  beyond_barangay_capability?: boolean;
   requested_by_user?: {
     full_name?: string;
     role?: string;
@@ -65,6 +74,15 @@ function statusLabel(status?: string): string {
 function requestTypeLabel(type?: string, subType?: string | null): string {
   const typeLabel = type === 'responders' ? 'Responders' : statusLabel(type);
   return subType ? `${typeLabel} · ${statusLabel(subType)}` : typeLabel;
+}
+
+function coordinationLabel(request: AssistanceRequest): string {
+  if (request.decision === 'provide_barangay_assistance') return 'Provided assistance';
+  if (request.decision === 'coordinate_mdrrmo') return 'MDRRMO coordination';
+  if (request.decision === 'dismissed' || request.status === 'rejected') return 'Rejected';
+  if (request.status === 'fulfilled') return 'Provided';
+  if (request.status === 'approved') return 'Approved';
+  return statusLabel(request.status);
 }
 
 function requestReportGroup(request: AssistanceRequest): MdrrmoReportGroup {
@@ -126,6 +144,11 @@ export default function ResourceRequestsPage() {
   const escalatedCount = useMemo(() => requests.filter((request) => requestReportGroup(request) === 'escalated').length, [requests]);
   const visibleRequests = useMemo(() => requests.filter((request) => requestReportGroup(request) === group), [requests, group]);
   const selected = visibleRequests.find((request) => request.id === selectedId) || visibleRequests[0] || null;
+  const selectedHistory = useMemo(() => selected
+    ? requests
+      .filter((request) => request.incident_id === selected.incident_id)
+      .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+    : [], [requests, selected?.incident_id]);
 
   useEffect(() => {
     if (!requests.length) return;
@@ -253,6 +276,53 @@ export default function ResourceRequestsPage() {
                     <section className="reports-detail-section-v2"><h3>Location</h3><div className="reports-location-card-v2"><MapPin size={20} /><div><strong>{selected.incident_report.barangay_name || selected.incident_report.address || 'Location not provided'}</strong><span>{selected.incident_report.address || selected.incident_report.title || 'Linked incident report'}</span></div></div></section>
                   </>
                 )}
+
+                <section className="reports-detail-section-v2 assistance-history-section">
+                  <div className="reports-section-heading-v2">
+                    <h3>Request &amp; coordination log</h3>
+                    <span>{selectedHistory.length} {selectedHistory.length === 1 ? 'request' : 'requests'}</span>
+                  </div>
+                  {selectedHistory.length ? (
+                    <div className="assistance-history-list">
+                      {selectedHistory.map((request) => {
+                        const hasDispatcherResponse = Boolean(request.decision || request.dispatcher_notes) || request.status !== 'pending';
+                        const categoryTags = [
+                          request.needs_more_manpower ? 'Manpower' : null,
+                          request.needs_resources ? 'Resources' : null,
+                          request.needs_equipment ? 'Equipment' : null,
+                          request.beyond_barangay_capability ? 'Needs MDRRMO' : null,
+                        ].filter((tag): tag is string => Boolean(tag));
+                        return (
+                          <article className="assistance-history-card" key={request.id}>
+                            <header>
+                              <div><span className="assistance-history-sos">SOS</span><strong>Assistance Request</strong></div>
+                              <span className={`assistance-status-chip ${request.status}`}>{hasDispatcherResponse ? coordinationLabel(request) : 'Pending'}</span>
+                            </header>
+                            <div className="assistance-history-entry">
+                              <strong>From: {request.requested_by_user?.full_name || 'Responder'}</strong>
+                              <div className="assistance-history-meta">
+                                <span>{requestTypeLabel(request.request_type, request.sub_type)}</span>
+                                <time>{dateTime(request.created_at)}</time>
+                              </div>
+                              {categoryTags.length > 0 && <div className="assistance-history-tags">{categoryTags.map((tag) => <span key={tag}>{tag}</span>)}</div>}
+                              <p>{request.explanation || request.details || 'No request details provided.'}</p>
+                            </div>
+                            {hasDispatcherResponse && (
+                              <div className="assistance-history-entry dispatcher">
+                                <strong>From: Dispatcher</strong>
+                                <span className={`assistance-decision-badge ${request.decision === 'coordinate_mdrrmo' ? 'coordination' : request.decision === 'dismissed' || request.status === 'rejected' ? 'rejected' : 'provided'}`}>
+                                  {coordinationLabel(request)}
+                                </span>
+                                {request.dispatcher_notes && <p>{request.dispatcher_notes}</p>}
+                                {request.decided_at && <time>{dateTime(request.decided_at)}</time>}
+                              </div>
+                            )}
+                          </article>
+                        );
+                      })}
+                    </div>
+                  ) : <div className="reports-no-media-v2">No request history is available for this incident.</div>}
+                </section>
               </div>
 
               {(selected.status === 'pending' || selected.status === 'approved') && (
