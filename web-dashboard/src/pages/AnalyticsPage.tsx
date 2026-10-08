@@ -19,7 +19,11 @@ export default function AnalyticsPage() {
 
   if (loading) return <div className="loading-overlay"><div className="spinner"/></div>;
 
-  const topResponders = [...responders].sort((a,b) => b.completedTasks - a.completedTasks).slice(0,10);
+  const topResponders = [...responders].sort((a, b) =>
+    (b.totalDeployments || 0) - (a.totalDeployments || 0) ||
+    (b.resolvedDeployments || 0) - (a.resolvedDeployments || 0) ||
+    String(a.full_name || '').localeCompare(String(b.full_name || ''))
+  ).slice(0, 10);
 
   return (
     <>
@@ -60,21 +64,21 @@ export default function AnalyticsPage() {
           ) : (
             <div className="table-container" style={{border:'none'}}>
               <table>
-                <thead><tr><th>Name</th><th>Role</th><th>Total Tasks</th><th>Completed</th><th>Completion Rate</th></tr></thead>
+                <thead><tr><th>Name</th><th>Role</th><th>Total Deployments</th><th>Resolved</th><th>Resolution Rate</th></tr></thead>
                 <tbody>
                   {topResponders.map(v => (
                     <tr key={v.id}>
                       <td style={{fontWeight:600,color:'var(--text-primary)'}}>{v.full_name}</td>
-                      <td><span className="badge badge-low">{v.role.replace(/_/g,' ')}</span></td>
-                      <td>{v.totalTasks}</td>
-                      <td>{v.completedTasks}</td>
+                      <td><span className="badge badge-low">{String(v.role || '').replace(/_/g,' ')}</span></td>
+                      <td>{v.totalDeployments || 0}</td>
+                      <td>{v.resolvedDeployments || 0}</td>
                       <td>
                         <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
                           <div style={{flex:1,height:'6px',background:'var(--bg-primary)',borderRadius:'3px',overflow:'hidden'}}>
-                            <div style={{width:`${v.totalTasks ? (v.completedTasks/v.totalTasks)*100 : 0}%`,height:'100%',background:'var(--success)',borderRadius:'3px',transition:'width 0.5s ease'}}/>
+                            <div style={{width:`${v.totalDeployments ? (v.resolvedDeployments/v.totalDeployments)*100 : 0}%`,height:'100%',background:'var(--success)',borderRadius:'3px',transition:'width 0.5s ease'}}/>
                           </div>
                           <span style={{fontSize:'12px',color:'var(--text-muted)'}}>
-                            {v.totalTasks ? Math.round((v.completedTasks/v.totalTasks)*100) : 0}%
+                            {v.totalDeployments ? Math.round((v.resolvedDeployments/v.totalDeployments)*100) : 0}%
                           </span>
                         </div>
                       </td>
