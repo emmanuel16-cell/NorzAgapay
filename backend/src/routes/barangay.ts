@@ -2541,8 +2541,24 @@ router.post('/assistance-requests', authenticateBarangay, requireRole(['responde
       const currentNotes = linkedReport.response_notes || '';
       const assignedMatch = currentNotes.match(/^\[ASSIGNED:([^\]]+)\]/);
       const assignedIds = assignedMatch ? assignedMatch[1].split(',').map((id: string) => id.trim()) : [];
-      if (linkedReport.responded_by !== req.barangayUser.userId && !assignedIds.includes(req.barangayUser.userId)) {
-        res.status(403).json({ error: 'You can only request escalation for an incident assigned to your responder account.' });
+      const isPrimaryResponder = linkedReport.responded_by === req.barangayUser.userId;
+      const isInAssignedList = assignedIds.includes(req.barangayUser.userId);
+
+      // Also check the barangay_report_assignments table (multi-responder dispatch)
+      let isAssignedViaTable = false;
+      if (!isPrimaryResponder && !isInAssignedList) {
+        const { data: assignment } = await supabaseAdmin
+          .from('barangay_report_assignments')
+          .select('id')
+          .eq('report_id', linkedReportId)
+          .eq('responder_id', req.barangayUser.userId)
+          .in('status', ['assigned', 'responding'])
+          .maybeSingle();
+        isAssignedViaTable = Boolean(assignment);
+      }
+
+      if (!isPrimaryResponder && !isInAssignedList && !isAssignedViaTable) {
+        res.status(403).json({ error: 'You can only request assistance for an incident assigned to your responder account.' });
         return;
       }
       linkedReportTitle = linkedReport.title || linkedReportTitle;
@@ -2566,12 +2582,14 @@ router.post('/assistance-requests', authenticateBarangay, requireRole(['responde
       .single();
 
     if (error) {
-      console.error('Create assistance request error:', error);
-      res.status(500).json({ error: 'Failed to submit assistance request.' });
+      console.error('Create assistance request error:', JSON.stringify(error));
+      // Surface the Supabase error code so the client can distinguish reasons
+      // (e.g. 42P01 = table not found, 23514 = check constraint, etc.)
+      res.status(500).json({ error: 'Failed to submit assistance request.', code: (error as any).code });
       return;
     }
 
-// Notify dispatcher via socket
+    // Notify dispatcher via socket
     io.to(`barangay:${req.barangayUser.barangayId}`).emit('assistance:new_request', { request: data });
 
     res.status(201).json({ message: 'Assistance request submitted successfully.', request: data });

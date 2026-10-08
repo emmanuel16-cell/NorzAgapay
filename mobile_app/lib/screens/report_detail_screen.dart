@@ -1768,9 +1768,14 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
       }
       setState(() => _isProcessing = true);
       final auth = Provider.of<AuthService>(context, listen: false);
+      final token = auth.token;
+      if (token == null) {
+        if (mounted) setState(() => _isProcessing = false);
+        return;
+      }
       try {
         await ApiService.submitAssistanceRequest(
-          auth.token!,
+          token,
           incidentReportId: _report.id,
           incidentTitle: _report.title,
           needsMoreManpower: needsManpower,
