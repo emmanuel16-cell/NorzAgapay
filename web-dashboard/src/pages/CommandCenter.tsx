@@ -1609,7 +1609,7 @@ export default function CommandCenter() {
                 {selectedIncident.status === 'pending' && <div className="selection-actions">
                   <button className="selection-invalid-btn" onClick={() => setInvalidReviewStep('choice')}>Invalid Report</button>
                   {!selectedIncident.mdrrmo_dispatched && (
-                    <button className="selection-dispatch-btn" onClick={() => handleDispatch()} disabled={dispatching}>
+                    <button type="button" className="selection-dispatch-btn" onClick={() => handleDispatch()} disabled={dispatching}>
                       {dispatching ? 'Dispatching…' : 'Dispatch'}
                     </button>
                   )}
@@ -1871,7 +1871,7 @@ export default function CommandCenter() {
 
                 {selectedIncident.status === 'pending' && !selectedIncident.mdrrmo_dispatched && (
                   <div className="selection-actions escalated-selection-actions">
-                    <button className="selection-dispatch-btn" onClick={() => handleDispatch()} disabled={dispatching}>
+                    <button type="button" className="selection-dispatch-btn" onClick={() => handleDispatch()} disabled={dispatching}>
                       {dispatching ? 'Dispatching…' : 'Dispatch'}
                     </button>
                   </div>

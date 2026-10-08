@@ -488,6 +488,15 @@ const dispatchMdrrmoReport = async (req: AuthRequest, res: Response): Promise<vo
       res.status(404).json({ error: 'MDRRMO report or dispatch assignment was not found.' });
       return;
     }
+    if (err?.code === '23503' && dispatchStage === 'persist_dispatch') {
+      res.status(503).json({
+        error: 'The dispatch assignment foreign key is out of date. Apply database/migrations/mdrrmo_report_assignment_canonical_fk_migration.sql, then retry.',
+        code: 'MDRRMO_ASSIGNMENT_REPORT_FK_OUTDATED',
+        stage: dispatchStage,
+        cause_code: err.code,
+      });
+      return;
+    }
     if (err?.code === '23514' || err?.code === '22023') {
       res.status(409).json({ error: err.message || 'The report or response unit is no longer eligible for dispatch.' });
       return;
