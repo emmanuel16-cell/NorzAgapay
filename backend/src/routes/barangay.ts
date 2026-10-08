@@ -2529,7 +2529,7 @@ router.post('/assistance-requests', authenticateBarangay, requireRole(['responde
     if (linkedReportId) {
       const { data: linkedReport, error: linkedReportError } = await supabaseAdmin
         .from('barangay_reports')
-        .select('id, title, responded_by, barangay_responded_by, response_notes, barangay_response_notes')
+        .select('id, title, responded_by, response_notes')
         .eq('id', linkedReportId)
         .eq('barangay_id', req.barangayUser.barangayId)
         .maybeSingle();
@@ -2538,12 +2538,10 @@ router.post('/assistance-requests', authenticateBarangay, requireRole(['responde
         res.status(404).json({ error: 'Linked incident report was not found in this barangay.' });
         return;
       }
-      const currentNotes = [linkedReport.response_notes, linkedReport.barangay_response_notes].filter(Boolean).join(' ');
+      const currentNotes = linkedReport.response_notes || '';
       const assignedMatch = currentNotes.match(/^\[ASSIGNED:([^\]]+)\]/);
       const assignedIds = assignedMatch ? assignedMatch[1].split(',').map((id: string) => id.trim()) : [];
-      const isPrimaryResponder =
-        linkedReport.responded_by === req.barangayUser.userId ||
-        linkedReport.barangay_responded_by === req.barangayUser.userId;
+      const isPrimaryResponder = linkedReport.responded_by === req.barangayUser.userId;
       const isInAssignedList = assignedIds.includes(req.barangayUser.userId);
       const hasResponderNameInNotes = Boolean(
         req.barangayUser.fullName &&
