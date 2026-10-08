@@ -422,7 +422,11 @@ router.post('/:id/dispatch', authenticate, authorize('dispatcher', 'admin'), dis
 router.patch('/:id/dispatch', authenticate, authorize('dispatcher', 'admin'), dispatchMdrrmoReport);
 router.get('/:id/dispatch', (_req, res) => {
   res.setHeader('Allow', 'POST, PATCH');
-  res.status(405).json({ error: 'Dispatch requires an authenticated POST request. Open the report in Command Center and use Dispatch.' });
+  res.setHeader('Cache-Control', 'no-store');
+  res.status(405).json({
+    error: 'This dashboard version sent GET for a dispatch action. Update or hard-refresh the dashboard; dispatch requires POST.',
+    code: 'MDRRMO_DISPATCH_CLIENT_OUTDATED',
+  });
 });
 
 async function findAssignment(reportId: string, responderId: string) {
