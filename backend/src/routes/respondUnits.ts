@@ -469,6 +469,19 @@ router.put('/:id/team-leader', authenticate, authorize('logistics', 'master_admi
   }
 });
 
+router.delete('/:id/team-leader', authenticate, authorize('logistics', 'master_admin'), async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { error } = await supabaseAdmin.rpc('clear_respond_unit_team_leader_v1', {
+      p_unit_id: req.params.id,
+    });
+    if (error) throw error;
+    await syncLegacyOfficerIds(req.params.id);
+    res.json({ unit: (await getUnitDetails([req.params.id]))[0] });
+  } catch (error: any) {
+    reportDbError(res, error, 'Could not clear the Team Leader.');
+  }
+});
+
 router.post('/:id/members', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const isStaff = req.user!.role === 'logistics' || req.user!.role === 'master_admin';
@@ -618,7 +631,9 @@ router.delete('/:id/members/:memberId', authenticate, authorize('logistics', 'ma
 
 router.delete('/:id', authenticate, authorize('logistics', 'master_admin'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { error } = await supabaseAdmin.from('respond_units').delete().eq('id', req.params.id);
+    const { error } = await supabaseAdmin.rpc('delete_empty_respond_unit_v1', {
+      p_unit_id: req.params.id,
+    });
     if (error) throw error;
     res.status(204).send();
   } catch (error: any) {

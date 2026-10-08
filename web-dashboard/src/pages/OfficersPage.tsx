@@ -148,8 +148,6 @@ export default function OfficersPage() {
               <thead>
                 <tr>
                   <th>Name</th>
-                  <th>Phone</th>
-                  <th>Email</th>
                   <th>Specialization</th>
                   <th>Rank</th>
                   <th>Status</th>
@@ -160,8 +158,6 @@ export default function OfficersPage() {
                 {filteredOfficers.map(officer => (
                   <tr key={officer.id}>
                     <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{officer.name}</td>
-                    <td>{officer.phone || '—'}</td>
-                    <td>{officer.email || '—'}</td>
                     <td>
                       <span className="badge badge-open" style={{ fontSize: '11px' }}>
                         {SPECIALIZATIONS.find(s => s.value === officer.specialization)?.label || officer.specialization}

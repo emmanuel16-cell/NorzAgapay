@@ -105,7 +105,8 @@ interface DispatchUnitItem {
 interface MdrrmoDispatchResponder {
   id: string;
   full_name: string;
-  phone?: string | null;
+  unit_name?: string | null;
+  officer_name?: string | null;
 }
 
 interface LiveResponderAssignment {
@@ -1174,7 +1175,7 @@ export default function CommandCenter() {
       });
       const assignedNames = mdrrmoDispatchResponders
         .filter((responder) => selectedMdrrmoResponderIds.includes(responder.id))
-        .map((responder) => responder.full_name)
+        .map((responder) => responder.officer_name || responder.full_name)
         .join(', ');
       toast.success(selectedMdrrmoResponderIds.length === 1
         ? `Dispatched to ${assignedNames}. The report is in their pending queue.`
@@ -2178,8 +2179,8 @@ export default function CommandCenter() {
                           disabled={dispatching}
                         />
                         <span>
-                          <strong>{responder.full_name}</strong>
-                          {responder.phone && <small>{responder.phone}</small>}
+                          <strong>{responder.officer_name || responder.full_name}</strong>
+                          <small>{responder.unit_name || 'Response unit'}{responder.officer_name && responder.officer_name !== responder.full_name ? ` · Mobile account: ${responder.full_name}` : ''}</small>
                         </span>
                       </label>
                     ))}

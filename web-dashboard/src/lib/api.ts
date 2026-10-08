@@ -146,6 +146,7 @@ export const respondUnitAPI = {
   create: (data: any) => api.post('/respond-units', data),
   update: (id: string, data: any) => api.patch(`/respond-units/${id}`, data),
   assignLeader: (id: string, responder_user_id: string) => api.put(`/respond-units/${id}/team-leader`, { responder_user_id }),
+  clearLeader: (id: string) => api.delete(`/respond-units/${id}/team-leader`),
   addMember: (id: string, data: { name: string; phone?: string; member_role: string }) => api.post(`/respond-units/${id}/members`, data),
   updateMember: (id: string, memberId: string, data: Record<string, unknown>) => api.patch(`/respond-units/${id}/members/${memberId}`, data),
   removeMember: (id: string, memberId: string) => api.delete(`/respond-units/${id}/members/${memberId}`),

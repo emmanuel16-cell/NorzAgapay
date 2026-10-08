@@ -216,6 +216,24 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
     final userId = auth.user?.id;
     if (token == null || userId == null || !auth.isTeamLeader) return;
 
+    try {
+      await auth.fetchMyUnit(rethrowErrors: true);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.toString().replaceFirst('Exception: ', ''))),
+        );
+      }
+      return;
+    }
+    if (!mounted) return;
+    if (!auth.isTeamLeader) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Only the current Team Leader can accept this dispatch.')),
+      );
+      return;
+    }
+
     final eligibleMembers = auth.unitMembers.where((member) {
       final role = member['member_role']?.toString();
       return member['unit_member_id'] != null &&

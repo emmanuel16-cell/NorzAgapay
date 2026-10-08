@@ -95,6 +95,7 @@ export default function RespondUnitsPage() {
   const [unitsLoadError, setUnitsLoadError] = useState('');
   const [saving, setSaving] = useState(false);
   const [activatingAll, setActivatingAll] = useState(false);
+  const [deletingUnit, setDeletingUnit] = useState(false);
   const [query, setQuery] = useState('');
   const [showUnitForm, setShowUnitForm] = useState(false);
   const [editingUnit, setEditingUnit] = useState<RespondUnit | null>(null);
@@ -199,6 +200,8 @@ export default function RespondUnitsPage() {
         });
         if (unitForm.team_leader_user_id && editingUnit.team_leader_user_id !== unitForm.team_leader_user_id) {
           await respondUnitAPI.assignLeader(editingUnit.id, unitForm.team_leader_user_id);
+        } else if (!unitForm.team_leader_user_id && editingUnit.team_leader_user_id) {
+          await respondUnitAPI.clearLeader(editingUnit.id);
         }
         toast.success('Respond unit updated.');
       } else {
@@ -219,6 +222,23 @@ export default function RespondUnitsPage() {
       toast.error(error.response?.data?.error || 'Could not save the respond unit.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const deleteUnit = async () => {
+    if (!editingUnit || editingUnit.members.length > 0 || deletingUnit) return;
+    if (!window.confirm(`Delete ${editingUnit.unit_name}? Only an empty unit can be deleted. This action cannot be undone.`)) return;
+    setDeletingUnit(true);
+    try {
+      await respondUnitAPI.delete(editingUnit.id);
+      toast.success('Respond unit deleted.');
+      setShowUnitForm(false);
+      setEditingUnit(null);
+      await fetchUnits();
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || 'Could not delete the respond unit.');
+    } finally {
+      setDeletingUnit(false);
     }
   };
 
@@ -463,7 +483,13 @@ export default function RespondUnitsPage() {
             <div className="form-group"><label className="form-label">Team Leader · MDRRMO mobile responder</label><select className="form-select" value={unitForm.team_leader_user_id} onChange={(event) => setUnitForm({ ...unitForm, team_leader_user_id: event.target.value })}><option value="">Assign a Team Leader later</option>{editingUnit?.team_leader_user_id && !leaderAccounts.some((account) => account.id === editingUnit.team_leader_user_id) && <option value={editingUnit.team_leader_user_id}>{editingUnit.team_leader?.full_name || 'Current Team Leader'}</option>}{leaderAccounts.length > 0 && <optgroup label="Active MDRRMO mobile responder accounts">{leaderAccounts.map((account) => <option key={account.id} value={account.id}>{account.officer_name || account.full_name} · {account.email}</option>)}</optgroup>}{officerProfiles.length > 0 && <optgroup label="MDRRMO Officers without an active mobile account">{officerProfiles.map((officer) => <option key={officer.id} value={`officer-${officer.id}`} disabled>{officer.name}{officer.email ? ` · ${officer.email}` : ''} · account needed</option>)}</optgroup>}</select>
               {leaderAccountsError ? <small className="ru-form-warning" role="status">{leaderAccountsError} {officerProfiles.length > 0 ? 'Officer profiles are shown below, but they need an active mobile responder account to be assigned as Team Leader.' : ''} You can still create the unit and assign the Team Leader later.</small> : leaderAccounts.length === 0 ? <small className="ru-form-warning" role="status">{officerProfiles.length > 0 ? `Found ${officerProfiles.length} active MDRRMO Officer profile(s), but none has a matching active mobile responder account. Create or activate a responder account with the same email, then retry.` : noLeaderAccountsMessage}</small> : <small className="ru-form-hint">Officer profiles are matched to MDRRMO mobile responder accounts by email. Assign one now or later; the unit also needs a Driver Responder, a First Aider Responder, and today’s activation before dispatch.</small>}
             </div>
-            <div className="modal-footer"><button type="button" className="btn btn-outline" onClick={() => { setShowUnitForm(false); setEditingUnit(null); }}>Cancel</button><button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : editingUnit ? 'Save Unit' : 'Create Unit'}</button></div>
+            <div className="modal-footer">
+              {editingUnit && <button type="button" className="btn btn-danger ru-delete-unit" onClick={() => void deleteUnit()} disabled={saving || deletingUnit || editingUnit.members.length > 0}><Trash2 size={15} /> {deletingUnit ? 'Deleting…' : 'Delete Unit'}</button>}
+              <button type="button" className="btn btn-outline" onClick={() => { setShowUnitForm(false); setEditingUnit(null); }} disabled={saving || deletingUnit}>Cancel</button>
+              <button type="submit" className="btn btn-primary" disabled={saving || deletingUnit}>{saving ? 'Saving…' : editingUnit ? 'Save Unit' : 'Create Unit'}</button>
+            </div>
+            {editingUnit && editingUnit.members.length > 0 && <small className="ru-form-warning" role="status">Remove all active roster members and clear the Team Leader before deleting this unit.</small>}
+            {editingUnit && editingUnit.members.length === 0 && <small className="ru-form-hint">Only empty units without active dispatches or saved response history can be deleted. Units with response history can be marked unavailable instead.</small>}
           </form>
         </div>
       )}

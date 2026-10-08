@@ -199,6 +199,94 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION public.clear_respond_unit_team_leader_v1(p_unit_id UUID)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_unit public.respond_units%ROWTYPE;
+BEGIN
+  SELECT * INTO v_unit FROM public.respond_units WHERE id = p_unit_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Respond unit not found' USING ERRCODE = 'P0002';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM public.respond_unit_members AS leaders
+    JOIN public.mdrrmo_report_assignments AS assignments
+      ON assignments.responder_id = leaders.responder_user_id
+    WHERE leaders.unit_id = p_unit_id
+      AND leaders.member_role = 'team_leader'
+      AND leaders.is_active
+      AND assignments.status IN ('assigned', 'responding')
+  ) THEN
+    RAISE EXCEPTION 'Cannot clear the Team Leader while they have an active dispatch' USING ERRCODE = '23514';
+  END IF;
+
+  UPDATE public.respond_unit_members
+  SET is_active = false
+  WHERE unit_id = p_unit_id AND member_role = 'team_leader' AND is_active;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'This unit has no active Team Leader to clear' USING ERRCODE = 'P0002';
+  END IF;
+
+  RETURN jsonb_build_object('unit_id', p_unit_id, 'team_leader_cleared', true);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.delete_empty_respond_unit_v1(p_unit_id UUID)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_unit public.respond_units%ROWTYPE;
+BEGIN
+  SELECT * INTO v_unit FROM public.respond_units WHERE id = p_unit_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Respond unit not found' USING ERRCODE = 'P0002';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM public.respond_unit_members
+    WHERE unit_id = p_unit_id AND is_active
+  ) THEN
+    RAISE EXCEPTION 'Remove all active roster members and clear the Team Leader before deleting this unit' USING ERRCODE = '23514';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM public.respond_unit_members AS members
+    JOIN public.mdrrmo_report_assignments AS assignments
+      ON assignments.responder_id = members.responder_user_id
+    WHERE members.unit_id = p_unit_id
+      AND members.responder_user_id IS NOT NULL
+      AND assignments.status IN ('assigned', 'responding')
+  ) THEN
+    RAISE EXCEPTION 'Cannot delete this unit while one of its responders has an active dispatch' USING ERRCODE = '23514';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM public.mdrrmo_assignment_crew_members AS crew
+    JOIN public.respond_unit_members AS members ON members.id = crew.unit_member_id
+    WHERE members.unit_id = p_unit_id
+  ) THEN
+    RAISE EXCEPTION 'This unit has response history and cannot be deleted. Set its status to unavailable instead.' USING ERRCODE = '23514';
+  END IF;
+
+  DELETE FROM public.respond_unit_members WHERE unit_id = p_unit_id;
+  DELETE FROM public.respond_units WHERE id = p_unit_id;
+
+  RETURN jsonb_build_object('unit_id', p_unit_id, 'deleted', true);
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION public.set_respond_unit_activation_today_v1(
   p_unit_id UUID,
   p_activated_by UUID,
@@ -538,6 +626,10 @@ GRANT EXECUTE ON FUNCTION public.accept_mdrrmo_report_with_crew_v1(UUID, UUID, U
 REVOKE ALL ON FUNCTION public.enforce_respond_unit_member_role() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.assign_respond_unit_team_leader_v1(UUID, UUID, UUID) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.assign_respond_unit_team_leader_v1(UUID, UUID, UUID) TO service_role;
+REVOKE ALL ON FUNCTION public.clear_respond_unit_team_leader_v1(UUID) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.clear_respond_unit_team_leader_v1(UUID) TO service_role;
+REVOKE ALL ON FUNCTION public.delete_empty_respond_unit_v1(UUID) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.delete_empty_respond_unit_v1(UUID) TO service_role;
 REVOKE ALL ON FUNCTION public.set_respond_unit_activation_today_v1(UUID, UUID, BOOLEAN) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.set_respond_unit_activation_today_v1(UUID, UUID, BOOLEAN) TO service_role;
 REVOKE ALL ON FUNCTION public.emergency_activate_all_respond_units_today_v1(UUID) FROM PUBLIC, anon, authenticated;

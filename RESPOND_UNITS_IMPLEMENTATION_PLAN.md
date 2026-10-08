@@ -24,6 +24,7 @@ Make unit setup reliable for logistics Staff and master admins, while ensuring d
 6. Build the dashboard and backend to catch integration and type errors.
 7. Match active mobile responder accounts to Officer profiles by normalized email, show unlinked Officer profiles as needing an active mobile account, and allow account creation even when no Team Leader is ready.
 8. Add a migration for roster tables, constraints, activation and assignment functions, plus the dispatch and crew acceptance RPCs; return an actionable migration error when the roster schema is absent.
+9. Add a guarded unit deletion action for Staff and master admins. Emptying includes deactivating every active roster entry and clearing the Team Leader; server-side checks prevent deletion during dispatch or when crew history must be preserved.
 
 ## Completion checks
 
@@ -34,3 +35,4 @@ Make unit setup reliable for logistics Staff and master admins, while ensuring d
 - A failed unit-list request has a visible retry state; a successful empty response still shows the create guidance.
 - Active MDRRMO responder accounts are selectable as Team Leaders and display their linked Officer names; Officer records without an active mobile account remain visible with an account-needed label.
 - Existing databases can apply `database/migrations/20261008_respond_units_roster.sql` to enable roster setup, unit activation, dispatch, and responder crew acceptance.
+- Staff and master admins can delete an empty unit; units with active roster members, active assignments, or saved crew history are protected.

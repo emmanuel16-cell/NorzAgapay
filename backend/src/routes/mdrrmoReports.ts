@@ -236,9 +236,17 @@ router.get('/responders', authenticate, authorize('dispatcher', 'admin'), async 
       ...responder,
       unit_id: leaderUnits.get(responder.id)?.unit_id,
       unit_name: leaderUnits.get(responder.id)?.unit_name || null,
+      officer_name: leaderUnits.get(responder.id)?.officer_name || null,
     })) });
-  } catch (err) {
+  } catch (err: any) {
     console.error('Fetch active MDRRMO responders error:', err);
+    if (['42P01', '42703', 'PGRST204', 'PGRST205', 'PGRST200'].includes(err?.code)) {
+      res.status(503).json({
+        error: 'The Respond Units roster database objects are missing. Apply database/migrations/20261008_respond_units_roster.sql, then retry.',
+        code: 'RESPOND_UNITS_SCHEMA_MISSING',
+      });
+      return;
+    }
     res.status(500).json({ error: 'Could not load active MDRRMO responders.' });
   }
 });

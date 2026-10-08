@@ -26,8 +26,13 @@ class AuthProvider with ChangeNotifier {
 
   bool _isAllowedMobileRole(UserRole role) => role == UserRole.responder;
 
-  Future<void> fetchMyUnit() async {
-    if (_token == null) return;
+  Future<void> fetchMyUnit({bool rethrowErrors = false}) async {
+    if (_token == null) {
+      if (rethrowErrors) {
+        throw Exception('Sign in again to refresh your response unit roster.');
+      }
+      return;
+    }
     try {
       final response = await http.get(
         Uri.parse('${AppConstants.apiBaseUrl}/respond-units/my-unit'),
@@ -76,9 +81,16 @@ class AuthProvider with ChangeNotifier {
           );
         }
         notifyListeners();
+      } else if (rethrowErrors) {
+        final data = json.decode(response.body);
+        final message = data is Map
+            ? data['error'] ?? 'Could not refresh your response unit roster.'
+            : 'Could not refresh your response unit roster.';
+        throw Exception(message);
       }
     } catch (e) {
       debugPrint('Fetch my unit error: $e');
+      if (rethrowErrors) rethrow;
     }
   }
 

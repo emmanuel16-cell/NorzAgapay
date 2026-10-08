@@ -15,6 +15,8 @@ export interface DispatchableRespondUnit {
   unit_id: string;
   unit_name: string;
   responder_user_id: string;
+  officer_id: string;
+  officer_name?: string | null;
 }
 
 export async function getDispatchableRespondUnits(): Promise<DispatchableRespondUnit[]> {
@@ -38,7 +40,7 @@ export async function getDispatchableRespondUnits(): Promise<DispatchableRespond
 
   const { data: members, error: membersError } = await supabaseAdmin
     .from('respond_unit_members')
-    .select('unit_id, responder_user_id, member_role')
+    .select('unit_id, officer_id, responder_user_id, member_role')
     .in('unit_id', activeUnitIds)
     .eq('is_active', true)
     .in('member_role', ['team_leader', 'driver_responder', 'first_aider_responder']);
@@ -63,7 +65,7 @@ export async function getDispatchableRespondUnits(): Promise<DispatchableRespond
   const leaderMemberships = readyUnits.flatMap((unit: any) =>
     (rosterByUnit.get(unit.id) || [])
       .filter((member) => member.member_role === 'team_leader' && member.responder_user_id)
-      .map((member) => ({ unit_id: unit.id, responder_user_id: member.responder_user_id })),
+      .map((member) => ({ unit_id: unit.id, responder_user_id: member.responder_user_id, officer_id: member.officer_id })),
   );
   const leaderIds = [...new Set(leaderMemberships.map((member) => member.responder_user_id))];
   if (!leaderIds.length) return [];
@@ -76,6 +78,13 @@ export async function getDispatchableRespondUnits(): Promise<DispatchableRespond
     .eq('status', 'active');
   if (usersError) throw usersError;
   const activeLeaderIds = new Set((users || []).map((user: any) => user.id));
+  const officerIds = [...new Set(leaderMemberships.map((member) => member.officer_id))];
+  const { data: officers, error: officersError } = await supabaseAdmin
+    .from('officers')
+    .select('id, name')
+    .in('id', officerIds);
+  if (officersError) throw officersError;
+  const officerNames = new Map((officers || []).map((officer: any) => [officer.id, officer.name]));
 
   return leaderMemberships
     .filter((leader) => activeLeaderIds.has(leader.responder_user_id))
@@ -83,5 +92,7 @@ export async function getDispatchableRespondUnits(): Promise<DispatchableRespond
       unit_id: leader.unit_id,
       unit_name: (unitById.get(leader.unit_id) as any)?.unit_name || 'Response unit',
       responder_user_id: leader.responder_user_id,
+      officer_id: leader.officer_id,
+      officer_name: officerNames.get(leader.officer_id) || null,
     }));
 }
