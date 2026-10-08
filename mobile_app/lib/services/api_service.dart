@@ -676,13 +676,18 @@ class ApiService {
     required bool beyondBarangayCapability,
     required String explanation,
   }) async {
+    final authToken = token.trim();
+    if (authToken.isEmpty) {
+      throw Exception('Your session has expired. Please sign in again.');
+    }
+
     final res = await http.post(
       Uri.parse('$baseUrl/barangay/assistance-requests'),
-      headers: _headers(token),
+      headers: _headers(authToken),
       body: jsonEncode({
         // Keep the token in the JSON body as a fallback for Flutter Web
         // clients whose browser omits the Authorization header.
-        'token': token,
+        'token': authToken,
         'incident_report_id': incidentReportId,
         'incident_title': incidentTitle,
         'needs_more_manpower': needsMoreManpower,

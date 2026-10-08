@@ -18,7 +18,7 @@ class AuthService extends ChangeNotifier {
 
   BarangayUser? get currentUser => _currentUser;
   String? get token => _token;
-  bool get isAuthenticated => _token != null && _currentUser != null;
+  bool get isAuthenticated => _token?.trim().isNotEmpty == true && _currentUser != null;
   bool get isLoading => _isLoading;
   String get apiBaseUrl => _apiBaseUrl;
 
@@ -33,8 +33,8 @@ class AuthService extends ChangeNotifier {
     final savedToken = box.get('token');
     final savedUserData = box.get('user');
 
-    if (savedToken != null && savedUserData != null) {
-      _token = savedToken;
+    if (savedToken is String && savedToken.trim().isNotEmpty && savedUserData is Map) {
+      _token = savedToken.trim();
       _currentUser = BarangayUser.fromJson(Map<String, dynamic>.from(savedUserData));
       // Never trust cached barangay approval after an app restart. Every role
       // stays behind the account-request screen until the server confirms it.
@@ -43,6 +43,12 @@ class AuthService extends ChangeNotifier {
       notifyListeners();
 
       checkVerificationStatus();
+    } else {
+      // A blank or malformed token must never count as a signed-in session.
+      await box.delete('token');
+      await box.delete('user');
+      _token = null;
+      _currentUser = null;
     }
   }
 
