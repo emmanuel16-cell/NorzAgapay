@@ -17,6 +17,7 @@ import 'barangay_account_request_screen.dart';
 import 'barangay_hotline_screen.dart';
 import 'analytics_screen.dart';
 import 'resolved_reports_screen.dart';
+import 'assistance_requests_screen.dart';
 import '../widgets/legal_dialogs.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -438,6 +439,26 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   context,
                   MaterialPageRoute(
                     builder: (_) => const ResolvedReportsScreen(),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+
+            if (user?.isDispatcher == true ||
+                user?.isResponder == true ||
+                user?.isBarangayAdmin == true) ...[
+              _actionTile(
+                icon: Icons.support_agent_rounded,
+                iconColor: const Color(0xFFF59E0B),
+                label: 'Assistance Requests',
+                subtitle: user?.isDispatcher == true
+                    ? 'Review and decide responder assistance requests'
+                    : 'View assistance requests & status',
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const AssistanceRequestsScreen(),
                   ),
                 ),
               ),

@@ -95,6 +95,12 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           }
         }
       });
+      socket.onAssistanceDecision((_) {
+        if (mounted) _fetchAssistanceRequest();
+      });
+      socket.onAssistanceRequest((_) {
+        if (mounted) _fetchAssistanceRequest();
+      });
       socket.addListener(_onSocketConnectionChanged);
     });
   }
@@ -134,7 +140,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     if (auth.token == null) return;
     try {
       List<Map<String, dynamic>> list = [];
-      if (auth.currentUser?.isDispatcher == true) {
+      if (auth.currentUser?.isDispatcher == true || auth.currentUser?.isBarangayAdmin == true) {
         list = await ApiService.getAssistanceRequests(auth.token!);
       } else {
         list = await ApiService.getMyAssistanceRequests(auth.token!);
@@ -1796,7 +1802,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+            SnackBar(content: Text(e.toString().replaceFirst('Exception: ', '')), backgroundColor: Colors.red),
           );
         }
       } finally {
@@ -3423,6 +3429,74 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                       ),
                     ],
 
+                    // Dispatcher Decide Button
+                    Builder(builder: (context) {
+                      final auth = Provider.of<AuthService>(context, listen: false);
+                      final canDecide = auth.currentUser?.isDispatcher == true ||
+                          auth.currentUser?.isBarangayAdmin == true;
+                      if (!hasDispatcherResponded && canDecide) {
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 10),
+                          child: SizedBox(
+                            width: double.infinity,
+                            height: 40,
+                            child: ElevatedButton.icon(
+                              onPressed: () => _handleDispatcherDecide(req),
+                              icon: const Icon(Icons.gavel, size: 16),
+                              label: const Text(
+                                'Decide / Provide Assistance',
+                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF0284C7),
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      }
+                      if (!hasDispatcherResponded && isResponder) {
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 10),
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF59E0B).withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: const Color(0xFFF59E0B).withOpacity(0.3)),
+                            ),
+                            child: const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Color(0xFFF59E0B),
+                                  ),
+                                ),
+                                SizedBox(width: 8),
+                                Text(
+                                  'Waiting for Dispatcher response...',
+                                  style: TextStyle(
+                                    color: Color(0xFFF59E0B),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }
+                      return const SizedBox.shrink();
+                    }),
+
                     // Responder Acknowledge Received button
                     if (isResponder && !teamAcknowledged) ...[
                       const SizedBox(height: 10),
@@ -3798,4 +3872,176 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
       ),
     );
   }
+
+  Future<void> _handleDispatcherDecide(Map<String, dynamic> request) async {
+    String selectedDecision = 'provide_barangay_assistance';
+    final notesController = TextEditingController();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          backgroundColor: const Color(0xFF1E293B),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text(
+            'Respond to Assistance Request',
+            style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold),
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'From: ${request['requested_by_user']?['full_name'] ?? 'Responder'}',
+                  style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 13, fontWeight: FontWeight.bold),
+                ),
+                if (request['explanation'] != null) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    'Need: ${request['explanation']}',
+                    style: const TextStyle(color: Color(0xFFCBD5E1), fontSize: 12),
+                  ),
+                ],
+                const SizedBox(height: 12),
+                const Text('Your Decision:', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                _decisionTile(
+                  setDialogState: setDialogState,
+                  value: 'provide_barangay_assistance',
+                  groupValue: selectedDecision,
+                  label: 'Provide Barangay Assistance',
+                  subtitle: 'Dispatch barangay resources/volunteers to support',
+                  color: const Color(0xFF10B981),
+                  onChanged: (v) => selectedDecision = v ?? selectedDecision,
+                ),
+                const SizedBox(height: 8),
+                _decisionTile(
+                  setDialogState: setDialogState,
+                  value: 'coordinate_mdrrmo',
+                  groupValue: selectedDecision,
+                  label: 'Recommend MDRRMO coordination',
+                  subtitle: 'Escalate incident to MDRRMO municipal support',
+                  color: const Color(0xFFEF4444),
+                  onChanged: (v) => selectedDecision = v ?? selectedDecision,
+                ),
+                const SizedBox(height: 8),
+                _decisionTile(
+                  setDialogState: setDialogState,
+                  value: 'dismissed',
+                  groupValue: selectedDecision,
+                  label: 'Dismiss Request',
+                  subtitle: 'No action needed at this time',
+                  color: const Color(0xFF94A3B8),
+                  onChanged: (v) => selectedDecision = v ?? selectedDecision,
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: notesController,
+                  style: const TextStyle(color: Colors.white),
+                  maxLines: 2,
+                  decoration: const InputDecoration(
+                    labelText: 'Dispatcher Notes (optional)',
+                    labelStyle: TextStyle(color: Color(0xFF94A3B8)),
+                    hintText: 'e.g., Sending 2 additional volunteers now.',
+                    hintStyle: TextStyle(color: Color(0xFF64748B), fontSize: 12),
+                    filled: true,
+                    fillColor: Color(0xFF0F172A),
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel', style: TextStyle(color: Color(0xFF94A3B8))),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0284C7)),
+              child: const Text('Confirm Decision', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed == true) {
+      final auth = Provider.of<AuthService>(context, listen: false);
+      if (auth.token == null) return;
+      setState(() => _isProcessing = true);
+      try {
+        await ApiService.decideAssistanceRequest(
+          auth.token!,
+          request['id'],
+          decision: selectedDecision,
+          dispatcherNotes: notesController.text.trim().isEmpty ? null : notesController.text.trim(),
+        );
+        await _fetchAssistanceRequest();
+        await _refreshReportFromServer();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Assistance decision recorded!'),
+              backgroundColor: Color(0xFF10B981),
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          final msg = e.toString().replaceFirst('Exception: ', '');
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error: $msg'), backgroundColor: Colors.red),
+          );
+        }
+      } finally {
+        if (mounted) setState(() => _isProcessing = false);
+      }
+    }
+  }
+
+  Widget _decisionTile({
+    required StateSetter setDialogState,
+    required String value,
+    required String groupValue,
+    required String label,
+    required String subtitle,
+    required Color color,
+    required ValueChanged<String?> onChanged,
+  }) {
+    final selected = value == groupValue;
+    return GestureDetector(
+      onTap: () => setDialogState(() => onChanged(value)),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected ? color.withOpacity(0.15) : const Color(0xFF0F172A),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: selected ? color : const Color(0xFF334155), width: selected ? 1.5 : 1),
+        ),
+        child: Row(
+          children: [
+            Radio<String>(
+              value: value,
+              groupValue: groupValue,
+              activeColor: color,
+              onChanged: (v) => setDialogState(() => onChanged(v)),
+            ),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label, style: TextStyle(color: selected ? color : Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                  Text(subtitle, style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 11)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
 }

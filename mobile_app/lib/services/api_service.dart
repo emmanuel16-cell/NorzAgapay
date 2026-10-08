@@ -693,8 +693,15 @@ class ApiService {
       }),
     );
     if (res.statusCode != 201) {
-      final data = jsonDecode(res.body);
-      throw Exception(data['error'] ?? 'Failed to submit assistance request');
+      try {
+        final data = jsonDecode(res.body);
+        final errorMsg = data['error']?.toString() ?? 'Failed to submit assistance request';
+        final details = data['details']?.toString();
+        throw Exception(details != null && !errorMsg.contains(details) ? '$errorMsg ($details)' : errorMsg);
+      } catch (e) {
+        if (e is Exception) rethrow;
+        throw Exception('Failed to submit assistance request (${res.statusCode})');
+      }
     }
   }
 
@@ -710,7 +717,13 @@ class ApiService {
       final List<dynamic> list = data['requests'] ?? [];
       return list.map((e) => Map<String, dynamic>.from(e)).toList();
     }
-    throw Exception('Failed to fetch assistance requests');
+    try {
+      final data = jsonDecode(res.body);
+      throw Exception(data['error'] ?? 'Failed to fetch assistance requests');
+    } catch (e) {
+      if (e is Exception) rethrow;
+      throw Exception('Failed to fetch assistance requests (${res.statusCode})');
+    }
   }
 
   static Future<void> decideAssistanceRequest(
@@ -728,8 +741,13 @@ class ApiService {
       }),
     );
     if (res.statusCode != 200) {
-      final data = jsonDecode(res.body);
-      throw Exception(data['error'] ?? 'Failed to update assistance request');
+      try {
+        final data = jsonDecode(res.body);
+        throw Exception(data['error'] ?? 'Failed to update assistance request');
+      } catch (e) {
+        if (e is Exception) rethrow;
+        throw Exception('Failed to update assistance request (${res.statusCode})');
+      }
     }
   }
 
@@ -745,7 +763,13 @@ class ApiService {
       final List<dynamic> list = data['requests'] ?? [];
       return list.map((e) => Map<String, dynamic>.from(e)).toList();
     }
-    throw Exception('Failed to fetch your assistance requests');
+    try {
+      final data = jsonDecode(res.body);
+      throw Exception(data['error'] ?? 'Failed to fetch your assistance requests');
+    } catch (e) {
+      if (e is Exception) rethrow;
+      throw Exception('Failed to fetch your assistance requests (${res.statusCode})');
+    }
   }
 
   static Future<void> teamLeaderRequestAction(

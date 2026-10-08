@@ -2529,7 +2529,7 @@ router.post('/assistance-requests', authenticateBarangay, requireRole(['responde
     if (linkedReportId) {
       const { data: linkedReport, error: linkedReportError } = await supabaseAdmin
         .from('barangay_reports')
-        .select('id, title, responded_by, response_notes')
+        .select('id, title, responded_by, barangay_responded_by, response_notes, barangay_response_notes')
         .eq('id', linkedReportId)
         .eq('barangay_id', req.barangayUser.barangayId)
         .maybeSingle();
@@ -2538,15 +2538,21 @@ router.post('/assistance-requests', authenticateBarangay, requireRole(['responde
         res.status(404).json({ error: 'Linked incident report was not found in this barangay.' });
         return;
       }
-      const currentNotes = linkedReport.response_notes || '';
+      const currentNotes = [linkedReport.response_notes, linkedReport.barangay_response_notes].filter(Boolean).join(' ');
       const assignedMatch = currentNotes.match(/^\[ASSIGNED:([^\]]+)\]/);
       const assignedIds = assignedMatch ? assignedMatch[1].split(',').map((id: string) => id.trim()) : [];
-      const isPrimaryResponder = linkedReport.responded_by === req.barangayUser.userId;
+      const isPrimaryResponder =
+        linkedReport.responded_by === req.barangayUser.userId ||
+        linkedReport.barangay_responded_by === req.barangayUser.userId;
       const isInAssignedList = assignedIds.includes(req.barangayUser.userId);
+      const hasResponderNameInNotes = Boolean(
+        req.barangayUser.fullName &&
+        currentNotes.toLowerCase().includes(req.barangayUser.fullName.toLowerCase())
+      );
 
       // Also check the barangay_report_assignments table (multi-responder dispatch)
       let isAssignedViaTable = false;
-      if (!isPrimaryResponder && !isInAssignedList) {
+      if (!isPrimaryResponder && !isInAssignedList && !hasResponderNameInNotes) {
         const { data: assignment } = await supabaseAdmin
           .from('barangay_report_assignments')
           .select('id')
@@ -2557,7 +2563,7 @@ router.post('/assistance-requests', authenticateBarangay, requireRole(['responde
         isAssignedViaTable = Boolean(assignment);
       }
 
-      if (!isPrimaryResponder && !isInAssignedList && !isAssignedViaTable) {
+      if (!isPrimaryResponder && !isInAssignedList && !hasResponderNameInNotes && !isAssignedViaTable) {
         res.status(403).json({ error: 'You can only request assistance for an incident assigned to your responder account.' });
         return;
       }
@@ -2583,9 +2589,18 @@ router.post('/assistance-requests', authenticateBarangay, requireRole(['responde
 
     if (error) {
       console.error('Create assistance request error:', JSON.stringify(error));
-      // Surface the Supabase error code so the client can distinguish reasons
-      // (e.g. 42P01 = table not found, 23514 = check constraint, etc.)
-      res.status(500).json({ error: 'Failed to submit assistance request.', code: (error as any).code });
+      const pgCode = (error as any).code;
+      let userFriendlyMsg = 'Failed to submit assistance request.';
+      if (pgCode === '42P01') {
+        userFriendlyMsg = 'The assistance requests table has not been initialized in Supabase yet. Please run migration: 20261008_barangay_assistance_requests.sql';
+      } else if (pgCode === '23503') {
+        userFriendlyMsg = 'Foreign key error: user or report reference not recognized.';
+      } else if (pgCode === '23514') {
+        userFriendlyMsg = 'Check constraint failed: Explanation must be at least 10 characters.';
+      } else if ((error as any).message) {
+        userFriendlyMsg = (error as any).message;
+      }
+      res.status(500).json({ error: userFriendlyMsg, code: pgCode, details: (error as any).message });
       return;
     }
 
@@ -2602,7 +2617,7 @@ router.post('/assistance-requests', authenticateBarangay, requireRole(['responde
 // ─── GET /api/barangay/assistance-requests ───────────────────────────────────
 // Dispatcher views all assistance requests for their barangay
 
-router.get('/assistance-requests', authenticateBarangay, requireRole(['dispatcher']), async (req: any, res: Response) => {
+router.get('/assistance-requests', authenticateBarangay, requireRole(['dispatcher', 'admin']), async (req: any, res: Response) => {
   try {
     const { data, error } = await supabaseAdmin
       .from('barangay_assistance_requests')
@@ -2611,6 +2626,11 @@ router.get('/assistance-requests', authenticateBarangay, requireRole(['dispatche
       .order('created_at', { ascending: false });
 
     if (error) {
+      if ((error as any).code === '42P01') {
+        // Table not yet migrated
+        res.json({ requests: [] });
+        return;
+      }
       console.error('Fetch assistance requests error:', error);
       res.status(500).json({ error: 'Failed to fetch assistance requests.' });
       return;
@@ -2635,6 +2655,10 @@ router.get('/my-assistance-requests', authenticateBarangay, requireRole(['respon
       .order('created_at', { ascending: false });
 
     if (error) {
+      if ((error as any).code === '42P01') {
+        res.json({ requests: [] });
+        return;
+      }
       console.error('Fetch my assistance requests error:', error);
       res.status(500).json({ error: 'Failed to fetch your assistance requests.' });
       return;
@@ -2692,12 +2716,12 @@ router.patch('/assistance-requests/:id/edit', authenticateBarangay, requireRole(
 // ─── PATCH /api/barangay/assistance-requests/:id/decide ──────────────────────
 // Dispatcher decides: provide_barangay_assistance or coordinate_mdrrmo
 
-router.patch('/assistance-requests/:id/decide', authenticateBarangay, requireRole(['dispatcher']), async (req: any, res: Response) => {
+router.patch('/assistance-requests/:id/decide', authenticateBarangay, requireRole(['dispatcher', 'admin']), async (req: any, res: Response) => {
   try {
     const { decision, dispatcher_notes } = req.body;
-    const validDecisions = ['provide_barangay_assistance', 'coordinate_mdrrmo'];
+    const validDecisions = ['provide_barangay_assistance', 'coordinate_mdrrmo', 'dismissed'];
     if (!validDecisions.includes(decision)) {
-      res.status(400).json({ error: 'Invalid decision. Must be: provide_barangay_assistance or coordinate_mdrrmo.' });
+      res.status(400).json({ error: 'Invalid decision. Must be: provide_barangay_assistance, coordinate_mdrrmo, or dismissed.' });
       return;
     }
 
@@ -2756,7 +2780,7 @@ router.patch('/assistance-requests/:id/decide', authenticateBarangay, requireRol
           escalated_to_mdrrmo: true,
           escalated_at: now,
           lifecycle_actor_id: req.barangayUser.userId,
-          lifecycle_actor_role: 'barangay_dispatcher',
+          lifecycle_actor_role: req.barangayUser.role === 'admin' ? 'barangay_admin' : 'barangay_dispatcher',
         })
         .eq('id', linkedReport.id)
         .eq('barangay_id', req.barangayUser.barangayId)
@@ -2810,12 +2834,42 @@ router.patch('/assistance-requests/:id/decide', authenticateBarangay, requireRol
       });
       io.to('dashboard_staff').emit('incident_report:updated', escalatedReport);
       io.to(`barangay:${req.barangayUser.barangayId}`).emit('barangay:report_updated', escalatedReport);
+    } else if (decision === 'provide_barangay_assistance' && assistanceRequest.incident_report_id) {
+      // Append note to linked incident report so responder sees it in the incident response log
+      const assistanceNote = dispatcher_notes
+        ? `[Assistance Approved: ${dispatcher_notes}]`
+        : '[Barangay assistance dispatched by Coordinator]';
+      const { data: existingReport } = await supabaseAdmin
+        .from('barangay_reports')
+        .select('id, barangay_response_notes, response_notes')
+        .eq('id', assistanceRequest.incident_report_id)
+        .eq('barangay_id', req.barangayUser.barangayId)
+        .maybeSingle();
+
+      if (existingReport) {
+        const existingNoteStr = existingReport.barangay_response_notes || existingReport.response_notes || '';
+        const updatedNotes = `${existingNoteStr} ${assistanceNote}`.trim();
+        const { data: updatedReport } = await supabaseAdmin
+          .from('barangay_reports')
+          .update({
+            barangay_response_notes: updatedNotes,
+            response_notes: updatedNotes,
+          })
+          .eq('id', existingReport.id)
+          .select('*')
+          .maybeSingle();
+
+        if (updatedReport) {
+          io.to(`barangay:${req.barangayUser.barangayId}`).emit('barangay:report_updated', updatedReport);
+        }
+      }
     }
 
+    const newStatus = decision === 'dismissed' ? 'rejected' : 'actioned';
     const { data: decisionRequest, error: requestUpdateError } = await supabaseAdmin
       .from('barangay_assistance_requests')
       .update({
-        status: 'actioned',
+        status: newStatus,
         decision,
         dispatcher_notes: dispatcher_notes || null,
         decided_at: new Date().toISOString(),

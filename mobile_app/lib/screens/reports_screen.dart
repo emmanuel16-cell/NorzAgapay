@@ -12,6 +12,8 @@ import '../widgets/resolved_report_card.dart';
 import 'report_detail_screen.dart';
 import 'barangay_report_incident_screen.dart';
 
+import 'assistance_requests_screen.dart';
+
 class ReportsScreen extends StatefulWidget {
   const ReportsScreen({super.key});
 
@@ -28,6 +30,8 @@ class _ReportsScreenState extends State<ReportsScreen>
 
   // Assistance requests map keyed by incident_report_id (for Dispatcher & Responder)
   Map<String, Map<String, dynamic>> _assistanceMap = {};
+  int get _pendingAssistanceCount =>
+      _assistanceMap.values.where((r) => r['status'] == 'pending').length;
   // Track which cards are expanded for assistance details
   final Set<String> _expandedAssistance = {};
   SocketService? _socketService;
@@ -275,6 +279,49 @@ class _ReportsScreenState extends State<ReportsScreen>
           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
         ),
         actions: [
+          IconButton(
+            tooltip: 'Assistance Requests',
+            icon: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                const Icon(Icons.support_agent_outlined, color: Colors.white),
+                if (_pendingAssistanceCount > 0)
+                  Positioned(
+                    right: -6,
+                    top: -4,
+                    child: Container(
+                      padding: const EdgeInsets.all(3),
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFEF4444),
+                        shape: BoxShape.circle,
+                      ),
+                      constraints:
+                          const BoxConstraints(minWidth: 16, minHeight: 16),
+                      child: Text(
+                        '$_pendingAssistanceCount',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const AssistanceRequestsScreen(),
+                ),
+              ).then((_) {
+                final auth = Provider.of<AuthService>(context, listen: false);
+                if (auth.token != null) _fetchAssistanceRequests(auth.token!);
+              });
+            },
+          ),
           IconButton(icon: const Icon(Icons.refresh), onPressed: _fetchReports),
         ],
         bottom: TabBar(

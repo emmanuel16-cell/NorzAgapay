@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
 import '../services/api_service.dart';
+import '../services/socket_service.dart';
 
 class AssistanceRequestsScreen extends StatefulWidget {
   const AssistanceRequestsScreen({super.key});
@@ -14,25 +15,50 @@ class _AssistanceRequestsScreenState extends State<AssistanceRequestsScreen> {
   List<Map<String, dynamic>> _requests = [];
   bool _isLoading = true;
   String? _errorMessage;
+  String _filter = 'all'; // 'all', 'pending', 'actioned'
 
   @override
   void initState() {
     super.initState();
     _fetchRequests();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final socket = Provider.of<SocketService>(context, listen: false);
+      socket.onAssistanceRequest((_) {
+        if (mounted) _fetchRequests(silent: true);
+      });
+      socket.onAssistanceDecision((_) {
+        if (mounted) _fetchRequests(silent: true);
+      });
+    });
   }
 
-  Future<void> _fetchRequests() async {
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
+  Future<void> _fetchRequests({bool silent = false}) async {
+    if (!silent) {
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+      });
+    }
     final auth = Provider.of<AuthService>(context, listen: false);
-    if (auth.token == null) return;
+    if (auth.token == null) {
+      if (mounted) setState(() => _isLoading = false);
+      return;
+    }
+    final isStaffOrDispatcher =
+        auth.currentUser?.isDispatcher == true || auth.currentUser?.isBarangayAdmin == true;
     try {
-      final list = await ApiService.getAssistanceRequests(auth.token!);
-      if (mounted) setState(() => _requests = list);
+      final list = isStaffOrDispatcher
+          ? await ApiService.getAssistanceRequests(auth.token!)
+          : await ApiService.getMyAssistanceRequests(auth.token!);
+      if (mounted) {
+        setState(() {
+          _requests = list;
+          _errorMessage = null;
+        });
+      }
     } catch (e) {
-      if (mounted) setState(() => _errorMessage = e.toString());
+      if (mounted && !silent) setState(() => _errorMessage = e.toString());
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -222,6 +248,13 @@ class _AssistanceRequestsScreenState extends State<AssistanceRequestsScreen> {
   @override
   Widget build(BuildContext context) {
     final pendingCount = _requests.where((r) => r['status'] == 'pending').length;
+    final actionedCount = _requests.where((r) => r['status'] == 'actioned').length;
+
+    final filtered = _requests.where((r) {
+      if (_filter == 'pending') return r['status'] == 'pending';
+      if (_filter == 'actioned') return r['status'] == 'actioned';
+      return true;
+    }).toList();
 
     return Scaffold(
       backgroundColor: const Color(0xFF0F172A),
@@ -242,46 +275,99 @@ class _AssistanceRequestsScreenState extends State<AssistanceRequestsScreen> {
           IconButton(icon: const Icon(Icons.refresh), onPressed: _fetchRequests),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFF38BDF8)))
-          : _errorMessage != null
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.error_outline, color: Colors.red, size: 48),
-                      const SizedBox(height: 12),
-                      Text(_errorMessage!, style: const TextStyle(color: Colors.red)),
-                      const SizedBox(height: 12),
-                      ElevatedButton(onPressed: _fetchRequests, child: const Text('Try Again')),
-                    ],
-                  ),
-                )
-              : _requests.isEmpty
-                  ? const Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.inbox_outlined, size: 64, color: Color(0xFF475569)),
-                          SizedBox(height: 12),
-                          Text('No assistance requests yet', style: TextStyle(color: Color(0xFF94A3B8), fontSize: 16)),
-                          SizedBox(height: 4),
-                          Text(
-                            'Responders can request help from incident detail pages.',
-                            style: TextStyle(color: Color(0xFF64748B), fontSize: 12),
-                            textAlign: TextAlign.center,
+      body: Column(
+        children: [
+          // Filter tabs
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            color: const Color(0xFF1E293B),
+            child: Row(
+              children: [
+                _filterChip('all', 'All (${_requests.length})'),
+                const SizedBox(width: 8),
+                _filterChip('pending', 'Pending ($pendingCount)', badgeColor: const Color(0xFFF59E0B)),
+                const SizedBox(width: 8),
+                _filterChip('actioned', 'Actioned ($actionedCount)', badgeColor: const Color(0xFF10B981)),
+              ],
+            ),
+          ),
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator(color: Color(0xFF38BDF8)))
+                : _errorMessage != null
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.error_outline, color: Colors.red, size: 48),
+                              const SizedBox(height: 12),
+                              Text(_errorMessage!, style: const TextStyle(color: Colors.red), textAlign: TextAlign.center),
+                              const SizedBox(height: 12),
+                              ElevatedButton(onPressed: _fetchRequests, child: const Text('Try Again')),
+                            ],
                           ),
-                        ],
-                      ),
-                    )
-                  : RefreshIndicator(
-                      onRefresh: _fetchRequests,
-                      child: ListView.builder(
-                        padding: const EdgeInsets.all(16),
-                        itemCount: _requests.length,
-                        itemBuilder: (context, i) => _buildCard(_requests[i]),
-                      ),
-                    ),
+                        ),
+                      )
+                    : filtered.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(Icons.inbox_outlined, size: 64, color: Color(0xFF475569)),
+                                const SizedBox(height: 12),
+                                Text(
+                                  _filter == 'pending' ? 'No pending assistance requests' : 'No assistance requests found',
+                                  style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 16),
+                                ),
+                                const SizedBox(height: 4),
+                                const Text(
+                                  'Responders can request help from incident detail pages.',
+                                  style: TextStyle(color: Color(0xFF64748B), fontSize: 12),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
+                            ),
+                          )
+                        : RefreshIndicator(
+                            onRefresh: _fetchRequests,
+                            child: ListView.builder(
+                              padding: const EdgeInsets.all(16),
+                              itemCount: filtered.length,
+                              itemBuilder: (context, i) => _buildCard(filtered[i]),
+                            ),
+                          ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _filterChip(String filterKey, String label, {Color? badgeColor}) {
+    final isSelected = _filter == filterKey;
+    return GestureDetector(
+      onTap: () => setState(() => _filter = filterKey),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? (badgeColor ?? const Color(0xFF38BDF8)).withOpacity(0.2)
+              : const Color(0xFF0F172A),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? (badgeColor ?? const Color(0xFF38BDF8)) : const Color(0xFF334155),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isSelected ? (badgeColor ?? const Color(0xFF38BDF8)) : const Color(0xFF94A3B8),
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+            fontSize: 12,
+          ),
+        ),
+      ),
     );
   }
 
@@ -450,20 +536,61 @@ class _AssistanceRequestsScreenState extends State<AssistanceRequestsScreen> {
             // Action button for pending requests
             if (isPending) ...[
               const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                height: 44,
-                child: ElevatedButton.icon(
-                  onPressed: () => _handleDecide(req),
-                  icon: const Icon(Icons.gavel, size: 18),
-                  label: const Text('Decide', style: TextStyle(fontWeight: FontWeight.bold)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF0284C7),
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
-                ),
-              ),
+              Builder(builder: (context) {
+                final auth = Provider.of<AuthService>(context, listen: false);
+                final canDecide = auth.currentUser?.isDispatcher == true ||
+                    auth.currentUser?.isBarangayAdmin == true;
+                if (canDecide) {
+                  return SizedBox(
+                    width: double.infinity,
+                    height: 44,
+                    child: ElevatedButton.icon(
+                      onPressed: () => _handleDecide(req),
+                      icon: const Icon(Icons.gavel, size: 18),
+                      label: const Text('Decide / Respond',
+                          style: TextStyle(fontWeight: FontWeight.bold)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF0284C7),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10)),
+                      ),
+                    ),
+                  );
+                } else {
+                  return Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF59E0B).withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFF59E0B).withOpacity(0.3)),
+                    ),
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Color(0xFFF59E0B),
+                          ),
+                        ),
+                        SizedBox(width: 8),
+                        Text(
+                          'Waiting for Dispatcher to respond...',
+                          style: TextStyle(
+                            color: Color(0xFFF59E0B),
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+              }),
             ],
           ],
         ),
