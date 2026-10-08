@@ -1976,6 +1976,9 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     final incidentLocation = LatLng(_report.latitude, _report.longitude);
     final isResponder = user?.isResponder ?? false;
     final isDispatcher = user?.isDispatcher ?? false;
+    final isAssignedResponder = isResponder &&
+        user != null &&
+        _report.isAssignedToUser(user.id, userFullName: user.fullName);
     final showPendingRoleAction =
         _selectedTabIndex == 0 &&
         canManage &&
@@ -1983,7 +1986,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         (isDispatcher || isResponder);
     final showRespondingAction =
         ((_selectedTabIndex == 2 && canManage) ||
-            (_selectedTabIndex == 1 && canManage && isResponder)) &&
+            (_selectedTabIndex == 1 && canManage && isAssignedResponder)) &&
         _report.isResponding &&
         !_report.isResolved;
     final savedAssessment = _report.cleanBarangayNotes;
@@ -3428,6 +3431,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                         ),
                       ),
                     ],
+                  ],
 
                     // Dispatcher Decide Button
                     Builder(builder: (context) {
@@ -3498,7 +3502,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                     }),
 
                     // Responder Acknowledge Received button
-                    if (isResponder && !teamAcknowledged) ...[
+                    if (hasDispatcherResponded && isResponder && !teamAcknowledged) ...[
                       const SizedBox(height: 10),
                       SizedBox(
                         width: double.infinity,
@@ -3559,7 +3563,6 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                         ),
                       ),
                     ],
-                  ],
                 ],
               ),
             ),
