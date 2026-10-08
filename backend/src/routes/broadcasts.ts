@@ -5,6 +5,7 @@ import multer from 'multer';
 import { config } from '../config';
 import { supabaseAdmin } from '../config/supabase';
 import { AuthRequest, authenticate, authorize } from '../middleware/auth';
+import { io } from '../server';
 import { DispatcherVerificationService } from '../services/dispatcherVerificationService';
 
 const router = Router();
@@ -160,6 +161,12 @@ function formatPost(row: any, names: Awaited<ReturnType<typeof fetchAuthorNames>
   };
 }
 
+function emitBroadcastChanged(id: string, action: 'created' | 'updated' | 'deleted') {
+  const event = { id, action };
+  io.to('role:responder').emit('broadcast:changed', event);
+  io.to('role:admin').to('role:master_admin').emit('broadcast:changed', event);
+}
+
 async function getRowsForFeed() {
   const { data, error } = await supabaseAdmin
     .from('public_broadcasts')
@@ -246,7 +253,9 @@ router.post('/mdrrmo', authenticate, authorize('admin', 'master_admin'), upload.
       .single();
     if (error || !data) throw error || new Error('The broadcast was not saved.');
     const names = await fetchAuthorNames([data]);
-    res.status(201).json(formatPost(data, names));
+    const post = formatPost(data, names);
+    emitBroadcastChanged(data.id, 'created');
+    res.status(201).json(post);
   } catch (err: any) {
     await cleanupUploadedMedia(storagePaths);
     console.error('Create MDRRMO broadcast error:', err);
@@ -274,6 +283,7 @@ router.patch('/mdrrmo/:id/pin', authenticate, authorize('admin', 'master_admin')
       return;
     }
     const names = await fetchAuthorNames([data]);
+    emitBroadcastChanged(data.id, 'updated');
     res.json(formatPost(data, names));
   } catch (err: any) {
     console.error('Update MDRRMO broadcast pinned status error:', err);
@@ -320,6 +330,7 @@ router.patch('/mdrrmo/:id', authenticate, authorize('admin', 'master_admin'), up
       res.status(404).json({ error: 'MDRRMO broadcast not found.' });
       return;
     }
+    emitBroadcastChanged(data.id, 'updated');
     const names = await fetchAuthorNames([data]);
     res.json(formatPost(data, names));
   } catch (err: any) {
@@ -344,6 +355,7 @@ router.delete('/mdrrmo/:id', authenticate, authorize('admin', 'master_admin'), a
       res.status(404).json({ error: 'MDRRMO broadcast not found.' });
       return;
     }
+    emitBroadcastChanged(data.id, 'deleted');
     res.json({ success: true, id: data.id });
   } catch (err: any) {
     console.error('Delete MDRRMO broadcast error:', err);

@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
+import '../services/socket_service.dart';
 
 class MdrrmoHomeScreen extends StatefulWidget {
   const MdrrmoHomeScreen({super.key});
@@ -15,17 +18,39 @@ class _MdrrmoHomeScreenState extends State<MdrrmoHomeScreen> {
   List<Map<String, dynamic>> _posts = [];
   bool _loading = true;
   String? _error;
+  late final void Function(dynamic) _broadcastChangedListener;
+  late final void Function(dynamic) _socketConnectListener;
+  dynamic _broadcastSocket;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+    _broadcastChangedListener = (_) => unawaited(_load(silent: true));
+    _socketConnectListener = (_) => unawaited(_load(silent: true));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final auth = context.read<AuthProvider>();
+      if (auth.user != null && auth.token != null) {
+        SocketService.connect(auth.user!.id, auth.user!.role.name, auth.token!);
+        _broadcastSocket = SocketService.socket;
+        _broadcastSocket.on('broadcast:changed', _broadcastChangedListener);
+        _broadcastSocket.on('connect', _socketConnectListener);
+      }
+      unawaited(_load());
+    });
   }
 
-  Future<void> _load() async {
+  @override
+  void dispose() {
+    _broadcastSocket?.off('broadcast:changed', _broadcastChangedListener);
+    _broadcastSocket?.off('connect', _socketConnectListener);
+    super.dispose();
+  }
+
+  Future<void> _load({bool silent = false}) async {
     final token = context.read<AuthProvider>().token;
     if (token == null) return;
-    if (mounted) setState(() { _loading = true; _error = null; });
+    if (mounted && (!silent || _posts.isEmpty)) setState(() { _loading = true; _error = null; });
     try {
       final posts = await ApiService.getMdrrmoBroadcasts(token);
       if (mounted) setState(() { _posts = posts; _error = null; });

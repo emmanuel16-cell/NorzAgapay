@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import {
   Megaphone,
   Plus,
@@ -24,7 +24,7 @@ import {
   Play,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { broadcastAPI } from '../lib/api';
+import { broadcastAPI, socket } from '../lib/api';
 
 /* ─────────────────── Types ─────────────────── */
 type BroadcastCategory =
@@ -1122,7 +1122,7 @@ export default function AlertBroadcastsPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [pinningId, setPinningId] = useState<string | null>(null);
 
-  const loadPosts = async () => {
+  const loadPosts = useCallback(async () => {
     setIsLoading(true);
     setLoadError(null);
     try {
@@ -1133,11 +1133,17 @@ export default function AlertBroadcastsPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     void loadPosts();
-  }, []);
+  }, [loadPosts]);
+
+  useEffect(() => {
+    const refresh = () => { void loadPosts(); };
+    socket.on('broadcast:changed', refresh);
+    return () => { socket.off('broadcast:changed', refresh); };
+  }, [loadPosts]);
 
   const activeCategoryItem = CATEGORY_SIDEBAR_ITEMS.find(c => c.id === selectedCategory);
 
@@ -1154,6 +1160,7 @@ export default function AlertBroadcastsPage() {
     setPosts(prev => editPost
       ? prev.map(item => item.id === savedPost.id ? savedPost : item)
       : [savedPost, ...prev]);
+    await loadPosts();
     toast.success(editPost ? 'Broadcast updated successfully.' : 'Broadcast published successfully.');
     setCreateOpen(false);
     setEditPost(null);
