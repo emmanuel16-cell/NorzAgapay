@@ -3697,7 +3697,6 @@ tbody tr:last-child td { border-bottom: none; }
 .assistance-status-chip.fulfilled { color: #70e6bd; background: #103d39; }
 .assistance-status-chip.rejected { color: #ffaaaa; background: #4a1c2b; }
 .assistance-status-chip.detail { padding: 8px 14px; font-size: 13px; }
-.assistance-request-detail-text { margin-top: 11px; }
 .assistance-request-preview { display: -webkit-box; overflow: hidden; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .assistance-request-actions { flex: 0 0 auto; }
 .assistance-history-list { display: flex; flex-direction: column; gap: 10px; }

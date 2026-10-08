@@ -259,15 +259,6 @@ export default function ResourceRequestsPage() {
                   </div>
                 </section>
 
-                <section className="reports-detail-section-v2">
-                  <h3>Assistance requested</h3>
-                  <div className="reports-info-grid-v2">
-                    <div className="reports-info-card-v2"><span>Request type</span><strong>{requestTypeLabel(selected.request_type)}</strong></div>
-                    <div className="reports-info-card-v2"><span>Submitted</span><strong>{dateTime(selected.created_at)}</strong></div>
-                  </div>
-                  <div className="reports-text-card-v2 assistance-request-detail-text">{selected.details}</div>
-                </section>
-
                 <section className="reports-detail-section-v2 assistance-history-section">
                   <div className="reports-section-heading-v2"><h3>Request &amp; coordination log</h3></div>
                   {selectedHistory.length ? (

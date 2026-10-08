@@ -3,6 +3,7 @@ import path from 'path';
 import PDFDocument from 'pdfkit';
 import { config } from '../config';
 import { supabaseAdmin } from '../config/supabase';
+import { isDirectMdrrmoReport, isEscalatedForMdrrmo } from './mdrrmoReportVisibility';
 
 type ResolutionCycle = 'barangay' | 'mdrrmo';
 type Assessment = Record<string, string>;
@@ -169,15 +170,11 @@ function completedCycles(report: any): ResolutionCycle[] {
   return cycles;
 }
 
-function hasMdrrmoResponseCycle(report: any): boolean {
-  const responseStatus = String(report.mdrrmo_response_status || '').toLowerCase();
-  return report.type === 'emergency' ||
-    String(report.send_to || '').toLowerCase() === 'mdrrmo' ||
-    String(report.status || '').toLowerCase() === 'escalated' ||
-    ['responding', 'resolved'].includes(responseStatus) ||
-    Boolean(report.mdrrmo_responded_by || report.mdrrmo_arrived_at || report.mdrrmo_resolved_at) ||
-    Boolean(cleanText(report.mdrrmo_coordination_notes)) ||
-    String(report.barangay_response_notes || '').toLowerCase().includes('escalated');
+function responseCycles(report: any): ResolutionCycle[] {
+  const sourceType = String(report.source_type || '').toLowerCase();
+  const escalated = sourceType ? sourceType === 'escalated' : isEscalatedForMdrrmo(report);
+  if (escalated) return ['barangay', 'mdrrmo'];
+  return [sourceType === 'direct' || isDirectMdrrmoReport(report) ? 'mdrrmo' : 'barangay'];
 }
 
 async function responderNames(report: any): Promise<{ barangay: string; mdrrmo: string }> {
@@ -223,36 +220,73 @@ async function mdrrmoCycleTimes(reportId: string): Promise<Record<string, string
 }
 
 async function assistanceForReport(reportId: string): Promise<any[]> {
-  const { data, error } = await supabaseAdmin
-    .from('barangay_assistance_requests')
-    .select('explanation, needs_more_manpower, needs_resources, needs_equipment, beyond_barangay_capability, status, decision, dispatcher_notes')
-    .eq('incident_report_id', reportId)
-    .order('created_at', { ascending: true });
-  if (error) {
-    console.warn('Could not load assistance requests for resolution PDF:', error.message);
-    return [];
+  const [barangayResult, legacyResult, reportResult] = await Promise.all([
+    supabaseAdmin
+      .from('barangay_assistance_requests')
+      .select('id, explanation, needs_more_manpower, needs_resources, needs_equipment, beyond_barangay_capability, status, decision, dispatcher_notes, created_at')
+      .eq('incident_report_id', reportId)
+      .order('created_at', { ascending: true }),
+    supabaseAdmin
+      .from('resource_requests')
+      .select('id, request_type, sub_type, details, status, created_at')
+      .eq('incident_id', reportId)
+      .order('created_at', { ascending: true }),
+    supabaseAdmin
+      .from('resource_requests')
+      .select('id, request_type, sub_type, details, status, created_at')
+      .eq('mdrrmo_report_id', reportId)
+      .order('created_at', { ascending: true }),
+  ]);
+  const firstError = barangayResult.error || legacyResult.error || reportResult.error;
+  if (firstError) throw firstError;
+
+  const requestsById = new Map<string, any>();
+  for (const request of barangayResult.data || []) {
+    requestsById.set(request.id, { ...request, source: 'barangay' });
   }
-  return data || [];
+  for (const request of [...(legacyResult.data || []), ...(reportResult.data || [])]) {
+    requestsById.set(request.id, {
+      ...request,
+      explanation: request.details,
+      source: 'mdrrmo',
+    });
+  }
+  return [...requestsById.values()].sort((a, b) =>
+    new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  );
 }
 
 function assistanceDetail(request: any): string {
-  const requested = [
+  const barangayNeeds = [
     request.needs_more_manpower ? 'Additional manpower' : '',
     request.needs_resources ? 'Resources' : '',
     request.needs_equipment ? 'Equipment' : '',
     request.beyond_barangay_capability ? 'MDRRMO coordination' : '',
   ].filter(Boolean);
+  const typeLabel = request.request_type === 'responders' ? 'Responders'
+    : request.request_type === 'goods' ? 'Goods'
+    : cleanText(request.request_type);
+  const requestLabel = barangayNeeds.length
+    ? barangayNeeds.join(', ')
+    : [typeLabel, cleanText(request.sub_type)].filter(Boolean).join(' · ');
   const explanation = cleanText(request.explanation);
-  return [requested.join(', '), explanation, cleanText(request.dispatcher_notes)]
+  return [requestLabel, explanation, cleanText(request.dispatcher_notes)]
     .filter(Boolean).join(' - ') || 'Assistance request';
 }
 
 function assistanceOutcome(request: any): string {
   if (request.status === 'cancelled') return 'Cancelled';
-  if (request.status !== 'actioned') return 'Pending';
-  if (request.decision === 'provide_barangay_assistance') return 'Provided';
-  if (request.decision === 'coordinate_mdrrmo') return 'Coordinated';
-  return 'Actioned';
+  if (request.decision === 'dismissed' || request.status === 'rejected') return 'Rejected';
+  if (request.source === 'mdrrmo') {
+    if (request.status === 'approved') return 'Approved';
+    if (request.status === 'fulfilled') return 'Received';
+    return 'Pending';
+  }
+  if (request.decision === 'provide_barangay_assistance') return request.status === 'fulfilled' ? 'Fulfilled' : 'Provided';
+  if (request.decision === 'coordinate_mdrrmo') return 'Coordinated with MDRRMO';
+  if (request.status === 'fulfilled') return 'Fulfilled';
+  if (request.status === 'actioned') return 'Actioned';
+  return 'Pending';
 }
 
 async function toBuffer(report: any, resident: any, assistance: any[], names: { barangay: string; mdrrmo: string }): Promise<Buffer> {
@@ -280,7 +314,10 @@ async function toBuffer(report: any, resident: any, assistance: any[], names: { 
   const occurred = report.incident_time_precision === 'unknown' || !report.incident_occurred_at
     ? 'Incident time unknown'
     : phDate(report.incident_occurred_at);
-  const destination = [report.send_to === 'mdrrmo' ? 'MDRRMO' : report.send_to === 'barangay' ? 'Barangay' : 'Response team', report.barangays?.name].filter(Boolean).join(' - ');
+  const destinationRoute = String(report.source_type || '').toLowerCase() === 'escalated' || isDirectMdrrmoReport(report)
+    ? 'MDRRMO'
+    : report.send_to === 'barangay' ? 'Barangay' : 'Response team';
+  const destination = [destinationRoute, report.barangays?.name].filter(Boolean).join(' - ');
 
   doc.font(bold).fontSize(18).fillColor(ink).text('Incident Resolution Report', { align: 'center' });
   doc.moveDown(0.2).font(regular).fontSize(9).fillColor(muted).text('NorzAgapay | Official incident record', { align: 'center' });
@@ -328,10 +365,7 @@ async function toBuffer(report: any, resident: any, assistance: any[], names: { 
   row('Classification & severity', `${cleanText(report.incident_type) || 'Not classified'} | ${cleanText(report.severity) || 'Not recorded'}`);
 
   const cycles = completedCycles(report);
-  const responseCycles: ResolutionCycle[] = hasMdrrmoResponseCycle(report)
-    ? ['barangay', 'mdrrmo']
-    : ['barangay'];
-  for (const cycle of responseCycles) {
+  for (const cycle of responseCycles(report)) {
     const status = cycle === 'barangay' ? report.barangay_response_status : report.mdrrmo_response_status;
     const title = cycle === 'barangay' ? 'Barangay' : 'MDRRMO';
     section(`${title} Response Cycle`);
@@ -422,9 +456,36 @@ export class IncidentResolutionPdfService {
         mdrrmo_arrived_at: mReport.arrived_at,
         mdrrmo_resolved_at: mReport.resolved_at,
         mdrrmo_resolved_notes: mReport.resolved_notes,
+        mdrrmo_dispatcher_reviewed_at: mReport.dispatcher_reviewed_at,
         status: mReport.response_status,
+        send_to: mReport.source_type === 'direct' ? 'mdrrmo' : mReport.send_to,
         barangays: mReport.barangay_name ? { name: mReport.barangay_name } : null,
       };
+
+      const sourceBarangayReportId = mReport.source_barangay_report_id ||
+        (mReport.source_type === 'escalated' ? reportId : null);
+      if (mReport.source_type === 'escalated' && sourceBarangayReportId) {
+        const { data: barangayReport, error: barangayReportError } = await supabaseAdmin
+          .from('barangay_reports')
+          .select('*')
+          .eq('id', sourceBarangayReportId)
+          .maybeSingle();
+        if (barangayReportError) throw barangayReportError;
+        if (barangayReport) {
+          report = {
+            ...report,
+            barangay_response_status: barangayReport.response_status,
+            barangay_response_notes: barangayReport.response_notes,
+            barangay_responded_by: barangayReport.responded_by,
+            barangay_dispatcher_reviewed_at: barangayReport.dispatcher_reviewed_at,
+            barangay_dispatched_at: barangayReport.dispatched_at,
+            barangay_accepted_at: barangayReport.accepted_at,
+            barangay_arrived_at: barangayReport.arrived_at,
+            barangay_resolved_at: barangayReport.resolved_at,
+            barangay_resolved_notes: barangayReport.resolved_notes,
+          };
+        }
+      }
     }
 
     if (!report) {
