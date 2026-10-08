@@ -127,9 +127,8 @@ interface BarangayPayload {
 
 const authenticateBarangay = async (req: AuthRequest, res: Response, next: any) => {
   const authHeader = req.headers.authorization;
-  const token = authHeader?.startsWith('Bearer ')
-    ? authHeader.split(' ')[1]
-    : ((req.query?.token as string) || (req.body?.token as string));
+  const bearerToken = authHeader?.match(/^Bearer\s+(.+)$/i)?.[1]?.trim();
+  const token = bearerToken || (req.body?.token as string) || (req.query?.token as string);
 
   if (!token) {
     res.status(401).json({ error: 'Unauthorized' });

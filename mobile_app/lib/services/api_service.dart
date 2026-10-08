@@ -680,6 +680,9 @@ class ApiService {
       Uri.parse('$baseUrl/barangay/assistance-requests'),
       headers: _headers(token),
       body: jsonEncode({
+        // Keep the token in the JSON body as a fallback for Flutter Web
+        // clients whose browser omits the Authorization header.
+        'token': token,
         'incident_report_id': incidentReportId,
         'incident_title': incidentTitle,
         'needs_more_manpower': needsMoreManpower,
