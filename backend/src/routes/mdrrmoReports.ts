@@ -76,6 +76,10 @@ function formatReport(report: any): any {
     is_escalated: isEscalated,
     response_status: normalizedStatus,
     mdrrmo_response_status: normalizedStatus,
+    // The responder app writes MDRRMO assessments to the canonical
+    // mdrrmo_reports.response_notes column. Expose the legacy API alias too
+    // so dashboard consumers reading mdrrmo_response_notes see the same data.
+    mdrrmo_response_notes: report.response_notes || report.mdrrmo_response_notes || null,
     mdrrmo_responded_by: report.responded_by || report.mdrrmo_responded_by || null,
     mdrrmo_responder_name: report.responder_name || report.mdrrmo_responder_name || null,
     mdrrmo_dispatched_at: report.dispatched_at || report.mdrrmo_dispatched_at || null,
@@ -552,7 +556,10 @@ router.patch('/:id/respond', authenticate, authorize('responder'), async (req: A
   const parsed = z.object({
     member_ids: z.array(z.string().uuid()).min(2).max(7)
       .refine((ids) => new Set(ids).size === ids.length, 'Choose each crew member once.'),
-  }).safeParse(req.body);
+    latitude: z.number().min(-90).max(90).optional(),
+    longitude: z.number().min(-180).max(180).optional(),
+  }).refine((body) => (body.latitude === undefined) === (body.longitude === undefined), 'Send both responder coordinates or neither.')
+    .safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: 'Choose at least one Driver Responder and one First Aider Responder before accepting.' });
     return;
@@ -573,6 +580,26 @@ router.patch('/:id/respond', authenticate, authorize('responder'), async (req: A
       res.status(409).json({ error: 'Only an assigned report can be accepted.' });
       return;
     }
+
+    if (parsed.data.latitude !== undefined && parsed.data.longitude !== undefined) {
+      const incidentLatitude = Number(report.latitude);
+      const incidentLongitude = Number(report.longitude);
+      if (Number.isFinite(incidentLatitude) && Number.isFinite(incidentLongitude) &&
+          incidentLatitude !== 0 && incidentLongitude !== 0) {
+        const travelDistanceM = Math.round(distanceMeters(
+          incidentLatitude,
+          incidentLongitude,
+          parsed.data.latitude,
+          parsed.data.longitude,
+        ) * 10) / 10;
+        const { error: distanceError } = await supabaseAdmin
+          .from('mdrrmo_reports')
+          .update({ travel_distance_m: travelDistanceM })
+          .eq('id', report.id);
+        if (distanceError) throw distanceError;
+      }
+    }
+
     const { error: acceptError } = await supabaseAdmin.rpc('accept_mdrrmo_report_with_crew_v1', {
       p_report_id: report.id,
       p_responder_id: req.user!.userId,

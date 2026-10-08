@@ -14,6 +14,7 @@ import '../services/incident_socket_service.dart';
 import '../services/evidence_upload_service.dart';
 import '../services/resident_gps_service.dart';
 import '../services/resident_push_service.dart';
+import '../services/notification_sound_service.dart';
 import 'evacuation_map_screen.dart';
 import 'feed_screen.dart';
 import 'hotlines_screen.dart';
@@ -488,6 +489,7 @@ class MainNavigationScreenState extends State<MainNavigationScreen>
     if (!mounted) return;
     final id = report.id;
     if (id == null) return;
+    unawaited(NotificationSoundService.play(ResidentNotificationSound.review));
     final isInconclusive = report.displayStatus == 'inconclusive';
     final reason = report.reviewReason?.trim();
     final message = isInconclusive
@@ -541,6 +543,15 @@ class MainNavigationScreenState extends State<MainNavigationScreen>
     if (!mounted) {
       return;
     }
+    final sound = handlerChanged
+        ? ResidentNotificationSound.dispatch
+        : switch (milestone) {
+            1 => ResidentNotificationSound.review,
+            2 || 3 => ResidentNotificationSound.dispatch,
+            4 => ResidentNotificationSound.arrival,
+            _ => ResidentNotificationSound.resolved,
+          };
+    unawaited(NotificationSoundService.play(sound));
     final responder = report.activeResponderName;
     final String title;
     final String message;

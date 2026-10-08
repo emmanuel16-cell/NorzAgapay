@@ -261,11 +261,23 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
     final selectedMemberIds = await _selectCrewMembers(eligibleMembers);
     if (selectedMemberIds == null || !mounted) return;
 
+    double? responderLatitude;
+    double? responderLongitude;
+    try {
+      final currentLocation = await _locationService.getLocation();
+      responderLatitude = currentLocation.latitude;
+      responderLongitude = currentLocation.longitude;
+    } catch (error) {
+      debugPrint('Could not capture responder position at dispatch acceptance: $error');
+    }
+
     await _run(() async {
       _report = await ApiService.respondToMdrrmoReport(
         token,
         _report.id,
         memberIds: selectedMemberIds,
+        latitude: responderLatitude,
+        longitude: responderLongitude,
       );
       _acceptedAssignment = {
         'responder_id': userId,

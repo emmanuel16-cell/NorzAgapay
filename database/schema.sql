@@ -3278,6 +3278,7 @@ CREATE TABLE IF NOT EXISTS public.mdrrmo_reports (
 
   -- Arrival (tracked per-assignment in mdrrmo_report_assignments)
   accepted_at                 TIMESTAMPTZ,
+  travel_distance_m           DOUBLE PRECISION,
   arrived_at                  TIMESTAMPTZ,
 
   -- Resolution
@@ -3342,6 +3343,7 @@ ALTER TABLE public.mdrrmo_reports
   ADD COLUMN IF NOT EXISTS dispatched_at TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS dispatch_notes TEXT,
   ADD COLUMN IF NOT EXISTS accepted_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS travel_distance_m DOUBLE PRECISION,
   ADD COLUMN IF NOT EXISTS arrived_at TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS resolved_by UUID,

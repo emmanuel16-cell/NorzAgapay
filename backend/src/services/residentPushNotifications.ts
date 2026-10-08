@@ -1,11 +1,13 @@
 import type { Messaging } from 'firebase-admin/messaging';
 import { supabaseAdmin } from '../config/supabase';
 import { getFirebaseMessagingClient } from './firebaseAdmin';
+import { estimateReportTimings } from './reportTiming';
 
 type ResidentPushOutboxEvent = {
   id: number;
   report_id: string;
   resident_id: string;
+  source_table?: string;
   report_title: string;
   display_status: string;
   revision: number;
@@ -17,6 +19,67 @@ type ResidentPushOutboxEvent = {
 let pushRelayTimer: ReturnType<typeof setInterval> | null = null;
 let pushRelayRunning = false;
 let retryAfter = 0;
+
+function notificationSoundForStatus(status: string): { channelId: string; sound: string } {
+  const normalized = status.toLowerCase();
+  if (normalized.includes('resolved')) {
+    return { channelId: 'resident_report_resolved', sound: 'report_resolved' };
+  }
+  if (normalized.includes('arrived')) {
+    return { channelId: 'resident_responder_arrived', sound: 'resident_report_update' };
+  }
+  if (normalized.includes('accepted') || normalized.includes('dispatched') || normalized === 'responding') {
+    return { channelId: 'resident_responder_enroute', sound: 'mdrrmo_dispatch' };
+  }
+  if (normalized.includes('review') || normalized.includes('inconclusive') || normalized.includes('false report') || normalized.includes('mdrrmo')) {
+    return { channelId: 'resident_report_review', sound: 'report_review' };
+  }
+  return { channelId: 'resident_report_updates', sound: 'resident_report_update' };
+}
+
+function formatEta(seconds: number): string {
+  const minutes = Math.max(1, Math.round(seconds / 60));
+  if (minutes < 60) return `about ${minutes} minute${minutes === 1 ? '' : 's'}`;
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return remainingMinutes === 0
+    ? `about ${hours} hour${hours === 1 ? '' : 's'}`
+    : `about ${hours} hour${hours === 1 ? '' : 's'} ${remainingMinutes} minute${remainingMinutes === 1 ? '' : 's'}`;
+}
+
+async function estimateAcceptedResponderArrival(event: ResidentPushOutboxEvent): Promise<number | null> {
+  const table = event.source_table === 'mdrrmo_reports' ? 'mdrrmo_reports' : 'barangay_reports';
+  try {
+    const { data: report, error: reportError } = await supabaseAdmin
+      .from(table)
+      .select('id, barangay_id, type, severity, created_at, accepted_at, travel_distance_m')
+      .eq('id', event.report_id)
+      .maybeSingle();
+    if (reportError) throw reportError;
+    const distance = Number(report?.travel_distance_m);
+    if (!report || !Number.isFinite(distance) || distance <= 0) return null;
+
+    const historyQuery = supabaseAdmin
+      .from(table)
+      .select('barangay_id, type, severity, created_at, accepted_at, arrived_at, resolved_at, travel_distance_m')
+      .not('accepted_at', 'is', null)
+      .not('arrived_at', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(5000);
+    const { data: history, error: historyError } = report.barangay_id
+      ? await historyQuery.eq('barangay_id', report.barangay_id)
+      : await historyQuery;
+    if (historyError) throw historyError;
+
+    const estimate = estimateReportTimings(report, history || []);
+    return estimate.arrival_method === 'historical_average'
+      ? null
+      : estimate.arrival_seconds;
+  } catch (error) {
+    console.warn('Could not estimate responder arrival for resident push:', error);
+    return null;
+  }
+}
 
 async function markProcessed(eventId: number): Promise<void> {
   const { error } = await supabaseAdmin
@@ -72,13 +135,27 @@ async function sendStatusUpdate(
 
   const reportTitle = event.report_title.trim() || 'Incident report';
   const status = event.display_status.trim() || 'updated';
+  const notificationSound = notificationSoundForStatus(status);
+  const accepted = status.toLowerCase() === 'responder accepted';
+  const dispatched = status.toLowerCase() === 'responder dispatched';
+  const etaSeconds = accepted ? await estimateAcceptedResponderArrival(event) : null;
+  const notificationTitle = accepted
+    ? 'Responder heading to your location'
+    : dispatched
+      ? 'Responder assigned to your report'
+      : 'Incident report update';
+  const notificationBody = accepted
+    ? `A responder has accepted the dispatch for “${reportTitle}” and is heading to your location.${etaSeconds === null ? '' : ` Estimated arrival: ${formatEta(etaSeconds)}.`}`
+    : dispatched
+      ? `A dispatcher assigned your report “${reportTitle}” to a responder. We will notify you when they accept and head your way.`
+      : `Your report “${reportTitle}” is ${status}.`;
   for (let start = 0; start < tokens.length; start += 500) {
     const tokenBatch = tokens.slice(start, start + 500);
     const response = await client.sendEachForMulticast({
       tokens: tokenBatch,
       notification: {
-        title: 'Incident report update',
-        body: `Your report “${reportTitle}” is ${status}.`,
+        title: notificationTitle,
+        body: notificationBody,
       },
       data: {
         type: 'resident_report_status',
@@ -86,12 +163,13 @@ async function sendStatusUpdate(
         report_title: reportTitle,
         status,
         revision: String(event.revision),
+        ...(etaSeconds === null ? {} : { expected_arrival_seconds: String(etaSeconds) }),
       },
       android: {
         priority: 'high',
         notification: {
-          channelId: 'resident_report_updates',
-          sound: 'resident_report_update',
+          channelId: notificationSound.channelId,
+          sound: notificationSound.sound,
           // Keep only the latest unread status notification for each report.
           tag: `resident-report-${event.report_id}`,
         },

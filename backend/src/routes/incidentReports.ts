@@ -296,6 +296,32 @@ async function fetchResidentReportById(id: string) {
   return mResult.data || bResult.data || null;
 }
 
+async function getResidentReportTimingHistory(barangayIds: string[]) {
+  if (barangayIds.length === 0) return [];
+  const select = 'barangay_id, type, severity, created_at, accepted_at, arrived_at, resolved_at, travel_distance_m';
+  const [barangayHistory, mdrrmoHistory] = await Promise.all([
+    supabaseAdmin
+      .from('barangay_reports')
+      .select(select)
+      .in('barangay_id', barangayIds)
+      .not('accepted_at', 'is', null)
+      .not('arrived_at', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(5000),
+    supabaseAdmin
+      .from('mdrrmo_reports')
+      .select(select)
+      .in('barangay_id', barangayIds)
+      .not('accepted_at', 'is', null)
+      .not('arrived_at', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(5000),
+  ]);
+  if (barangayHistory.error) console.warn('Barangay response timing history unavailable:', barangayHistory.error.message);
+  if (mdrrmoHistory.error) console.warn('MDRRMO response timing history unavailable:', mdrrmoHistory.error.message);
+  return [...(barangayHistory.data || []), ...(mdrrmoHistory.data || [])];
+}
+
 async function persistIncidentEvidence(
   reportId: string,
   files: Express.Multer.File[],
@@ -721,19 +747,7 @@ router.get('/resident', optionalAuthenticate, async (req: AuthRequest, res: Resp
     reportRows.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
     const barangayIds = [...new Set(reportRows.map((report: any) => report.barangay_id).filter(Boolean))];
-    let timingHistory: any[] = [];
-    if (barangayIds.length > 0) {
-      const { data: history } = await supabaseAdmin
-        .from('barangay_reports')
-        .select('barangay_id, type, severity, created_at, accepted_at, arrived_at, resolved_at, travel_distance_m')
-        .in('barangay_id', barangayIds)
-        .not('accepted_at', 'is', null)
-        .not('arrived_at', 'is', null)
-        .not('resolved_at', 'is', null)
-        .order('created_at', { ascending: false })
-        .limit(5000);
-      timingHistory = history || [];
-    }
+    const timingHistory = await getResidentReportTimingHistory(barangayIds);
 
     const assignedResponderIds = new Set<string>();
     for (const report of reportRows) {
@@ -799,7 +813,13 @@ router.get('/resident/:id', optionalAuthenticate, async (req: AuthRequest, res: 
       }
     }
     const bMap = await getBarangayNameMap();
-    res.json(formatIncidentReport(report, bMap));
+    const timingHistory = await getResidentReportTimingHistory(
+      report.barangay_id ? [report.barangay_id] : [],
+    );
+    res.json(formatIncidentReport({
+      ...report,
+      expected_timings: estimateReportTimings(report, timingHistory),
+    }, bMap));
   } catch (error) {
     console.error('Fetch resident incident report error:', error);
     res.status(500).json({ error: 'Could not refresh incident status.' });

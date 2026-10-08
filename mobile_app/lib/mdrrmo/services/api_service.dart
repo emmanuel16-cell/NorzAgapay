@@ -128,11 +128,17 @@ class ApiService {
     String token,
     String reportId, {
     required List<String> memberIds,
+    double? latitude,
+    double? longitude,
   }) async {
     final response = await http.patch(
       Uri.parse('$baseUrl/mdrrmo/reports/$reportId/respond'),
       headers: _headers(token),
-      body: jsonEncode({'member_ids': memberIds}),
+      body: jsonEncode({
+        'member_ids': memberIds,
+        if (latitude != null && longitude != null) 'latitude': latitude,
+        if (latitude != null && longitude != null) 'longitude': longitude,
+      }),
     );
     return _mdrrmoReportFromResponse(response, 'Failed to accept report');
   }

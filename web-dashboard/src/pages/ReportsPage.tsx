@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { format, formatDistanceToNowStrict } from 'date-fns';
-import { AlertTriangle, CheckCircle2, Image as ImageIcon, MapPin, Paperclip, Phone, Send, UserRound, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Download, Image as ImageIcon, MapPin, Paperclip, Phone, Send, UserRound, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { reportAPI, socket } from '../lib/api';
 import { INCIDENT_SEVERITY_OPTIONS, INCIDENT_TYPE_OPTIONS } from '../lib/incidentClassification';
@@ -25,7 +25,7 @@ interface IncidentReport {
   responder_media?: Array<{ url: string; type?: string; uploader_name?: string; role?: string; uploader_role?: string; created_at?: string }>;
   reporter_type?: string; reporter_name?: string | null; reporter_phone?: string | null;
   barangay_responder_name?: string | null; barangay_response_notes?: string | null; mdrrmo_coordination_notes?: string | null;
-  mdrrmo_response_notes?: string | null; mdrrmo_dispatch_notes?: string | null; mdrrmo_responder_name?: string | null;
+  response_notes?: string | null; mdrrmo_response_notes?: string | null; mdrrmo_dispatch_notes?: string | null; mdrrmo_responder_name?: string | null;
   resolved_notes?: string | null; created_at: string; dispatcher_reviewed_at?: string | null;
   incident_occurred_at?: string | null; incident_time_precision?: 'exact' | 'approximate' | 'unknown' | null;
   dispatched_at?: string | null; accepted_at?: string | null; arrived_at?: string | null;
@@ -96,6 +96,7 @@ export default function ReportsPage() {
   const [loadingResponders, setLoadingResponders] = useState(false);
   const [responderError, setResponderError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [preview, setPreview] = useState<{ url: string; video: boolean } | null>(null);
 
   const fetchReports = async () => {
@@ -211,9 +212,33 @@ export default function ReportsPage() {
     } catch (error) { console.error('Invalid-report review failed', error); toast.error('Could not mark this report invalid'); }
   };
 
+  const downloadResolutionPdf = async (report: IncidentReport) => {
+    try {
+      setDownloadingPdf(true);
+      const response = await reportAPI.downloadMdrrmoResolutionPdf(report.id);
+      const blob = new Blob([response.data], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `NorzAgapay_Incident_${report.id.slice(0, 8)}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      toast.success('Resolution document downloaded.');
+    } catch (error: any) {
+      console.error('Resolution PDF download failed', error);
+      toast.error(error?.response?.status === 409
+        ? 'The resolution document is incomplete. Complete the required field assessment before downloading.'
+        : 'Could not download the resolution document. Please try again.');
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
+
   const residentCount = reports.filter((item) => getGroup(item) === 'resident').length;
   const escalatedCount = reports.filter((item) => getGroup(item) === 'escalated').length;
-  const assessment = parseAssessment(selected?.mdrrmo_response_notes || selected?.barangay_response_notes);
+  const assessment = parseAssessment(selected?.mdrrmo_response_notes || selected?.response_notes || selected?.barangay_response_notes);
   const assignment = selected?.mdrrmo_assignments?.find((item) => item.status !== 'removed');
   const activeAssignments = selected?.mdrrmo_assignments?.filter((item) => item.status !== 'removed') || [];
   const reporterName = selected?.reporter_name || selected?.reporter?.full_name || 'Resident';
@@ -328,6 +353,11 @@ export default function ReportsPage() {
             {stage === 'pending' && <footer className="reports-detail-actions-v2">
                 {getGroup(selected) === 'resident' && !selected.mdrrmo_dispatched_at && <button type="button" className="reports-invalid-button-v2" onClick={() => void markInvalid(selected)}>Mark invalid</button>}
                 <button type="button" className="reports-dispatch-button-v2" onClick={() => void openDispatch(selected)} disabled={saving}><Send size={17} /> {selected.mdrrmo_dispatched_at ? 'Update dispatch' : 'Dispatch to MDRRMO'}</button>
+            </footer>}
+            {stage === 'resolved' && <footer className="reports-detail-actions-v2">
+              <button type="button" className="reports-dispatch-button-v2" onClick={() => void downloadResolutionPdf(selected)} disabled={downloadingPdf}>
+                <Download size={17} /> {downloadingPdf ? 'Preparing document…' : 'Download resolution document'}
+              </button>
             </footer>}
           </>}
         </section>

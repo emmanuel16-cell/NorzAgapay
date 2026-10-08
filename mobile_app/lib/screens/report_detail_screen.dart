@@ -17,6 +17,7 @@ import '../core/phone_number_utils.dart';
 import '../models/barangay_user.dart';
 import '../widgets/video_proof_player.dart';
 import '../widgets/incident_header_gradient.dart';
+import '../widgets/resolution_pdf_download_button.dart';
 
 class ReportDetailScreen extends StatefulWidget {
   final IncidentReport report;
@@ -140,7 +141,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     if (auth.token == null) return;
     try {
       List<Map<String, dynamic>> list = [];
-      if (auth.currentUser?.isDispatcher == true || auth.currentUser?.isBarangayAdmin == true) {
+      if (auth.currentUser?.isDispatcher == true ||
+          auth.currentUser?.isBarangayAdmin == true) {
         list = await ApiService.getAssistanceRequests(auth.token!);
       } else {
         list = await ApiService.getMyAssistanceRequests(auth.token!);
@@ -1531,8 +1533,12 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           ),
           ElevatedButton(
             onPressed: () {
-              if ([condition, people, actions, risks]
-                  .any((controller) => controller.text.trim().isEmpty)) {
+              if ([
+                condition,
+                people,
+                actions,
+                risks,
+              ].any((controller) => controller.text.trim().isEmpty)) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                     content: Text(
@@ -1802,7 +1808,10 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(e.toString().replaceFirst('Exception: ', '')), backgroundColor: Colors.red),
+            SnackBar(
+              content: Text(e.toString().replaceFirst('Exception: ', '')),
+              backgroundColor: Colors.red,
+            ),
           );
         }
       } finally {
@@ -1976,7 +1985,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     final incidentLocation = LatLng(_report.latitude, _report.longitude);
     final isResponder = user?.isResponder ?? false;
     final isDispatcher = user?.isDispatcher ?? false;
-    final isAssignedResponder = isResponder &&
+    final isAssignedResponder =
+        isResponder &&
         user != null &&
         _report.isAssignedToUser(user.id, userFullName: user.fullName);
     final showPendingRoleAction =
@@ -2169,6 +2179,16 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                   ],
                 ),
                 const SizedBox(height: 6),
+                if (_report.isResolved && auth.token != null) ...[
+                  ResolutionPdfDownloadButton(
+                    reportId: _report.id,
+                    loadPdf: () => ApiService.downloadResolutionPdf(
+                      auth.token!,
+                      _report.id,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
                 if (_report.incidentType != null ||
                     _report.severity != null) ...[
                   Container(
@@ -3433,10 +3453,15 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                     ],
                   ],
 
-                    // Dispatcher Decide Button
-                    Builder(builder: (context) {
-                      final auth = Provider.of<AuthService>(context, listen: false);
-                      final canDecide = auth.currentUser?.isDispatcher == true ||
+                  // Dispatcher Decide Button
+                  Builder(
+                    builder: (context) {
+                      final auth = Provider.of<AuthService>(
+                        context,
+                        listen: false,
+                      );
+                      final canDecide =
+                          auth.currentUser?.isDispatcher == true ||
                           auth.currentUser?.isBarangayAdmin == true;
                       if (!hasDispatcherResponded && canDecide) {
                         return Padding(
@@ -3449,7 +3474,10 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                               icon: const Icon(Icons.gavel, size: 16),
                               label: const Text(
                                 'Decide / Provide Assistance',
-                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                ),
                               ),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: const Color(0xFF0284C7),
@@ -3467,11 +3495,16 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                           padding: const EdgeInsets.only(top: 10),
                           child: Container(
                             width: double.infinity,
-                            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 8,
+                              horizontal: 12,
+                            ),
                             decoration: BoxDecoration(
                               color: const Color(0xFFF59E0B).withOpacity(0.12),
                               borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: const Color(0xFFF59E0B).withOpacity(0.3)),
+                              border: Border.all(
+                                color: const Color(0xFFF59E0B).withOpacity(0.3),
+                              ),
                             ),
                             child: const Row(
                               mainAxisAlignment: MainAxisAlignment.center,
@@ -3499,70 +3532,70 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                         );
                       }
                       return const SizedBox.shrink();
-                    }),
+                    },
+                  ),
 
-                    // Responder Acknowledge Received button
-                    if (hasDispatcherResponded && isResponder && !teamAcknowledged) ...[
-                      const SizedBox(height: 10),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 38,
-                        child: ElevatedButton.icon(
-                          onPressed: () async {
-                            final auth = Provider.of<AuthService>(
-                              context,
-                              listen: false,
+                  // Responder Acknowledge Received button
+                  if (hasDispatcherResponded &&
+                      isResponder &&
+                      !teamAcknowledged) ...[
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 38,
+                      child: ElevatedButton.icon(
+                        onPressed: () async {
+                          final auth = Provider.of<AuthService>(
+                            context,
+                            listen: false,
+                          );
+                          if (auth.token == null) return;
+                          try {
+                            await ApiService.teamLeaderRequestAction(
+                              auth.token!,
+                              req['id'],
+                              action: 'acknowledge',
                             );
-                            if (auth.token == null) return;
-                            try {
-                              await ApiService.teamLeaderRequestAction(
-                                auth.token!,
-                                req['id'],
-                                action: 'acknowledge',
+                            await _fetchAssistanceRequest();
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Assistance marked as received!',
+                                  ),
+                                  backgroundColor: Color(0xFF10B981),
+                                ),
                               );
-                              await _fetchAssistanceRequest();
-                              if (mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      'Assistance marked as received!',
-                                    ),
-                                    backgroundColor: Color(0xFF10B981),
-                                  ),
-                                );
-                              }
-                            } catch (e) {
-                              if (mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text('Error: $e'),
-                                    backgroundColor: Colors.red,
-                                  ),
-                                );
-                              }
                             }
-                          },
-                          icon: const Icon(
-                            Icons.check_circle_outline,
-                            size: 16,
+                          } catch (e) {
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Error: $e'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                          }
+                        },
+                        icon: const Icon(Icons.check_circle_outline, size: 16),
+                        label: const Text(
+                          'Mark Received',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
                           ),
-                          label: const Text(
-                            'Mark Received',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
-                            ),
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF10B981),
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF10B981),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
                           ),
                         ),
                       ),
-                    ],
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -3885,10 +3918,16 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           backgroundColor: const Color(0xFF1E293B),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           title: const Text(
             'Respond to Assistance Request',
-            style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold),
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 17,
+              fontWeight: FontWeight.bold,
+            ),
           ),
           content: SingleChildScrollView(
             child: Column(
@@ -3897,17 +3936,31 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
               children: [
                 Text(
                   'From: ${request['requested_by_user']?['full_name'] ?? 'Responder'}',
-                  style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 13, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                    color: Color(0xFF38BDF8),
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 if (request['explanation'] != null) ...[
                   const SizedBox(height: 6),
                   Text(
                     'Need: ${request['explanation']}',
-                    style: const TextStyle(color: Color(0xFFCBD5E1), fontSize: 12),
+                    style: const TextStyle(
+                      color: Color(0xFFCBD5E1),
+                      fontSize: 12,
+                    ),
                   ),
                 ],
                 const SizedBox(height: 12),
-                const Text('Your Decision:', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
+                const Text(
+                  'Your Decision:',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 const SizedBox(height: 8),
                 _decisionTile(
                   setDialogState: setDialogState,
@@ -3947,7 +4000,10 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                     labelText: 'Dispatcher Notes (optional)',
                     labelStyle: TextStyle(color: Color(0xFF94A3B8)),
                     hintText: 'e.g., Sending 2 additional volunteers now.',
-                    hintStyle: TextStyle(color: Color(0xFF64748B), fontSize: 12),
+                    hintStyle: TextStyle(
+                      color: Color(0xFF64748B),
+                      fontSize: 12,
+                    ),
                     filled: true,
                     fillColor: Color(0xFF0F172A),
                     border: OutlineInputBorder(),
@@ -3959,12 +4015,23 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel', style: TextStyle(color: Color(0xFF94A3B8))),
+              child: const Text(
+                'Cancel',
+                style: TextStyle(color: Color(0xFF94A3B8)),
+              ),
             ),
             ElevatedButton(
               onPressed: () => Navigator.pop(ctx, true),
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0284C7)),
-              child: const Text('Confirm Decision', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0284C7),
+              ),
+              child: const Text(
+                'Confirm Decision',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ),
           ],
         ),
@@ -3980,7 +4047,9 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           auth.token!,
           request['id'],
           decision: selectedDecision,
-          dispatcherNotes: notesController.text.trim().isEmpty ? null : notesController.text.trim(),
+          dispatcherNotes: notesController.text.trim().isEmpty
+              ? null
+              : notesController.text.trim(),
         );
         await _fetchAssistanceRequest();
         await _refreshReportFromServer();
@@ -4022,7 +4091,10 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         decoration: BoxDecoration(
           color: selected ? color.withOpacity(0.15) : const Color(0xFF0F172A),
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: selected ? color : const Color(0xFF334155), width: selected ? 1.5 : 1),
+          border: Border.all(
+            color: selected ? color : const Color(0xFF334155),
+            width: selected ? 1.5 : 1,
+          ),
         ),
         child: Row(
           children: [
@@ -4036,8 +4108,21 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(label, style: TextStyle(color: selected ? color : Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
-                  Text(subtitle, style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 11)),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      color: selected ? color : Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
+                  ),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      color: Color(0xFF94A3B8),
+                      fontSize: 11,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -4046,5 +4131,4 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
       ),
     );
   }
-
 }

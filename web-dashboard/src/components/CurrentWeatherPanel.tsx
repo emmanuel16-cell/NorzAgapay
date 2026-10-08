@@ -10,6 +10,7 @@ interface CurrentWeather {
   weather_condition?: string;
   source?: string;
   last_updated?: string;
+  stale?: boolean;
 }
 
 function formatValue(value: number | undefined, digits = 0): string {
@@ -114,7 +115,11 @@ export default function CurrentWeatherPanel() {
       </div>
 
       <div className="command-weather-source">
-        {hasError && weather ? 'Refresh unavailable' : `Source: ${weather?.source || 'N/A'}`}
+        {weather?.stale
+          ? `Using cached weather · Updated ${updatedAt ? new Date(updatedAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : 'earlier'}`
+          : hasError && weather
+            ? 'Refresh unavailable'
+            : `Source: ${weather?.source || 'N/A'}`}
       </div>
     </aside>
   );

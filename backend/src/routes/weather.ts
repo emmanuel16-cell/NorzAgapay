@@ -53,13 +53,21 @@ const generateFallbackForecast = () => {
     return { hourly, daily };
 };
 
-// Fetch weather data from Open-Meteo (secondary/backup source)
-const fetchOpenMeteoWeather = async (lat: number = 14.9042, lon: number = 121.0430) => {
+// Fetch current weather and, when requested, the forecast bundle from Open-Meteo.
+const fetchOpenMeteoWeather = async (
+    lat: number = 14.9042,
+    lon: number = 121.0430,
+    includeForecast = true,
+) => {
     try {
-        const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m,rain,showers,snowfall,pressure_msl,visibility,uv_index,weather_code&hourly=temperature_2m,relative_humidity_2m,precipitation_probability,weather_code,wind_speed_10m,wind_direction_10m&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max&timezone=Asia%2FManila`;
-        const response = await fetch(url, { signal: AbortSignal.timeout(4000) });
+        const forecastParameters = includeForecast
+            ? '&hourly=temperature_2m,relative_humidity_2m,precipitation_probability,weather_code,wind_speed_10m,wind_direction_10m&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max'
+            : '';
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m,rain,showers,snowfall,pressure_msl,visibility,uv_index,weather_code${forecastParameters}&timezone=Asia%2FManila`;
+        const response = await fetch(url, { signal: AbortSignal.timeout(12000) });
         if (!response.ok) throw new Error('Open-Meteo API request failed');
         const data = await response.json() as any;
+        if (!data.current) throw new Error('Open-Meteo response is missing current conditions');
         
         return {
             temperature: data.current.temperature_2m,
@@ -76,7 +84,7 @@ const fetchOpenMeteoWeather = async (lat: number = 14.9042, lon: number = 121.04
             daily: data.daily
         };
     } catch (error) {
-        console.warn('Open-Meteo unreachable or timed out, using fallback prediction.');
+        console.warn('Open-Meteo current weather request failed:', error);
         return null;
     }
 };
@@ -233,17 +241,32 @@ const calculateMunicipalityRisk = async () => {
 // Weather endpoints
 // ============================================
 
+const CURRENT_WEATHER_CACHE_TTL_MS = 10 * 60 * 1000;
+const CURRENT_WEATHER_MAX_STALE_MS = 60 * 60 * 1000;
+let currentWeatherCache: { data: Record<string, unknown>; cachedAt: number } | null = null;
+let currentWeatherRequest: Promise<Awaited<ReturnType<typeof fetchOpenMeteoWeather>>> | null = null;
+
 // Get current weather directly from Open-Meteo without persisting it.
 router.get('/current', async (req, res) => {
     try {
-        const weatherData = await fetchOpenMeteoWeather();
+        if (currentWeatherCache && Date.now() - currentWeatherCache.cachedAt < CURRENT_WEATHER_CACHE_TTL_MS) {
+            return res.json({ success: true, data: currentWeatherCache.data });
+        }
+
+        currentWeatherRequest ??= fetchOpenMeteoWeather(14.9042, 121.0430, false);
+        const weatherData = await currentWeatherRequest;
+        currentWeatherRequest = null;
         if (!weatherData) {
+            if (currentWeatherCache && Date.now() - currentWeatherCache.cachedAt < CURRENT_WEATHER_MAX_STALE_MS) {
+                return res.json({
+                    success: true,
+                    data: { ...currentWeatherCache.data, stale: true },
+                });
+            }
             return res.status(502).json({ success: false, error: 'Failed to fetch current weather from Open-Meteo' });
         }
 
-        res.json({
-            success: true,
-            data: {
+        const data = {
                 temperature: weatherData.temperature,
                 humidity: weatherData.humidity,
                 wind_speed: weatherData.windSpeed,
@@ -256,6 +279,7 @@ router.get('/current', async (req, res) => {
                 source: weatherData.source || 'Open-Meteo',
                 location: 'Norzagaray',
                 last_updated: new Date().toISOString(),
+                stale: false,
                 units: {
                     temperature: '°C',
                     humidity: '%',
@@ -263,11 +287,17 @@ router.get('/current', async (req, res) => {
                     pressure: 'hPa',
                     visibility: 'km'
                 }
-            }
-        });
+            };
+        currentWeatherCache = { data, cachedAt: Date.now() };
+        res.json({ success: true, data });
     } catch (error) {
+        currentWeatherRequest = null;
         console.error('Error in weather current endpoint:', error);
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        if (currentWeatherCache && Date.now() - currentWeatherCache.cachedAt < CURRENT_WEATHER_MAX_STALE_MS) {
+            res.json({ success: true, data: { ...currentWeatherCache.data, stale: true } });
+            return;
+        }
+        res.status(502).json({ success: false, error: 'Current weather is temporarily unavailable.' });
     }
 });
 

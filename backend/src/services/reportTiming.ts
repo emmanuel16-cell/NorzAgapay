@@ -64,7 +64,7 @@ export function summarizeReportTimings(reports: ReportTimingRecord[]) {
 
 function predictArrivalFromDistance(history: ReportTimingRecord[], targetDistanceM: number): {
   seconds: number | null;
-  method: 'distance_regression' | 'nearby_distance_median' | 'historical_average';
+  method: 'distance_regression' | 'nearby_distance_median' | 'distance_ratio' | 'distance_baseline';
   sampleCount: number;
 } {
   const samples = history.flatMap((report) => {
@@ -101,14 +101,23 @@ function predictArrivalFromDistance(history: ReportTimingRecord[], targetDistanc
     };
   }
 
-  const allArrivalDurations = history
-    .map((report) => reportStageDurations(report).arrivalSeconds)
-    .filter((value): value is number => value !== null);
-  const historicalAverage = mean(allArrivalDurations);
+  if (samples.length > 0) {
+    const secondsPerKm = median(samples.map((sample) => sample.duration / sample.distanceKm))!;
+    return {
+      seconds: Math.min(8 * 60 * 60, Math.max(60, Math.round(secondsPerKm * (targetDistanceM / 1000)))),
+      method: 'distance_ratio',
+      sampleCount: samples.length,
+    };
+  }
+
+  // Until completed distance samples are available, estimate road distance
+  // at a conservative 30 km/h and allow 35% for road route vs. straight line.
+  const estimatedRoadDistanceM = targetDistanceM * 1.35;
+  const baselineSeconds = estimatedRoadDistanceM / (30_000 / 3_600);
   return {
-    seconds: historicalAverage === null ? null : Math.round(historicalAverage),
-    method: 'historical_average',
-    sampleCount: allArrivalDurations.length,
+    seconds: Math.min(8 * 60 * 60, Math.max(60, Math.round(baselineSeconds))),
+    method: 'distance_baseline',
+    sampleCount: 0,
   };
 }
 
