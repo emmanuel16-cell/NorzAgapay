@@ -80,9 +80,13 @@ async function sendAssignmentAlert(client: Messaging, event: ResponderPushOutbox
       android: {
         priority: 'high',
         notification: {
-          channelId: 'incident_reports',
+          channelId: 'mdrrmo_dispatches',
+          sound: 'mdrrmo_dispatch',
           tag: event.report_id,
         },
+      },
+      apns: {
+        payload: { aps: { sound: 'default' } },
       },
     });
 

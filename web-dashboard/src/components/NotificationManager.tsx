@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { socket } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { isVisibleToMdrrmo } from '../lib/mdrrmoReportVisibility';
+import { playNotificationSound } from '../lib/notificationSound';
 
 export default function NotificationManager() {
   const navigate = useNavigate();
@@ -17,6 +18,7 @@ export default function NotificationManager() {
 
     // Helper to show custom notification
     const showIncidentNotification = (reportId: string, title: string) => {
+      playNotificationSound('incident');
       toast((t) => (
         <div 
           onClick={() => {
@@ -46,6 +48,7 @@ export default function NotificationManager() {
 
     socket.on('resource:request', (request: any) => {
       if (!['dispatcher', 'master_admin'].includes(user.role)) return;
+      playNotificationSound('assistance');
       toast((t) => (
         <div
           onClick={() => {

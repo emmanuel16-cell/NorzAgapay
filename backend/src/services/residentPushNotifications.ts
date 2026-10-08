@@ -90,9 +90,14 @@ async function sendStatusUpdate(
       android: {
         priority: 'high',
         notification: {
+          channelId: 'resident_report_updates',
+          sound: 'resident_report_update',
           // Keep only the latest unread status notification for each report.
           tag: `resident-report-${event.report_id}`,
         },
+      },
+      apns: {
+        payload: { aps: { sound: 'default' } },
       },
     });
 

@@ -7,6 +7,7 @@ import '../core/phone_number_utils.dart';
 import '../services/socket_service.dart';
 import '../services/api_service.dart';
 import '../services/dispatcher_push_service.dart';
+import '../services/notification_sound_service.dart';
 import '../models/incident_report.dart';
 import 'reports_screen.dart';
 import 'report_detail_screen.dart';
@@ -90,6 +91,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (!mounted || !DispatcherPushService.shouldShowReportAlert(reportId)) {
       return;
     }
+    unawaited(
+      NotificationSoundService.play(NotificationSound.residentIncident),
+    );
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(

@@ -10,6 +10,7 @@ import 'mdrrmo_hotline_screen.dart';
 import 'mdrrmo_profile_screen.dart';
 import 'mdrrmo_reports_screen.dart';
 import '../../services/mdrrmo_responder_push_service.dart';
+import '../../services/notification_sound_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -60,6 +61,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _showAssignmentAlert(MdrrmoAssignmentAlert alert) {
     if (!mounted) return;
+    unawaited(
+      NotificationSoundService.play(NotificationSound.mdrrmoDispatch),
+    );
     final messenger = ScaffoldMessenger.of(context);
     // Replace an older alert immediately so a new assignment is visible even
     // while the previous red alert is still on screen.

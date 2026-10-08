@@ -116,9 +116,13 @@ async function sendReportAlert(client: Messaging, event: PushOutboxEvent): Promi
       android: {
         priority: 'high',
         notification: {
-          channelId: 'incident_reports',
+          channelId: 'resident_incidents',
+          sound: 'resident_incident',
           tag: report.id,
         },
+      },
+      apns: {
+        payload: { aps: { sound: 'default' } },
       },
     });
 
