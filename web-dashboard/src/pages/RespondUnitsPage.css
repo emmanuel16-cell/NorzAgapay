@@ -40,6 +40,8 @@
 .ru-queue-empty, .ru-detail-empty { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 25px; color: #91a8cc; text-align: center; }
 .ru-queue-empty strong, .ru-detail-empty strong { color: #dce8fc; font-size: 16px; }
 .ru-queue-empty span, .ru-detail-empty p { max-width: 330px; margin: 0; color: #91add9; font-size: 13px; line-height: 1.5; }
+.ru-queue-error strong { color: #ffb6bc; }
+.ru-queue-error .btn { margin-top: 5px; }
 .ru-detail-empty > div { display: grid; width: 54px; height: 54px; place-items: center; border-radius: 14px; color: #91a8cc; background: #12264a; }
 .ru-unit-detail { min-width: 0; min-height: 0; overflow: auto; padding: 26px 30px 32px; background: #08152e; }
 .ru-detail-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding-bottom: 19px; border-bottom: 1px solid #243a61; }
@@ -60,6 +62,7 @@
 .ru-member-info strong { overflow: hidden; color: #f2f6ff; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
 .ru-member-info span { overflow: hidden; color: #91add9; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .ru-member-status { padding: 5px 10px; border: 1px solid #28655f; border-radius: 99px; color: #7de0c5; background: #123b3a; font-size: 11px; font-weight: 700; }
+.ru-member-status.inactive { border-color: #7d4150; color: #ffb6bc; background: #432536; }
 .ru-roster-title { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: 24px 0 12px; }
 .ru-roster-title h3 { margin: 0 0 4px; color: #d7e4f8; font-size: 16px; }
 .ru-roster-title span { color: #8fa8ce; font-size: 12px; }

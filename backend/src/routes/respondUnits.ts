@@ -77,7 +77,7 @@ async function getUnitDetails(unitIds?: string[]) {
       ? supabaseAdmin.from('officers').select('id, name, email, phone, specialization, rank, status').in('id', officerIds)
       : Promise.resolve({ data: [], error: null } as any),
     responderIds.length
-      ? supabaseAdmin.from('users').select('id, full_name, email, phone, status').in('id', responderIds)
+      ? supabaseAdmin.from('users').select('id, full_name, email, phone, role, status').in('id', responderIds)
       : Promise.resolve({ data: [], error: null } as any),
   ]);
   if (officersResult.error) throw officersResult.error;
@@ -112,7 +112,7 @@ async function getUnitDetails(unitIds?: string[]) {
     const activeMembers = members.filter((member: any) => member.member_role !== 'unassigned');
     const officerIds = [...new Set(members.map((member: any) => member.officer_id))];
     const activation: any = activationByUnit.get(unit.id);
-    const rosterReady = Boolean(leader) &&
+    const rosterReady = Boolean(leader && leaderAccount?.role === 'responder' && leaderAccount?.status === 'active') &&
       activeMembers.some((member: any) => member.member_role === 'driver_responder') &&
       activeMembers.some((member: any) => member.member_role === 'first_aider_responder');
     return {
@@ -124,6 +124,7 @@ async function getUnitDetails(unitIds?: string[]) {
         id: leader.responder_user_id,
         full_name: leaderAccount?.full_name || leader.name,
         email: leaderAccount?.email || leader.email,
+        is_active_account: leaderAccount?.role === 'responder' && leaderAccount?.status === 'active',
       } : null,
       members,
       roster_ready: rosterReady,
@@ -275,7 +276,7 @@ router.get('/', authenticate, authorize('logistics', 'admin', 'dispatcher', 'mas
   }
 });
 
-router.put('/:id/activation-today', authenticate, authorize('logistics', 'dispatcher', 'master_admin'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.put('/:id/activation-today', authenticate, authorize('logistics', 'master_admin'), async (req: AuthRequest, res: Response): Promise<void> => {
   const parsed = z.object({ active: z.boolean() }).safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: 'Choose whether this unit should be active today.' }); return; }
   try {
@@ -309,12 +310,12 @@ router.post('/', authenticate, authorize('logistics', 'master_admin'), async (re
   const schema = z.object({
     unit_name: z.string().trim().min(2).max(100),
     specialization: z.string().trim().min(1).max(120).default('mixed'),
-    team_leader_user_id: z.string().uuid(),
+    team_leader_user_id: z.string().uuid().optional(),
     members: z.array(memberInput).max(7).optional().default([]),
   });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: 'Enter a unit name, choose a Team Leader responder account, and check the roster fields.' });
+    res.status(400).json({ error: 'Enter a valid unit name, optional Team Leader, and roster fields.' });
     return;
   }
   const capacityError = validateRosterCapacity(parsed.data.members);
@@ -323,15 +324,19 @@ router.post('/', authenticate, authorize('logistics', 'master_admin'), async (re
   let unitId: string | null = null;
   const newOfficerIds: string[] = [];
   try {
-    const { data: leaderUser, error: userError } = await supabaseAdmin
-      .from('users')
-      .select('id, full_name, email, phone, role, status')
-      .eq('id', parsed.data.team_leader_user_id)
-      .maybeSingle();
-    if (userError) throw userError;
-    if (!leaderUser || leaderUser.role !== 'responder' || leaderUser.status !== 'active') {
-      res.status(400).json({ error: 'Choose an active responder account as the Team Leader.' });
-      return;
+    let leaderUser: any = null;
+    if (parsed.data.team_leader_user_id) {
+      const { data, error: userError } = await supabaseAdmin
+        .from('users')
+        .select('id, full_name, email, phone, role, status')
+        .eq('id', parsed.data.team_leader_user_id)
+        .maybeSingle();
+      if (userError) throw userError;
+      leaderUser = data;
+      if (!leaderUser || leaderUser.role !== 'responder' || leaderUser.status !== 'active') {
+        res.status(400).json({ error: 'Choose an active responder account as the Team Leader, or leave the position unassigned for now.' });
+        return;
+      }
     }
 
     const { data: unit, error: unitError } = await supabaseAdmin
@@ -347,14 +352,16 @@ router.post('/', authenticate, authorize('logistics', 'master_admin'), async (re
     if (unitError) throw unitError;
     unitId = unit.id;
 
-    const leaderOfficer = await ensureOfficerForResponder(leaderUser, parsed.data.specialization);
-    if (leaderOfficer.created) newOfficerIds.push(leaderOfficer.id);
-    const { error: assignError } = await supabaseAdmin.rpc('assign_respond_unit_team_leader_v1', {
-      p_unit_id: unit.id,
-      p_officer_id: leaderOfficer.id,
-      p_responder_user_id: leaderUser.id,
-    });
-    if (assignError) throw assignError;
+    if (leaderUser) {
+      const leaderOfficer = await ensureOfficerForResponder(leaderUser, parsed.data.specialization);
+      if (leaderOfficer.created) newOfficerIds.push(leaderOfficer.id);
+      const { error: assignError } = await supabaseAdmin.rpc('assign_respond_unit_team_leader_v1', {
+        p_unit_id: unit.id,
+        p_officer_id: leaderOfficer.id,
+        p_responder_user_id: leaderUser.id,
+      });
+      if (assignError) throw assignError;
+    }
 
     for (const member of parsed.data.members) {
       newOfficerIds.push(await createRosterOfficer(unit.id, parsed.data.specialization, member));

@@ -36,7 +36,7 @@ interface RespondUnit {
   status: string;
   created_at: string;
   team_leader_user_id?: string | null;
-  team_leader?: { id: string; full_name: string; email: string } | null;
+  team_leader?: { id: string; full_name: string; email: string; is_active_account?: boolean } | null;
   members: UnitMember[];
   roster_ready: boolean;
   is_active_today: boolean;
@@ -69,15 +69,17 @@ const roleIcons: Record<CrewRole, typeof Radio> = {
 export default function RespondUnitsPage() {
   const { user, isMasterAdmin } = useAuth();
   const canManageRoster = isMasterAdmin || user?.role === 'logistics';
-  const canActivateUnits = canManageRoster || user?.role === 'dispatcher';
+  const canActivateUnits = canManageRoster;
   const isDispatcher = user?.role === 'dispatcher';
   const noLeaderAccountsMessage = isMasterAdmin
-    ? 'No available active responder accounts. Create or activate a Responder in User Management, or release an existing Team Leader assignment.'
-    : 'No available active responder accounts. Ask a Master Admin to create or activate a Responder in User Management, or release an existing Team Leader assignment.';
+    ? 'No available active responder accounts. You can create this unit now and assign a Team Leader after a responder account is available.'
+    : 'No available active responder accounts. You can create this unit now; ask a Master Admin to create or activate a Responder, then assign the Team Leader.';
   const [units, setUnits] = useState<RespondUnit[]>([]);
   const [selectedId, setSelectedId] = useState('');
   const [leaderAccounts, setLeaderAccounts] = useState<ResponderAccount[]>([]);
+  const [leaderAccountsError, setLeaderAccountsError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [unitsLoadError, setUnitsLoadError] = useState('');
   const [saving, setSaving] = useState(false);
   const [activatingAll, setActivatingAll] = useState(false);
   const [query, setQuery] = useState('');
@@ -102,14 +104,17 @@ export default function RespondUnitsPage() {
     setLoading(true);
     try {
       const response = await respondUnitAPI.list();
-      const nextUnits: RespondUnit[] = response.data.units || [];
+      const nextUnits: RespondUnit[] = Array.isArray(response.data.units) ? response.data.units : [];
       setUnits(nextUnits);
+      setUnitsLoadError('');
       setSelectedId((current) => {
         const desired = preferredId || current;
         return nextUnits.some((unit) => unit.id === desired) ? desired : nextUnits[0]?.id || '';
       });
     } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Could not load respond units.');
+      const message = error.response?.data?.error || 'Could not load respond units.';
+      setUnitsLoadError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -120,44 +125,48 @@ export default function RespondUnitsPage() {
   const openCreate = async () => {
     setUnitForm({ unit_name: '', specialization: 'mixed', status: 'available', team_leader_user_id: '' });
     setEditingUnit(null);
+    setLeaderAccounts([]);
+    setLeaderAccountsError('');
     setSaving(true);
     try {
       const response = await respondUnitAPI.leaderAccounts();
-      setLeaderAccounts(response.data.responders || []);
-      setShowUnitForm(true);
+      setLeaderAccounts(Array.isArray(response.data.responders) ? response.data.responders : []);
     } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Could not load active responder accounts.');
+      const message = error.response?.data?.error || 'Could not load active responder accounts.';
+      setLeaderAccountsError(message);
+      toast.error(`${message} You can still create the unit and assign a Team Leader later.`);
     } finally {
+      setShowUnitForm(true);
       setSaving(false);
     }
   };
 
   const openEdit = async (unit: RespondUnit) => {
+    setEditingUnit(unit);
+    setUnitForm({
+      unit_name: unit.unit_name,
+      specialization: unit.specialization || 'mixed',
+      status: unit.status || 'available',
+      team_leader_user_id: unit.team_leader_user_id || '',
+    });
+    setLeaderAccounts([]);
+    setLeaderAccountsError('');
     setSaving(true);
     try {
       const response = await respondUnitAPI.leaderAccounts(unit.id);
-      setLeaderAccounts(response.data.responders || []);
-      setEditingUnit(unit);
-      setUnitForm({
-        unit_name: unit.unit_name,
-        specialization: unit.specialization || 'mixed',
-        status: unit.status || 'available',
-        team_leader_user_id: unit.team_leader_user_id || '',
-      });
-      setShowUnitForm(true);
+      setLeaderAccounts(Array.isArray(response.data.responders) ? response.data.responders : []);
     } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Could not load unit details.');
+      const message = error.response?.data?.error || 'Could not load active responder accounts.';
+      setLeaderAccountsError(message);
+      toast.error(`${message} Unit details can still be updated.`);
     } finally {
+      setShowUnitForm(true);
       setSaving(false);
     }
   };
 
   const saveUnit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!unitForm.team_leader_user_id) {
-      toast.error('Choose an active responder account as the Team Leader.');
-      return;
-    }
     setSaving(true);
     try {
       if (editingUnit) {
@@ -166,7 +175,7 @@ export default function RespondUnitsPage() {
           specialization: unitForm.specialization,
           status: unitForm.status,
         });
-        if (editingUnit.team_leader_user_id !== unitForm.team_leader_user_id) {
+        if (unitForm.team_leader_user_id && editingUnit.team_leader_user_id !== unitForm.team_leader_user_id) {
           await respondUnitAPI.assignLeader(editingUnit.id, unitForm.team_leader_user_id);
         }
         toast.success('Respond unit updated.');
@@ -174,7 +183,7 @@ export default function RespondUnitsPage() {
         const response = await respondUnitAPI.create({
           unit_name: unitForm.unit_name,
           specialization: unitForm.specialization,
-          team_leader_user_id: unitForm.team_leader_user_id,
+          ...(unitForm.team_leader_user_id ? { team_leader_user_id: unitForm.team_leader_user_id } : {}),
         });
         toast.success('Respond unit created.');
         setShowUnitForm(false);
@@ -291,7 +300,9 @@ export default function RespondUnitsPage() {
             <Search size={16} />
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search units or leaders" />
           </label>
-          {loading ? <div className="ru-queue-empty">Loading units…</div> : filteredUnits.length === 0 ? (
+          {loading ? <div className="ru-queue-empty">Loading units…</div> : unitsLoadError ? (
+            <div className="ru-queue-empty ru-queue-error"><strong>Could not load response units</strong><span>{unitsLoadError}</span><button type="button" className="btn btn-outline btn-sm" onClick={() => void fetchUnits()}>Retry</button></div>
+          ) : filteredUnits.length === 0 ? (
             <div className="ru-queue-empty"><Users size={22} /><strong>No units found</strong><span>{canManageRoster ? 'Create a unit and assign its Team Leader.' : 'Ask logistics staff to configure a response unit.'}</span></div>
           ) : (
             <div className="ru-unit-list">
@@ -366,7 +377,7 @@ export default function RespondUnitsPage() {
                   <strong>{selectedUnit.team_leader?.full_name || 'No Team Leader assigned'}</strong>
                   {selectedUnit.team_leader?.email && <span>{selectedUnit.team_leader.email}</span>}
                 </div>
-                <span className="ru-member-status">{selectedUnit.team_leader ? 'Assigned' : 'Required'}</span>
+                <span className={`ru-member-status ${selectedUnit.team_leader && !selectedUnit.team_leader.is_active_account ? 'inactive' : ''}`}>{selectedUnit.team_leader ? selectedUnit.team_leader.is_active_account ? 'Assigned' : 'Account inactive' : 'Required'}</span>
               </div>
 
               <div className="ru-roster-title"><div><h3>Unit roster</h3><span>One radio operator · up to three drivers · up to three first aiders</span></div><span>{selectedUnit.members.length} members</span></div>
@@ -427,10 +438,10 @@ export default function RespondUnitsPage() {
             <div className="form-group"><label className="form-label">Unit name *</label><input className="form-input" required minLength={2} maxLength={100} placeholder="e.g. Alpha Rescue Team" value={unitForm.unit_name} onChange={(event) => setUnitForm({ ...unitForm, unit_name: event.target.value })} /></div>
             <div className="form-group"><label className="form-label">Specialization *</label><input className="form-input" required maxLength={120} value={unitForm.specialization} onChange={(event) => setUnitForm({ ...unitForm, specialization: event.target.value })} /></div>
             {editingUnit && <div className="form-group"><label className="form-label">Status</label><select className="form-select" value={unitForm.status} onChange={(event) => setUnitForm({ ...unitForm, status: event.target.value })}><option value="available">Available</option><option value="unavailable">Unavailable</option><option value="maintenance">Maintenance</option></select></div>}
-            <div className="form-group"><label className="form-label">Team Leader responder account *</label><select className="form-select" required value={unitForm.team_leader_user_id} onChange={(event) => setUnitForm({ ...unitForm, team_leader_user_id: event.target.value })}><option value="">Choose an active responder</option>{leaderAccounts.map((account) => <option key={account.id} value={account.id}>{account.full_name} · {account.email}</option>)}</select>
-              {leaderAccounts.length === 0 ? <small className="ru-form-warning" role="status">{noLeaderAccountsMessage}</small> : <small className="ru-form-hint">Each active Team Leader account can lead one response unit. Add at least one Driver Responder and one First Aider after creating this unit, then activate it for dispatch.</small>}
+            <div className="form-group"><label className="form-label">Team Leader responder account</label><select className="form-select" value={unitForm.team_leader_user_id} onChange={(event) => setUnitForm({ ...unitForm, team_leader_user_id: event.target.value })}><option value="">Assign a Team Leader later</option>{editingUnit?.team_leader_user_id && !leaderAccounts.some((account) => account.id === editingUnit.team_leader_user_id) && <option value={editingUnit.team_leader_user_id}>{editingUnit.team_leader?.full_name || 'Current Team Leader'}</option>}{leaderAccounts.map((account) => <option key={account.id} value={account.id}>{account.full_name} · {account.email}</option>)}</select>
+              {leaderAccountsError ? <small className="ru-form-warning" role="status">{leaderAccountsError} You can still save the unit and assign the Team Leader later.</small> : leaderAccounts.length === 0 ? <small className="ru-form-warning" role="status">{noLeaderAccountsMessage}</small> : <small className="ru-form-hint">Assign a Team Leader now or later. The unit becomes dispatch-ready after it also has a Driver Responder, a First Aider Responder, and today’s activation.</small>}
             </div>
-            <div className="modal-footer"><button type="button" className="btn btn-outline" onClick={() => { setShowUnitForm(false); setEditingUnit(null); }}>Cancel</button><button type="submit" className="btn btn-primary" disabled={saving || (!editingUnit && leaderAccounts.length === 0)}>{saving ? 'Saving…' : editingUnit ? 'Save Unit' : 'Create Unit'}</button></div>
+            <div className="modal-footer"><button type="button" className="btn btn-outline" onClick={() => { setShowUnitForm(false); setEditingUnit(null); }}>Cancel</button><button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : editingUnit ? 'Save Unit' : 'Create Unit'}</button></div>
           </form>
         </div>
       )}
