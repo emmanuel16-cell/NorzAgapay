@@ -18,35 +18,9 @@ The platform connects residents, barangay teams, MDRRMO command staff, and respo
 
 ## 📌 System Architecture & Ecosystem
 
-NorzAgapay is composed of five tightly integrated subsystems designed for specific operational roles:
+NorzAgapay is organized into user, client, application, and data layers, with external map, weather, and notification services connected where needed. The diagram shows the three client apps and the shared API/realtime engine.
 
-```
-                                  ┌───────────────────────────────┐
-                                  │      MDRRMO Command Center    │
-                                  │   (React + Vite Web Portal)   │
-                                  └───────────────┬───────────────┘
-                                                  │
-                                                  │ REST / WebSockets
-                                                  ▼
-┌───────────────────────┐         ┌───────────────────────────────┐         ┌────────────────────────┐
-│     Resident App      │ ◄─────► │     NorzAgapay Backend API    │ ◄─────► │  Unified Operations App│
-│  (Flutter Mobile App) │  HTTPS  │   (Node.js + Express + TS)    │  HTTPS  │  (Flutter Mobile App)  │
-└───────────────────────┘  WSS    └───────┬───────────────┬───────┘  WSS    └────────────────────────┘
-                                          │               │
-                                          ▼               ▼
-                              ┌──────────────────┐  ┌──────────────────┐
-                              │ Supabase Cloud   │  │  Upstash Redis   │
-                              │ (Postgres + Auth │  │ (Real-time GPS & │
-                              │  + Storage + RLS)│  │   Cached State)  │
-                              └──────────────────┘  └──────────────────┘
-                                          ▲
-                                          │ HTTPS / WSS
-                                          ▼
-                                  ┌───────────────────────────────┐
-                                  │  Mobile Responder Workspace  │
-                                  │     (Flutter Mobile App)      │
-                                  └───────────────────────────────┘
-```
+![NorzAgapay layered system architecture](documents/NorzAgapay_System_Layered_Architecture.svg)
 
 ### 1. 🌐 MDRRMO Web Command Center (`web-dashboard/`)
 * **Technology**: React 18, Vite, TypeScript, TailwindCSS / Custom CSS, Leaflet, OpenStreetMap.
@@ -78,7 +52,7 @@ NorzAgapay is composed of five tightly integrated subsystems designed for specif
   - **Nearest Evacuation Stations**: See the nearest active stations, their distance, and estimated travel time.
   - **Safety Advisories & Weather Alerts**: Receive official municipal disaster bulletins, flood alerts, and emergency notifications.
 
-### 5. ⚡ Central Backend API & Socket Engine (`backend/`)
+### 4. ⚡ Central Backend API & Socket Engine (`backend/`)
 * **Technology**: Node.js, Express.js, TypeScript, Socket.IO, Supabase Client, Upstash Redis, PDFKit, Zod.
 * **Target Role**: Core transaction, event coordination, and data abstraction layer.
 * **Key Capabilities**:

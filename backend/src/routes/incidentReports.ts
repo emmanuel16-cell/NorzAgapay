@@ -261,7 +261,8 @@ function combineResidentReportCopies(barangayReport: any, mdrrmoReport: any) {
     mdrrmo_accepted_at: mdrrmoReport.accepted_at || null,
     mdrrmo_arrived_at: mdrrmoReport.arrived_at || null,
     mdrrmo_resolved_at: mdrrmoReport.resolved_at || null,
-    is_escalated: true,
+    is_escalated: String(mdrrmoReport.source_type || '').toLowerCase() === 'escalated' ||
+      isEscalatedForMdrrmo(mdrrmoReport) || isEscalatedForMdrrmo(barangayReport),
   };
 }
 
@@ -900,7 +901,7 @@ router.get('/', optionalAuthenticate, async (req: AuthRequest, res: Response) =>
             mQuery = mQuery.eq('type', type);
         }
         const [bRes, mRes, bMap] = await Promise.all([bQuery, mQuery, getBarangayNameMap()]);
-        const reports = [...(bRes.data || []), ...(mRes.data || [])];
+        const reports = mergeResidentReportCopies(bRes.data || [], mRes.data || []);
         reports.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
         let formatted = (reports || []).map((r: any) => formatIncidentReport(r, bMap));

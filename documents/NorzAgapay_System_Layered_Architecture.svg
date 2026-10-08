@@ -1,0 +1,305 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1760 1320" role="img" aria-labelledby="title description">
+  <title id="title">NorzAgapay layered system architecture</title>
+  <desc id="description">A black and white architecture overview showing users, client applications, the shared backend API and real-time engine, data services, and external integrations.</desc>
+  <defs>
+    <style>
+      text { font-family: Arial, Helvetica, sans-serif; fill: #161616; }
+      .muted { fill: #606060; }
+      .eyebrow { font-size: 12px; font-weight: 700; letter-spacing: 2px; }
+      .layerNo { font-size: 14px; font-weight: 700; fill: #fff; }
+      .layerName { font-size: 11px; font-weight: 700; letter-spacing: 1px; }
+      .layerSub { font-size: 10px; letter-spacing: .5px; fill: #777; }
+      .card { fill: #fff; stroke: #d7d7d7; stroke-width: 1.4; }
+      .soft { fill: #f7f7f7; stroke: #e0e0e0; stroke-width: 1; }
+      .icon { fill: none; stroke: #161616; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+      .cardTitle { font-size: 16px; font-weight: 700; }
+      .cardTitleSmall { font-size: 14px; font-weight: 700; }
+      .body { font-size: 12px; fill: #575757; }
+      .tiny { font-size: 10px; fill: #666; }
+      .rule { stroke: #e2e2e2; stroke-width: 1; }
+      .coreFlow { fill: none; stroke: #222; stroke-width: 1.6; marker-end: url(#arrow); }
+      .providerFlow { fill: none; stroke: #666; stroke-width: 1.4; stroke-dasharray: 5 5; marker-end: url(#arrowLight); }
+    </style>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0 0L8 4L0 8Z" fill="#222" />
+    </marker>
+    <marker id="arrowLight" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0 0L8 4L0 8Z" fill="#666" />
+    </marker>
+    <symbol id="person" viewBox="0 0 48 48">
+      <circle cx="24" cy="14" r="7" />
+      <path d="M10 39c1-8 6-13 14-13s13 5 14 13M15 39h18" />
+    </symbol>
+    <symbol id="building" viewBox="0 0 48 48">
+      <path d="M7 20L24 9l17 11M11 20h26v20H11zM18 40V27h12v13M17 23h.1M24 23h.1M31 23h.1" />
+    </symbol>
+    <symbol id="team" viewBox="0 0 48 48">
+      <circle cx="18" cy="15" r="6" /><circle cx="33" cy="17" r="5" />
+      <path d="M6 39c1-8 5-12 12-12s11 4 12 12M28 29c6-2 12 2 14 9" />
+    </symbol>
+    <symbol id="responder" viewBox="0 0 48 48">
+      <path d="M7 18h23v18H7zM30 24h7l5 6v6H30zM12 13h14M17 9h5M12 36a4 4 0 1 0 8 0M32 36a4 4 0 1 0 8 0M14 27h9M18.5 22.5v9" />
+    </symbol>
+    <symbol id="phone" viewBox="0 0 48 48">
+      <rect x="14" y="5" width="20" height="38" rx="4" />
+      <path d="M20 10h8M21 37h6" />
+    </symbol>
+    <symbol id="browser" viewBox="0 0 48 48">
+      <rect x="5" y="8" width="38" height="31" rx="3" />
+      <path d="M5 16h38M11 12h.1M16 12h.1M12 22h11v11H12zM28 23h9M28 28h9M28 33h6" />
+    </symbol>
+    <symbol id="server" viewBox="0 0 48 48">
+      <rect x="7" y="7" width="34" height="14" rx="3" />
+      <rect x="7" y="27" width="34" height="14" rx="3" />
+      <path d="M13 14h.1M18 14h.1M13 34h.1M18 34h.1M25 14h10M25 34h10" />
+    </symbol>
+    <symbol id="clipboard" viewBox="0 0 48 48">
+      <path d="M16 10H9v32h30V10h-7M18 6h12v8H18zM16 22h16M16 29h16M16 36h10" />
+    </symbol>
+    <symbol id="shield" viewBox="0 0 48 48">
+      <path d="M24 5l15 6v11c0 10-6 17-15 21C15 39 9 32 9 22V11zM17 24l5 5 10-11" />
+    </symbol>
+    <symbol id="dispatch" viewBox="0 0 48 48">
+      <path d="M24 8l18 32H6zM24 19v10M24 34h.1" />
+    </symbol>
+    <symbol id="signal" viewBox="0 0 48 48">
+      <circle cx="24" cy="35" r="2" />
+      <path d="M18 30a8 8 0 0 1 12 0M12 24a17 17 0 0 1 24 0M6 18a25 25 0 0 1 36 0" />
+    </symbol>
+    <symbol id="file" viewBox="0 0 48 48">
+      <path d="M12 5h17l9 9v29H12zM29 5v10h9M18 24h14M18 30h14M18 36h9" />
+    </symbol>
+    <symbol id="database" viewBox="0 0 48 48">
+      <ellipse cx="24" cy="11" rx="16" ry="6" />
+      <path d="M8 11v25c0 3 7 6 16 6s16-3 16-6V11M8 23c0 3 7 6 16 6s16-3 16-6M8 34c0 3 7 6 16 6s16-3 16-6" />
+    </symbol>
+    <symbol id="storage" viewBox="0 0 48 48">
+      <path d="M8 12h32v29H8zM5 7h38v7H5zM17 23h14M17 29h14M17 35h9" />
+    </symbol>
+    <symbol id="cache" viewBox="0 0 48 48">
+      <path d="M9 13c0-3 7-6 15-6s15 3 15 6-7 6-15 6-15-3-15-6zM9 13v11c0 3 7 6 15 6s15-3 15-6V13M9 24v11c0 3 7 6 15 6s15-3 15-6V24" />
+      <path d="M17 14h.1M23 14h.1M29 14h.1" />
+    </symbol>
+    <symbol id="map" viewBox="0 0 48 48">
+      <path d="M5 11l12-5 14 5 12-5v31l-12 5-14-5-12 5zM17 6v31M31 11v31" />
+      <path d="M22 21a5 5 0 1 1 10 0c0 4-5 10-5 10s-5-6-5-10zM27 21h.1" />
+    </symbol>
+    <symbol id="cloud" viewBox="0 0 48 48">
+      <path d="M13 36h23a8 8 0 0 0 1-16 13 13 0 0 0-25-2A9 9 0 0 0 13 36z" />
+      <path d="M18 41l-2 4M27 41l-2 4M36 41l-2 4" />
+    </symbol>
+    <symbol id="bell" viewBox="0 0 48 48">
+      <path d="M11 33h26l-4-5V19a9 9 0 0 0-18 0v9zM20 38a4 4 0 0 0 8 0M24 6V3" />
+    </symbol>
+    <symbol id="message" viewBox="0 0 48 48">
+      <path d="M7 9h34v25H23l-9 8v-8H7zM14 18h20M14 25h14" />
+    </symbol>
+  </defs>
+
+  <rect width="1760" height="1320" fill="#fff" />
+  <text x="220" y="48" class="eyebrow muted">NORZAGAPAY / SYSTEM OVERVIEW</text>
+  <text x="220" y="96" font-size="34" font-weight="700">Layered system architecture</text>
+  <text x="220" y="126" font-size="14" class="muted">A shared emergency response platform for residents, barangays, responders, and municipal command.</text>
+  <line x1="220" y1="151" x2="1690" y2="151" class="rule" />
+
+  <!-- Layer 01: People and roles -->
+  <rect x="220" y="185" width="1000" height="150" rx="16" fill="#fafafa" stroke="#e3e3e3" />
+  <rect x="72" y="202" width="48" height="38" rx="9" fill="#171717" /><text x="96" y="227" text-anchor="middle" class="layerNo">01</text>
+  <text x="72" y="261" class="layerName">ACTORS</text><text x="72" y="278" class="layerSub">PEOPLE</text>
+  <g>
+    <rect x="242" y="207" width="230" height="106" rx="12" class="card" />
+    <use href="#person" x="258" y="235" width="42" height="42" class="icon" />
+    <text x="312" y="249" class="cardTitle">Residents</text><text x="312" y="271" class="body">Community members</text>
+    <text x="258" y="294" class="tiny">REPORT · TRACK · GET ALERTS</text>
+  </g>
+  <g>
+    <rect x="484" y="207" width="230" height="106" rx="12" class="card" />
+    <use href="#building" x="500" y="235" width="42" height="42" class="icon" />
+    <text x="554" y="249" class="cardTitle">MDRRMO staff</text><text x="554" y="271" class="body">Municipal command team</text>
+    <text x="500" y="294" class="tiny">COMMAND · DISPATCH · LOGISTICS</text>
+  </g>
+  <g>
+    <rect x="726" y="207" width="230" height="106" rx="12" class="card" />
+    <use href="#team" x="742" y="235" width="42" height="42" class="icon" />
+    <text x="796" y="249" class="cardTitle">Barangay teams</text><text x="796" y="271" class="body">Local admins &amp; dispatchers</text>
+    <text x="742" y="294" class="tiny">JURISDICTION-SCOPED OPERATIONS</text>
+  </g>
+  <g>
+    <rect x="968" y="207" width="230" height="106" rx="12" class="card" />
+    <use href="#responder" x="984" y="235" width="42" height="42" class="icon" />
+    <text x="1038" y="249" class="cardTitle">Responders</text><text x="1038" y="271" class="body">Municipal &amp; barangay units</text>
+    <text x="984" y="294" class="tiny">FIELD RESPONSE · STATUS · GPS</text>
+  </g>
+
+  <!-- Layer 02: Client applications -->
+  <rect x="220" y="358" width="1000" height="214" rx="16" fill="#fafafa" stroke="#e3e3e3" />
+  <rect x="72" y="377" width="48" height="38" rx="9" fill="#171717" /><text x="96" y="402" text-anchor="middle" class="layerNo">02</text>
+  <text x="72" y="436" class="layerName">CLIENTS</text><text x="72" y="453" class="layerSub">INTERFACES</text>
+  <g>
+    <rect x="242" y="380" width="308" height="170" rx="12" class="card" />
+    <use href="#phone" x="260" y="397" width="38" height="38" class="icon" />
+    <text x="310" y="411" class="cardTitleSmall">Resident Emergency App</text>
+    <text x="310" y="430" class="tiny">FLUTTER · MOBILE</text>
+    <line x1="260" y1="444" x2="532" y2="444" class="rule" />
+    <text x="260" y="469" class="body">Geotagged incident reports</text>
+    <text x="260" y="490" class="body">Report tracking · shelters · advisories</text>
+    <text x="260" y="525" class="tiny">OFFLINE QUEUE FOR UNSENT REPORTS</text>
+  </g>
+  <g>
+    <rect x="562" y="380" width="308" height="170" rx="12" class="card" />
+    <use href="#browser" x="580" y="397" width="38" height="38" class="icon" />
+    <text x="630" y="411" class="cardTitleSmall">MDRRMO Web Command Center</text>
+    <text x="630" y="430" class="tiny">REACT · VITE · TYPESCRIPT</text>
+    <line x1="580" y1="444" x2="852" y2="444" class="rule" />
+    <text x="580" y="469" class="body">Incident triage · live operations map</text>
+    <text x="580" y="490" class="body">Coordination · users · analytics</text>
+    <text x="580" y="525" class="tiny">COMMAND, DISPATCH &amp; LOGISTICS ROLES</text>
+  </g>
+  <g>
+    <rect x="882" y="380" width="316" height="170" rx="12" class="card" />
+    <use href="#clipboard" x="900" y="397" width="38" height="38" class="icon" />
+    <text x="950" y="411" class="cardTitleSmall">Unified Operations App</text>
+    <text x="950" y="430" class="tiny">FLUTTER · MOBILE</text>
+    <line x1="900" y1="444" x2="1180" y2="444" class="rule" />
+    <text x="900" y="469" class="body">Barangay operations &amp; escalation</text>
+    <text x="900" y="490" class="body">Responder dispatch · field updates · GPS</text>
+    <text x="900" y="525" class="tiny">SCREENS VARY BY ROLE AND ACCESS SCOPE</text>
+  </g>
+
+  <!-- Client transport to the shared application layer -->
+  <rect x="242" y="590" width="956" height="48" rx="12" fill="#f2f2f2" />
+  <use href="#shield" x="430" y="599" width="28" height="28" class="icon" />
+  <text x="467" y="620" font-size="12" font-weight="700">HTTPS · REST API</text>
+  <line x1="613" y1="600" x2="613" y2="628" class="rule" />
+  <use href="#signal" x="642" y="599" width="28" height="28" class="icon" />
+  <text x="679" y="620" font-size="12" font-weight="700">Socket.IO over WSS · live events</text>
+  <path d="M720 638V652" class="coreFlow" />
+
+  <!-- Layer 03: Application and realtime -->
+  <rect x="220" y="657" width="1000" height="252" rx="16" fill="#fafafa" stroke="#e3e3e3" />
+  <rect x="72" y="677" width="48" height="38" rx="9" fill="#171717" /><text x="96" y="702" text-anchor="middle" class="layerNo">03</text>
+  <text x="72" y="736" class="layerName">APPLICATION</text><text x="72" y="753" class="layerSub">SERVICES</text>
+  <rect x="242" y="676" width="956" height="210" rx="13" class="card" />
+  <use href="#server" x="262" y="690" width="34" height="34" class="icon" />
+  <text x="309" y="704" font-size="19" font-weight="700">Shared Backend API &amp; Real-Time Engine</text>
+  <text x="309" y="724" class="tiny">NODE.JS · EXPRESS · TYPESCRIPT · SOCKET.IO</text>
+  <rect x="963" y="690" width="211" height="28" rx="14" fill="#f2f2f2" />
+  <text x="1068" y="708" text-anchor="middle" font-size="10" font-weight="700">JWT · ROLE &amp; BARANGAY SCOPE</text>
+  <line x1="262" y1="735" x2="1178" y2="735" class="rule" />
+  <g>
+    <rect x="262" y="751" width="448" height="54" rx="10" class="soft" />
+    <use href="#shield" x="276" y="761" width="32" height="32" class="icon" />
+    <text x="319" y="774" class="cardTitleSmall">Identity &amp; access</text><text x="319" y="792" class="tiny">JWT · authorization · barangay scope</text>
+  </g>
+  <g>
+    <rect x="728" y="751" width="448" height="54" rx="10" class="soft" />
+    <use href="#dispatch" x="742" y="761" width="32" height="32" class="icon" />
+    <text x="785" y="774" class="cardTitleSmall">Emergency workflows</text><text x="785" y="792" class="tiny">Reports · triage · dispatch · escalation</text>
+  </g>
+  <g>
+    <rect x="262" y="817" width="448" height="54" rx="10" class="soft" />
+    <use href="#signal" x="276" y="828" width="32" height="32" class="icon" />
+    <text x="319" y="840" class="cardTitleSmall">Live coordination</text><text x="319" y="858" class="tiny">Socket rooms · status · responder locations</text>
+  </g>
+  <g>
+    <rect x="728" y="817" width="448" height="54" rx="10" class="soft" />
+    <use href="#file" x="742" y="828" width="32" height="32" class="icon" />
+    <text x="785" y="840" class="cardTitleSmall">Supporting services</text><text x="785" y="858" class="tiny">Media · weather · notifications · PDF documents</text>
+  </g>
+
+  <!-- Layer 04: Data services -->
+  <path d="M720 909V933" class="coreFlow" />
+  <rect x="220" y="938" width="1000" height="228" rx="16" fill="#fafafa" stroke="#e3e3e3" />
+  <rect x="72" y="958" width="48" height="38" rx="9" fill="#171717" /><text x="96" y="983" text-anchor="middle" class="layerNo">04</text>
+  <text x="72" y="1017" class="layerName">DATA</text><text x="72" y="1034" class="layerSub">SERVICES</text>
+  <g>
+    <rect x="242" y="963" width="300" height="174" rx="12" class="card" />
+    <use href="#database" x="260" y="980" width="42" height="42" class="icon" />
+    <text x="314" y="994" class="cardTitle">Supabase</text><text x="314" y="1015" class="tiny">POSTGRESQL</text>
+    <line x1="260" y1="1033" x2="524" y2="1033" class="rule" />
+    <text x="260" y="1057" class="body">Operational records &amp; accounts</text>
+    <text x="260" y="1078" class="body">Row-level security · realtime feed</text>
+    <text x="260" y="1111" class="tiny">INCIDENTS · USERS · DISPATCH · ADVISORIES</text>
+  </g>
+  <g>
+    <rect x="554" y="963" width="300" height="174" rx="12" class="card" />
+    <use href="#storage" x="572" y="980" width="42" height="42" class="icon" />
+    <text x="626" y="994" class="cardTitle">Supabase Storage</text><text x="626" y="1015" class="tiny">OBJECT FILES</text>
+    <line x1="572" y1="1033" x2="836" y2="1033" class="rule" />
+    <text x="572" y="1057" class="body">Incident &amp; field evidence</text>
+    <text x="572" y="1078" class="body">Broadcast media · generated PDFs</text>
+    <text x="572" y="1111" class="tiny">MEDIA UPLOADS AND DOCUMENTS</text>
+  </g>
+  <g>
+    <rect x="866" y="963" width="332" height="174" rx="12" class="card" />
+    <use href="#cache" x="884" y="980" width="42" height="42" class="icon" />
+    <text x="938" y="994" class="cardTitle">Upstash Redis</text><text x="938" y="1015" class="tiny">SHORT-LIVED CACHE</text>
+    <line x1="884" y1="1033" x2="1180" y2="1033" class="rule" />
+    <text x="884" y="1057" class="body">Responder GPS · one-time codes</text>
+    <text x="884" y="1078" class="body">TTL expiry · in-memory fallback</text>
+    <text x="884" y="1111" class="tiny">TRANSIENT OPERATIONAL STATE</text>
+  </g>
+
+  <!-- Third-party providers and map tiles -->
+  <rect x="1260" y="185" width="430" height="981" rx="16" fill="#fff" stroke="#cfcfcf" stroke-width="1.4" stroke-dasharray="6 5" />
+  <text x="1284" y="223" class="eyebrow">CONNECTED SERVICES</text>
+  <text x="1284" y="246" class="body">External data, maps &amp; delivery providers</text>
+  <g>
+    <rect x="1284" y="270" width="382" height="112" rx="12" class="card" />
+    <use href="#map" x="1302" y="290" width="42" height="42" class="icon" />
+    <text x="1356" y="304" class="cardTitleSmall">Basemap tiles</text>
+    <text x="1356" y="325" class="body">OpenStreetMap · CARTO</text>
+    <text x="1302" y="360" class="tiny">REQUESTED DIRECTLY BY MAP CLIENTS</text>
+  </g>
+  <g>
+    <rect x="1284" y="397" width="382" height="112" rx="12" class="card" />
+    <use href="#cloud" x="1302" y="417" width="42" height="42" class="icon" />
+    <text x="1356" y="431" class="cardTitleSmall">Weather forecast</text>
+    <text x="1356" y="452" class="body">Open-Meteo</text>
+    <text x="1302" y="487" class="tiny">BACKEND WEATHER SERVICE</text>
+  </g>
+  <g>
+    <rect x="1284" y="524" width="382" height="112" rx="12" class="card" />
+    <use href="#bell" x="1302" y="544" width="42" height="42" class="icon" />
+    <text x="1356" y="558" class="cardTitleSmall">Push notifications</text>
+    <text x="1356" y="579" class="body">Firebase Cloud Messaging</text>
+    <text x="1302" y="614" class="tiny">REQUIRES PROVIDER CONFIGURATION</text>
+  </g>
+  <g>
+    <rect x="1284" y="651" width="382" height="112" rx="12" class="card" />
+    <use href="#message" x="1302" y="671" width="42" height="42" class="icon" />
+    <text x="1356" y="685" class="cardTitleSmall">Email &amp; SMS</text>
+    <text x="1356" y="706" class="body">SendGrid · TextBee</text>
+    <text x="1302" y="741" class="tiny">REQUIRES PROVIDER CONFIGURATION</text>
+  </g>
+
+  <rect x="1284" y="785" width="382" height="351" rx="12" fill="#f8f8f8" stroke="#e0e0e0" />
+  <text x="1304" y="817" class="eyebrow">HOW THE LAYERS CONNECT</text>
+  <line x1="1304" y1="834" x2="1646" y2="834" class="rule" />
+  <text x="1304" y="861" class="cardTitleSmall">Real-time updates</text>
+  <text x="1304" y="882" class="body">Database change feed → backend relay</text>
+  <text x="1304" y="901" class="body">→ role- and user-scoped Socket.IO rooms</text>
+  <line x1="1304" y1="918" x2="1646" y2="918" class="rule" />
+  <text x="1304" y="945" class="cardTitleSmall">Access checks</text>
+  <text x="1304" y="966" class="body">JWT roles and barangay jurisdiction are</text>
+  <text x="1304" y="985" class="body">validated by the backend.</text>
+  <line x1="1304" y1="1002" x2="1646" y2="1002" class="rule" />
+  <text x="1304" y="1029" class="cardTitleSmall">Resilience</text>
+  <text x="1304" y="1050" class="body">Mobile apps cache selected data; resident</text>
+  <text x="1304" y="1069" class="body">reports can queue while offline.</text>
+  <line x1="1304" y1="1086" x2="1646" y2="1086" class="rule" />
+  <line x1="1307" y1="1110" x2="1344" y2="1110" stroke="#222" stroke-width="1.6" marker-end="url(#arrow)" />
+  <text x="1354" y="1114" class="tiny">Core pathway</text>
+  <line x1="1450" y1="1110" x2="1487" y2="1110" stroke="#666" stroke-width="1.4" stroke-dasharray="5 5" marker-end="url(#arrowLight)" />
+  <text x="1497" y="1114" class="tiny">Provider link</text>
+
+  <!-- Dashed external connections: maps are client-side; other providers use backend services. -->
+  <path d="M1220 465H1238V326H1280" class="providerFlow" />
+  <path d="M1284 453H1248V774H1198" class="providerFlow" />
+  <path d="M1198 790H1255V580H1280" class="providerFlow" />
+  <path d="M1198 808H1241V707H1280" class="providerFlow" />
+
+  <line x1="220" y1="1200" x2="1690" y2="1200" class="rule" />
+  <text x="220" y="1230" class="tiny">HIGH-LEVEL LOGICAL VIEW · Based on the current repository structure and integrations.</text>
+  <text x="1690" y="1230" text-anchor="end" class="tiny">NORZAGAPAY · 01</text>
+</svg>

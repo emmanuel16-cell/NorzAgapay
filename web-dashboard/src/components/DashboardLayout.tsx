@@ -94,7 +94,7 @@ export default function DashboardLayout() {
       : user?.role === 'logistics'
         ? navItems.filter(item => ['Operations', '/evacuation-centers', '/municipality-boundary', '/respond-units', '/officers'].includes(item.path || item.label))
         : user?.role === 'dispatcher'
-          ? navItems.filter(item => ['Incident Monitoring', '/', '/reports', '/requests'].includes(item.path || item.label))
+          ? navItems.filter(item => ['Incident Monitoring', '/', '/reports', '/requests', 'Operations', '/respond-units'].includes(item.path || item.label))
           : [];
 
   return (

@@ -267,7 +267,7 @@ router.get('/leader-accounts', authenticate, authorize('logistics'), async (req:
   }
 });
 
-router.get('/', authenticate, authorize('logistics', 'admin'), async (_req: AuthRequest, res: Response): Promise<void> => {
+router.get('/', authenticate, authorize('logistics', 'admin', 'dispatcher'), async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
     res.json({ units: await getUnitDetails() });
   } catch (error: any) {
@@ -275,7 +275,7 @@ router.get('/', authenticate, authorize('logistics', 'admin'), async (_req: Auth
   }
 });
 
-router.put('/:id/activation-today', authenticate, authorize('logistics'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.put('/:id/activation-today', authenticate, authorize('logistics', 'dispatcher'), async (req: AuthRequest, res: Response): Promise<void> => {
   const parsed = z.object({ active: z.boolean() }).safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: 'Choose whether this unit should be active today.' }); return; }
   try {

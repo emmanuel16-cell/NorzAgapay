@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Activity, HeartPulse, MapPin, Pencil, Plus, Power, Radio, Search, Shield, Trash2, Users, X, Zap } from 'lucide-react';
 import { respondUnitAPI } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 import './RespondUnitsPage.css';
 
@@ -66,6 +67,10 @@ const roleIcons: Record<CrewRole, typeof Radio> = {
 };
 
 export default function RespondUnitsPage() {
+  const { user, isMasterAdmin } = useAuth();
+  const canManageRoster = isMasterAdmin || user?.role === 'logistics';
+  const canActivateUnits = canManageRoster || user?.role === 'dispatcher';
+  const isDispatcher = user?.role === 'dispatcher';
   const [units, setUnits] = useState<RespondUnit[]>([]);
   const [selectedId, setSelectedId] = useState('');
   const [leaderAccounts, setLeaderAccounts] = useState<ResponderAccount[]>([]);
@@ -267,12 +272,12 @@ export default function RespondUnitsPage() {
       <header className="ru-page-header">
         <div className="ru-title-group">
           <h1>Respond Units</h1>
-          <span>Staff workspace</span>
+          <span>{isDispatcher ? 'Activate a ready team, then dispatch from Command Center' : 'Staff workspace'}</span>
         </div>
         <div className="ru-header-actions">
           <span className="ru-live"><i /> Unit roster</span>
-          <button className="btn btn-outline ru-emergency-button" onClick={() => void emergencyActivateAll()} disabled={saving || activatingAll || !units.length}><Zap size={16} /> {activatingAll ? 'Activating…' : 'Emergency activate all'}</button>
-          <button className="btn btn-primary" onClick={openCreate} disabled={saving || activatingAll}><Plus size={17} /> Create Unit</button>
+          {canManageRoster && <button className="btn btn-outline ru-emergency-button" onClick={() => void emergencyActivateAll()} disabled={saving || activatingAll || !units.length}><Zap size={16} /> {activatingAll ? 'Activating…' : 'Emergency activate all'}</button>}
+          {canManageRoster && <button className="btn btn-primary" onClick={openCreate} disabled={saving || activatingAll}><Plus size={17} /> Create Unit</button>}
         </div>
       </header>
 
@@ -284,7 +289,7 @@ export default function RespondUnitsPage() {
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search units or leaders" />
           </label>
           {loading ? <div className="ru-queue-empty">Loading units…</div> : filteredUnits.length === 0 ? (
-            <div className="ru-queue-empty"><Users size={22} /><strong>No units found</strong><span>Create a unit and assign its Team Leader.</span></div>
+            <div className="ru-queue-empty"><Users size={22} /><strong>No units found</strong><span>{canManageRoster ? 'Create a unit and assign its Team Leader.' : 'Ask logistics staff to configure a response unit.'}</span></div>
           ) : (
             <div className="ru-unit-list">
               {filteredUnits.map((unit) => {
@@ -298,7 +303,7 @@ export default function RespondUnitsPage() {
                       <small>{unit.team_leader?.full_name || 'Team Leader unassigned'}</small>
                       <small>{activeMembers.length} roster members · {unit.status || 'available'}</small>
                       <small className={`ru-unit-activation ${unit.can_dispatch_today ? 'dispatchable' : ''}`}>
-                        {unit.can_dispatch_today ? 'Active today · dispatchable' : unit.is_active_today ? 'Activated · not dispatchable' : 'Inactive today'}
+                        {unit.can_dispatch_today ? 'Active today · dispatchable' : unit.is_active_today ? 'Activated · not dispatchable' : 'Inactive today · not dispatchable'}
                       </small>
                     </span>
                   </button>
@@ -329,11 +334,11 @@ export default function RespondUnitsPage() {
                   </div>
                 </div>
                 <div className="ru-detail-actions">
-                  <button className={`btn btn-sm ${selectedUnit.is_active_today ? 'btn-outline' : 'btn-primary'}`} onClick={() => void setUnitActiveToday(selectedUnit, !selectedUnit.is_active_today)} disabled={saving || (!selectedUnit.is_active_today && (selectedUnit.status !== 'available' || !selectedUnit.roster_ready))}>
+                  {canActivateUnits && <button className={`btn btn-sm ${selectedUnit.is_active_today ? 'btn-outline' : 'btn-primary'}`} onClick={() => void setUnitActiveToday(selectedUnit, !selectedUnit.is_active_today)} disabled={saving || (!selectedUnit.is_active_today && (selectedUnit.status !== 'available' || !selectedUnit.roster_ready))}>
                     <Power size={14} /> {selectedUnit.is_active_today ? 'Deactivate today' : 'Activate today'}
-                  </button>
-                  <button className="btn btn-outline btn-sm" onClick={() => void openEdit(selectedUnit)} disabled={saving}><Pencil size={14} /> Edit unit</button>
-                  <button className="btn btn-primary btn-sm" onClick={() => setShowMemberForm((visible) => !visible)}><Plus size={15} /> Add crew</button>
+                  </button>}
+                  {canManageRoster && <button className="btn btn-outline btn-sm" onClick={() => void openEdit(selectedUnit)} disabled={saving}><Pencil size={14} /> Edit unit</button>}
+                  {canManageRoster && <button className="btn btn-primary btn-sm" onClick={() => setShowMemberForm((visible) => !visible)}><Plus size={15} /> Add crew</button>}
                 </div>
               </div>
 
@@ -373,10 +378,10 @@ export default function RespondUnitsPage() {
                         <div className="ru-roster-member" key={member.id}>
                           <div className="ru-member-avatar">{member.name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()}</div>
                           <div className="ru-member-info"><strong>{member.name}</strong><span>{member.phone || member.specialization || 'Unit crew'}</span></div>
-                          <select aria-label={`Position for ${member.name}`} value={member.member_role} onChange={(event) => void updateMemberRole(member, event.target.value as CrewRole)}>
+                          {canManageRoster && <select aria-label={`Position for ${member.name}`} value={member.member_role} onChange={(event) => void updateMemberRole(member, event.target.value as CrewRole)}>
                             {roles.map((choice) => <option key={choice.value} value={choice.value}>{choice.label}</option>)}
-                          </select>
-                          <button type="button" className="ru-remove-member" aria-label={`Remove ${member.name}`} onClick={() => void removeMember(member)}><Trash2 size={15} /></button>
+                          </select>}
+                          {canManageRoster && <button type="button" className="ru-remove-member" aria-label={`Remove ${member.name}`} onClick={() => void removeMember(member)}><Trash2 size={15} /></button>}
                         </div>
                       )) : <div className="ru-role-empty">No {role.label.toLowerCase()} assigned</div>}
                     </section>
@@ -391,11 +396,11 @@ export default function RespondUnitsPage() {
                     <div className="ru-roster-member" key={member.id}>
                       <div className="ru-member-avatar">{member.name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()}</div>
                       <div className="ru-member-info"><strong>{member.name}</strong><span>Choose the correct unit position</span></div>
-                      <select aria-label={`Assign position for ${member.name}`} defaultValue="" onChange={(event) => event.target.value && void updateMemberRole(member, event.target.value as CrewRole)}>
+                      {canManageRoster ? <select aria-label={`Assign position for ${member.name}`} defaultValue="" onChange={(event) => event.target.value && void updateMemberRole(member, event.target.value as CrewRole)}>
                         <option value="" disabled>Select position</option>
                         {roles.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}
-                      </select>
-                      <button type="button" className="ru-remove-member" aria-label={`Remove ${member.name}`} onClick={() => void removeMember(member)}><Trash2 size={15} /></button>
+                      </select> : <span className="ru-member-status">Position needs review</span>}
+                      {canManageRoster && <button type="button" className="ru-remove-member" aria-label={`Remove ${member.name}`} onClick={() => void removeMember(member)}><Trash2 size={15} /></button>}
                     </div>
                   ))}
                 </section>

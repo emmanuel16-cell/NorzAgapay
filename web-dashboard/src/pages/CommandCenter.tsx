@@ -811,7 +811,8 @@ export default function CommandCenter() {
           const isResolved = ['resolved', 'closed'].includes(mdrrmoCycleStatus) &&
             (!isEscalated || ['resolved', 'closed'].includes(barangayCycleStatus));
           const isResponding = mdrrmoCycleStatus === 'responding';
-          const isArrived = Boolean(r.mdrrmo_arrived_at) || (!r.mdrrmo_response_status && Boolean(r.arrived_at));
+          const isArrived = Boolean(r.mdrrmo_arrived_at) ||
+            (!isEscalated && !r.mdrrmo_response_status && Boolean(r.arrived_at));
           const stage: ReportStage = isResolved
             ? 'resolved'
             : isArrived
@@ -860,7 +861,9 @@ export default function CommandCenter() {
             mdrrmo_response_notes: r.mdrrmo_response_notes || '',
             mdrrmo_dispatch_notes: r.mdrrmo_dispatch_notes || '',
             mdrrmo_coordination_notes: r.mdrrmo_coordination_notes || '',
-            mdrrmo_dispatched: Boolean(r.dispatched_at || r.mdrrmo_responded_at || r.mdrrmo_responder_name),
+            mdrrmo_dispatched: isEscalated
+              ? Boolean(r.mdrrmo_dispatched_at || r.mdrrmo_responded_at || r.mdrrmo_responder_name)
+              : Boolean(r.mdrrmo_dispatched_at || r.dispatched_at || r.mdrrmo_responded_at || r.mdrrmo_responder_name),
             barangay_responded_by: r.barangay_responded_by || null,
             mdrrmo_responded_by: r.mdrrmo_responded_by || null,
             arrived_at: r.arrived_at || null,

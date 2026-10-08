@@ -53,7 +53,7 @@ function AppRoutes() {
         <Route path="verification" element={<Navigate to="/verification/barangay" replace />} />
         <Route path="verification/officers" element={<Navigate to="/verification/barangay" replace />} />
         <Route path="verification/barangay" element={<RoleAccess roles={['admin']}><VerificationPage category="barangay" /></RoleAccess>} />
-        <Route path="respond-units" element={<RoleAccess roles={['logistics']}><RespondUnitsPage /></RoleAccess>} />
+        <Route path="respond-units" element={<RoleAccess roles={['logistics', 'dispatcher']}><RespondUnitsPage /></RoleAccess>} />
         <Route path="users" element={<RoleAccess roles={['admin']}><UsersPage /></RoleAccess>} />
         <Route path="alert-broadcasts" element={<RoleAccess roles={['admin']}><AlertBroadcastsPage /></RoleAccess>} />
         <Route path="officers" element={<RoleAccess roles={['admin', 'logistics']}><OfficersPage /></RoleAccess>} />

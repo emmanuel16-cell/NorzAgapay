@@ -28,7 +28,12 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const [token, setToken] = useState<string | null>(localStorage.getItem('norzagapay_token'));
   const [user, setUser] = useState<User | null>(() => {
+    if (!localStorage.getItem('norzagapay_token')) {
+      localStorage.removeItem('norzagapay_user');
+      return null;
+    }
     try {
       const savedUser = localStorage.getItem('norzagapay_user');
       return savedUser ? JSON.parse(savedUser) as User : null;
@@ -37,7 +42,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return null;
     }
   });
-  const [token, setToken] = useState<string | null>(localStorage.getItem('norzagapay_token'));
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -51,6 +55,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!token) {
+      setUser(null);
+      localStorage.removeItem('norzagapay_user');
       setLoading(false);
       return;
     }
