@@ -301,6 +301,17 @@ export default function ReportsPage() {
 
               <section className="reports-detail-section-v2"><h3>Resident’s report</h3><div className="reports-text-card-v2">{selected.description?.trim() || 'No details provided.'}</div></section>
 
+              <section className="reports-detail-section-v2">
+                <div className="reports-section-heading-v2"><h3>Proof of incident</h3><span>{proofs.length} attachment{proofs.length === 1 ? '' : 's'}</span></div>
+                {proofs.length ? <div className="reports-media-grid-v2 proof">{proofs.map((url, index) => {
+                  const video = isVideo(url, selected.proof_types?.[index] || selected.proof_type);
+                  return <button type="button" key={url + index} onClick={() => setPreview({ url, video })} aria-label={'Open proof attachment ' + (index + 1)}>
+                    {video ? <span className="reports-video-thumb">▶ Video</span> : <img src={url} alt={'Incident proof ' + (index + 1)} />}
+                    <span>{video ? 'Video' : 'Photo'} {String(index + 1).padStart(2, '0')}</span>
+                  </button>;
+                })}</div> : <div className="reports-no-media-v2">No proof attached to this report.</div>}
+              </section>
+
               <section className="reports-detail-section-v2"><h3>Incident time</h3><div className="reports-info-grid-v2">
                 <div className="reports-info-card-v2"><span>Incident occurred</span><strong>{incidentTimeLabel(selected)}</strong></div>
                 <div className="reports-info-card-v2"><span>Report received</span><strong>{dateTime(selected.created_at)}</strong></div>
@@ -313,16 +324,7 @@ export default function ReportsPage() {
 
               <section className="reports-detail-section-v2"><h3>Reported location</h3><div className="reports-location-card-v2"><MapPin size={20} /><div><strong>{locationName}</strong><span>{locationNote}</span></div>{hasPin(selected) && <small>Map pin available</small>}</div></section>
 
-              {stage === 'pending' ? <section className="reports-detail-section-v2">
-                <div className="reports-section-heading-v2"><h3>Proof of incident</h3><span>{proofs.length} attachment{proofs.length === 1 ? '' : 's'}</span></div>
-                {proofs.length ? <div className="reports-media-grid-v2 proof">{proofs.map((url, index) => {
-                  const video = isVideo(url, selected.proof_types?.[index] || selected.proof_type);
-                  return <button type="button" key={url + index} onClick={() => setPreview({ url, video })} aria-label={'Open proof attachment ' + (index + 1)}>
-                    {video ? <span className="reports-video-thumb">▶ Video</span> : <img src={url} alt={'Incident proof ' + (index + 1)} />}
-                    <span>{video ? 'Video' : 'Photo'} {String(index + 1).padStart(2, '0')}</span>
-                  </button>;
-                })}</div> : <div className="reports-no-media-v2">No proof attached to this report.</div>}
-              </section> : <>
+              {stage !== 'pending' && <>
                 {getGroup(selected) === 'escalated' && selected.mdrrmo_coordination_notes && <section className="reports-detail-section-v2"><h3>Escalation notes</h3><div className="reports-text-card-v2">{selected.mdrrmo_coordination_notes}</div></section>}
                 <section className="reports-detail-section-v2"><h3>Responder and response timeline</h3><div className="reports-timeline-grid-v2">
                   <div className="reports-assignee-stack-v2">{activeAssignments.length ? activeAssignments.map((item) => <div className="reports-assignee-card-v2" key={item.responder_id}>
