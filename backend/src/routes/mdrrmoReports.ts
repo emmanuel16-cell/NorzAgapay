@@ -312,6 +312,9 @@ const dispatchMdrrmoReport = async (req: AuthRequest, res: Response): Promise<vo
     res.status(400).json({ error: 'Choose incident type, severity, and at least one active responder.', details: parsed.error.flatten() });
     return;
   }
+  let dispatchStage = 'load_report';
+  let dispatchCommitted = false;
+  let committedPayload: any = null;
   try {
     const report = await reportForAction(req.params.id);
     if (!report) { res.status(404).json({ error: 'Report not found.' }); return; }
@@ -328,6 +331,7 @@ const dispatchMdrrmoReport = async (req: AuthRequest, res: Response): Promise<vo
       res.status(409).json({ error: 'Dispatch can only be changed before a responder accepts the report.' });
       return;
     }
+    dispatchStage = 'load_current_assignments';
     const currentAssignments = await getAssignments([report.id]);
     if (currentAssignments.some((assignment: any) => assignment.status === 'responding')) {
       res.status(409).json({ error: 'Dispatch cannot be changed after a responder accepts the report.' });
@@ -335,6 +339,7 @@ const dispatchMdrrmoReport = async (req: AuthRequest, res: Response): Promise<vo
     }
 
     const responderIds = [...new Set(parsed.data.responder_ids)];
+    dispatchStage = 'validate_active_unit_roster';
     const dispatchableUnits = await getDispatchableRespondUnits();
     const dispatchableResponderIds = new Set(dispatchableUnits.map((unit) => unit.responder_user_id));
     if (responderIds.some((id) => !dispatchableResponderIds.has(id))) {
@@ -342,6 +347,7 @@ const dispatchMdrrmoReport = async (req: AuthRequest, res: Response): Promise<vo
       return;
     }
 
+    dispatchStage = 'load_active_responders';
     const { data: responders, error: respondersError } = await supabaseAdmin
       .from('users')
       .select('id, full_name, phone, unit_type')
@@ -356,7 +362,8 @@ const dispatchMdrrmoReport = async (req: AuthRequest, res: Response): Promise<vo
 
     const responderNames = responders.map((r: any) => r.full_name).join(', ');
     // --- Write to new mdrrmo_reports table (V2 RPC) ---
-    const { error: dispatchV2Error } = await supabaseAdmin.rpc('dispatch_mdrrmo_report_v2', {
+    dispatchStage = 'persist_dispatch';
+    const { data: dispatchResult, error: dispatchV2Error } = await supabaseAdmin.rpc('dispatch_mdrrmo_report_v2', {
       p_report_id: report.id,
       p_actor_id: req.user!.userId,
       p_incident_type: parsed.data.incident_type,
@@ -371,36 +378,109 @@ const dispatchMdrrmoReport = async (req: AuthRequest, res: Response): Promise<vo
     // assignments from the canonical queue.
     if (dispatchV2Error) throw dispatchV2Error;
 
-    const updatedReport = await reportForAction(report.id);
-    const updatedAssignments = await getAssignments([report.id]);
-    const activeAssignments = updatedAssignments.filter((a: any) => a.status !== 'removed');
-
-    const payload = formatReport({
-      ...(updatedReport || report),
-      mdrrmo_assignments: activeAssignments,
+    // The RPC commits the dispatch and assignments as one transaction. Build a
+    // fallback response immediately so a later readback/realtime error cannot
+    // make the client report a failed dispatch that was actually committed.
+    dispatchCommitted = true;
+    const dispatchTimestamp = dispatchResult?.dispatched_at || new Date().toISOString();
+    const fallbackAssignments = responders.map((responder: any) => ({
+      id: null,
+      report_id: report.id,
+      responder_id: responder.id,
+      status: 'assigned',
+      assigned_at: dispatchTimestamp,
+      accepted_at: null,
+      arrived_at: null,
+      resolved_at: null,
+      responder: { ...responder, status: 'active' },
+      crew: [],
+    }));
+    const fallbackReport = {
+      ...report,
+      incident_type: parsed.data.incident_type,
+      severity: parsed.data.severity,
+      dispatched_at: dispatchTimestamp,
+      dispatch_notes: parsed.data.notes || null,
+      responder_name: responderNames,
+      dispatched_by: req.user!.userId,
+      lifecycle_actor_id: req.user!.userId,
+      lifecycle_actor_role: 'dispatcher',
+    };
+    committedPayload = formatReport({
+      ...fallbackReport,
+      mdrrmo_assignments: fallbackAssignments,
       assigned_responder_ids: responderIds,
-      mdrrmo_responder_name: activeAssignments.map((a: any) => a.responder?.full_name).filter(Boolean).join(', ') || responderNames,
+      mdrrmo_responder_name: responderNames,
     });
-    io.to('dashboard_staff').emit('incident_report:updated', payload);
-    io.to('dashboard_staff').emit('mdrrmo:report_updated', payload);
-    for (const responderId of responderIds) {
-      const assignment = activeAssignments.find((item: any) => item.responder_id === responderId);
-      const responderPayload = {
-        ...payload,
-        assignment_id: assignment?.id || null,
-        responder_id: responderId,
-      };
-      io.to(`user:${responderId}`).emit('mdrrmo:report_assigned', responderPayload);
-      io.to(`user:${responderId}`).emit('mdrrmo:report_updated', responderPayload);
+
+    let payload = committedPayload;
+    let activeAssignments = fallbackAssignments;
+    try {
+      dispatchStage = 'readback_report';
+      const updatedReport = await reportForAction(report.id);
+      dispatchStage = 'readback_assignments';
+      const updatedAssignments = await getAssignments([report.id]);
+      activeAssignments = updatedAssignments.filter((a: any) => a.status !== 'removed');
+      payload = formatReport({
+        ...(updatedReport || fallbackReport),
+        mdrrmo_assignments: activeAssignments,
+        assigned_responder_ids: responderIds,
+        mdrrmo_responder_name: activeAssignments.map((a: any) => a.responder?.full_name).filter(Boolean).join(', ') || responderNames,
+      });
+      committedPayload = payload;
+    } catch (readbackError) {
+      console.error('MDRRMO dispatch committed but readback failed:', {
+        reportId: report.id,
+        stage: dispatchStage,
+        error: readbackError,
+      });
     }
-    if (report.reporter_id) io.to(`user:${report.reporter_id}`).emit('incident_report:updated', payload);
+
+    // Database state is authoritative. A realtime transport error must not
+    // turn a committed dispatch into an HTTP 500 and invite a duplicate retry.
+    try {
+      dispatchStage = 'emit_dispatch_updates';
+      io.to('dashboard_staff').emit('incident_report:updated', payload);
+      io.to('dashboard_staff').emit('mdrrmo:report_updated', payload);
+      for (const responderId of responderIds) {
+        const assignment = activeAssignments.find((item: any) => item.responder_id === responderId);
+        const responderPayload = {
+          ...payload,
+          assignment_id: assignment?.id || null,
+          responder_id: responderId,
+        };
+        io.to(`user:${responderId}`).emit('mdrrmo:report_assigned', responderPayload);
+        io.to(`user:${responderId}`).emit('mdrrmo:report_updated', responderPayload);
+      }
+      if (report.reporter_id) io.to(`user:${report.reporter_id}`).emit('incident_report:updated', payload);
+    } catch (emitError) {
+      console.error('MDRRMO dispatch committed but realtime notification failed:', {
+        reportId: report.id,
+        error: emitError,
+      });
+    }
     res.json(payload);
   } catch (err: any) {
-    console.error('MDRRMO report dispatch error:', err);
-    if (err?.code === 'PGRST202' || err?.code === '42883') {
+    if (dispatchCommitted) {
+      console.error('MDRRMO report dispatch committed; returning fallback response after follow-up failure:', {
+        reportId: req.params.id,
+        stage: dispatchStage,
+        error: err,
+      });
+      res.json(committedPayload);
+      return;
+    }
+    console.error('MDRRMO report dispatch error:', {
+      reportId: req.params.id,
+      actorId: req.user?.userId,
+      stage: dispatchStage,
+      error: err,
+    });
+    if (['PGRST202', '42883', '42P01', '42703', 'PGRST204', 'PGRST205', 'PGRST200'].includes(err?.code)) {
       res.status(503).json({
-        error: 'MDRRMO dispatch is not configured in the database yet. Apply the current Respond Units roster migration and retry.',
+        error: 'MDRRMO dispatch database objects are missing or out of date. Apply database/migrations/20261008_respond_units_roster.sql, then retry.',
         code: 'MDRRMO_DISPATCH_SCHEMA_MISSING',
+        stage: dispatchStage,
       });
       return;
     }
@@ -412,7 +492,12 @@ const dispatchMdrrmoReport = async (req: AuthRequest, res: Response): Promise<vo
       res.status(409).json({ error: err.message || 'The report or response unit is no longer eligible for dispatch.' });
       return;
     }
-    res.status(500).json({ error: 'Failed to dispatch this report to MDRRMO responders.' });
+    res.status(500).json({
+      error: 'Failed to dispatch this report to MDRRMO responders.',
+      code: 'MDRRMO_DISPATCH_FAILED',
+      stage: dispatchStage,
+      cause_code: typeof err?.code === 'string' ? err.code : undefined,
+    });
   }
 };
 
