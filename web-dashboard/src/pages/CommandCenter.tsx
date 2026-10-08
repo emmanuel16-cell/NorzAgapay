@@ -1187,7 +1187,13 @@ export default function CommandCenter() {
       closeModal();
       await fetchData();
     } catch (error: any) {
-      toast.error(error?.response?.data?.error || 'Could not dispatch the report to MDRRMO responders.');
+      const response = error?.response?.data;
+      const diagnostics = [
+        response?.stage ? `Stage: ${response.stage}` : null,
+        response?.cause_code ? `Code: ${response.cause_code}` : null,
+      ].filter(Boolean).join(' · ');
+      const message = response?.error || 'Could not dispatch the report to MDRRMO responders.';
+      toast.error(diagnostics ? `${message} (${diagnostics})` : message);
     } finally {
       setDispatching(false);
     }

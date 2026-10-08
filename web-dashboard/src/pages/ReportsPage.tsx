@@ -191,8 +191,15 @@ export default function ReportsPage() {
       await reportAPI.dispatchToMdrrmo(dispatchReport.id, { incident_type: incidentType, severity, responder_ids: responderIds, notes: dispatchNotes.trim() });
       toast.success('Incident classified and assigned to MDRRMO responders.');
       setDispatchReport(null); setStage('pending'); await fetchReports();
-    } catch (error) {
-      console.error('Dispatch failed', error); toast.error('Failed to dispatch report to MDRRMO responders');
+    } catch (error: any) {
+      console.error('Dispatch failed', error);
+      const response = error?.response?.data;
+      const diagnostics = [
+        response?.stage ? `Stage: ${response.stage}` : null,
+        response?.cause_code ? `Code: ${response.cause_code}` : null,
+      ].filter(Boolean).join(' · ');
+      const message = response?.error || 'Failed to dispatch report to MDRRMO responders';
+      toast.error(diagnostics ? `${message} (${diagnostics})` : message);
     } finally { setSaving(false); }
   };
   const markInvalid = async (report: IncidentReport) => {
