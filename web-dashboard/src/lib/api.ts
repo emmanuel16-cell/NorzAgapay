@@ -182,7 +182,7 @@ export const reportAPI = {
   get: (id: string) => api.get(`/incident-reports/${id}`),
   mdrrmoQueue: () => api.get('/mdrrmo/reports/queue'),
   mdrrmoResponders: () => api.get<{ responders: Array<{ id: string; full_name: string; phone?: string | null; unit_type?: string | null; unit_id: string; unit_name: string }> }>('/mdrrmo/reports/responders'),
-  dispatchToMdrrmo: (id: string, data: { responder_ids: string[]; incident_type: string; severity: string; notes?: string }) => api.patch(`/mdrrmo/reports/${id}/dispatch`, data),
+  dispatchToMdrrmo: (id: string, data: { responder_ids: string[]; incident_type: string; severity: string; notes?: string }) => api.post(`/mdrrmo/reports/${id}/dispatch`, data),
   review: (id: string, data: { outcome: 'inconclusive' | 'false_report'; reason?: string }) => api.patch(`/incident-reports/${id}/review`, data),
 };
 

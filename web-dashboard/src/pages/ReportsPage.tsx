@@ -291,7 +291,7 @@ export default function ReportsPage() {
                   </button>;
                 })}</div> : <div className="reports-no-media-v2">No proof attached to this report.</div>}
               </section> : <>
-                {getGroup(selected) === 'escalated' && (selected.mdrrmo_coordination_notes || selected.barangay_response_notes) && <section className="reports-detail-section-v2"><h3>Escalation notes</h3><div className="reports-text-card-v2">{selected.mdrrmo_coordination_notes || selected.barangay_response_notes}</div></section>}
+                {getGroup(selected) === 'escalated' && selected.mdrrmo_coordination_notes && <section className="reports-detail-section-v2"><h3>Escalation notes</h3><div className="reports-text-card-v2">{selected.mdrrmo_coordination_notes}</div></section>}
                 <section className="reports-detail-section-v2"><h3>Responder and response timeline</h3><div className="reports-timeline-grid-v2">
                   <div className="reports-assignee-stack-v2">{activeAssignments.length ? activeAssignments.map((item) => <div className="reports-assignee-card-v2" key={item.responder_id}>
                     <strong>{item.responder?.full_name || selected.mdrrmo_responder_name || 'Assigned responder'}</strong><span>MDRRMO Team Leader</span><em>{stage === 'resolved' ? 'Resolved' : item.status === 'responding' ? 'Accepted' : 'Assigned'}</em>

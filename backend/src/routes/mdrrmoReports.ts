@@ -306,7 +306,7 @@ router.delete('/push-token', authenticate, authorize('responder'), async (req: A
   }
 });
 
-router.patch('/:id/dispatch', authenticate, authorize('dispatcher', 'admin'), async (req: AuthRequest, res: Response): Promise<void> => {
+const dispatchMdrrmoReport = async (req: AuthRequest, res: Response): Promise<void> => {
   const parsed = dispatchSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: 'Choose incident type, severity, and at least one active responder.', details: parsed.error.flatten() });
@@ -395,10 +395,34 @@ router.patch('/:id/dispatch', authenticate, authorize('dispatcher', 'admin'), as
     }
     if (report.reporter_id) io.to(`user:${report.reporter_id}`).emit('incident_report:updated', payload);
     res.json(payload);
-  } catch (err) {
+  } catch (err: any) {
     console.error('MDRRMO report dispatch error:', err);
+    if (err?.code === 'PGRST202' || err?.code === '42883') {
+      res.status(503).json({
+        error: 'MDRRMO dispatch is not configured in the database yet. Apply the current Respond Units roster migration and retry.',
+        code: 'MDRRMO_DISPATCH_SCHEMA_MISSING',
+      });
+      return;
+    }
+    if (err?.code === 'P0002') {
+      res.status(404).json({ error: 'MDRRMO report or dispatch assignment was not found.' });
+      return;
+    }
+    if (err?.code === '23514' || err?.code === '22023') {
+      res.status(409).json({ error: err.message || 'The report or response unit is no longer eligible for dispatch.' });
+      return;
+    }
     res.status(500).json({ error: 'Failed to dispatch this report to MDRRMO responders.' });
   }
+};
+
+// Dispatch is a write action. POST is the canonical method; keep PATCH for
+// already-open dashboard bundles and older clients during deployment rollout.
+router.post('/:id/dispatch', authenticate, authorize('dispatcher', 'admin'), dispatchMdrrmoReport);
+router.patch('/:id/dispatch', authenticate, authorize('dispatcher', 'admin'), dispatchMdrrmoReport);
+router.get('/:id/dispatch', (_req, res) => {
+  res.setHeader('Allow', 'POST, PATCH');
+  res.status(405).json({ error: 'Dispatch requires an authenticated POST request. Open the report in Command Center and use Dispatch.' });
 });
 
 async function findAssignment(reportId: string, responderId: string) {

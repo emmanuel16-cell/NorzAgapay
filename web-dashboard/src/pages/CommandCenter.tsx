@@ -376,7 +376,7 @@ function EscalatedResponsePanel({
   onResponderViewChange: (view: 'assessment' | 'assistance') => void;
   onPreview: (url: string) => void;
 }) {
-  const coordinationNotes = incident.mdrrmo_coordination_notes || incident.mdrrmo_dispatch_notes || incident.mdrrmo_response_notes;
+  const coordinationNotes = incident.mdrrmo_coordination_notes;
   return (
     <div className="escalated-response-panel">
       <div className={`escalated-response-tabs ${incident.status === 'pending' ? 'single-tab' : ''}`} role="tablist" aria-label="Escalated report response">
@@ -1053,7 +1053,9 @@ export default function CommandCenter() {
     setSelectedIncident(item);
     setInvalidReviewStep(null);
     setInvalidReason('');
-    setMdrrmoNotes(item.mdrrmo_dispatch_notes || item.mdrrmo_coordination_notes || item.mdrrmo_response_notes || '');
+    // Dispatcher instructions have their own field. Never seed them from
+    // barangay escalation or responder field-assessment notes.
+    setMdrrmoNotes(item.mdrrmo_dispatch_notes || '');
     setEscalatedResponseTab('barangay');
     setResponderInfoTab('assessment');
     setProofPreviewOpen(false);
@@ -2133,7 +2135,7 @@ export default function CommandCenter() {
               </div>
 
               <label className="mdrrmo-dispatch-notes">
-                Dispatcher notes <span>(optional)</span>
+                Dispatcher notes <span>(optional · sent to responders; separate from escalation notes)</span>
                 <textarea
                   value={mdrrmoDispatchNotes}
                   onChange={(event) => setMdrrmoDispatchNotes(event.target.value)}
