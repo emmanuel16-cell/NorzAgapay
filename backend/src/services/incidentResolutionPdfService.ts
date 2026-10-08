@@ -82,6 +82,17 @@ function phDate(value: unknown): string {
   }).format(date);
 }
 
+function phDateTimeWithSeconds(value: unknown): string {
+  if (!value) return 'Not recorded';
+  const date = new Date(String(value));
+  if (!Number.isFinite(date.getTime())) return 'Not recorded';
+  return new Intl.DateTimeFormat('en-PH', {
+    timeZone: 'Asia/Manila',
+    month: 'short', day: 'numeric', year: 'numeric',
+    hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true,
+  }).format(date);
+}
+
 function cycleTimestamp(report: any, cycle: ResolutionCycle, event: string, shared: string): unknown {
   const own = report[`${cycle}_${event}`];
   if (own) return own;
@@ -104,15 +115,17 @@ function elapsedLabel(startValue: unknown, endValue: unknown, stage: string): st
 }
 
 function completionDuration(startValue: unknown, endValue: unknown): string {
-  if (!startValue) return 'Not recorded';
-  if (!endValue) return 'In progress';
-  const seconds = Math.floor((new Date(String(endValue)).getTime() - new Date(String(startValue)).getTime()) / 1000);
+  if (!startValue || !endValue) return 'Not recorded';
+  const seconds = Math.round((new Date(String(endValue)).getTime() - new Date(String(startValue)).getTime()) / 1000);
   if (!Number.isFinite(seconds) || seconds < 0) return 'Not recorded';
-  if (seconds < 60) return `${seconds} sec${seconds === 1 ? '' : 's'}`;
-  const totalMinutes = Math.floor(seconds / 60);
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  return hours > 0 ? `${hours} hr${hours === 1 ? '' : 's'}${minutes ? ` ${minutes} min` : ''}` : `${minutes} min`;
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainingSeconds = seconds % 60;
+  const parts: string[] = [];
+  if (hours) parts.push(`${hours} hr${hours === 1 ? '' : 's'}`);
+  if (minutes) parts.push(`${minutes} min`);
+  if (remainingSeconds || !parts.length) parts.push(`${remainingSeconds} sec${remainingSeconds === 1 ? '' : 's'}`);
+  return parts.join(' ');
 }
 
 function parseAssessment(notesValue: unknown, channel: ResolutionCycle): Assessment {
@@ -375,7 +388,7 @@ async function toBuffer(report: any, resident: any, assistance: any[], names: { 
     const left = doc.page.margins.left;
     const recordedX = left + timelineColumnWidths.label + 10;
     const completionX = recordedX + timelineColumnWidths.recorded + 10;
-    const recordedText = phDate(recordedAt);
+    const recordedText = phDateTimeWithSeconds(recordedAt);
     doc.font(regular).fontSize(9.5);
     const rowHeight = Math.max(
       doc.heightOfString(label, { width: timelineColumnWidths.label }),
