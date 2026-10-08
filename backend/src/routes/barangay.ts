@@ -1939,7 +1939,7 @@ router.patch('/reports/:id/escalate', authenticateBarangay, requireRole(['dispat
         barangay_resolved_at: newRow.resolved_at,
         barangay_responded_by: newRow.responded_by,
         barangay_response_notes: newRow.response_notes,
-        mdrrmo_coordination_notes: newRow.coordination_notes,
+        mdrrmo_coordination_notes: newRow.mdrrmo_coordination_notes,
         mdrrmo_dispatched_at: null, mdrrmo_accepted_at: null, mdrrmo_arrived_at: null, mdrrmo_resolved_at: null,
         mdrrmo_response_status: null,
       };
@@ -1981,7 +1981,7 @@ router.patch('/reports/:id/escalate', authenticateBarangay, requireRole(['dispat
 
     const barangayReportsUpdate: any = {
       status: 'escalated',
-      coordination_notes: escalationNotes,
+      mdrrmo_coordination_notes: escalationNotes,
       escalated_to_mdrrmo: true,
       escalated_at: now,
       lifecycle_actor_id: req.barangayUser.userId,
@@ -2009,7 +2009,7 @@ router.patch('/reports/:id/escalate', authenticateBarangay, requireRole(['dispat
         .from('barangay_reports')
         .update({
           status: newRow!.status,
-          coordination_notes: newRow!.coordination_notes,
+          mdrrmo_coordination_notes: newRow!.mdrrmo_coordination_notes,
           escalated_to_mdrrmo: newRow!.escalated_to_mdrrmo,
           escalated_at: newRow!.escalated_at,
           lifecycle_actor_id: newRow!.lifecycle_actor_id,
@@ -2773,7 +2773,7 @@ router.patch('/assistance-requests/:id/decide', authenticateBarangay, requireRol
       const { data: reportData, error: reportError } = await supabaseAdmin
         .from('barangay_reports')
         .update({
-          coordination_notes: escalationNotes,
+          mdrrmo_coordination_notes: escalationNotes,
           status: 'escalated',
           escalated_to_mdrrmo: true,
           escalated_at: now,
@@ -2798,7 +2798,7 @@ router.patch('/assistance-requests/:id/decide', authenticateBarangay, requireRol
           .from('barangay_reports')
           .update({
             status: linkedReport.status,
-            coordination_notes: linkedReport.coordination_notes,
+            mdrrmo_coordination_notes: linkedReport.mdrrmo_coordination_notes,
             escalated_to_mdrrmo: linkedReport.escalated_to_mdrrmo,
             escalated_at: linkedReport.escalated_at,
             lifecycle_actor_id: linkedReport.lifecycle_actor_id,
@@ -2837,25 +2837,24 @@ router.patch('/assistance-requests/:id/decide', authenticateBarangay, requireRol
       const assistanceNote = dispatcher_notes
         ? `[Assistance Approved: ${dispatcher_notes}]`
         : '[Barangay assistance dispatched by Coordinator]';
-      const { data: existingReport } = await supabaseAdmin
+      const { data: existingReport, error: existingReportError } = await supabaseAdmin
         .from('barangay_reports')
-        .select('id, barangay_response_notes, response_notes')
+        .select('id, response_notes')
         .eq('id', assistanceRequest.incident_report_id)
         .eq('barangay_id', req.barangayUser.barangayId)
         .maybeSingle();
+      if (existingReportError) throw existingReportError;
 
       if (existingReport) {
-        const existingNoteStr = existingReport.barangay_response_notes || existingReport.response_notes || '';
+        const existingNoteStr = existingReport.response_notes || '';
         const updatedNotes = `${existingNoteStr} ${assistanceNote}`.trim();
-        const { data: updatedReport } = await supabaseAdmin
+        const { data: updatedReport, error: updatedReportError } = await supabaseAdmin
           .from('barangay_reports')
-          .update({
-            barangay_response_notes: updatedNotes,
-            response_notes: updatedNotes,
-          })
+          .update({ response_notes: updatedNotes })
           .eq('id', existingReport.id)
           .select('*')
           .maybeSingle();
+        if (updatedReportError) throw updatedReportError;
 
         if (updatedReport) {
           io.to(`barangay:${req.barangayUser.barangayId}`).emit('barangay:report_updated', updatedReport);
