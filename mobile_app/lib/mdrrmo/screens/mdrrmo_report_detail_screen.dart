@@ -14,6 +14,7 @@ import '../../widgets/incident_header_gradient.dart';
 import '../models/mdrrmo_report.dart';
 import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
+import '../services/socket_service.dart';
 
 const _detailNavy = Color(0xFF0C243B);
 const _detailTeal = Color(0xFF0D9488);
@@ -46,20 +47,37 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
   String _assistanceRequestType = 'goods';
   final _assistanceCategory = TextEditingController();
   final _assistanceDetails = TextEditingController();
+  List<Map<String, dynamic>> _assistanceRequests = [];
+  bool _assistanceRequestsLoading = true;
+  bool _showAssistanceForm = false;
+  int _assistanceLoadSequence = 0;
+  late final void Function(dynamic) _assistanceRequestListener;
+  late final void Function(dynamic) _assistanceConnectListener;
 
   @override
   void initState() {
     super.initState();
     _report = widget.report;
     _tabs = TabController(length: 3, vsync: this);
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) => _syncArrivalMonitoring(),
-    );
+    _assistanceRequestListener = (_) => unawaited(_loadAssistanceRequests());
+    _assistanceConnectListener = (_) => unawaited(_loadAssistanceRequests());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _syncArrivalMonitoring();
+      final auth = context.read<AuthProvider>();
+      if (auth.user != null && auth.token != null) {
+        SocketService.connect(auth.user!.id, auth.user!.role.name, auth.token!);
+        SocketService.socket.on('connect', _assistanceConnectListener);
+        SocketService.socket.on('resource:request', _assistanceRequestListener);
+        unawaited(_loadAssistanceRequests(showLoading: true));
+      }
+    });
   }
 
   @override
   void dispose() {
     _arrivalLocationSubscription?.cancel();
+    SocketService.socket.off('connect', _assistanceConnectListener);
+    SocketService.socket.off('resource:request', _assistanceRequestListener);
     _tabs.dispose();
     _assistanceCategory.dispose();
     _assistanceDetails.dispose();
@@ -580,7 +598,59 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
       );
       _assistanceCategory.clear();
       _assistanceDetails.clear();
+      if (mounted) setState(() => _showAssistanceForm = false);
+      await _loadAssistanceRequests(showLoading: true, showFormOnFailure: false);
     }, 'Assistance request sent to command staff.');
+  }
+
+  Future<void> _loadAssistanceRequests({bool showLoading = false, bool showFormOnFailure = true}) async {
+    final token = context.read<AuthProvider>().token;
+    if (token == null) {
+      if (mounted) setState(() => _assistanceRequestsLoading = false);
+      return;
+    }
+    final loadSequence = ++_assistanceLoadSequence;
+    if (showLoading && mounted) setState(() => _assistanceRequestsLoading = true);
+    try {
+      final requests = await ApiService.getMyMdrrmoAssistanceRequests(token);
+      if (!mounted || loadSequence != _assistanceLoadSequence) return;
+      setState(() {
+        _assistanceRequests = requests;
+        _assistanceRequestsLoading = false;
+        if (!_showAssistanceForm) _showAssistanceForm = requests.isEmpty;
+      });
+    } catch (_) {
+      if (!mounted || loadSequence != _assistanceLoadSequence) return;
+      setState(() {
+        _assistanceRequestsLoading = false;
+        if (_assistanceRequests.isEmpty && showFormOnFailure) _showAssistanceForm = true;
+      });
+    }
+  }
+
+  Future<void> _markAssistanceReceived(Map<String, dynamic> request) async {
+    final token = context.read<AuthProvider>().token;
+    if (token == null) return;
+    final requestId = request['id']?.toString();
+    if (requestId == null || requestId.isEmpty) return;
+    await _run(() async {
+      await ApiService.markMdrrmoAssistanceReceived(token, requestId);
+      await _loadAssistanceRequests();
+    }, 'Assistance marked as received.');
+  }
+
+  String _assistanceRequestTypeLabel(String? type) => type == 'responders'
+      ? 'Additional Responders'
+      : type == 'goods'
+      ? 'Supplies / Equipment'
+      : _label(type);
+
+  String _assistanceRequestTime(dynamic value) {
+    final date = DateTime.tryParse(value?.toString() ?? '')?.toLocal();
+    if (date == null) return 'Time unavailable';
+    final dateLabel = MaterialLocalizations.of(context).formatMediumDate(date);
+    final timeLabel = MaterialLocalizations.of(context).formatTimeOfDay(TimeOfDay.fromDateTime(date));
+    return '$dateLabel · $timeLabel';
   }
 
   Future<void> _run(Future<void> Function() action, String success) async {
@@ -1551,7 +1621,16 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
             style: const TextStyle(color: Color(0xFF475569), height: 1.45),
           ),
         ),
-        if (canRequest)
+        if (canRequest && !_showAssistanceForm && !_assistanceRequestsLoading)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: OutlinedButton.icon(
+              onPressed: () => setState(() => _showAssistanceForm = true),
+              icon: const Icon(Icons.add_rounded),
+              label: const Text('Request more assistance'),
+            ),
+          ),
+        if (canRequest && _showAssistanceForm)
           _section(
             'Assistance Needed',
             Column(
@@ -1607,7 +1686,118 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
                     label: Text(_busy ? 'Sending…' : 'Send Request'),
                   ),
                 ),
+                if (_assistanceRequests.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: _busy ? null : () => setState(() => _showAssistanceForm = false),
+                      child: const Text('Cancel'),
+                    ),
+                  ),
+                ],
               ],
+            ),
+          ),
+        if (_assistanceRequestsLoading && _assistanceRequests.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 26),
+            child: Center(child: CircularProgressIndicator()),
+          ),
+        if (_assistanceRequests.isNotEmpty)
+          _section(
+            'My assistance requests',
+            Column(
+              children: _assistanceRequests.map((request) {
+                final status = request['status']?.toString() ?? 'pending';
+                final statusLabel = status == 'fulfilled'
+                    ? 'Received'
+                    : status == 'approved'
+                    ? 'Approved'
+                    : status == 'rejected'
+                    ? 'Rejected'
+                    : 'Pending';
+                final statusColor = status == 'fulfilled'
+                    ? const Color(0xFF0D9488)
+                    : status == 'approved'
+                    ? const Color(0xFF2563EB)
+                    : status == 'rejected'
+                    ? const Color(0xFFDC2626)
+                    : const Color(0xFFD97706);
+                final subType = request['sub_type']?.toString().trim() ?? '';
+                final reportId = request['incident_id']?.toString();
+                final reportLabel = reportId == null
+                    ? null
+                    : reportId == _report.id
+                    ? _report.title
+                    : 'Incident ${reportId.length > 8 ? reportId.substring(0, 8) : reportId}';
+                return Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(11),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              _assistanceRequestTypeLabel(request['request_type']?.toString()),
+                              style: const TextStyle(fontWeight: FontWeight.bold, color: _detailInk),
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: statusColor.withOpacity(.12),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              statusLabel,
+                              style: TextStyle(color: statusColor, fontSize: 12, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (subType.isNotEmpty) ...[
+                        const SizedBox(height: 5),
+                        Text(subType, style: const TextStyle(color: _detailMuted, fontWeight: FontWeight.w600)),
+                      ],
+                      if (reportLabel != null) ...[
+                        const SizedBox(height: 5),
+                        Text(reportLabel, style: const TextStyle(color: _detailMuted, fontSize: 12)),
+                      ],
+                      const SizedBox(height: 7),
+                      Text(
+                        request['details']?.toString() ?? '',
+                        style: const TextStyle(color: Color(0xFF334155), height: 1.4),
+                      ),
+                      const SizedBox(height: 7),
+                      Text(
+                        _assistanceRequestTime(request['created_at']),
+                        style: const TextStyle(color: _detailMuted, fontSize: 12),
+                      ),
+                      if (status == 'approved') ...[
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton.icon(
+                            onPressed: _busy ? null : () => _markAssistanceReceived(request),
+                            icon: const Icon(Icons.inventory_2_outlined, size: 18),
+                            label: const Text('Received'),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                );
+              }).toList(),
             ),
           ),
       ],

@@ -71,6 +71,12 @@ function statusLabel(status?: string): string {
   return status ? status.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()) : 'Unknown';
 }
 
+function requestStatusLabel(request: AssistanceRequest): string {
+  return request.status === 'fulfilled' && request.source === 'mdrrmo'
+    ? 'Received'
+    : statusLabel(request.status);
+}
+
 function requestTypeLabel(type?: string, subType?: string | null): string {
   const typeLabel = type === 'responders' ? 'Responders' : statusLabel(type);
   return subType ? `${typeLabel} · ${statusLabel(subType)}` : typeLabel;
@@ -80,7 +86,7 @@ function coordinationLabel(request: AssistanceRequest): string {
   if (request.decision === 'provide_barangay_assistance') return 'Provided assistance';
   if (request.decision === 'coordinate_mdrrmo') return 'MDRRMO coordination';
   if (request.decision === 'dismissed' || request.status === 'rejected') return 'Rejected';
-  if (request.status === 'fulfilled') return 'Provided';
+  if (request.status === 'fulfilled') return request.source === 'mdrrmo' ? 'Received by responder' : 'Provided';
   if (request.status === 'approved') return 'Approved';
   return statusLabel(request.status);
 }
@@ -142,8 +148,10 @@ export default function ResourceRequestsPage() {
 
   const residentCount = useMemo(() => requests.filter((request) => requestReportGroup(request) === 'resident').length, [requests]);
   const escalatedCount = useMemo(() => requests.filter((request) => requestReportGroup(request) === 'escalated').length, [requests]);
-  const visibleRequests = useMemo(() => requests.filter((request) => requestReportGroup(request) === group), [requests, group]);
-  const selected = visibleRequests.find((request) => request.id === selectedId) || visibleRequests[0] || null;
+  const visibleRequests = useMemo(() => requests
+    .filter((request) => requestReportGroup(request) === group)
+    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()), [requests, group]);
+  const selected = visibleRequests.find((request) => request.id === selectedId) || visibleRequests[visibleRequests.length - 1] || null;
   const selectedHistory = selected ? [selected] : [];
 
   useEffect(() => {
@@ -217,7 +225,7 @@ export default function ResourceRequestsPage() {
                   <button key={request.id} type="button" className={`reports-queue-item-v2 assistance-request-item ${active ? 'selected' : ''}`} onClick={() => selectRequest(request)}>
                     <span className="reports-queue-item-top">
                       <strong>{requestTypeLabel(request.request_type, request.sub_type)}</strong>
-                      <span className={`assistance-status-chip ${request.status}`}>{statusLabel(request.status)}</span>
+                      <span className={`assistance-status-chip ${request.status}`}>{requestStatusLabel(request)}</span>
                     </span>
                     <span className="reports-queue-time">{request.requested_by_user?.full_name || 'Responder'} · {timeAgo(request.created_at)}</span>
                     <span className="reports-queue-time assistance-request-preview">{request.details || 'No request details provided.'}</span>
@@ -240,7 +248,7 @@ export default function ResourceRequestsPage() {
                     <h2>{requestTypeLabel(selected.request_type, selected.sub_type)}</h2>
                     <p>Requested by {selected.requested_by_user?.full_name || 'Responder'} · {timeAgo(selected.created_at)}</p>
                   </div>
-                  <span className={`assistance-status-chip detail ${selected.status}`}>{statusLabel(selected.status)}</span>
+                  <span className={`assistance-status-chip detail ${selected.status}`}>{requestStatusLabel(selected)}</span>
                 </header>
 
                 <section className="reports-detail-section-v2">
@@ -305,7 +313,7 @@ export default function ResourceRequestsPage() {
                 </section>
               </div>
 
-              {(selected.status === 'pending' || selected.status === 'approved') && (
+              {(selected.status === 'pending' || (selected.status === 'approved' && selected.source !== 'mdrrmo')) && (
                 <footer className="reports-detail-actions-v2 assistance-request-actions">
                   {selected.status === 'pending' ? <>
                     <button type="button" className="reports-invalid-button-v2" disabled={saving} onClick={() => void updateStatus(selected, 'rejected')}>Reject</button>

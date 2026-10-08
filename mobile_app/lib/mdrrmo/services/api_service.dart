@@ -90,6 +90,40 @@ class ApiService {
     }
   }
 
+  static Future<List<Map<String, dynamic>>> getMyMdrrmoAssistanceRequests(String token) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/requests/mine'),
+      headers: _headers(token),
+    );
+    final body = response.body.isEmpty ? const [] : jsonDecode(response.body);
+    if (response.statusCode == 200 && body is List) {
+      final requests = body
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList();
+      requests.sort((a, b) {
+        final aDate = DateTime.tryParse(a['created_at']?.toString() ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final bDate = DateTime.tryParse(b['created_at']?.toString() ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+        return aDate.compareTo(bDate);
+      });
+      return requests;
+    }
+    final message = body is Map ? body['error'] : null;
+    throw Exception(message ?? 'Failed to fetch your assistance requests');
+  }
+
+  static Future<void> markMdrrmoAssistanceReceived(String token, String requestId) async {
+    final response = await http.patch(
+      Uri.parse('$baseUrl/requests/$requestId/status'),
+      headers: _headers(token),
+      body: jsonEncode({'status': 'fulfilled'}),
+    );
+    final body = response.body.isEmpty ? <String, dynamic>{} : jsonDecode(response.body);
+    if (response.statusCode != 200) {
+      throw Exception(body is Map ? body['error'] ?? 'Failed to confirm assistance receipt' : 'Failed to confirm assistance receipt');
+    }
+  }
+
   static Future<MdrrmoReport> respondToMdrrmoReport(
     String token,
     String reportId, {

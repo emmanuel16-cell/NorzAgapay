@@ -7,6 +7,26 @@ import { formatIncidentReport } from './incidentReports';
 
 const router = Router();
 
+// Responders see the assistance requests they have submitted, in submission order.
+router.get('/mine', authenticate, authorize('responder'), async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('resource_requests')
+      .select('*')
+      .eq('requested_by', req.user!.userId)
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+
+    res.json((data || []).map((request: any) => ({
+      ...request,
+      incident_id: request.mdrrmo_report_id || request.incident_id,
+    })));
+  } catch (err) {
+    console.error('Fetch responder assistance requests error:', err);
+    res.status(500).json({ error: 'Could not load your assistance requests.' });
+  }
+});
+
 // ============================================
 // GET /api/requests — list eligible responder assistance requests (Dispatcher and master admin)
 // ============================================
@@ -291,11 +311,39 @@ router.post('/', authenticate, authorize('responder', 'logistics'), async (req: 
 // ============================================
 // PATCH /api/requests/:id/status — update request status
 // ============================================
-router.patch('/:id/status', authenticate, authorize('dispatcher'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.patch('/:id/status', authenticate, authorize('dispatcher', 'responder'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { status } = req.body;
     if (!['pending', 'approved', 'rejected', 'fulfilled'].includes(status)) {
       res.status(400).json({ error: 'Invalid status.' });
+      return;
+    }
+
+    if (req.user!.role === 'responder') {
+      if (status !== 'fulfilled') {
+        res.status(403).json({ error: 'Responders can only confirm receipt of approved assistance requests.' });
+        return;
+      }
+      const { data: receivedRequest, error: receiveError } = await supabaseAdmin
+        .from('resource_requests')
+        .update({ status: 'fulfilled' })
+        .eq('id', req.params.id)
+        .eq('requested_by', req.user!.userId)
+        .eq('status', 'approved')
+        .select('*')
+        .maybeSingle();
+      if (receiveError) throw receiveError;
+      if (!receivedRequest) {
+        res.status(409).json({ error: 'Only your approved assistance requests can be marked received.' });
+        return;
+      }
+      const responseRequest = {
+        ...receivedRequest,
+        incident_id: receivedRequest.mdrrmo_report_id || receivedRequest.incident_id,
+      };
+      io.to('role:dispatcher').to('role:master_admin').emit('resource:request', responseRequest);
+      io.to(`user:${req.user!.userId}`).emit('resource:request', responseRequest);
+      res.json({ message: 'Assistance receipt confirmed.', request: responseRequest });
       return;
     }
 
@@ -313,6 +361,7 @@ router.patch('/:id/status', authenticate, authorize('dispatcher'), async (req: A
         incident_id: request.mdrrmo_report_id || request.incident_id,
       };
       io.to('role:dispatcher').to('role:master_admin').emit('resource:request', responseRequest);
+      if (request.requested_by) io.to(`user:${request.requested_by}`).emit('resource:request', responseRequest);
       res.json({ message: `Request ${status}.`, request: responseRequest });
       return;
     }
