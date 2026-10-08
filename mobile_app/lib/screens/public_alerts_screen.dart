@@ -15,20 +15,85 @@ class PublicAlertsScreen extends StatefulWidget {
   State<PublicAlertsScreen> createState() => _PublicAlertsScreenState();
 }
 
-class _PublicAlertsScreenState extends State<PublicAlertsScreen> {
+class _PublicAlertsScreenState extends State<PublicAlertsScreen>
+    with WidgetsBindingObserver {
   // Tab index: 0 = Barangay, 1 = MDRRMO
-  int _selectedTab = 0;
+  int _selectedTab = 0; // 0 = All, 1 = Barangay, 2 = MDRRMO
   String _selectedCategory = 'all';
 
   static const List<Map<String, dynamic>> _categories = [
-    {'id': 'all', 'label': 'All Category', 'description': 'Show all official alerts and updates', 'icon': Icons.apps_rounded, 'color': Color(0xFF475569), 'bg': Color(0xFFF1F5F9), 'border': Color(0xFFCBD5E1)},
-    {'id': 'all_disaster', 'label': 'All Disaster Alert', 'description': 'Red, Orange, and Yellow emergency alerts', 'icon': Icons.warning_rounded, 'color': Color(0xFFDC2626), 'bg': Color(0xFFFEF2F2), 'border': Color(0xFFFCA5A5)},
-    {'id': 'disaster_red', 'label': 'Disaster Alert · Red', 'description': 'Severe flooding, evacuation orders & life threats', 'icon': Icons.local_fire_department_rounded, 'color': Color(0xFFEF4444), 'bg': Color(0xFFFEF2F2), 'border': Color(0xFFFCA5A5)},
-    {'id': 'disaster_orange', 'label': 'Disaster Alert · Orange', 'description': 'Dam spillway alerts & pre-evacuation notices', 'icon': Icons.warning_amber_rounded, 'color': Color(0xFFF97316), 'bg': Color(0xFFFFF7ED), 'border': Color(0xFFFDBA74)},
-    {'id': 'disaster_yellow', 'label': 'Disaster Alert · Yellow', 'description': 'River telemetry warning & standing advisory', 'icon': Icons.warning_amber_rounded, 'color': Color(0xFFEAB308), 'bg': Color(0xFFFFFBEB), 'border': Color(0xFFFDE68A)},
-    {'id': 'safety_advisory', 'label': 'Safety Advisory', 'description': 'Preemptive clearing, sandbagging & safety tips', 'icon': Icons.security_rounded, 'color': Color(0xFF14B8A6), 'bg': Color(0xFFF0FDFA), 'border': Color(0xFF99F6E4)},
-    {'id': 'relief_assistance', 'label': 'Relief & Assistance', 'description': 'Food packs, medical kits & shelter distribution', 'icon': Icons.volunteer_activism_rounded, 'color': Color(0xFF22C55E), 'bg': Color(0xFFF0FDF4), 'border': Color(0xFFBBF7D0)},
-    {'id': 'all_clear', 'label': 'All-Clear Notice', 'description': 'Water subsided, safe return to residences', 'icon': Icons.check_circle_rounded, 'color': Color(0xFF3B82F6), 'bg': Color(0xFFEFF6FF), 'border': Color(0xFFBFDBFE)},
+    {
+      'id': 'all',
+      'label': 'All Category',
+      'description': 'Show all official alerts and updates',
+      'icon': Icons.apps_rounded,
+      'color': Color(0xFF475569),
+      'bg': Color(0xFFF1F5F9),
+      'border': Color(0xFFCBD5E1),
+    },
+    {
+      'id': 'all_disaster',
+      'label': 'All Disaster Alert',
+      'description': 'Red, Orange, and Yellow emergency alerts',
+      'icon': Icons.warning_rounded,
+      'color': Color(0xFFDC2626),
+      'bg': Color(0xFFFEF2F2),
+      'border': Color(0xFFFCA5A5),
+    },
+    {
+      'id': 'disaster_red',
+      'label': 'Disaster Alert · Red',
+      'description': 'Severe flooding, evacuation orders & life threats',
+      'icon': Icons.local_fire_department_rounded,
+      'color': Color(0xFFEF4444),
+      'bg': Color(0xFFFEF2F2),
+      'border': Color(0xFFFCA5A5),
+    },
+    {
+      'id': 'disaster_orange',
+      'label': 'Disaster Alert · Orange',
+      'description': 'Dam spillway alerts & pre-evacuation notices',
+      'icon': Icons.warning_amber_rounded,
+      'color': Color(0xFFF97316),
+      'bg': Color(0xFFFFF7ED),
+      'border': Color(0xFFFDBA74),
+    },
+    {
+      'id': 'disaster_yellow',
+      'label': 'Disaster Alert · Yellow',
+      'description': 'River telemetry warning & standing advisory',
+      'icon': Icons.warning_amber_rounded,
+      'color': Color(0xFFEAB308),
+      'bg': Color(0xFFFFFBEB),
+      'border': Color(0xFFFDE68A),
+    },
+    {
+      'id': 'safety_advisory',
+      'label': 'Safety Advisory',
+      'description': 'Preemptive clearing, sandbagging & safety tips',
+      'icon': Icons.security_rounded,
+      'color': Color(0xFF14B8A6),
+      'bg': Color(0xFFF0FDFA),
+      'border': Color(0xFF99F6E4),
+    },
+    {
+      'id': 'relief_assistance',
+      'label': 'Relief & Assistance',
+      'description': 'Food packs, medical kits & shelter distribution',
+      'icon': Icons.volunteer_activism_rounded,
+      'color': Color(0xFF22C55E),
+      'bg': Color(0xFFF0FDF4),
+      'border': Color(0xFFBBF7D0),
+    },
+    {
+      'id': 'all_clear',
+      'label': 'All-Clear Notice',
+      'description': 'Water subsided, safe return to residences',
+      'icon': Icons.check_circle_rounded,
+      'color': Color(0xFF3B82F6),
+      'bg': Color(0xFFEFF6FF),
+      'border': Color(0xFFBFDBFE),
+    },
   ];
 
   List<BroadcastPost> _barangayPosts = [];
@@ -40,7 +105,21 @@ class _PublicAlertsScreenState extends State<PublicAlertsScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _fetchPosts();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _fetchPosts();
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
   }
 
   Future<void> _fetchPosts() async {
@@ -62,14 +141,16 @@ class _PublicAlertsScreenState extends State<PublicAlertsScreen> {
         _barangayPosts = await ApiService.getBroadcasts(auth.token!);
       } catch (_) {
         _barangayPosts = [];
-        _barangayLoadError = 'Could not load barangay posts. Check your connection and try again.';
+        _barangayLoadError =
+            'Could not load barangay posts. Check your connection and try again.';
       }
 
       try {
         _mdrrmoPosts = await ApiService.getMdrrmoBroadcasts(auth.token!);
       } catch (_) {
         _mdrrmoPosts = [];
-        _mdrrmoLoadError = 'Could not load MDRRMO posts. Check your connection and try again.';
+        _mdrrmoLoadError =
+            'Could not load MDRRMO posts. Check your connection and try again.';
       }
     }
     if (mounted) setState(() => _isLoading = false);
@@ -108,9 +189,11 @@ class _PublicAlertsScreenState extends State<PublicAlertsScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(existing != null
-                ? 'Post updated successfully!'
-                : 'Alert posted successfully!'),
+            content: Text(
+              existing != null
+                  ? 'Post updated successfully!'
+                  : 'Alert posted successfully!',
+            ),
             backgroundColor: const Color(0xFF10B981),
           ),
         );
@@ -130,7 +213,10 @@ class _PublicAlertsScreenState extends State<PublicAlertsScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(
           'Repost to $bName',
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
         ),
         content: Text(
           'This MDRRMO alert will be shared to your barangay feed so residents of $bName will see it marked as "From Mdrrmo".',
@@ -139,14 +225,19 @@ class _PublicAlertsScreenState extends State<PublicAlertsScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel', style: TextStyle(color: Color(0xFF94A3B8))),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: Color(0xFF94A3B8)),
+            ),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF0284C7),
               foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
             ),
             child: Text('Repost to $bName'),
           ),
@@ -183,12 +274,14 @@ class _PublicAlertsScreenState extends State<PublicAlertsScreen> {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Reposted to $bName successfully! View it in your Barangay feed.'),
+          content: Text(
+            'Reposted to $bName successfully! View it in your Barangay feed.',
+          ),
           backgroundColor: const Color(0xFF10B981),
           action: SnackBarAction(
             label: 'View Feed',
             textColor: Colors.white,
-            onPressed: () => setState(() => _selectedTab = 0),
+            onPressed: () => setState(() => _selectedTab = 1),
           ),
         ),
       );
@@ -201,8 +294,10 @@ class _PublicAlertsScreenState extends State<PublicAlertsScreen> {
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1E293B),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Remove Post',
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        title: const Text(
+          'Remove Post',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
         content: const Text(
           'Are you sure you want to remove this alert broadcast? Residents will no longer see this notification.',
           style: TextStyle(color: Color(0xFF94A3B8)),
@@ -210,14 +305,19 @@ class _PublicAlertsScreenState extends State<PublicAlertsScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel', style: TextStyle(color: Color(0xFF94A3B8))),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: Color(0xFF94A3B8)),
+            ),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFFEF4444),
               foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
             ),
             child: const Text('Remove'),
           ),
@@ -271,14 +371,18 @@ class _PublicAlertsScreenState extends State<PublicAlertsScreen> {
       );
       if (!mounted) return;
       setState(() {
-        final index = _barangayPosts.indexWhere((item) => item.id == updated.id);
+        final index = _barangayPosts.indexWhere(
+          (item) => item.id == updated.id,
+        );
         if (index >= 0) _barangayPosts[index] = updated;
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(updated.isPinned
-              ? 'Post pinned to resident home.'
-              : 'Post unpinned from resident home.'),
+          content: Text(
+            updated.isPinned
+                ? 'Post pinned to resident home.'
+                : 'Post unpinned from resident home.',
+          ),
           backgroundColor: const Color(0xFF0D9488),
         ),
       );
@@ -333,8 +437,21 @@ class _PublicAlertsScreenState extends State<PublicAlertsScreen> {
     final isDispatcher = user?.canManageContent == true;
     final barangayDisplayName = user?.barangayName ?? 'Bigte';
 
-    final sourcePosts = _selectedTab == 0 ? _barangayPosts : _mdrrmoPosts;
-    final sourceError = _selectedTab == 0 ? _barangayLoadError : _mdrrmoLoadError;
+    final sourcePosts = switch (_selectedTab) {
+      1 => _barangayPosts,
+      2 => _mdrrmoPosts,
+      _ => [
+        ..._barangayPosts,
+        ..._mdrrmoPosts,
+      ]..sort((a, b) => b.createdAt.compareTo(a.createdAt)),
+    };
+    final sourceError = switch (_selectedTab) {
+      1 => _barangayLoadError,
+      2 => _mdrrmoLoadError,
+      _ when _barangayLoadError != null && _mdrrmoLoadError != null =>
+        'Could not load public alerts. Check your connection and try again.',
+      _ => null,
+    };
     final activePosts = sourcePosts.where(_matchesCategory).toList();
 
     return Scaffold(
@@ -348,7 +465,11 @@ class _PublicAlertsScreenState extends State<PublicAlertsScreen> {
         elevation: 0,
         title: const Text(
           'Public Alerts and Broadcasts',
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, letterSpacing: -0.3),
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 18,
+            letterSpacing: -0.3,
+          ),
         ),
         actions: [
           IconButton(
@@ -367,38 +488,40 @@ class _PublicAlertsScreenState extends State<PublicAlertsScreen> {
           Expanded(
             child: _isLoading
                 ? const Center(
-                    child: CircularProgressIndicator(color: Color(0xFF38BDF8)))
+                    child: CircularProgressIndicator(color: Color(0xFF38BDF8)),
+                  )
                 : sourceError != null
-                    ? _buildError(sourceError)
-                    : activePosts.isEmpty
-                    ? _buildEmpty()
-                        : RefreshIndicator(
-                            onRefresh: _fetchPosts,
-                            color: const Color(0xFF38BDF8),
-                            child: ListView.builder(
-                              padding: const EdgeInsets.fromLTRB(14, 14, 14, 80),
-                              itemCount: activePosts.length,
-                              itemBuilder: (context, index) {
-                                final post = activePosts[index];
-                                final isMdrrmoTab = _selectedTab == 1;
+                ? _buildError(sourceError)
+                : activePosts.isEmpty
+                ? _buildEmpty()
+                : RefreshIndicator(
+                    onRefresh: _fetchPosts,
+                    color: const Color(0xFF38BDF8),
+                    child: ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(14, 14, 14, 80),
+                      itemCount: activePosts.length,
+                      itemBuilder: (context, index) {
+                        final post = activePosts[index];
+                        final isMdrrmoPost =
+                            post.barangayId.isEmpty && post.isFromMdrrmo;
 
-                                return _BroadcastPostCard(
-                                  post: post,
-                                  currentUserId: user?.id ?? '',
-                                  isDispatcher: isDispatcher,
-                                  isMdrrmoTab: isMdrrmoTab,
-                                  barangayName: barangayDisplayName,
-                                  onEdit: () => _openCreateModal(existing: post),
-                                  onDelete: () => _deletePost(post),
-                                  onRepost: () => _repostMdrrmoToBarangay(post),
-                                  onTogglePin: () => _togglePinnedPost(post),
-                                  onImageTap: (items, idx) =>
-                                      _openMediaViewer(items, idx),
-                                  onPlusTap: (items) => _openVerticalCarousel(items),
-                                );
-                              },
-                            ),
-                          ),
+                        return _BroadcastPostCard(
+                          post: post,
+                          currentUserId: user?.id ?? '',
+                          isDispatcher: isDispatcher,
+                          isMdrrmoTab: isMdrrmoPost,
+                          barangayName: barangayDisplayName,
+                          onEdit: () => _openCreateModal(existing: post),
+                          onDelete: () => _deletePost(post),
+                          onRepost: () => _repostMdrrmoToBarangay(post),
+                          onTogglePin: () => _togglePinnedPost(post),
+                          onImageTap: (items, idx) =>
+                              _openMediaViewer(items, idx),
+                          onPlusTap: (items) => _openVerticalCarousel(items),
+                        );
+                      },
+                    ),
+                  ),
           ),
         ],
       ),
@@ -420,14 +543,23 @@ class _PublicAlertsScreenState extends State<PublicAlertsScreen> {
     if (id == 'all') return true;
     switch (id) {
       case 'all_disaster':
-        return post.category == BroadcastCategory.disasterAlertRed || post.category == BroadcastCategory.disasterAlertOrange || post.category == BroadcastCategory.disasterAlertYellow;
-      case 'disaster_red': return post.category == BroadcastCategory.disasterAlertRed;
-      case 'disaster_orange': return post.category == BroadcastCategory.disasterAlertOrange;
-      case 'disaster_yellow': return post.category == BroadcastCategory.disasterAlertYellow;
-      case 'safety_advisory': return post.category == BroadcastCategory.safetyAdvisory;
-      case 'relief_assistance': return post.category == BroadcastCategory.reliefAssistance;
-      case 'all_clear': return post.category == BroadcastCategory.allClearNotice;
-      default: return true;
+        return post.category == BroadcastCategory.disasterAlertRed ||
+            post.category == BroadcastCategory.disasterAlertOrange ||
+            post.category == BroadcastCategory.disasterAlertYellow;
+      case 'disaster_red':
+        return post.category == BroadcastCategory.disasterAlertRed;
+      case 'disaster_orange':
+        return post.category == BroadcastCategory.disasterAlertOrange;
+      case 'disaster_yellow':
+        return post.category == BroadcastCategory.disasterAlertYellow;
+      case 'safety_advisory':
+        return post.category == BroadcastCategory.safetyAdvisory;
+      case 'relief_assistance':
+        return post.category == BroadcastCategory.reliefAssistance;
+      case 'all_clear':
+        return post.category == BroadcastCategory.allClearNotice;
+      default:
+        return true;
     }
   }
 
@@ -439,14 +571,22 @@ class _PublicAlertsScreenState extends State<PublicAlertsScreen> {
       builder: (sheetContext) => _PostCategoryFilterSheet(
         categories: _categories,
         selectedCategory: _selectedCategory,
-        showCreatePost: Provider.of<AuthService>(context, listen: false).currentUser?.canManageContent == true && _selectedTab == 0,
+        showCreatePost:
+            Provider.of<AuthService>(
+                  context,
+                  listen: false,
+                ).currentUser?.canManageContent ==
+                true &&
+            _selectedTab != 2,
         onSelect: (id) {
           setState(() => _selectedCategory = id);
           Navigator.pop(sheetContext);
         },
         onCreatePost: () {
           Navigator.pop(sheetContext);
-          WidgetsBinding.instance.addPostFrameCallback((_) => _openCreateModal());
+          WidgetsBinding.instance.addPostFrameCallback(
+            (_) => _openCreateModal(),
+          );
         },
       ),
     );
@@ -467,7 +607,7 @@ class _PublicAlertsScreenState extends State<PublicAlertsScreen> {
       ),
       child: Row(
         children: [
-          // Tab 1: Barangay Name
+          // All posts are visible on the home feed by default.
           Expanded(
             child: InkWell(
               onTap: () => setState(() => _selectedTab = 0),
@@ -483,16 +623,51 @@ class _PublicAlertsScreenState extends State<PublicAlertsScreen> {
                       width: 2.5,
                     ),
                   ),
+                ),
+                child: Center(
+                  child: Text(
+                    'All',
+                    style: TextStyle(
+                      color: _selectedTab == 0
+                          ? Colors.white
+                          : const Color(0xFF94A3B8),
+                      fontWeight: _selectedTab == 0
+                          ? FontWeight.bold
+                          : FontWeight.w600,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          // Barangay Name
+          Expanded(
+            child: InkWell(
+              onTap: () => setState(() => _selectedTab = 1),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                decoration: BoxDecoration(
+                  border: Border(
+                    right: const BorderSide(color: Color(0xFF334155), width: 1),
+                    bottom: BorderSide(
+                      color: _selectedTab == 1
+                          ? const Color(0xFF38BDF8)
+                          : Colors.transparent,
+                      width: 2.5,
+                    ),
+                  ),
                   color: Colors.transparent,
                 ),
                 child: Center(
                   child: Text(
                     barangayName.isNotEmpty ? barangayName : 'Barangay Name',
                     style: TextStyle(
-                      color: _selectedTab == 0
+                      color: _selectedTab == 1
                           ? Colors.white
                           : const Color(0xFF94A3B8),
-                      fontWeight: _selectedTab == 0
+                      fontWeight: _selectedTab == 1
                           ? FontWeight.bold
                           : FontWeight.w600,
                       fontSize: 14,
@@ -505,16 +680,16 @@ class _PublicAlertsScreenState extends State<PublicAlertsScreen> {
             ),
           ),
 
-          // Tab 2: Mdrrmo
+          // MDRRMO
           Expanded(
             child: InkWell(
-              onTap: () => setState(() => _selectedTab = 1),
+              onTap: () => setState(() => _selectedTab = 2),
               child: Container(
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 decoration: BoxDecoration(
                   border: Border(
                     bottom: BorderSide(
-                      color: _selectedTab == 1
+                      color: _selectedTab == 2
                           ? const Color(0xFF38BDF8)
                           : Colors.transparent,
                       width: 2.5,
@@ -526,10 +701,10 @@ class _PublicAlertsScreenState extends State<PublicAlertsScreen> {
                   child: Text(
                     'Mdrrmo',
                     style: TextStyle(
-                      color: _selectedTab == 1
+                      color: _selectedTab == 2
                           ? Colors.white
                           : const Color(0xFF94A3B8),
-                      fontWeight: _selectedTab == 1
+                      fontWeight: _selectedTab == 2
                           ? FontWeight.bold
                           : FontWeight.w600,
                       fontSize: 14,
@@ -551,7 +726,11 @@ class _PublicAlertsScreenState extends State<PublicAlertsScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.cloud_off_rounded, color: Color(0xFF475569), size: 56),
+            const Icon(
+              Icons.cloud_off_rounded,
+              color: Color(0xFF475569),
+              size: 56,
+            ),
             const SizedBox(height: 12),
             Text(
               message,
@@ -561,8 +740,13 @@ class _PublicAlertsScreenState extends State<PublicAlertsScreen> {
             const SizedBox(height: 16),
             ElevatedButton(
               onPressed: _fetchPosts,
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0284C7)),
-              child: const Text('Try Again', style: TextStyle(color: Colors.white)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0284C7),
+              ),
+              child: const Text(
+                'Try Again',
+                style: TextStyle(color: Colors.white),
+              ),
             ),
           ],
         ),
@@ -571,14 +755,18 @@ class _PublicAlertsScreenState extends State<PublicAlertsScreen> {
   }
 
   Widget _buildEmpty() {
-    final isMdrrmo = _selectedTab == 1;
+    final isMdrrmo = _selectedTab == 2;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.campaign_outlined, size: 64, color: Color(0xFF94A3B8)),
+            const Icon(
+              Icons.campaign_outlined,
+              size: 64,
+              color: Color(0xFF94A3B8),
+            ),
             const SizedBox(height: 14),
             Text(
               _selectedCategory != 'all'
@@ -697,7 +885,11 @@ class _BroadcastPostCardState extends State<_BroadcastPostCard> {
               ),
               child: const Row(
                 children: [
-                  Icon(Icons.push_pin_rounded, size: 14, color: Color(0xFFB45309)),
+                  Icon(
+                    Icons.push_pin_rounded,
+                    size: 14,
+                    color: Color(0xFFB45309),
+                  ),
                   SizedBox(width: 6),
                   Text(
                     'PINNED',
@@ -725,7 +917,11 @@ class _BroadcastPostCardState extends State<_BroadcastPostCard> {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.shield_rounded, color: Color(0xFF1B4F72), size: 14),
+                  const Icon(
+                    Icons.shield_rounded,
+                    color: Color(0xFF1B4F72),
+                    size: 14,
+                  ),
                   const SizedBox(width: 6),
                   const Text(
                     'From MDRRMO',
@@ -766,9 +962,11 @@ class _BroadcastPostCardState extends State<_BroadcastPostCard> {
                             child: Text(
                               isMdrrmoTab
                                   ? 'MDRRMO Norzagaray'
-                                  : (post.barangayName.toLowerCase().startsWith('barangay')
-                                      ? post.barangayName
-                                      : 'Barangay ${post.barangayName}'),
+                                  : (post.barangayName.toLowerCase().startsWith(
+                                          'barangay',
+                                        )
+                                        ? post.barangayName
+                                        : 'Barangay ${post.barangayName}'),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
@@ -811,10 +1009,14 @@ class _BroadcastPostCardState extends State<_BroadcastPostCard> {
                 if (isMdrrmoTab && widget.isDispatcher) ...[
                   PopupMenuButton<String>(
                     color: const Color(0xFF1E293B),
-                    icon: const Icon(Icons.more_vert,
-                        color: Color(0xFF475569), size: 22),
+                    icon: const Icon(
+                      Icons.more_vert,
+                      color: Color(0xFF475569),
+                      size: 22,
+                    ),
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                     onSelected: (v) {
                       if (v == 'repost') widget.onRepost();
                     },
@@ -823,8 +1025,11 @@ class _BroadcastPostCardState extends State<_BroadcastPostCard> {
                         value: 'repost',
                         child: Row(
                           children: [
-                            const Icon(Icons.repeat_rounded,
-                                color: Color(0xFF38BDF8), size: 18),
+                            const Icon(
+                              Icons.repeat_rounded,
+                              color: Color(0xFF38BDF8),
+                              size: 18,
+                            ),
                             const SizedBox(width: 10),
                             Text(
                               'Repost to ${widget.barangayName}',
@@ -838,10 +1043,14 @@ class _BroadcastPostCardState extends State<_BroadcastPostCard> {
                 ] else if (widget.isDispatcher) ...[
                   PopupMenuButton<String>(
                     color: const Color(0xFF1E293B),
-                    icon: const Icon(Icons.more_vert,
-                        color: Color(0xFF475569), size: 22),
+                    icon: const Icon(
+                      Icons.more_vert,
+                      color: Color(0xFF475569),
+                      size: 22,
+                    ),
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                     onSelected: (v) {
                       if (v == 'edit') widget.onEdit();
                       if (v == 'delete') widget.onDelete();
@@ -852,11 +1061,16 @@ class _BroadcastPostCardState extends State<_BroadcastPostCard> {
                         value: 'pin',
                         child: Row(
                           children: [
-                            const Icon(Icons.push_pin_outlined,
-                                color: Color(0xFF38BDF8), size: 18),
+                            const Icon(
+                              Icons.push_pin_outlined,
+                              color: Color(0xFF38BDF8),
+                              size: 18,
+                            ),
                             const SizedBox(width: 10),
                             Text(
-                              post.isPinned ? 'Unpin from Resident Home' : 'Pin to Resident Home',
+                              post.isPinned
+                                  ? 'Unpin from Resident Home'
+                                  : 'Pin to Resident Home',
                               style: const TextStyle(color: Colors.white),
                             ),
                           ],
@@ -866,11 +1080,16 @@ class _BroadcastPostCardState extends State<_BroadcastPostCard> {
                         value: 'edit',
                         child: Row(
                           children: [
-                            Icon(Icons.edit_outlined,
-                                color: Color(0xFF38BDF8), size: 18),
+                            Icon(
+                              Icons.edit_outlined,
+                              color: Color(0xFF38BDF8),
+                              size: 18,
+                            ),
                             SizedBox(width: 10),
-                            Text('Edit Post',
-                                style: TextStyle(color: Colors.white)),
+                            Text(
+                              'Edit Post',
+                              style: TextStyle(color: Colors.white),
+                            ),
                           ],
                         ),
                       ),
@@ -878,11 +1097,16 @@ class _BroadcastPostCardState extends State<_BroadcastPostCard> {
                         value: 'delete',
                         child: Row(
                           children: [
-                            Icon(Icons.delete_outline,
-                                color: Color(0xFFEF4444), size: 18),
+                            Icon(
+                              Icons.delete_outline,
+                              color: Color(0xFFEF4444),
+                              size: 18,
+                            ),
                             SizedBox(width: 10),
-                            Text('Remove Post',
-                                style: TextStyle(color: Color(0xFFEF4444))),
+                            Text(
+                              'Remove Post',
+                              style: TextStyle(color: Color(0xFFEF4444)),
+                            ),
                           ],
                         ),
                       ),
@@ -988,8 +1212,8 @@ class _CategoryPill extends StatelessWidget {
     final label = category.sublabel.isNotEmpty
         ? '${category.label} · ${category.sublabel}'
         : category == BroadcastCategory.reliefAssistance
-            ? 'Relief & Assistance'
-            : category.label;
+        ? 'Relief & Assistance'
+        : category.label;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -1076,15 +1300,15 @@ class _BarangayGradient extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        width: double.infinity,
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Color(0xFF0C243B), Color(0xFF133E68), Color(0xFF0F5B78)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-        ),
-      );
+    width: double.infinity,
+    decoration: const BoxDecoration(
+      gradient: LinearGradient(
+        colors: [Color(0xFF0C243B), Color(0xFF133E68), Color(0xFF0F5B78)],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      ),
+    ),
+  );
 }
 
 class _PostCategoryFilterSheet extends StatelessWidget {
@@ -1094,7 +1318,13 @@ class _PostCategoryFilterSheet extends StatelessWidget {
   final bool showCreatePost;
   final VoidCallback onCreatePost;
 
-  const _PostCategoryFilterSheet({required this.categories, required this.selectedCategory, required this.onSelect, required this.showCreatePost, required this.onCreatePost});
+  const _PostCategoryFilterSheet({
+    required this.categories,
+    required this.selectedCategory,
+    required this.onSelect,
+    required this.showCreatePost,
+    required this.onCreatePost,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1103,21 +1333,67 @@ class _PostCategoryFilterSheet extends StatelessWidget {
       minChildSize: 0.5,
       maxChildSize: 0.95,
       builder: (context, scrollController) => Container(
-        decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
         child: SafeArea(
           top: false,
           child: Column(
             children: [
               const SizedBox(height: 8),
-              Container(width: 44, height: 5, decoration: BoxDecoration(color: Color(0xFFD6D6D6), borderRadius: BorderRadius.all(Radius.circular(8)))),
+              Container(
+                width: 44,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: Color(0xFFD6D6D6),
+                  borderRadius: BorderRadius.all(Radius.circular(8)),
+                ),
+              ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 16, 12, 12),
-                child: Row(children: [
-                  Container(padding: const EdgeInsets.all(9), decoration: BoxDecoration(color: const Color(0xFF2563EB).withValues(alpha: .12), borderRadius: BorderRadius.circular(10)), child: const Icon(Icons.format_list_bulleted_rounded, color: Color(0xFF2563EB))),
-                  const SizedBox(width: 12),
-                  const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Filter by Post Category', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))), Text('Select a category to filter public alerts and advisories', style: TextStyle(fontSize: 12, color: Color(0xFF64748B)))])),
-                  IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close, color: Color(0xFF9CA3AF))),
-                ]),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(9),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF2563EB).withValues(alpha: .12),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(
+                        Icons.format_list_bulleted_rounded,
+                        color: Color(0xFF2563EB),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Filter by Post Category',
+                            style: TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF0F172A),
+                            ),
+                          ),
+                          Text(
+                            'Select a category to filter public alerts and advisories',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF64748B),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close, color: Color(0xFF9CA3AF)),
+                    ),
+                  ],
+                ),
               ),
               const Divider(height: 1, indent: 16, endIndent: 16),
               Expanded(
@@ -1134,20 +1410,74 @@ class _PostCategoryFilterSheet extends StatelessWidget {
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 10),
                       child: Material(
-                        color: selected ? category['bg'] as Color : Colors.white,
+                        color: selected
+                            ? category['bg'] as Color
+                            : Colors.white,
                         borderRadius: BorderRadius.circular(16),
                         child: InkWell(
                           borderRadius: BorderRadius.circular(16),
                           onTap: () => onSelect(id),
                           child: Container(
                             padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(borderRadius: BorderRadius.circular(16), border: Border.all(color: selected ? const Color(0xFF475569) : border.withValues(alpha: .65), width: selected ? 2 : 1)),
-                            child: Row(children: [
-                              Container(width: 48, height: 48, decoration: BoxDecoration(color: color.withValues(alpha: .15), borderRadius: BorderRadius.circular(12)), child: Icon(category['icon'] as IconData, color: color, size: 23)),
-                              const SizedBox(width: 14),
-                              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(category['label'] as String, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))), const SizedBox(height: 4), Text(category['description'] as String, style: const TextStyle(fontSize: 12.5, color: Color(0xFF737373)))])),
-                              Icon(selected ? Icons.check_circle : Icons.chevron_right, color: selected ? const Color(0xFF475569) : const Color(0xFFBDBDBD)),
-                            ]),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: selected
+                                    ? const Color(0xFF475569)
+                                    : border.withValues(alpha: .65),
+                                width: selected ? 2 : 1,
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 48,
+                                  height: 48,
+                                  decoration: BoxDecoration(
+                                    color: color.withValues(alpha: .15),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Icon(
+                                    category['icon'] as IconData,
+                                    color: color,
+                                    size: 23,
+                                  ),
+                                ),
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        category['label'] as String,
+                                        style: const TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.bold,
+                                          color: Color(0xFF1E293B),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        category['description'] as String,
+                                        style: const TextStyle(
+                                          fontSize: 12.5,
+                                          color: Color(0xFF737373),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Icon(
+                                  selected
+                                      ? Icons.check_circle
+                                      : Icons.chevron_right,
+                                  color: selected
+                                      ? const Color(0xFF475569)
+                                      : const Color(0xFFBDBDBD),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -1159,14 +1489,29 @@ class _PostCategoryFilterSheet extends StatelessWidget {
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
-                  decoration: const BoxDecoration(color: Colors.white, border: Border(top: BorderSide(color: Color(0xFFE2E8F0)))),
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
+                  ),
                   child: SizedBox(
                     height: 54,
                     child: ElevatedButton.icon(
                       onPressed: onCreatePost,
                       icon: const Icon(Icons.add_rounded),
-                      label: const Text('Create Post', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0D9488), foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+                      label: const Text(
+                        'Create Post',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF0D9488),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
                     ),
                   ),
                 ),

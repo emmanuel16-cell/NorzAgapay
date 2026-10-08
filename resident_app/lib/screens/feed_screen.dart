@@ -20,9 +20,9 @@ class FeedScreen extends StatefulWidget {
   State<FeedScreen> createState() => _FeedScreenState();
 }
 
-class _FeedScreenState extends State<FeedScreen> {
-  // Source filter: 'barangay' or 'mdrrmo' (matching img 1 & 3)
-  String _selectedSource = 'barangay';
+class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
+  // The home feed starts with the resident's barangay and municipality alerts.
+  String _selectedSource = 'all';
   String _selectedBarangay = '';
 
   // Category filter: 'all' by default, or specific category from img 2 button
@@ -113,9 +113,23 @@ class _FeedScreenState extends State<FeedScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _residentPinnedBroadcastIds = OfflineService.getPinnedBroadcastIds();
     _loadVerifiedBarangays();
     _fetchBroadcasts();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _fetchBroadcasts();
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
   }
 
   Future<void> _loadVerifiedBarangays() async {
@@ -269,7 +283,9 @@ class _FeedScreenState extends State<FeedScreen> {
       setState(() => _residentPinnedBroadcastIds = updated);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(isPinned ? 'Added to Pinned.' : 'Your pin was removed.'),
+          content: Text(
+            isPinned ? 'Added to Pinned.' : 'Your pin was removed.',
+          ),
           duration: const Duration(seconds: 2),
         ),
       );
@@ -312,6 +328,12 @@ class _FeedScreenState extends State<FeedScreen> {
       } else if (_selectedSource == 'mdrrmo') {
         // MDRRMO tab: Only MDRRMO posts (pinned or not), never Barangay
         if (!isMdrrmo) return false;
+      } else if (_selectedSource == 'all' &&
+          !isMdrrmo &&
+          _normalizeBarangayName(p['barangay_name']) !=
+              _normalizeBarangayName(_selectedBarangay)) {
+        // All combines town-wide MDRRMO alerts with the selected Barangay.
+        return false;
       }
 
       // 2. Category filter
@@ -632,7 +654,7 @@ class _FeedScreenState extends State<FeedScreen> {
               ),
               const SizedBox(height: 14),
 
-              // Segmented Tabs: [Barangay name] | [MDRRMO] | [ 📌 ] (matching img 2)
+              // Segmented Tabs: [All] | [Barangay name] | [MDRRMO] | [ 📌 ]
               Container(
                 height: 48,
                 decoration: BoxDecoration(
@@ -675,6 +697,43 @@ class _FeedScreenState extends State<FeedScreen> {
                             Icons.keyboard_arrow_down_rounded,
                             color: Colors.white,
                             size: 25,
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    Expanded(
+                      flex: 2,
+                      child: InkWell(
+                        onTap: () => setState(() => _selectedSource = 'all'),
+                        borderRadius: BorderRadius.circular(8),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          height: 42,
+                          decoration: BoxDecoration(
+                            color: _selectedSource == 'all'
+                                ? const Color(
+                                    0xFF0284C7,
+                                  ).withValues(alpha: 0.28)
+                                : Colors.transparent,
+                            borderRadius: BorderRadius.circular(8),
+                            border: _selectedSource == 'all'
+                                ? Border.all(
+                                    color: const Color(0xFF38BDF8),
+                                    width: 2,
+                                  )
+                                : null,
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            'All',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 13,
+                              fontWeight: _selectedSource == 'all'
+                                  ? FontWeight.w900
+                                  : FontWeight.w600,
+                            ),
                           ),
                         ),
                       ),

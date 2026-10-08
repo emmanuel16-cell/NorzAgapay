@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import path from 'path';
 import { Request, Response, Router } from 'express';
 import multer from 'multer';
+import { config } from '../config';
 import { supabaseAdmin } from '../config/supabase';
 import { AuthRequest, authenticate, authorize } from '../middleware/auth';
 import { DispatcherVerificationService } from '../services/dispatcherVerificationService';
@@ -87,20 +88,20 @@ async function uploadMedia(
     const extension = path.extname(file.originalname) || (isVideo ? '.mp4' : '.jpg');
     const storagePath = `broadcasts/${randomUUID()}${extension}`;
     const { error } = await supabaseAdmin.storage
-      .from('incident-media')
+      .from(config.supabaseBucketName)
       .upload(storagePath, file.buffer, {
         contentType: file.mimetype,
         upsert: false,
       });
     if (error) {
       if (storagePaths.length) {
-        await supabaseAdmin.storage.from('incident-media').remove(storagePaths).catch(() => undefined);
+        await supabaseAdmin.storage.from(config.supabaseBucketName).remove(storagePaths).catch(() => undefined);
       }
       throw new Error(`Could not upload ${file.originalname}: ${error.message}`);
     }
 
     storagePaths.push(storagePath);
-    const { data } = supabaseAdmin.storage.from('incident-media').getPublicUrl(storagePath);
+    const { data } = supabaseAdmin.storage.from(config.supabaseBucketName).getPublicUrl(storagePath);
     media.push({ url: data.publicUrl, type: isVideo ? 'video' : 'image' });
   }
 
@@ -109,7 +110,7 @@ async function uploadMedia(
 
 async function cleanupUploadedMedia(storagePaths: string[]) {
   if (!storagePaths.length) return;
-  await supabaseAdmin.storage.from('incident-media').remove(storagePaths).catch(() => undefined);
+  await supabaseAdmin.storage.from(config.supabaseBucketName).remove(storagePaths).catch(() => undefined);
 }
 
 async function fetchAuthorNames(rows: any[]) {

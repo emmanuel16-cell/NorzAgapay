@@ -150,7 +150,7 @@ NorzAgapay/
    - `add_send_to_to_incident_reports.sql` (Targeted recipient routing)
    - `add_multiple_proof_and_field_media.sql` (Multi-photo attachments)
 4. Ensure **Realtime** is enabled on the `incidents`, `incident_reports`, `alerts`, `evacuation_centers`, and `activity_feed` tables.
-5. Create a public Supabase Storage bucket named `incident-media` for report uploads.
+5. Create a public Supabase Storage bucket matching `SUPABASE_BUCKET_NAME` (defaults to `norzagapay-files`) for report and broadcast media uploads.
 
 ---
 

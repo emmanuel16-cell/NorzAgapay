@@ -3182,7 +3182,7 @@ router.post('/broadcasts', authenticateBarangay, requireRole(['admin', 'staff'])
       const filename = `broadcasts/${Date.now()}_${Math.random().toString(36).substring(7)}${ext}`;
 
       const { data: uploadData, error: uploadErr } = await supabaseAdmin.storage
-        .from('incident-media')
+        .from(config.supabaseBucketName)
         .upload(filename, file.buffer, {
           contentType: file.mimetype,
           upsert: true,
@@ -3190,7 +3190,7 @@ router.post('/broadcasts', authenticateBarangay, requireRole(['admin', 'staff'])
 
       if (!uploadErr && uploadData) {
         const { data: publicUrlData } = supabaseAdmin.storage
-          .from('incident-media')
+          .from(config.supabaseBucketName)
           .getPublicUrl(filename);
         mediaItems.push({
           url: publicUrlData.publicUrl,
@@ -3293,7 +3293,7 @@ router.patch('/broadcasts/:id', authenticateBarangay, requireRole(['admin', 'sta
       const filename = `broadcasts/${Date.now()}_${Math.random().toString(36).substring(7)}${ext}`;
 
       const { data: uploadData, error: uploadErr } = await supabaseAdmin.storage
-        .from('incident-media')
+        .from(config.supabaseBucketName)
         .upload(filename, file.buffer, {
           contentType: file.mimetype,
           upsert: true,
@@ -3301,7 +3301,7 @@ router.patch('/broadcasts/:id', authenticateBarangay, requireRole(['admin', 'sta
 
       if (!uploadErr && uploadData) {
         const { data: publicUrlData } = supabaseAdmin.storage
-          .from('incident-media')
+          .from(config.supabaseBucketName)
           .getPublicUrl(filename);
         finalMedia.push({
           url: publicUrlData.publicUrl,
