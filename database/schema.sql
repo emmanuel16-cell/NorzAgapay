@@ -5261,3 +5261,86 @@ REVOKE ALL ON FUNCTION public.assign_respond_unit_team_leader_v1(UUID, UUID, UUI
 GRANT EXECUTE ON FUNCTION public.assign_respond_unit_team_leader_v1(UUID, UUID, UUID) TO service_role;
 REVOKE ALL ON FUNCTION public.accept_mdrrmo_report_with_crew_v1(UUID, UUID, UUID[]) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.accept_mdrrmo_report_with_crew_v1(UUID, UUID, UUID[]) TO service_role;
+
+-- ============================================
+-- Barangay assistance requests
+-- ============================================
+-- Responders submit these requests from an assigned barangay incident.
+-- The backend uses the named requested_by/decided_by foreign keys for its
+-- embedded barangay_users lookups.
+CREATE TABLE IF NOT EXISTS public.barangay_assistance_requests (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  barangay_id UUID NOT NULL REFERENCES public.barangays(id) ON DELETE CASCADE,
+  requested_by UUID NOT NULL,
+  incident_report_id UUID REFERENCES public.barangay_reports(id) ON DELETE SET NULL,
+  incident_title TEXT,
+  needs_more_manpower BOOLEAN NOT NULL DEFAULT false,
+  needs_resources BOOLEAN NOT NULL DEFAULT false,
+  needs_equipment BOOLEAN NOT NULL DEFAULT false,
+  beyond_barangay_capability BOOLEAN NOT NULL DEFAULT false,
+  explanation TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'actioned', 'rejected', 'fulfilled', 'cancelled')),
+  decision TEXT
+    CHECK (decision IS NULL OR decision IN ('provide_barangay_assistance', 'coordinate_mdrrmo')),
+  dispatcher_notes TEXT,
+  decided_by UUID,
+  decided_at TIMESTAMPTZ,
+  team_acknowledged BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT requested_by
+    FOREIGN KEY (requested_by) REFERENCES public.barangay_users(id) ON DELETE CASCADE,
+  CONSTRAINT decided_by
+    FOREIGN KEY (decided_by) REFERENCES public.barangay_users(id) ON DELETE SET NULL,
+  CONSTRAINT barangay_assistance_requests_explanation_length_check
+    CHECK (char_length(btrim(explanation)) >= 10)
+);
+
+CREATE INDEX IF NOT EXISTS idx_barangay_assistance_requests_barangay_created
+  ON public.barangay_assistance_requests (barangay_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_barangay_assistance_requests_requested_by
+  ON public.barangay_assistance_requests (requested_by, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_barangay_assistance_requests_incident_report
+  ON public.barangay_assistance_requests (incident_report_id)
+  WHERE incident_report_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_barangay_assistance_requests_status
+  ON public.barangay_assistance_requests (status, created_at DESC);
+
+ALTER TABLE public.barangay_assistance_requests ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.barangay_assistance_requests FROM PUBLIC, anon, authenticated;
+GRANT SELECT, INSERT, UPDATE ON TABLE public.barangay_assistance_requests TO service_role;
+
+-- MDRRMO responder assistance requests reference mdrrmo_reports directly.
+-- Keep resource_requests.incident_id for legacy requests linked to incidents.
+ALTER TABLE public.resource_requests
+  ADD COLUMN IF NOT EXISTS mdrrmo_report_id UUID;
+
+UPDATE public.resource_requests AS request
+SET mdrrmo_report_id = request.incident_id,
+    incident_id = NULL
+FROM public.mdrrmo_reports AS report
+WHERE request.incident_id = report.id
+  AND request.mdrrmo_report_id IS NULL;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'resource_requests_mdrrmo_report_id_fkey'
+      AND conrelid = 'public.resource_requests'::regclass
+  ) THEN
+    ALTER TABLE public.resource_requests
+      ADD CONSTRAINT resource_requests_mdrrmo_report_id_fkey
+      FOREIGN KEY (mdrrmo_report_id)
+      REFERENCES public.mdrrmo_reports(id)
+      ON DELETE SET NULL;
+  END IF;
+END;
+$$;
+
+CREATE INDEX IF NOT EXISTS idx_resource_requests_mdrrmo_report_id
+  ON public.resource_requests (mdrrmo_report_id, created_at DESC)
+  WHERE mdrrmo_report_id IS NOT NULL;
+
+NOTIFY pgrst, 'reload schema';

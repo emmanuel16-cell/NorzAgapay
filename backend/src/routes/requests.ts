@@ -31,29 +31,44 @@ router.get('/', authenticate, authorize('dispatcher'), async (req: AuthRequest, 
     const reportById = new Map(eligibleReports.map((report) => [report.id, report]));
     const reportIds = [...reportById.keys()];
 
-    // 1. Fetch MDRRMO responder assistance requests
+    // 1. Fetch MDRRMO responder assistance requests. Older requests used
+    // incidents.id; new responder requests point directly to mdrrmo_reports.id.
     let responderRequests: any[] = [];
     if (incidentId ? true : reportIds.length > 0) {
-      let reqQuery = supabaseAdmin
+      const selectRequest = () => supabaseAdmin
         .from('resource_requests')
         .select('*, requested_by_user:users!requested_by(full_name, role, unit_type, phone)')
         .order('created_at', { ascending: false });
+      let legacyQuery = selectRequest();
+      let reportQuery = selectRequest();
 
       if (incidentId) {
-        reqQuery = reqQuery.eq('incident_id', incidentId);
+        legacyQuery = legacyQuery.eq('incident_id', incidentId);
+        reportQuery = reportQuery.eq('mdrrmo_report_id', incidentId);
       } else {
-        reqQuery = reqQuery.in('incident_id', reportIds);
+        legacyQuery = legacyQuery.in('incident_id', reportIds);
+        reportQuery = reportQuery.in('mdrrmo_report_id', reportIds);
       }
 
-      const { data: resReqData, error: resReqError } = await reqQuery;
-      if (resReqError) throw resReqError;
+      const [legacyResult, reportResult] = await Promise.all([legacyQuery, reportQuery]);
+      if (legacyResult.error) throw legacyResult.error;
+      if (reportResult.error) throw reportResult.error;
 
-      responderRequests = (resReqData || [])
-        .map((request) => ({
-          ...request,
-          incident_report: reportById.get(request.incident_id) || null,
-          source: 'mdrrmo',
-        }));
+      const requestsById = new Map(
+        [...(legacyResult.data || []), ...(reportResult.data || [])].map((request) => [request.id, request]),
+      );
+      responderRequests = [...requestsById.values()]
+        .map((request) => {
+          const linkedReportId = request.mdrrmo_report_id || request.incident_id;
+          return {
+            ...request,
+            // Keep the existing dashboard API contract while storing the
+            // canonical MDRRMO foreign key separately in the database.
+            incident_id: linkedReportId,
+            incident_report: reportById.get(linkedReportId) || null,
+            source: 'mdrrmo',
+          };
+        });
     }
 
     // 2. Fetch escalated Barangay assistance requests (beyond barangay capability or coordinated with MDRRMO)
@@ -233,10 +248,13 @@ router.post('/', authenticate, authorize('responder', 'logistics'), async (req: 
       }
     }
 
+    const isMdrrmoResponderRequest = req.user!.role === 'responder';
     const { data: request, error } = await supabaseAdmin
       .from('resource_requests')
       .insert({
         ...parsed.data,
+        incident_id: isMdrrmoResponderRequest ? null : parsed.data.incident_id ?? null,
+        mdrrmo_report_id: isMdrrmoResponderRequest ? parsed.data.incident_id : null,
         requested_by: req.user!.userId,
         status: 'pending',
       })
@@ -249,8 +267,12 @@ router.post('/', authenticate, authorize('responder', 'logistics'), async (req: 
       return;
     }
 
-    io.to('role:dispatcher').to('role:master_admin').emit('resource:request', request);
-    res.status(201).json({ message: 'Resource request submitted successfully.', request });
+    const responseRequest = {
+      ...request,
+      incident_id: request.mdrrmo_report_id || request.incident_id,
+    };
+    io.to('role:dispatcher').to('role:master_admin').emit('resource:request', responseRequest);
+    res.status(201).json({ message: 'Resource request submitted successfully.', request: responseRequest });
   } catch (err) {
     console.error('Create request error:', err);
     res.status(500).json({ error: 'Internal server error.' });
@@ -277,8 +299,12 @@ router.patch('/:id/status', authenticate, authorize('dispatcher'), async (req: A
       .maybeSingle();
 
     if (request) {
-      io.to('role:dispatcher').to('role:master_admin').emit('resource:request', request);
-      res.json({ message: `Request ${status}.`, request });
+      const responseRequest = {
+        ...request,
+        incident_id: request.mdrrmo_report_id || request.incident_id,
+      };
+      io.to('role:dispatcher').to('role:master_admin').emit('resource:request', responseRequest);
+      res.json({ message: `Request ${status}.`, request: responseRequest });
       return;
     }
 
