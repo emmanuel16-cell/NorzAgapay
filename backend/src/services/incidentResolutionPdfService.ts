@@ -302,6 +302,7 @@ async function toBuffer(report: any, resident: any, assistance: any[]): Promise<
   const width = doc.page.width - doc.page.margins.left - doc.page.margins.right;
   const labelWidth = 142;
   const valueWidth = width - labelWidth - 12;
+  const responseSectionHeadingX = doc.page.margins.left + labelWidth + 12;
   const ink = '#1f2937';
   const muted = '#536273';
   const cleanDescription = cleanText(report.description) || cleanText(report.specifics) || 'Not provided';
@@ -320,9 +321,9 @@ async function toBuffer(report: any, resident: any, assistance: any[]): Promise<
   doc.moveDown(0.2).font(regular).fontSize(9).fillColor(muted).text('NorzAgapay | Official incident record', { align: 'center' });
   doc.moveDown(0.5);
 
-  const section = (title: string) => {
+  const section = (title: string, x = doc.x) => {
     doc.moveDown(0.55);
-    doc.font(bold).fontSize(12).fillColor(ink).text(title);
+    doc.font(bold).fontSize(12).fillColor(ink).text(title, x, doc.y);
     const y = doc.y + 3;
     doc.moveTo(doc.page.margins.left, y).lineTo(doc.page.width - doc.page.margins.right, y).lineWidth(0.5).strokeColor('#94a3b8').stroke();
     doc.y = y + 8;
@@ -400,7 +401,7 @@ async function toBuffer(report: any, resident: any, assistance: any[]): Promise<
   const cycles = completedCycles(report);
   for (const cycle of responseCycles(report)) {
     const title = cycle === 'barangay' ? 'Barangay' : 'MDRRMO';
-    section(`${title} Response Times`);
+    section(`${title} Response Times`, responseSectionHeadingX);
     const acceptedAt = cycleTimestamp(report, cycle, 'accepted_at', 'accepted_at');
     const arrivedAt = cycleTimestamp(report, cycle, 'arrived_at', 'arrived_at');
     const receivedAt = cycle === 'mdrrmo'
@@ -418,7 +419,7 @@ async function toBuffer(report: any, resident: any, assistance: any[]): Promise<
         ? (report.barangay_response_notes || report.response_notes || '')
         : (report.mdrrmo_response_notes || report.response_notes || '');
       const assessment = parseAssessment(notes, cycle);
-      section(`${title} Field Assessment`);
+      section(`${title} Field Assessment`, responseSectionHeadingX);
       for (const [key, label] of Object.entries(assessmentLabels)) row(label, assessment[key]);
       const resolvedNotes = cycle === 'barangay'
         ? report.barangay_resolved_notes || report.resolved_notes
@@ -428,7 +429,7 @@ async function toBuffer(report: any, resident: any, assistance: any[]): Promise<
         elapsedLabel(report.created_at, resolvedAt, 'report receipt'),
         elapsedLabel(arrivedAt, resolvedAt, 'arrival'),
       ].filter(Boolean).join(' | ');
-      section(`${title} Resolution`);
+      section(`${title} Resolution`, responseSectionHeadingX);
       row('Resolved status & timing', [phDate(resolvedAt), elapsed].filter(Boolean).join(' | '));
       row('Resolution notes', resolvedNotes);
     }
