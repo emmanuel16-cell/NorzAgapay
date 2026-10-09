@@ -202,32 +202,6 @@ function responseCycles(report: any): ResolutionCycle[] {
   return [sourceType === 'direct' || isDirectMdrrmoReport(report) ? 'mdrrmo' : 'barangay'];
 }
 
-async function responderNames(report: any): Promise<{ barangay: string; mdrrmo: string }> {
-  const barangayIds = new Set<string>();
-  const assignedMatch = String(report.barangay_response_notes || '').match(/^\[ASSIGNED:([^\]]+)\]/);
-  if (assignedMatch?.[1]) assignedMatch[1].split(',').forEach((id) => barangayIds.add(id.trim()));
-  if (report.barangay_responded_by) barangayIds.add(String(report.barangay_responded_by));
-
-  const barangayNames: string[] = [];
-  if (barangayIds.size) {
-    const { data } = await supabaseAdmin.from('barangay_users').select('id, full_name').in('id', [...barangayIds]);
-    for (const row of data || []) if (row.full_name) barangayNames.push(row.full_name);
-  }
-
-  const { data: mdrrmoAssignments } = await supabaseAdmin
-    .from('mdrrmo_report_assignments')
-    .select('responder_id')
-    .eq('report_id', report.id)
-    .neq('status', 'removed');
-  const mdrrmoIds = [...new Set((mdrrmoAssignments || []).map((item: any) => item.responder_id).filter(Boolean))];
-  const mdrrmoNames: string[] = [];
-  if (mdrrmoIds.length) {
-    const { data } = await supabaseAdmin.from('users').select('id, full_name').in('id', mdrrmoIds);
-    for (const row of data || []) if (row.full_name) mdrrmoNames.push(row.full_name);
-  }
-  return { barangay: [...new Set(barangayNames)].join(', '), mdrrmo: [...new Set(mdrrmoNames)].join(', ') };
-}
-
 async function mdrrmoCycleTimes(reportId: string): Promise<Record<string, string | null>> {
   const { data, error } = await supabaseAdmin
     .from('mdrrmo_report_assignments')
@@ -312,7 +286,7 @@ function assistanceOutcome(request: any): string {
   return 'Pending';
 }
 
-async function toBuffer(report: any, resident: any, assistance: any[], names: { barangay: string; mdrrmo: string }): Promise<Buffer> {
+async function toBuffer(report: any, resident: any, assistance: any[]): Promise<Buffer> {
   const fonts = resolveFonts();
   const doc = new PDFDocument({ size: 'A4', margin: 42, info: { Title: `Incident Resolution - ${report.id}`, Author: 'NorzAgapay' } });
   if (fonts.regularPath) doc.registerFont('Times New Roman', fonts.regularPath);
@@ -381,7 +355,7 @@ async function toBuffer(report: any, resident: any, assistance: any[], names: { 
     doc.font(bold).fontSize(8.5).fillColor(muted)
       .text('Milestone', left, headerY, { width: timelineColumnWidths.label })
       .text('Recorded at', recordedX, headerY, { width: timelineColumnWidths.recorded })
-      .text('Completion time', completionX, headerY, { width: timelineColumnWidths.completion });
+      .text('Elapsed time', completionX, headerY, { width: timelineColumnWidths.completion });
     doc.y = headerY + 14;
   };
   const timelineRow = (label: string, recordedAt: unknown, duration: string) => {
@@ -425,27 +399,20 @@ async function toBuffer(report: any, resident: any, assistance: any[], names: { 
 
   const cycles = completedCycles(report);
   for (const cycle of responseCycles(report)) {
-    const status = cycle === 'barangay' ? report.barangay_response_status : report.mdrrmo_response_status;
     const title = cycle === 'barangay' ? 'Barangay' : 'MDRRMO';
-    section(`${title} Response Cycle`);
-    row('Cycle status', String(status || 'pending').toUpperCase());
-    const reviewedAt = cycleTimestamp(report, cycle, 'dispatcher_reviewed_at', 'dispatcher_reviewed_at');
-    const dispatchedAt = cycleTimestamp(report, cycle, 'dispatched_at', 'dispatched_at');
+    section(`${title} Response Times`);
     const acceptedAt = cycleTimestamp(report, cycle, 'accepted_at', 'accepted_at');
     const arrivedAt = cycleTimestamp(report, cycle, 'arrived_at', 'arrived_at');
-    const dispatchReviewAt = reviewedAt || dispatchedAt;
     const receivedAt = cycle === 'mdrrmo'
       ? report.mdrrmo_received_at || report.created_at
       : report.created_at;
     const cycleResolvedAt = cycle === 'barangay'
-      ? report.barangay_resolved_at
-      : report.mdrrmo_resolved_at;
+      ? report.barangay_resolved_at || report.resolved_at
+      : report.mdrrmo_resolved_at || report.resolved_at;
     timelineHeader();
-    timelineRow('Dispatcher review', dispatchReviewAt, completionDuration(receivedAt, dispatchedAt || dispatchReviewAt));
-    timelineRow('Responder dispatched', dispatchedAt, completionDuration(dispatchedAt, acceptedAt));
-    timelineRow('Responder accepted', acceptedAt, completionDuration(acceptedAt, arrivedAt));
-    timelineRow('Arrived at incident area', arrivedAt, completionDuration(arrivedAt, cycleResolvedAt));
-    row('Assigned responder(s)', cycle === 'barangay' ? names.barangay : names.mdrrmo);
+    timelineRow('Responder accepted', acceptedAt, `Response to acceptance: ${completionDuration(receivedAt, acceptedAt)}`);
+    timelineRow('Arrived at incident area', arrivedAt, `Travel to arrival: ${completionDuration(acceptedAt, arrivedAt)}`);
+    timelineRow('Incident resolved', cycleResolvedAt, `Time to resolve: ${completionDuration(arrivedAt, cycleResolvedAt)}`);
     if (cycles.includes(cycle)) {
       const notes = cycle === 'barangay'
         ? (report.barangay_response_notes || report.response_notes || '')
@@ -596,11 +563,8 @@ export class IncidentResolutionPdfService {
       const { data } = await supabaseAdmin.from('resident_user').select('full_name, phone, email').eq('id', report.reporter_id).maybeSingle();
       resident = data;
     }
-    const [assistance, names] = await Promise.all([
-      assistanceForReport(reportId),
-      responderNames(report),
-    ]);
-    const buffer = await toBuffer(report, resident, assistance, names);
+    const assistance = await assistanceForReport(reportId);
+    const buffer = await toBuffer(report, resident, assistance);
     const storagePath = `resolved-reports/${reportId}/latest.pdf`;
     const { error: uploadError } = await supabaseAdmin.storage
       .from(config.resolutionPdfBucketName)
