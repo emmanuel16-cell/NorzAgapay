@@ -320,9 +320,14 @@ async function toBuffer(report: any, resident: any, assistance: any[]): Promise<
   doc.moveDown(0.2).font(regular).fontSize(9).fillColor(muted).text('NorzAgapay | Official incident record', { align: 'center' });
   doc.moveDown(0.5);
 
-  const section = (title: string) => {
+  const section = (title: string, centered = false) => {
     doc.moveDown(0.55);
-    doc.font(bold).fontSize(12).fillColor(ink).text(title);
+    doc.font(bold).fontSize(12).fillColor(ink);
+    if (centered) {
+      doc.text(title, doc.page.margins.left, doc.y, { width, align: 'center' });
+    } else {
+      doc.text(title);
+    }
     const y = doc.y + 3;
     doc.moveTo(doc.page.margins.left, y).lineTo(doc.page.width - doc.page.margins.right, y).lineWidth(0.5).strokeColor('#94a3b8').stroke();
     doc.y = y + 8;
@@ -418,7 +423,7 @@ async function toBuffer(report: any, resident: any, assistance: any[]): Promise<
         ? (report.barangay_response_notes || report.response_notes || '')
         : (report.mdrrmo_response_notes || report.response_notes || '');
       const assessment = parseAssessment(notes, cycle);
-      section(`${title} Field Assessment`);
+      section(`${title} Field Assessment`, true);
       for (const [key, label] of Object.entries(assessmentLabels)) row(label, assessment[key]);
       const resolvedNotes = cycle === 'barangay'
         ? report.barangay_resolved_notes || report.resolved_notes
