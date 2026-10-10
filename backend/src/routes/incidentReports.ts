@@ -729,14 +729,12 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
       proof_types: proofTypes.length > 0 ? proofTypes : ((report as any)?.proof_types || []),
     }, bMap);
 
-    // Preserve the immediate queue notification for installed clients. The
-    // transactional outbox separately provides durable lifecycle delivery.
-    if (targetSendTo !== 'barangay' || type === 'emergency') {
-      io.to(['dashboard_staff', 'role:dispatcher']).emit(
-        'incident_report:new',
-        formattedReport,
-      );
-    }
+    // Every new report enters the MDRRMO queue. The transactional outbox
+    // separately provides durable lifecycle delivery.
+    io.to(['dashboard_staff', 'role:dispatcher']).emit(
+      'incident_report:new',
+      formattedReport,
+    );
     // Barangays receive the report only after an MDRRMO assignment is saved.
     if (formattedReport.reporter_type === 'resident' && formattedReport.reporter_id) {
       io.to(`user:${formattedReport.reporter_id}`).emit('incident_report:updated', formattedReport);
@@ -755,19 +753,17 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
 
     // This is a secondary convenience task. The lifecycle outbox already
     // notified the correctly scoped queue from the report insert transaction.
-    if (targetSendTo !== 'barangay') {
-      void supabaseAdmin.from('tasks').insert({
-        title: `🚨 Emergency: ${formattedReport.title}`,
-        description: formattedReport.description || formattedReport.specifics || `Emergency reported at ${formattedReport.barangay_name || 'Norzagaray'}.`,
-        task_type: 'general_labor',
-        status: 'pending',
-        latitude: formattedReport.latitude,
-        longitude: formattedReport.longitude,
-        address: formattedReport.address || formattedReport.barangay_name || 'Norzagaray, Bulacan',
-      }).then(({ error }) => {
-        if (error) console.warn('Could not create the optional initial task:', error.message);
-      });
-    }
+    void supabaseAdmin.from('tasks').insert({
+      title: `🚨 Emergency: ${formattedReport.title}`,
+      description: formattedReport.description || formattedReport.specifics || `Emergency reported at ${formattedReport.barangay_name || 'Norzagaray'}.`,
+      task_type: 'general_labor',
+      status: 'pending',
+      latitude: formattedReport.latitude,
+      longitude: formattedReport.longitude,
+      address: formattedReport.address || formattedReport.barangay_name || 'Norzagaray, Bulacan',
+    }).then(({ error }) => {
+      if (error) console.warn('Could not create the optional initial task:', error.message);
+    });
   } catch (err) {
     console.error('Incident report submission error:', err);
     res.status(500).json({ error: 'Internal server error.' });
