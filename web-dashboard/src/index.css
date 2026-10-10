@@ -3856,6 +3856,10 @@ tbody tr:last-child td { border-bottom: none; }
 .public-location-dialog h2 { margin: 0; font-size: 18px; }
 .public-location-dialog header p { margin: 5px 0 0; color: #a9bddb; font-size: 12px; }
 .public-location-dialog header button { display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid #385276; border-radius: 8px; color: #dce8fb; background: #102543; cursor: pointer; }
+.public-map-current-location { display: inline-flex; min-height: 38px; align-items: center; gap: 7px; margin: 0 0 10px; padding: 7px 11px; border: 1px solid #36547d; border-radius: 8px; color: #cce3ff; background: #102543; font: inherit; font-size: 12px; font-weight: 650; cursor: pointer; }
+.public-map-current-location:hover { background: #153254; }
+.public-map-current-location:disabled { opacity: .6; cursor: wait; }
+.public-map-location-message { margin: -2px 0 9px; color: #a9bddb; font-size: 11px; line-height: 1.4; }
 .public-location-picker-map { height: min(52vh, 420px); overflow: hidden; border: 1px solid #385276; border-radius: 10px; background: #10213d; }
 .public-location-picker-coordinate { margin: 9px 0; color: #a9bddb; font-size: 12px; font-variant-numeric: tabular-nums; }
 .public-location-dialog > footer { display: flex; justify-content: flex-end; gap: 8px; }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { LocateFixed, MapPin, Phone, Siren, Upload, X } from 'lucide-react';
-import { MapContainer, Marker, TileLayer, useMapEvents } from 'react-leaflet';
+import { MapContainer, Marker, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import { Link } from 'react-router-dom';
 import PublicHeader from '../components/PublicHeader';
@@ -52,6 +52,14 @@ function IncidentMapClickPicker({ onPick }: { onPick: (point: { latitude: number
   return null;
 }
 
+function IncidentMapRecenter({ point }: { point: [number, number] }) {
+  const map = useMap();
+  useEffect(() => {
+    map.setView(point, Math.max(map.getZoom(), 14), { animate: true });
+  }, [map, point]);
+  return null;
+}
+
 export default function PublicReportPage() {
   const [hotlines, setHotlines] = useState<PublicHotlines>(emptyHotlines);
   const [barangays, setBarangays] = useState<BarangayLocation[]>([]);
@@ -63,6 +71,10 @@ export default function PublicReportPage() {
   const [locationSource, setLocationSource] = useState<'current' | 'map' | null>(null);
   const [mapPickerOpen, setMapPickerOpen] = useState(false);
   const [mapLocation, setMapLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [mapLocationSource, setMapLocationSource] = useState<'current' | 'map' | null>(null);
+  const [mapFocus, setMapFocus] = useState<[number, number]>(defaultMapCenter);
+  const [mapLocationLoading, setMapLocationLoading] = useState(false);
+  const [mapLocationMessage, setMapLocationMessage] = useState('');
   const [evidence, setEvidence] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
@@ -126,19 +138,42 @@ export default function PublicReportPage() {
 
   const openMapPicker = () => {
     setMapLocation(location);
+    setMapLocationSource(locationSource);
+    setMapFocus(location ? [location.latitude, location.longitude] : defaultMapCenter);
+    setMapLocationMessage('');
     setMapPickerOpen(true);
+  };
+
+  const useCurrentLocationInPicker = () => {
+    setMapLocationMessage('');
+    if (!navigator.geolocation) {
+      setMapLocationMessage('This browser cannot read your current location.');
+      return;
+    }
+    setMapLocationLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        const point = { latitude: coords.latitude, longitude: coords.longitude };
+        setMapLocation(point);
+        setMapLocationSource('current');
+        setMapFocus([point.latitude, point.longitude]);
+        setMapLocationMessage('Current location pin placed. Confirm below to use it.');
+        setMapLocationLoading(false);
+      },
+      () => {
+        setMapLocationMessage('Could not get your current location. Allow location access and try again.');
+        setMapLocationLoading(false);
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
+    );
   };
 
   const confirmMapLocation = () => {
     if (!mapLocation) return;
     setLocation(mapLocation);
-    setLocationSource('map');
+    setLocationSource(mapLocationSource || 'map');
     setMapPickerOpen(false);
   };
-
-  const mapCenter: [number, number] = mapLocation
-    ? [mapLocation.latitude, mapLocation.longitude]
-    : defaultMapCenter;
 
   const submitReport = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -231,10 +266,15 @@ export default function PublicReportPage() {
       {mapPickerOpen && <div className="public-location-modal" role="dialog" aria-modal="true" aria-labelledby="public-location-picker-title">
         <section className="public-location-dialog">
           <header><div><h2 id="public-location-picker-title">Choose incident location</h2><p>Click or tap inside Norzagaray to place the incident pin.</p></div><button type="button" aria-label="Close map picker" onClick={() => setMapPickerOpen(false)}><X size={18} /></button></header>
+          <button className="public-map-current-location" type="button" onClick={useCurrentLocationInPicker} disabled={mapLocationLoading}>
+            <LocateFixed size={16} aria-hidden="true" />{mapLocationLoading ? 'Finding current location…' : 'Use current location'}
+          </button>
+          {mapLocationMessage && <p className="public-map-location-message" role="status">{mapLocationMessage}</p>}
           <div className="public-location-picker-map">
-            <MapContainer center={mapCenter} zoom={14} scrollWheelZoom style={{ width: '100%', height: '100%' }}>
+            <MapContainer center={mapFocus} zoom={14} scrollWheelZoom style={{ width: '100%', height: '100%' }}>
               <TileLayer url={CARTO_DARK_MAP_URL} attribution={CARTO_ATTRIBUTION} />
-              <IncidentMapClickPicker onPick={setMapLocation} />
+              <IncidentMapRecenter point={mapFocus} />
+              <IncidentMapClickPicker onPick={(point) => { setMapLocation(point); setMapLocationSource('map'); setMapLocationMessage(''); }} />
               {mapLocation && <Marker position={[mapLocation.latitude, mapLocation.longitude]} icon={incidentPinIcon} />}
             </MapContainer>
           </div>
