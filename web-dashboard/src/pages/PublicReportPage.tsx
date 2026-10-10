@@ -14,6 +14,7 @@ type PublicHotlines = {
   barangays: HotlineGroup[];
 };
 type BarangayLocation = {
+  id: string;
   name: string;
   latitude?: number | string | null;
   longitude?: number | string | null;
@@ -44,6 +45,7 @@ const emptyHotlines: PublicHotlines = { national: [], mdrrmo: [], barangays: [] 
 export default function PublicReportPage() {
   const [hotlines, setHotlines] = useState<PublicHotlines>(emptyHotlines);
   const [barangays, setBarangays] = useState<BarangayLocation[]>([]);
+  const [selectedBarangayId, setSelectedBarangayId] = useState('');
   const [guestPhone, setGuestPhone] = useState('');
   const [sendTo, setSendTo] = useState<'barangay' | 'mdrrmo'>('mdrrmo');
   const [description, setDescription] = useState('');
@@ -53,7 +55,7 @@ export default function PublicReportPage() {
   const [message, setMessage] = useState('');
   const [submitted, setSubmitted] = useState(false);
 
-  const closestBarangayName = useMemo(() => {
+  const closestBarangay = useMemo(() => {
     if (!location) return null;
     let nearest: BarangayLocation | null = null;
     let nearestDistance = Number.POSITIVE_INFINITY;
@@ -67,8 +69,10 @@ export default function PublicReportPage() {
         nearestDistance = distance;
       }
     }
-    return nearest?.name || null;
+    return nearest;
   }, [barangays, location]);
+  const recipientBarangayId = selectedBarangayId || closestBarangay?.id || '';
+  const recipientBarangayName = barangays.find((barangay) => barangay.id === recipientBarangayId)?.name;
 
   useEffect(() => {
     reportAPI.verifiedBarangays()
@@ -110,16 +114,18 @@ export default function PublicReportPage() {
       await reportAPI.guestReport({
         type: 'emergency', title: 'Resident Incident Report', description: description.trim(),
         latitude: location.latitude, longitude: location.longitude, contact_number: phone, send_to: sendTo,
+        recipient_barangay_id: sendTo === 'barangay' ? recipientBarangayId : undefined,
       }, evidence);
       setDescription('');
       setGuestPhone('');
       setLocation(null);
+      setSelectedBarangayId('');
       setEvidence(null);
       const input = document.getElementById('public-report-evidence') as HTMLInputElement | null;
       if (input) input.value = '';
       setSubmitted(true);
       setMessage(sendTo === 'barangay'
-        ? 'Report sent to the closest active barangay. It can be escalated to MDRRMO if more support is needed.'
+        ? `Report sent to ${recipientBarangayName || 'the selected active barangay'}. It can be escalated to MDRRMO if more support is needed.`
         : 'Report sent to MDRRMO for review. A dispatcher can assign it to a nearby active barangay.');
     } catch (error: any) {
       setMessage(error?.response?.data?.error || 'The report could not be submitted. Please try again.');
@@ -153,13 +159,14 @@ export default function PublicReportPage() {
               <span id="public-report-location-status" className="public-report-location-status" aria-live="polite">{location ? `Location attached · ${location.latitude.toFixed(5)}, ${location.longitude.toFixed(5)}` : 'Use the device at the incident location to add a map pin.'}</span>
               <fieldset className="public-report-routing" disabled={busy}>
                 <legend>Send report to</legend>
-                <label><input type="radio" name="public-report-recipient" value="barangay" checked={sendTo === 'barangay'} onChange={() => setSendTo('barangay')} /><span><strong>{closestBarangayName ? `Closest Barangay (${closestBarangayName})` : 'Closest Barangay'}</strong><small>Based on the incident location. The barangay can escalate to MDRRMO.</small></span></label>
+                <label><input type="radio" name="public-report-recipient" value="barangay" checked={sendTo === 'barangay'} onChange={() => setSendTo('barangay')} /><span><strong>{closestBarangay?.name ? `Closest Barangay (${closestBarangay.name})` : 'Closest Barangay'}</strong><small>Based on the incident location. The barangay can escalate to MDRRMO.</small></span></label>
+                {sendTo === 'barangay' && <div className="public-report-barangay-select"><label htmlFor="public-report-barangay">Receiving barangay</label><select id="public-report-barangay" value={recipientBarangayId} onChange={(event) => setSelectedBarangayId(event.target.value)} required><option value="" disabled>Select a verified barangay</option>{barangays.map((barangay) => <option key={barangay.id} value={barangay.id}>{barangay.name}{barangay.id === closestBarangay?.id ? ' · Closest' : ''}</option>)}</select><small>All verified barangays are listed. The closest barangay is selected by default.</small></div>}
                 <label><input type="radio" name="public-report-recipient" value="mdrrmo" checked={sendTo === 'mdrrmo'} onChange={() => setSendTo('mdrrmo')} /><span><strong>MDRRMO</strong><small>A dispatcher can assign the report to a nearby active barangay.</small></span></label>
               </fieldset>
               <label className="public-evidence-label" htmlFor="public-report-evidence"><Upload size={15} aria-hidden="true" /> Add photo or video <span>(optional)</span></label>
               <input id="public-report-evidence" type="file" accept="image/*,video/*" onChange={(event) => setEvidence(event.target.files?.[0] || null)} />
               {message && <p className={submitted ? 'public-report-success' : 'public-report-error'} role="status">{message}</p>}
-              <button type="submit" className="btn btn-primary btn-lg public-report-submit" disabled={busy}>{busy ? 'Sending report…' : `Send report to ${sendTo === 'barangay' ? 'closest barangay' : 'MDRRMO'}`}</button>
+              <button type="submit" className="btn btn-primary btn-lg public-report-submit" disabled={busy}>{busy ? 'Sending report…' : `Send report to ${sendTo === 'barangay' ? recipientBarangayName || 'barangay' : 'MDRRMO'}`}</button>
             </form>
           </section>
           <aside className="public-hotlines-panel" aria-labelledby="public-hotlines-title">

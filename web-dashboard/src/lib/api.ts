@@ -201,7 +201,7 @@ export const reportAPI = {
   availableBarangayResponders: () => api.get('/barangay/location/available-responders'),
   saveBarangayLocation: (data: { latitude: number; longitude: number; address?: string | null }) => api.put('/barangay/location', data),
   saveOfficeLocation: (data: { latitude: number; longitude: number; address?: string | null }) => api.put('/mdrrmo/reports/command-locations/office', data),
-  guestReport: (data: { type: string; title: string; description: string; latitude: number; longitude: number; contact_number: string; send_to: 'barangay' | 'mdrrmo'; incident_time_choice?: string; incident_occurred_at?: string | null; incident_time_precision?: string }, evidence?: File | null) => {
+  guestReport: (data: { type: string; title: string; description: string; latitude: number; longitude: number; contact_number: string; send_to: 'barangay' | 'mdrrmo'; recipient_barangay_id?: string; incident_time_choice?: string; incident_occurred_at?: string | null; incident_time_precision?: string }, evidence?: File | null) => {
     const body = new FormData();
     Object.entries(data).forEach(([key, value]) => body.append(key, value == null ? '' : String(value)));
     if (evidence) { body.append('proof', evidence); body.append('proof_type', evidence.type.startsWith('video/') ? 'video' : 'image'); }

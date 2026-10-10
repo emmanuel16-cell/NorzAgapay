@@ -18,7 +18,7 @@ import {
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
-async function findNearestActiveBarangay(latitude: number, longitude: number) {
+async function findNearestActiveBarangay(latitude: number, longitude: number, selectedBarangayId?: string) {
   const verifiedIds = await getVerifiedBarangayIds();
   if (!verifiedIds.length) return null;
   const { data, error } = await supabaseAdmin
@@ -26,7 +26,11 @@ async function findNearestActiveBarangay(latitude: number, longitude: number) {
     .select('id, name, latitude, longitude, location_latitude, location_longitude')
     .in('id', verifiedIds);
   if (error) throw error;
-  return getNearestBarangay({ latitude, longitude }, data || []);
+  const eligibleBarangays = data || [];
+  if (selectedBarangayId) {
+    return eligibleBarangays.find((barangay: any) => barangay.id === selectedBarangayId) || null;
+  }
+  return getNearestBarangay({ latitude, longitude }, eligibleBarangays);
 }
 
 async function ensureResidentBarangayAssignment(report: any, preferredBarangayId?: string | null) {
@@ -42,9 +46,9 @@ async function ensureResidentBarangayAssignment(report: any, preferredBarangayId
 
   const latitude = Number(report.latitude);
   const longitude = Number(report.longitude);
-  let nearest: { id: string } | null = preferredBarangayId ? { id: preferredBarangayId } : null;
-  if (!nearest && Number.isFinite(latitude) && Number.isFinite(longitude)) {
-    nearest = await findNearestActiveBarangay(latitude, longitude);
+  let nearest: { id: string } | null = null;
+  if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+    nearest = await findNearestActiveBarangay(latitude, longitude, preferredBarangayId || undefined);
   }
   if (!nearest) throw new Error('No active barangay with a location is available for this incident.');
 
@@ -53,7 +57,7 @@ async function ensureResidentBarangayAssignment(report: any, preferredBarangayId
     {
       p_report_id: report.id,
       p_barangay_id: nearest.id,
-      p_notes: 'Resident selected the closest active barangay when submitting this report.',
+      p_notes: 'Resident selected an active verified barangay when submitting this report.',
     },
   );
   if (assignmentError) throw assignmentError;
@@ -530,11 +534,14 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
       contact_number
     } = req.body;
 
-    // The backend owns the destination: "barangay" means the closest active
-    // barangay to the incident coordinates; every other value routes to MDRRMO.
+    // The backend validates the selected active barangay, defaulting to the
+    // closest one when no explicit recipient was selected.
     const targetSendTo = String(req.body.send_to || '').trim().toLowerCase() === 'barangay'
       ? 'barangay'
       : 'mdrrmo';
+    const selectedResponseBarangayId = typeof req.body.recipient_barangay_id === 'string'
+      ? req.body.recipient_barangay_id.trim()
+      : '';
 
     // Basic validation
     const parsedLatitude = Number(latitude);
@@ -657,7 +664,10 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
         const bMap = await getBarangayNameMap();
         let formattedExisting = formatIncidentReport(existing, bMap);
         if (reportWasRoutedToBarangay(existing) && existing.source_type !== undefined) {
-          const assignment = await ensureResidentBarangayAssignment(existing);
+          const assignment = await ensureResidentBarangayAssignment(
+            existing,
+            selectedResponseBarangayId || undefined,
+          );
           if (assignment?.barangay_id) {
             const assignmentBarangay = bMap.get(assignment.barangay_id) || null;
             formattedExisting = {
@@ -714,10 +724,12 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
     }
 
     const nearestResponseBarangay = targetSendTo === 'barangay'
-      ? await findNearestActiveBarangay(lat, lng)
+      ? await findNearestActiveBarangay(lat, lng, selectedResponseBarangayId || undefined)
       : null;
     if (targetSendTo === 'barangay' && !nearestResponseBarangay) {
-      res.status(409).json({ error: 'No active barangay with a location is available for this incident. Choose MDRRMO instead.' });
+      res.status(409).json({ error: selectedResponseBarangayId
+        ? 'That barangay is not currently verified and active. Choose another verified barangay or send the report to MDRRMO.'
+        : 'No active verified barangay with a location is available. Choose MDRRMO instead.' });
       return;
     }
 
@@ -833,7 +845,7 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
     }
     res.status(201).json({
       message: targetSendTo === 'barangay'
-        ? 'Report submitted to the closest active barangay.'
+        ? `Report submitted to ${nearestResponseBarangay!.name || 'the selected active barangay'}.`
         : 'Report submitted to MDRRMO.',
       report: formattedReport
     });
