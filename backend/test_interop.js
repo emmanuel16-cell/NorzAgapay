@@ -45,7 +45,7 @@ function httpReq(method, path, body = null, token = null) {
 
 async function runTests() {
   console.log('====================================================');
-  console.log('  NORZAGAPAY MULTI-APP INTEROPERABILITY TEST SUITE  ');
+  console.log('  NORZ-AGAPAY MULTI-APP INTEROPERABILITY TEST SUITE  ');
   console.log('====================================================\n');
 
   let passed = 0;

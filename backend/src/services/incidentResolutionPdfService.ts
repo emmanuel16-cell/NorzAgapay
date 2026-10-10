@@ -288,7 +288,7 @@ function assistanceOutcome(request: any): string {
 
 async function toBuffer(report: any, resident: any, assistance: any[]): Promise<Buffer> {
   const fonts = resolveFonts();
-  const doc = new PDFDocument({ size: 'A4', margin: 42, info: { Title: `Incident Resolution - ${report.id}`, Author: 'NorzAgapay' } });
+  const doc = new PDFDocument({ size: 'A4', margin: 42, info: { Title: `Incident Resolution - ${report.id}`, Author: 'Norz-Agapay' } });
   if (fonts.regularPath) doc.registerFont('Times New Roman', fonts.regularPath);
   if (fonts.boldPath) doc.registerFont('Times New Roman Bold', fonts.boldPath);
   const regular = fonts.regularPath ? 'Times New Roman' : fonts.regular;
@@ -318,7 +318,7 @@ async function toBuffer(report: any, resident: any, assistance: any[]): Promise<
   const destination = [destinationRoute, report.barangays?.name].filter(Boolean).join(' - ');
 
   doc.font(bold).fontSize(18).fillColor(ink).text('Incident Resolution Report', { align: 'center' });
-  doc.moveDown(0.2).font(regular).fontSize(9).fillColor(muted).text('NorzAgapay | Official incident record', { align: 'center' });
+  doc.moveDown(0.2).font(regular).fontSize(9).fillColor(muted).text('Norz-Agapay | Official incident record', { align: 'center' });
   doc.moveDown(0.5);
 
   const section = (title: string, x = doc.x) => {

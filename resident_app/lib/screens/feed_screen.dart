@@ -613,7 +613,7 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'NorzAgapay',
+                          'Norz-Agapay',
                           style: TextStyle(
                             color: Colors.white,
                             fontSize: 19,

@@ -4,7 +4,7 @@ class LegalDialogs {
   static void showTermsAndConditions(BuildContext context) => _show(
         context,
         title: 'Terms and Conditions',
-        subtitle: 'NorzAgapay Barangay App',
+        subtitle: 'Norz-Agapay Barangay App',
         icon: Icons.gavel_rounded,
         color: const Color(0xFF1B4F72),
         content: '''
@@ -35,7 +35,7 @@ These terms may be updated when app functions or applicable requirements change.
         icon: Icons.privacy_tip_rounded,
         color: const Color(0xFF0D9488),
         content: '''
-This notice describes how personal information is handled when you use NorzAgapay's Barangay App. Processing must follow applicable requirements, including the Philippine Data Privacy Act of 2012 (Republic Act No. 10173).
+This notice describes how personal information is handled when you use Norz-Agapay's Barangay App. Processing must follow applicable requirements, including the Philippine Data Privacy Act of 2012 (Republic Act No. 10173).
 
 1. Information Processed
 Depending on the feature used, the app may process account and profile details such as your name, email address, phone number, barangay, role, and sign-in status. Incident records may include descriptions, photos or videos, location coordinates, submission details, and response updates.

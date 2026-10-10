@@ -142,7 +142,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     border: const Border(left: BorderSide(color: Color(0xFF1B4F72), width: 5)),
                   ),
                   child: const Text(
-                    'NorzAgapay sent a temporary password. Don’t share it with anyone. If you didn’t request it, please ignore this message.',
+                    'Norz-Agapay sent a temporary password. Don’t share it with anyone. If you didn’t request it, please ignore this message.',
                     style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, height: 1.5, color: Color(0xFF0F172A)),
                   ),
                 ),
@@ -735,7 +735,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       const SizedBox(height: 16),
                       const Text(
-                        'NorzAgapay Barangay',
+                        'Norz-Agapay Barangay',
                         style: TextStyle(
                           fontSize: 22,
                           fontWeight: FontWeight.bold,
@@ -895,7 +895,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         child: Text(
                           _isRegisterMode
                               ? 'Already have an account? Sign In'
-                              : 'Don’t have a NorzAgapay barangay admin account? Create one',
+                              : 'Don’t have a Norz-Agapay barangay admin account? Create one',
                           style: const TextStyle(color: Color(0xFF0284C7), fontSize: 13),
                         ),
                       ),

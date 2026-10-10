@@ -242,7 +242,7 @@ BEGIN
       LIMIT 1
     ), FALSE) INTO v_is_verified;
     IF NOT COALESCE(v_is_verified, FALSE) THEN
-      RAISE EXCEPTION 'Destination barangay is not active in NorzAgapay.' USING ERRCODE = '42501';
+      RAISE EXCEPTION 'Destination barangay is not active in Norz-Agapay.' USING ERRCODE = '42501';
     END IF;
   END IF;
 

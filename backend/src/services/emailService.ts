@@ -15,7 +15,7 @@ async function sendEmail(toEmail: string, subject: string, html: string, text: s
       },
       body: JSON.stringify({
         personalizations: [{ to: [{ email: toEmail }] }],
-        from: { email: config.emailFrom, name: 'NorzAgapay Portal' },
+        from: { email: config.emailFrom, name: 'Norz-Agapay Portal' },
         ...(config.emailReplyTo ? { reply_to: { email: config.emailReplyTo } } : {}),
         subject,
         content: [
@@ -60,26 +60,26 @@ export const emailService = {
       || purpose === 'barangay_password_reset'
       || purpose === 'responder_password_reset';
     const subject = isRegistration
-      ? 'Your NorzAgapay verification code'
+      ? 'Your Norz-Agapay verification code'
       : isPasswordReset
-        ? 'Your NorzAgapay password reset code'
-        : 'Your NorzAgapay password change code';
+        ? 'Your Norz-Agapay password reset code'
+        : 'Your Norz-Agapay password change code';
 
     const actionTextByPurpose = {
-      registration: 'complete your NorzAgapay citizen registration',
-      barangay_registration: 'complete your NorzAgapay Barangay Administrator registration',
+      registration: 'complete your Norz-Agapay citizen registration',
+      barangay_registration: 'complete your Norz-Agapay Barangay Administrator registration',
       password_change: 'update your resident account password',
-      barangay_password_change: 'update your NorzAgapay barangay account password',
+      barangay_password_change: 'update your Norz-Agapay barangay account password',
       resident_password_reset: 'reset your resident account password',
-      barangay_password_reset: 'reset your NorzAgapay barangay account password',
-      responder_password_reset: 'reset your NorzAgapay responder account password',
+      barangay_password_reset: 'reset your Norz-Agapay barangay account password',
+      responder_password_reset: 'reset your Norz-Agapay responder account password',
     } as const;
     const actionText = actionTextByPurpose[purpose];
 
     const html = `
       <div style="margin: 0; padding: 24px; background: #f5f7fa; color: #1f2937; font-family: Arial, Helvetica, sans-serif;">
         <div style="max-width: 480px; margin: 0 auto; padding: 24px; background: #ffffff; border: 1px solid #dfe3e8;">
-          <h1 style="margin: 0 0 20px; color: #163b5c; font-size: 22px;">NorzAgapay</h1>
+          <h1 style="margin: 0 0 20px; color: #163b5c; font-size: 22px;">Norz-Agapay</h1>
           <p style="font-size: 16px; line-height: 1.5;">Your verification code is:</p>
           <p style="margin: 20px 0; color: #163b5c; font-family: monospace; font-size: 32px; font-weight: bold; letter-spacing: 5px;">${otp}</p>
           <p style="font-size: 15px; line-height: 1.5;">Use this code to ${actionText}. It expires in <strong>10 minutes</strong>. Do not share it with anyone.</p>
@@ -92,7 +92,7 @@ export const emailService = {
       toEmail,
       subject,
       html,
-      `Your NorzAgapay verification code is ${otp}.\n\nUse this code to ${actionText}. It expires in 10 minutes. Do not share it with anyone.\n\nIf you did not request this code, you can ignore this email.`,
+      `Your Norz-Agapay verification code is ${otp}.\n\nUse this code to ${actionText}. It expires in 10 minutes. Do not share it with anyone.\n\nIf you did not request this code, you can ignore this email.`,
     );
   },
 
@@ -100,23 +100,23 @@ export const emailService = {
    * Send temporary password after OTP verification
    */
   async sendTemporaryPasswordEmail(toEmail: string, tempPass: string, fullName: string, audience: 'resident' | 'barangay' = 'resident'): Promise<boolean> {
-    const subject = 'NorzAgapay - Your Temporary Login Password';
+    const subject = 'Norz-Agapay - Your Temporary Login Password';
 
     const html = `
       <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 520px; margin: 0 auto; background: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; overflow: hidden;">
         <div style="background: linear-gradient(135deg, #0c243b, #133e68, #0f5b78); padding: 24px; text-align: center; color: white;">
-          <h2 style="margin: 0; font-size: 22px; font-weight: 800;">NorzAgapay</h2>
+          <h2 style="margin: 0; font-size: 22px; font-weight: 800;">Norz-Agapay</h2>
           <p style="margin: 4px 0 0; font-size: 13px; opacity: 0.85;">Citizen Emergency &amp; Reporting Portal</p>
         </div>
         <div style="padding: 28px 24px; color: #1e293b;">
           <p style="font-size: 15px; line-height: 1.5; margin-top: 0;">Hello ${fullName || 'Resident'},</p>
           <div style="background: #f8fafc; border-left: 4px solid #1b4f72; padding: 14px 16px; border-radius: 6px; margin: 18px 0;">
             <p style="margin: 0; font-size: 14px; color: #0f172a; font-weight: 600;">
-              NorzAgapay sent a temporary password. Don't share this to anyone. If it's not you that requested it, please ignore.
+              Norz-Agapay sent a temporary password. Don't share this to anyone. If it's not you that requested it, please ignore.
             </p>
           </div>
             <p style="font-size: 14px; line-height: 1.5; color: #475569;">
-            Your temporary password for logging into the NorzAgapay ${audience === 'barangay' ? 'Barangay App' : 'Resident App'} is:
+            Your temporary password for logging into the Norz-Agapay ${audience === 'barangay' ? 'Barangay App' : 'Resident App'} is:
           </p>
           <div style="margin: 20px 0; text-align: center;">
             <div style="display: inline-block; background: #eff6ff; border: 1.5px solid #93c5fd; border-radius: 10px; padding: 12px 24px;">
@@ -128,7 +128,7 @@ export const emailService = {
           </p>
           <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;" />
           <p style="font-size: 11.5px; color: #94a3b8; line-height: 1.4; margin-bottom: 0;">
-            NorzAgapay Incident Management &bull; Municipality of Norzagaray, Bulacan
+            Norz-Agapay Incident Management &bull; Municipality of Norzagaray, Bulacan
           </p>
         </div>
       </div>
@@ -138,7 +138,7 @@ export const emailService = {
       toEmail,
       subject,
       html,
-      `NorzAgapay sent a temporary password for the NorzAgapay ${audience === 'barangay' ? 'Barangay' : 'Resident'} App: ${tempPass}. Do not share it. You can change your password in Profile settings.`,
+      `Norz-Agapay sent a temporary password for the Norz-Agapay ${audience === 'barangay' ? 'Barangay' : 'Resident'} App: ${tempPass}. Do not share it. You can change your password in Profile settings.`,
     );
   },
 };

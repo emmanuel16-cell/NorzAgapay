@@ -92,7 +92,7 @@ class _MobileAppState extends State<MobileApp> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'NorzAgapay Mobile',
+      title: 'Norz-Agapay Mobile',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         brightness: Brightness.light,

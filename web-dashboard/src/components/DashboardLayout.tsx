@@ -116,10 +116,10 @@ export default function DashboardLayout() {
             tabIndex={isCollapsed ? 0 : undefined}
             onKeyDown={isCollapsed ? (e) => (e.key === 'Enter' || e.key === ' ') && setIsCollapsed(false) : undefined}
           >
-            <img className="sidebar-logo" src="/NA-icon.png" alt="NorzAgapay" />
+            <img className="sidebar-logo" src="/NA-icon.png" alt="Norz-Agapay" />
             {!isCollapsed && (
               <div className="sidebar-brand-text">
-                <div className="sidebar-title">NorzAgapay</div>
+                <div className="sidebar-title">Norz-Agapay</div>
                 <div className="sidebar-subtitle">MDRRMO Command</div>
               </div>
             )}
@@ -228,7 +228,7 @@ export default function DashboardLayout() {
       <main className="main-content">
         <div className="mobile-dashboard-header">
           <button type="button" aria-label={mobileOpen ? 'Close navigation menu' : 'Open navigation menu'} onClick={() => setMobileOpen(!mobileOpen)}>{mobileOpen ? <X size={21} /> : <Menu size={21} />}</button>
-          <strong>{user?.account_kind === 'barangay' ? user.barangay_name || 'Barangay Command' : 'NorzAgapay Command'}</strong>
+          <strong>{user?.account_kind === 'barangay' ? user.barangay_name || 'Barangay Command' : 'Norz-Agapay Command'}</strong>
           <button type="button" aria-label="Sign out" onClick={handleLogout}><LogOut size={18} /></button>
         </div>
         <Outlet />

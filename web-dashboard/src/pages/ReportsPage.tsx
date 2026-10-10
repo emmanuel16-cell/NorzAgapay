@@ -313,7 +313,7 @@ export default function ReportsPage() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `NorzAgapay_Incident_${report.id.slice(0, 8)}.pdf`;
+      link.download = `Norz-Agapay_Incident_${report.id.slice(0, 8)}.pdf`;
       document.body.appendChild(link);
       link.click();
       link.remove();

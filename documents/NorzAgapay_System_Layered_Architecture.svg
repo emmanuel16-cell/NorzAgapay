@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1760 1320" role="img" aria-labelledby="title description">
-  <title id="title">NorzAgapay layered system architecture</title>
+  <title id="title">Norz-Agapay layered system architecture</title>
   <desc id="description">A black and white architecture overview showing users, client applications, the shared backend API and real-time engine, data services, and external integrations.</desc>
   <defs>
     <style>
@@ -97,7 +97,7 @@
   </defs>
 
   <rect width="1760" height="1320" fill="#fff" />
-  <text x="220" y="48" class="eyebrow muted">NORZAGAPAY / SYSTEM OVERVIEW</text>
+  <text x="220" y="48" class="eyebrow muted">NORZ-AGAPAY / SYSTEM OVERVIEW</text>
   <text x="220" y="96" font-size="34" font-weight="700">Layered system architecture</text>
   <text x="220" y="126" font-size="14" class="muted">A shared emergency response platform for residents, barangays, responders, and municipal command.</text>
   <line x1="220" y1="151" x2="1690" y2="151" class="rule" />
@@ -301,5 +301,5 @@
 
   <line x1="220" y1="1200" x2="1690" y2="1200" class="rule" />
   <text x="220" y="1230" class="tiny">HIGH-LEVEL LOGICAL VIEW · Based on the current repository structure and integrations.</text>
-  <text x="1690" y="1230" text-anchor="end" class="tiny">NORZAGAPAY · 01</text>
+  <text x="1690" y="1230" text-anchor="end" class="tiny">NORZ-AGAPAY · 01</text>
 </svg>

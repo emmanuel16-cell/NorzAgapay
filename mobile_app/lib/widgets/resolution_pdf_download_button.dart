@@ -45,7 +45,7 @@ class _ResolutionPdfDownloadButtonState
 
       final safeId = widget.reportId.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '');
       final shortId = safeId.length > 8 ? safeId.substring(0, 8) : safeId;
-      final file = File('${directory.path}/NorzAgapay_Incident_$shortId.pdf');
+      final file = File('${directory.path}/Norz-Agapay_Incident_$shortId.pdf');
       await file.writeAsBytes(bytes, flush: true);
       if (!mounted) return;
 

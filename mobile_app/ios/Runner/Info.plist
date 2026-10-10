@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>NorzAgapay Mobile</string>
+	<string>Norz-Agapay Mobile</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -15,7 +15,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>NorzAgapay Mobile</string>
+	<string>Norz-Agapay Mobile</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -27,15 +27,15 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>NorzAgapay uses your location to show your position relative to an incident and support responder navigation.</string>
+	<string>Norz-Agapay uses your location to show your position relative to an incident and support responder navigation.</string>
 	<key>NSLocationAlwaysUsageDescription</key>
-	<string>NorzAgapay uses your location in the background to keep command staff updated while responders travel to incidents.</string>
+	<string>Norz-Agapay uses your location in the background to keep command staff updated while responders travel to incidents.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>NorzAgapay uses your location in the background to keep command staff updated while responders travel to incidents.</string>
+	<string>Norz-Agapay uses your location in the background to keep command staff updated while responders travel to incidents.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>NorzAgapay uses the camera to document incidents and response outcomes.</string>
+	<string>Norz-Agapay uses the camera to document incidents and response outcomes.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>NorzAgapay uses your photo library to attach incident and field documentation.</string>
+	<string>Norz-Agapay uses your photo library to attach incident and field documentation.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

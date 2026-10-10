@@ -1,7 +1,7 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 
-/// Firebase's Android client settings for the NorzAgapay resident app.
+/// Firebase's Android client settings for the Norz-Agapay resident app.
 /// These values match the resident Android client registered in Firebase.
 class DefaultFirebaseOptions {
   static FirebaseOptions? get currentPlatform {

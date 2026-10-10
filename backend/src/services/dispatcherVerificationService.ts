@@ -1127,7 +1127,7 @@ export class DispatcherVerificationService {
           margins: { top: 60, bottom: 60, left: 60, right: 60 },
           info: {
             Title: 'Barangay Account Request',
-            Author: 'NorzAgapay Crisis Management System',
+            Author: 'Norz-Agapay Crisis Management System',
             Subject: 'Barangay Account Request',
           },
         });
@@ -1176,8 +1176,8 @@ export class DispatcherVerificationService {
           .lineGap(5)
           .text(
             position
-              ? `This is to certify that ${fullName}, serving as ${position} at Barangay ${barangay}, Municipality of Norzagaray, Bulacan, is the barangay administrator and authorized representative submitting a Barangay Account Request to the NorzAgapay Emergency Response and Crisis Management Coordination Application. The request seeks MDRRMO verification and activation of access for authorized accounts belonging to Barangay ${barangay}.`
-              : `This is to certify that ${fullName} is the barangay administrator and an authorized representative of Barangay ${barangay}, Municipality of Norzagaray, Bulacan, submitting a Barangay Account Request to the NorzAgapay Emergency Response and Crisis Management Coordination Application. The request seeks MDRRMO verification and activation of access for authorized accounts belonging to Barangay ${barangay}.`,
+              ? `This is to certify that ${fullName}, serving as ${position} at Barangay ${barangay}, Municipality of Norzagaray, Bulacan, is the barangay administrator and authorized representative submitting a Barangay Account Request to the Norz-Agapay Emergency Response and Crisis Management Coordination Application. The request seeks MDRRMO verification and activation of access for authorized accounts belonging to Barangay ${barangay}.`
+              : `This is to certify that ${fullName} is the barangay administrator and an authorized representative of Barangay ${barangay}, Municipality of Norzagaray, Bulacan, submitting a Barangay Account Request to the Norz-Agapay Emergency Response and Crisis Management Coordination Application. The request seeks MDRRMO verification and activation of access for authorized accounts belonging to Barangay ${barangay}.`,
             { align: 'justify' }
           );
 

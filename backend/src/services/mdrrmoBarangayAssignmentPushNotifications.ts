@@ -104,7 +104,7 @@ async function sendAssignmentAlert(client: Messaging, event: AssignmentPushEvent
       tokens: tokenBatch,
       notification: {
         title: 'New report assigned to your barangay',
-        body: 'MDRRMO assigned an incident report to your barangay. Open NorzAgapay to review it.',
+        body: 'MDRRMO assigned an incident report to your barangay. Open Norz-Agapay to review it.',
       },
       data: { type: 'incident_report', report_id: report.id, report_title: title },
       android: {

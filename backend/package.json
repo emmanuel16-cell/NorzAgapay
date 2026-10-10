@@ -1,7 +1,7 @@
 {
   "name": "norzagapay-backend",
   "version": "1.0.0",
-  "description": "NorzAgapay Crisis Management Backend API",
+  "description": "Norz-Agapay Crisis Management Backend API",
   "main": "dist/server.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",

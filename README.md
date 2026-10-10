@@ -1,4 +1,4 @@
-# NorzAgapay (An Integrated Web and Mobile-Based Emergency Response and Crisis Management Coordination System)
+# Norz-Agapay (An Integrated Web and Mobile-Based Emergency Response and Crisis Management Coordination System)
 
 [![Node.js](https://img.shields.io/badge/Node.js-v18+-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
@@ -10,7 +10,7 @@
 [![Socket.io](https://img.shields.io/badge/Socket.io-Realtime-010101?logo=socket.io&logoColor=white)](https://socket.io/)
 [![Upstash Redis](https://img.shields.io/badge/Upstash-Redis-00E599?logo=redis&logoColor=white)](https://upstash.com/)
 
-**NorzAgapay** is a full-stack, real-time crisis management, emergency response, and multi-agency coordination system developed for the **Municipal Disaster Risk Reduction and Management Office (MDRRMO)** of Norzagaray, Bulacan, in active coordination with **Barangay Local Government Units (BDRRMC)**, **Barangay Tanods (First Responders)**, and **local residents**.
+**Norz-Agapay** is a full-stack, real-time crisis management, emergency response, and multi-agency coordination system developed for the **Municipal Disaster Risk Reduction and Management Office (MDRRMO)** of Norzagaray, Bulacan, in active coordination with **Barangay Local Government Units (BDRRMC)**, **Barangay Tanods (First Responders)**, and **local residents**.
 
 The platform connects residents, barangay teams, MDRRMO command staff, and responders through shared incident reporting, dispatch, GPS tracking, coordination approval, station locations, and public safety advisories.
 
@@ -18,9 +18,9 @@ The platform connects residents, barangay teams, MDRRMO command staff, and respo
 
 ## 📌 System Architecture & Ecosystem
 
-NorzAgapay is organized into user, client, application, and data layers, with external map, weather, and notification services connected where needed. The diagram shows the three client apps and the shared API/realtime engine.
+Norz-Agapay is organized into user, client, application, and data layers, with external map, weather, and notification services connected where needed. The diagram shows the three client apps and the shared API/realtime engine.
 
-![NorzAgapay layered system architecture](documents/NorzAgapay_System_Layered_Architecture.svg)
+![Norz-Agapay layered system architecture](documents/NorzAgapay_System_Layered_Architecture.svg)
 
 ### 1. 🌐 MDRRMO Web Command Center (`web-dashboard/`)
 * **Technology**: React 18, Vite, TypeScript, TailwindCSS / Custom CSS, Leaflet, OpenStreetMap.
@@ -264,7 +264,7 @@ Barangay access remains scoped to the user's own barangay and is gated by the sh
 ## 🏫 Academic Background & Research
 
 This project was developed as an undergraduate capstone thesis titled:
-> **"NORZAGAPAY: AN INTEGRATED WEB AND MOBILE-BASED EMERGENCY RESPONSE AND CRISIS MANAGEMENT COORDINATION SYSTEM"**
+> **"NORZ-AGAPAY: AN INTEGRATED WEB AND MOBILE-BASED EMERGENCY RESPONSE AND CRISIS MANAGEMENT COORDINATION SYSTEM"**
 > 
 > **Institution**: Norzagaray College, College of Computing Studies  
 > **Degree**: Bachelor of Science in Computer Science  

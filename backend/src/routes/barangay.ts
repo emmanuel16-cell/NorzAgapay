@@ -1129,8 +1129,8 @@ router.get(
       reference_no: verification.reference_no,
       paragraphs: [
         positionDesignation
-          ? `This is to certify that ${verification.full_name}, serving as ${positionDesignation} at Barangay ${barangayName}, Municipality of Norzagaray, Bulacan, is the barangay administrator and authorized representative submitting a Barangay Account Request to the NorzAgapay Emergency Response and Crisis Management Coordination Application. The request seeks MDRRMO verification and activation of access for authorized accounts belonging to Barangay ${barangayName}.`
-          : `This is to certify that ${verification.full_name} is the barangay administrator and an authorized representative of Barangay ${barangayName}, Municipality of Norzagaray, Bulacan, submitting a Barangay Account Request to the NorzAgapay Emergency Response and Crisis Management Coordination Application. The request seeks MDRRMO verification and activation of access for authorized accounts belonging to Barangay ${barangayName}.`,
+          ? `This is to certify that ${verification.full_name}, serving as ${positionDesignation} at Barangay ${barangayName}, Municipality of Norzagaray, Bulacan, is the barangay administrator and authorized representative submitting a Barangay Account Request to the Norz-Agapay Emergency Response and Crisis Management Coordination Application. The request seeks MDRRMO verification and activation of access for authorized accounts belonging to Barangay ${barangayName}.`
+          : `This is to certify that ${verification.full_name} is the barangay administrator and an authorized representative of Barangay ${barangayName}, Municipality of Norzagaray, Bulacan, submitting a Barangay Account Request to the Norz-Agapay Emergency Response and Crisis Management Coordination Application. The request seeks MDRRMO verification and activation of access for authorized accounts belonging to Barangay ${barangayName}.`,
         `The barangay administrator is responsible for managing authorized team accounts and ensuring they are used only for official emergency preparedness, incident reporting, and response coordination.`,
         `All accounts belonging to the barangay will remain restricted until the MDRRMO verifies and activates this request. MDRRMO may deactivate barangay access at any time; the administrator may then submit a request to restore access.`,
       ],
@@ -2850,7 +2850,7 @@ router.get('/reports/:id/resolution-pdf', authenticateBarangay, requireRole(['ad
     }
     const pdf = await IncidentResolutionPdfService.generateAndStore(req.params.id);
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="NorzAgapay_Incident_${req.params.id.slice(0, 8)}.pdf"`);
+    res.setHeader('Content-Disposition', `attachment; filename="Norz-Agapay_Incident_${req.params.id.slice(0, 8)}.pdf"`);
     res.setHeader('Content-Length', pdf.buffer.length);
     res.send(pdf.buffer);
   } catch (error) {

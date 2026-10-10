@@ -8,14 +8,14 @@ class LegalDialogs {
       backgroundColor: Colors.transparent,
       builder: (ctx) => _LegalModal(
         title: 'Terms and Conditions',
-        subtitle: 'NorzAgapay Disaster & Incident Management System',
+        subtitle: 'Norz-Agapay Disaster & Incident Management System',
         icon: Icons.gavel_rounded,
         iconColor: const Color(0xFF1B4F72),
         content: '''
-Welcome to NorzAgapay, the official citizen portal for the Municipality of Norzagaray Disaster Risk Reduction and Management Office (MDRRMO) and partner Barangays.
+Welcome to Norz-Agapay, the official citizen portal for the Municipality of Norzagaray Disaster Risk Reduction and Management Office (MDRRMO) and partner Barangays.
 
 1. Acceptance of Terms
-By accessing or using the NorzAgapay Resident Application, you agree to comply with and be bound by these Terms and Conditions and our Privacy Policy. If you do not agree with any part of these terms, you should refrain from using the incident reporting services.
+By accessing or using the Norz-Agapay Resident Application, you agree to comply with and be bound by these Terms and Conditions and our Privacy Policy. If you do not agree with any part of these terms, you should refrain from using the incident reporting services.
 
 2. Public Broadcasts & Advisories
 MDRRMO and Barangay administrators broadcast verified public safety advisories, disaster alerts (Red, Orange, Yellow), relief distributions, and all-clear notices. While information is provided with utmost urgency and accuracy, citizens should follow official evacuation orders and emergency responder directives at all times.
@@ -30,7 +30,7 @@ To facilitate rapid assessment and rescue documentation, MDRRMO dispatchers and 
 Residents must provide valid contact details and true identity information when creating an account. You are responsible for safeguarding your login credentials and ensuring all reports submitted under your profile are authentic.
 
 6. Limitation of Liability
-NorzAgapay aims for maximum server availability and offline resiliency. In cases of acute carrier outages or physical disconnection, users are urged to directly dial national hotline 911, MDRRMO hotline 0905-247-0355, or their local Barangay emergency landlines.
+Norz-Agapay aims for maximum server availability and offline resiliency. In cases of acute carrier outages or physical disconnection, users are urged to directly dial national hotline 911, MDRRMO hotline 0905-247-0355, or their local Barangay emergency landlines.
 ''',
       ),
     );

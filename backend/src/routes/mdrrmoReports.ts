@@ -1175,7 +1175,7 @@ router.get('/:id/resolution-pdf', authenticate, authorize('dispatcher', 'admin',
     }
     const pdf = await IncidentResolutionPdfService.generateAndStore(report.id);
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="NorzAgapay_Incident_${report.id.slice(0, 8)}.pdf"`);
+    res.setHeader('Content-Disposition', `attachment; filename="Norz-Agapay_Incident_${report.id.slice(0, 8)}.pdf"`);
     res.setHeader('Content-Length', pdf.buffer.length);
     res.send(pdf.buffer);
   } catch (error) {

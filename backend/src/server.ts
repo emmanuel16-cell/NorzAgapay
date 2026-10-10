@@ -546,7 +546,7 @@ if (require.main === module) {
     startResidentPushRelay();
     console.log(`
     ╔══════════════════════════════════════════════╗
-    ║         NorzAgapay Backend Server            ║
+    ║         Norz-Agapay Backend Server           ║
     ║══════════════════════════════════════════════║
     ║  Port:        ${config.port}                          ║
     ║  Environment: ${config.nodeEnv.padEnd(20)}       ║

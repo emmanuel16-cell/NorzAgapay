@@ -1,11 +1,11 @@
--- NorzAgapay consolidated Supabase schema for a fresh installation.
+-- Norz-Agapay consolidated Supabase schema for a fresh installation.
 -- Derived from the historical database scripts, with final enum definitions
 -- and the current responder push schema applied in dependency order.
 -- Requires Supabase auth/storage schemas, roles, and the supabase_realtime publication.
 -- Existing installations with legacy user-role data need a separate data upgrade.
 
 -- ===== Source section: database/migrations/migration.sql =====
--- NorzAgapay Complete Database Schema Migration
+-- Norz-Agapay Complete Database Schema Migration
 -- Run this in Supabase SQL Editor
 
 -- ============================================
@@ -1155,7 +1155,7 @@ CREATE INDEX IF NOT EXISTS idx_weather_forecasts_forecast_time ON weather_foreca
 
 -- ===== Source section: database/migrations/evacuation_centers_migration.sql =====
 -- ============================================
--- NorzAgapay Evacuation & Barangay Migration
+-- Norz-Agapay Evacuation & Barangay Migration
 -- Run this in Supabase SQL Editor
 -- ============================================
 
@@ -1335,7 +1335,7 @@ END $$;
 
 -- ===== Source section: database/migrations/co_response_migration.sql =====
 -- ============================================
--- NorzAgapay Multi-Agency Co-Response Migration
+-- Norz-Agapay Multi-Agency Co-Response Migration
 -- Run this in Supabase SQL Editor
 -- ============================================
 
@@ -1461,7 +1461,7 @@ END $$;
 
 -- ===== Source section: database/migrations/add_send_to_to_incident_reports.sql =====
 -- ============================================
--- NorzAgapay Emergency Report Target Recipient Migration
+-- Norz-Agapay Emergency Report Target Recipient Migration
 -- Adds send_to column to incident_reports table
 -- ('barangay' | 'mdrrmo' | 'all')
 -- ============================================
@@ -2955,7 +2955,7 @@ GRANT EXECUTE ON FUNCTION public.append_mdrrmo_field_media(UUID, UUID, TEXT, JSO
 -- ===== Source section: database/migrations/separate_report_tables_phase1.sql =====
 -- ============================================================
 -- PHASE 1: SEPARATED REPORT TABLES MIGRATION
--- NorzAgapay — Barangay + MDRRMO Report Table Separation
+-- Norz-Agapay — Barangay + MDRRMO Report Table Separation
 -- 
 -- Run in Supabase SQL Editor.
 -- Safe to run while incident_reports still exists (additive only).
@@ -5715,7 +5715,7 @@ BEGIN
       LIMIT 1
     ), FALSE) INTO v_is_verified;
     IF NOT COALESCE(v_is_verified, FALSE) THEN
-      RAISE EXCEPTION 'Destination barangay is not active in NorzAgapay.' USING ERRCODE = '42501';
+      RAISE EXCEPTION 'Destination barangay is not active in Norz-Agapay.' USING ERRCODE = '42501';
     END IF;
   END IF;
 

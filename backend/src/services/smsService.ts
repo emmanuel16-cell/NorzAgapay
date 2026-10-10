@@ -12,7 +12,7 @@ export const smsService = {
   async sendRegistrationOtp(phoneNumber: string, otp: string): Promise<boolean> {
     return sendSms(
       phoneNumber,
-      `Your NorzAgapay verification code is ${otp}. It expires in 10 minutes. Do not share this code.`,
+      `Your Norz-Agapay verification code is ${otp}. It expires in 10 minutes. Do not share this code.`,
       'registration OTP',
     );
   },
@@ -21,7 +21,7 @@ export const smsService = {
     const accountType = audience;
     return sendSms(
       phoneNumber,
-      `Your NorzAgapay ${accountType} password reset code is ${otp}. It expires in 10 minutes. Do not share this code.`,
+      `Your Norz-Agapay ${accountType} password reset code is ${otp}. It expires in 10 minutes. Do not share this code.`,
       `${accountType} password reset OTP`,
     );
   },
@@ -29,7 +29,7 @@ export const smsService = {
   async sendTemporaryPasswordSms(phoneNumber: string, temporaryPassword: string): Promise<boolean> {
     return sendSms(
       phoneNumber,
-      `Your NorzAgapay temporary password is ${temporaryPassword}. Sign in and change it after logging in. Do not share it.`,
+      `Your Norz-Agapay temporary password is ${temporaryPassword}. Sign in and change it after logging in. Do not share it.`,
       'temporary password',
     );
   },

@@ -106,9 +106,9 @@ export default function LoginPage() {
       <main className="login-page public-login-main">
       <div className="login-card">
         <button className="login-logo" type="button" onClick={toggleDebugAccounts} title="Click logo to toggle Debug Quick Login">
-          <img src="/NA-icon.png" alt="NorzAgapay" />
+          <img src="/NA-icon.png" alt="Norz-Agapay" />
         </button>
-        <h1 className="login-title">{showSetup ? 'Create Master Admin' : 'NorzAgapay'}</h1>
+        <h1 className="login-title">{showSetup ? 'Create Master Admin' : 'Norz-Agapay'}</h1>
         <p className="login-subtitle">{showSetup ? 'Set up the first command center account' : 'Crisis Management Command Center'}</p>
 
         {error && (

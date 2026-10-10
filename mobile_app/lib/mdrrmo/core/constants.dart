@@ -1,5 +1,5 @@
 class AppConstants {
-  static const String appName = 'NorzAgapay Mobile';
+  static const String appName = 'Norz-Agapay Mobile';
   static const String apiBaseUrl = 'https://norzagapay-backend.onrender.com/api'; 
   
   // Storage Keys

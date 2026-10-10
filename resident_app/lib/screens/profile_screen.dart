@@ -973,7 +973,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               child: Text(
                 passwordSent
-                    ? 'NorzAgapay sent your temporary password by $deliveryChannel. Don\'t share it with anyone.'
+                    ? 'Norz-Agapay sent your temporary password by $deliveryChannel. Don\'t share it with anyone.'
                     : 'We could not send the temporary password by $deliveryChannel. It is shown below; save it securely.',
                 style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: Color(0xFF0F172A), height: 1.45),
               ),
@@ -1019,7 +1019,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               child: ElevatedButton(
                 onPressed: () {
                   Navigator.pop(ctx);
-                  _onLoginSuccess('Welcome to NorzAgapay!');
+                  _onLoginSuccess('Welcome to Norz-Agapay!');
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF1B4F72),

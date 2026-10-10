@@ -1,4 +1,4 @@
-# NorzAgapay Mobile
+# Norz-Agapay Mobile
 
 Unified Flutter app for MDRRMO and barangay operations.
 
