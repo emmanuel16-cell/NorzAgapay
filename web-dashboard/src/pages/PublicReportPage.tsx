@@ -259,7 +259,6 @@ export default function PublicReportPage() {
               }))}
               {hotlines.national.length === 0 && hotlines.mdrrmo.length === 0 && hotlines.barangays.length === 0 && <p className="public-hotlines-empty">Hotline information is not available right now.</p>}
             </div>
-            {hotlines.mdrrmo?.[0]?.email && <a className="public-hotline-email" href={`mailto:${hotlines.mdrrmo[0].email}`}>{hotlines.mdrrmo[0].email}</a>}
           </aside>
         </div>
       </main>
