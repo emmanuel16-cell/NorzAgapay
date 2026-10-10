@@ -3817,8 +3817,8 @@ tbody tr:last-child td { border-bottom: none; }
 .public-home-inline-link { display: flex; align-items: center; gap: 7px; margin-top: 20px; color: #6dd8ef; font-size: 13px; font-weight: 750; text-decoration: none; }
 .public-home-footer { display: flex; min-height: 68px; align-items: center; justify-content: center; gap: 9px; padding: 14px 20px; color: #8fa3c3; font-size: 11px; }
 .public-home-footer img { width: 25px; height: 25px; border-radius: 50%; object-fit: contain; }
-.public-login-page { display: flex; width: 100%; height: 100vh; height: 100svh; flex-direction: column; overflow: hidden; background: #08152e; }
-.public-login-main { min-height: 0; flex: 1 1 auto; align-items: flex-start; justify-content: flex-start; overflow-y: hidden; padding: clamp(10px, 2.4vh, 26px) clamp(24px, 8vw, 120px); }
+.public-login-page { display: flex; width: 100%; height: 100vh; height: 100svh; flex-direction: column; overflow: clip; background: #08152e; }
+.public-login-main { min-height: 0; flex: 1 1 auto; align-items: flex-start; justify-content: flex-start; overflow: clip; padding: clamp(10px, 2.4vh, 26px) clamp(24px, 8vw, 120px); }
 .public-login-main::before { pointer-events: none; }
 .public-login-main .login-card { width: min(100%, 500px); margin-block: auto; padding: clamp(18px, 2.8vh, 30px) 32px; }
 .public-login-main .login-logo { width: clamp(56px, 7.5vh, 82px); height: clamp(56px, 7.5vh, 82px); margin-bottom: 10px; }
@@ -3908,7 +3908,12 @@ tbody tr:last-child td { border-bottom: none; }
   .public-login-main .login-card { padding: 18px 16px; }
 }
 @media (max-height: 680px) {
-  .public-login-main { overflow-y: auto; }
+  .public-login-main { padding-top: 6px; padding-bottom: 6px; }
+  .public-login-main .login-card { padding-top: 12px; padding-bottom: 12px; }
+  .public-login-main .login-logo { width: 48px; height: 48px; margin-bottom: 4px; }
+  .public-login-main .login-subtitle { margin-bottom: 8px; }
+  .public-login-main .form-group { margin-bottom: 6px; }
+  .public-login-main .login-card > p:last-child { margin-top: 6px !important; }
 }
 @media (prefers-reduced-motion: reduce) {
   .public-site-action { transition: none; }
