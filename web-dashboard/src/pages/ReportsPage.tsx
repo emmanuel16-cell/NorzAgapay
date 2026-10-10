@@ -23,7 +23,8 @@ type BarangayAssignment = {
 interface IncidentReport {
   id: string; type: string; title?: string; specifics?: string; description?: string; status: string;
   send_to?: string; is_escalated?: boolean; beyond_barangay_capability?: boolean;
-  mdrrmo_response_status?: string; barangay_response_status?: string;
+  response_status?: string; mdrrmo_response_status?: string; barangay_response_status?: string;
+  response_barangay_name?: string | null;
   mdrrmo_dispatched_at?: string | null; mdrrmo_accepted_at?: string | null; mdrrmo_arrived_at?: string | null; mdrrmo_resolved_at?: string | null;
   barangay_dispatched_at?: string | null; barangay_accepted_at?: string | null; barangay_arrived_at?: string | null; barangay_resolved_at?: string | null;
   severity?: string; incident_type?: string; latitude?: number | string | null; longitude?: number | string | null;
@@ -40,7 +41,7 @@ interface IncidentReport {
   reporter?: { id: string; full_name: string; role: string } | null;
   is_central_assignment?: boolean; assignment_id?: string; assignment_status?: string; assignment_notes?: string;
   assigned_team_leader_ids?: string[]; active_barangay_assignment?: BarangayAssignment | null; barangay_assignments?: BarangayAssignment[];
-  barangay_dispatched_at?: string | null; barangay_responded_at?: string | null; barangay_resolved_notes?: string | null;
+  barangay_responded_at?: string | null; barangay_resolved_notes?: string | null;
 }
 type ResponderOption = { id: string; full_name: string; phone?: string | null; unit_type?: string | null; unit_id: string; unit_name: string };
 
