@@ -3848,7 +3848,23 @@ tbody tr:last-child td { border-bottom: none; }
 .public-location-button { display: flex; width: 100%; min-height: 46px; align-items: center; justify-content: center; gap: 8px; padding: 9px 12px; border: 1px solid #36547d; border-radius: 9px; color: #cce3ff; background: #102543; font: inherit; font-size: 13px; font-weight: 650; text-align: center; cursor: pointer; }
 .public-location-button:hover { background: #153254; }
 .public-location-button.located { color: #9ff1d3; border-color: #318568; }
+.public-report-location-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
 .public-report-location-status { color: #91a9ca; font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; }
+.public-location-modal { position: fixed; inset: 0; z-index: 2500; display: grid; place-items: center; padding: 18px; background: rgba(2, 9, 22, .78); }
+.public-location-dialog { width: min(760px, 100%); padding: 18px; border: 1px solid #385276; border-radius: 15px; color: #f3f7ff; background: #0b1b35; box-shadow: 0 20px 70px rgba(0, 0, 0, .42); }
+.public-location-dialog > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 13px; }
+.public-location-dialog h2 { margin: 0; font-size: 18px; }
+.public-location-dialog header p { margin: 5px 0 0; color: #a9bddb; font-size: 12px; }
+.public-location-dialog header button { display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid #385276; border-radius: 8px; color: #dce8fb; background: #102543; cursor: pointer; }
+.public-location-picker-map { height: min(52vh, 420px); overflow: hidden; border: 1px solid #385276; border-radius: 10px; background: #10213d; }
+.public-location-picker-coordinate { margin: 9px 0; color: #a9bddb; font-size: 12px; font-variant-numeric: tabular-nums; }
+.public-location-dialog > footer { display: flex; justify-content: flex-end; gap: 8px; }
+.public-location-dialog > footer button { min-height: 40px; padding: 8px 13px; border-radius: 8px; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.public-location-cancel { border: 1px solid #385276; color: #dce8fb; background: #102543; }
+.public-location-confirm { border: 1px solid #37bad7; color: #062235; background: #57d5eb; }
+.public-location-confirm:disabled { opacity: .45; cursor: not-allowed; }
+.public-incident-pin { display: grid; place-items: center; border: 3px solid #fff; border-radius: 50%; background: #f04452; box-shadow: 0 2px 12px #0009; }
+.public-incident-pin span { width: 6px; height: 6px; border-radius: 50%; background: #fff; }
 .public-report-routing { display: grid; gap: 8px; margin: 8px 0; padding: 12px; border: 1px solid #385276; border-radius: 10px; }
 .public-report-routing legend { padding: 0 5px; color: #dce8fb; font-size: 12px; font-weight: 700; }
 .public-report-routing label { display: flex; min-width: 0; align-items: flex-start; gap: 9px; padding: 9px; border-radius: 8px; background: #10213d; cursor: pointer; }
@@ -3897,6 +3913,7 @@ tbody tr:last-child td { border-bottom: none; }
   .public-home-step-card { padding: 18px; }
   .public-report-layout { padding: 30px 14px 42px; }
   .public-report-content-grid { grid-template-columns: minmax(0, 1fr); }
+  .public-report-location-actions { grid-template-columns: minmax(0, 1fr); }
   .public-hotlines-panel { order: 2; }
   .public-hotline-list { max-height: 42vh; }
   .public-login-main { min-height: 0; align-items: flex-start; justify-content: center; padding: 14px 14px; }

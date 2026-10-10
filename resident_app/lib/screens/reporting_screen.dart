@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import 'dart:convert';
@@ -13,6 +14,7 @@ import '../core/constants.dart';
 import '../core/incident_time_format.dart';
 import '../core/phone_number_utils.dart';
 import '../widgets/resident_gradient_app_bar.dart';
+import '../widgets/municipality_boundary_map_layer.dart';
 import 'my_reports_screen.dart';
 import 'emergency_camera_screen.dart';
 import '../widgets/video_proof_player.dart';
@@ -79,6 +81,7 @@ class _ReportingScreenState extends State<ReportingScreen> {
   final TextEditingController _guestPhoneController = TextEditingController();
 
   LatLng? _currentLocation;
+  String? _locationSource;
   bool _locationCheckComplete = false;
   bool _isInsideNorzagaray = false;
   bool _isRefreshingLocation = false;
@@ -123,6 +126,8 @@ class _ReportingScreenState extends State<ReportingScreen> {
   }
 
   String? get _closestBarangayName => _closestBarangay?['name']?.toString();
+  String get _locationSourceLabel =>
+      _locationSource == 'map' ? 'Chosen on map' : 'Current location';
 
   List<Map<String, dynamic>> get _routingBarangays {
     final closestId = _closestBarangay?['id']?.toString();
@@ -283,6 +288,9 @@ class _ReportingScreenState extends State<ReportingScreen> {
         longitude <= 180) {
       final savedLocation = LatLng(latitude, longitude);
       _currentLocation = savedLocation;
+      _locationSource = draft['location_source']?.toString() == 'map'
+          ? 'map'
+          : 'current';
       _keepCurrentLocationForSubmit = true;
       _isInsideNorzagaray = NorzagarayBoundary.containsPoint(savedLocation);
       _locationCheckComplete = true;
@@ -326,6 +334,7 @@ class _ReportingScreenState extends State<ReportingScreen> {
     'description': _descController.text,
     'latitude': _currentLocation?.latitude,
     'longitude': _currentLocation?.longitude,
+    'location_source': _locationSource,
     'client_submitted_at': _clientSubmittedAt?.toUtc().toIso8601String(),
     'incident_time_choice': _incidentTimeChoice,
     'incident_occurred_at': _incidentOccurredAt?.toUtc().toIso8601String(),
@@ -448,6 +457,7 @@ class _ReportingScreenState extends State<ReportingScreen> {
         (location != null && NorzagarayBoundary.containsPoint(location));
     setState(() {
       _currentLocation = location;
+      _locationSource = location == null ? null : 'current';
       _isInsideNorzagaray = isInside;
       _locationCheckComplete = true;
       _isRefreshingLocation = false;
@@ -464,6 +474,114 @@ class _ReportingScreenState extends State<ReportingScreen> {
         ),
       );
     }
+  }
+
+  Future<void> _chooseIncidentLocationOnMap() async {
+    LatLng? draftLocation = _currentLocation;
+    final selectedLocation = await showDialog<LatLng>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final isInsideMunicipality = draftLocation != null &&
+              (!NorzagarayBoundary.isEnabled ||
+                  NorzagarayBoundary.containsPoint(draftLocation!));
+          return AlertDialog(
+            title: const Text('Choose incident location'),
+            content: SizedBox(
+              width: double.maxFinite,
+              height: min(MediaQuery.sizeOf(context).height * 0.52, 430),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Tap the map inside Norzagaray to place the incident pin.'),
+                  const SizedBox(height: 10),
+                  Expanded(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: FlutterMap(
+                        options: MapOptions(
+                          initialCenter: draftLocation ?? NorzagarayBoundary.townCenter,
+                          initialZoom: 13,
+                          cameraConstraint: NorzagarayBoundary.isEnabled
+                              ? CameraConstraint.containCenter(
+                                  bounds: NorzagarayBoundary.cameraBounds,
+                                )
+                              : CameraConstraint.unconstrained(),
+                          onTap: (_, point) =>
+                              setDialogState(() => draftLocation = point),
+                        ),
+                        children: [
+                          TileLayer(
+                            urlTemplate:
+                                'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                            userAgentPackageName: 'com.norzagapay.resident',
+                          ),
+                          const MunicipalityBoundaryMapLayer(
+                            outsideColor: Colors.white,
+                          ),
+                          if (draftLocation != null)
+                            MarkerLayer(
+                              markers: [
+                                Marker(
+                                  point: draftLocation!,
+                                  width: 42,
+                                  height: 50,
+                                  child: const Icon(
+                                    Icons.location_pin,
+                                    color: Color(0xFFEF4444),
+                                    size: 44,
+                                  ),
+                                ),
+                              ],
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    draftLocation == null
+                        ? 'No location selected'
+                        : '${draftLocation!.latitude.toStringAsFixed(6)}, ${draftLocation!.longitude.toStringAsFixed(6)}',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                  if (!isInsideMunicipality)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 6),
+                      child: Text(
+                        'Choose a point inside Norzagaray to continue.',
+                        style: TextStyle(color: Color(0xFFB91C1C), fontSize: 12),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: isInsideMunicipality
+                    ? () => Navigator.pop(dialogContext, draftLocation)
+                    : null,
+                child: const Text('Use this location'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    if (selectedLocation == null || !mounted) return;
+    final isInside = !NorzagarayBoundary.isEnabled ||
+        NorzagarayBoundary.containsPoint(selectedLocation);
+    setState(() {
+      _currentLocation = selectedLocation;
+      _locationSource = 'map';
+      _isInsideNorzagaray = isInside;
+      _locationCheckComplete = true;
+      _keepCurrentLocationForSubmit = isInside;
+    });
   }
 
   Future<void> _loadBarangays() async {
@@ -1090,8 +1208,8 @@ class _ReportingScreenState extends State<ReportingScreen> {
                       const SizedBox(height: 8),
                       Text(
                         _currentLocation == null
-                            ? 'Turn on GPS and refresh your location to continue.'
-                            : 'Your current location is outside the Municipality of Norzagaray.',
+                            ? 'Use GPS or choose the incident location on the map to continue.'
+                            : 'Your current location is outside Norzagaray. If the incident is inside the municipality, choose its location on the map.',
                         textAlign: TextAlign.center,
                         style: const TextStyle(
                           color: Color(0xFF64748B),
@@ -1104,7 +1222,13 @@ class _ReportingScreenState extends State<ReportingScreen> {
                             ? null
                             : () => _getLocation(showResult: true),
                         icon: const Icon(Icons.refresh_rounded),
-                        label: const Text('Check location again'),
+                        label: const Text('Use current location'),
+                      ),
+                      const SizedBox(height: 10),
+                      OutlinedButton.icon(
+                        onPressed: _chooseIncidentLocationOnMap,
+                        icon: const Icon(Icons.map_outlined),
+                        label: const Text('Choose incident location on map'),
                       ),
                     ],
                   ),
@@ -1530,38 +1654,62 @@ class _ReportingScreenState extends State<ReportingScreen> {
                         color: const Color(0xFFEBF3FF),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: Row(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Icon(
-                            Icons.location_on,
-                            color: Color(0xFF1E88E5),
-                            size: 24,
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.location_on,
+                                color: Color(0xFF1E88E5),
+                                size: 24,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Incident location',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                        color: Color(0xFF1E293B),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      _currentLocation != null
+                                          ? '${_currentLocation!.latitude!.toStringAsFixed(6)}, ${_currentLocation!.longitude!.toStringAsFixed(6)} · $_locationSourceLabel'
+                                          : 'Choose a current or map location',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: Color(0xFF64748B),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'Your Location',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 13,
-                                    color: Color(0xFF1E293B),
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  _currentLocation != null
-                                      ? '${_currentLocation!.latitude!.toStringAsFixed(6)}, ${_currentLocation!.longitude!.toStringAsFixed(6)}'
-                                      : 'Fetching location...',
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: Color(0xFF64748B),
-                                  ),
-                                ),
-                              ],
-                            ),
+                          const SizedBox(height: 12),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              OutlinedButton.icon(
+                                onPressed: _isRefreshingLocation
+                                    ? null
+                                    : () => _getLocation(showResult: true),
+                                icon: const Icon(Icons.my_location_rounded),
+                                label: const Text('Use current location'),
+                              ),
+                              OutlinedButton.icon(
+                                onPressed: _chooseIncidentLocationOnMap,
+                                icon: const Icon(Icons.map_outlined),
+                                label: const Text('Choose on map'),
+                              ),
+                            ],
                           ),
                         ],
                       ),

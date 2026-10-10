@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { MapPin, Phone, Siren, Upload } from 'lucide-react';
+import { LocateFixed, MapPin, Phone, Siren, Upload, X } from 'lucide-react';
+import { MapContainer, Marker, TileLayer, useMapEvents } from 'react-leaflet';
+import L from 'leaflet';
 import { Link } from 'react-router-dom';
 import PublicHeader from '../components/PublicHeader';
 import { reportAPI } from '../lib/api';
+import { CARTO_ATTRIBUTION, CARTO_DARK_MAP_URL } from '../lib/mapConfig';
 
 type HotlineGroup = {
   barangay_name: string;
@@ -41,6 +44,13 @@ function distanceMeters(from: { latitude: number; longitude: number }, to: { lat
 }
 
 const emptyHotlines: PublicHotlines = { national: [], mdrrmo: [], barangays: [] };
+const incidentPinIcon = L.divIcon({ className: 'public-incident-pin', html: '<span></span>', iconSize: [24, 24], iconAnchor: [12, 12] });
+const defaultMapCenter: [number, number] = [14.9133, 121.0436];
+
+function IncidentMapClickPicker({ onPick }: { onPick: (point: { latitude: number; longitude: number }) => void }) {
+  useMapEvents({ click: ({ latlng }) => onPick({ latitude: latlng.lat, longitude: latlng.lng }) });
+  return null;
+}
 
 export default function PublicReportPage() {
   const [hotlines, setHotlines] = useState<PublicHotlines>(emptyHotlines);
@@ -50,6 +60,9 @@ export default function PublicReportPage() {
   const [sendTo, setSendTo] = useState<'barangay' | 'mdrrmo'>('mdrrmo');
   const [description, setDescription] = useState('');
   const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [locationSource, setLocationSource] = useState<'current' | 'map' | null>(null);
+  const [mapPickerOpen, setMapPickerOpen] = useState(false);
+  const [mapLocation, setMapLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [evidence, setEvidence] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
@@ -102,11 +115,30 @@ export default function PublicReportPage() {
     setSubmitted(false);
     if (!navigator.geolocation) { setMessage('This browser cannot read your location.'); return; }
     navigator.geolocation.getCurrentPosition(
-      (position) => setLocation({ latitude: position.coords.latitude, longitude: position.coords.longitude }),
+      (position) => {
+        setLocation({ latitude: position.coords.latitude, longitude: position.coords.longitude });
+        setLocationSource('current');
+      },
       () => setMessage('Allow location access or try again from the incident location.'),
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
     );
   };
+
+  const openMapPicker = () => {
+    setMapLocation(location);
+    setMapPickerOpen(true);
+  };
+
+  const confirmMapLocation = () => {
+    if (!mapLocation) return;
+    setLocation(mapLocation);
+    setLocationSource('map');
+    setMapPickerOpen(false);
+  };
+
+  const mapCenter: [number, number] = mapLocation
+    ? [mapLocation.latitude, mapLocation.longitude]
+    : defaultMapCenter;
 
   const submitReport = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -126,6 +158,7 @@ export default function PublicReportPage() {
       setDescription('');
       setGuestPhone('');
       setLocation(null);
+      setLocationSource(null);
       setSelectedBarangayId('');
       setEvidence(null);
       const input = document.getElementById('public-report-evidence') as HTMLInputElement | null;
@@ -160,10 +193,15 @@ export default function PublicReportPage() {
               <label htmlFor="public-report-description">Incident details <b>Required</b></label>
               <textarea id="public-report-description" rows={5} minLength={8} maxLength={2000} placeholder="Describe what happened and who needs help…" value={description} onChange={(event) => setDescription(event.target.value)} required />
               <span className="public-report-field-label">Incident location <b>Required</b></span>
-              <button className={'public-location-button ' + (location ? 'located' : '')} type="button" onClick={requestLocation} aria-describedby="public-report-location-status">
-                <MapPin size={16} aria-hidden="true" />{location ? 'Update incident location' : 'Add current incident location'}
-              </button>
-              <span id="public-report-location-status" className="public-report-location-status" aria-live="polite">{location ? `Location attached · ${location.latitude.toFixed(5)}, ${location.longitude.toFixed(5)}` : 'Use the device at the incident location to add a map pin.'}</span>
+              <div className="public-report-location-actions">
+                <button className={'public-location-button ' + (locationSource === 'current' ? 'located' : '')} type="button" onClick={requestLocation} aria-describedby="public-report-location-status">
+                  <LocateFixed size={16} aria-hidden="true" />{locationSource === 'current' ? 'Update current location' : 'Use current location'}
+                </button>
+                <button className={'public-location-button ' + (locationSource === 'map' ? 'located' : '')} type="button" onClick={openMapPicker} aria-describedby="public-report-location-status">
+                  <MapPin size={16} aria-hidden="true" />{locationSource === 'map' ? 'Change map location' : 'Choose location on map'}
+                </button>
+              </div>
+              <span id="public-report-location-status" className="public-report-location-status" aria-live="polite">{location ? `${locationSource === 'map' ? 'Map location selected' : 'Current location attached'} · ${location.latitude.toFixed(5)}, ${location.longitude.toFixed(5)}` : 'Use your current location or choose the incident point on the map.'}</span>
               <fieldset className="public-report-routing" disabled={busy}>
                 <legend>Send report to</legend>
                 <div className="public-report-barangay-select"><label htmlFor="public-report-barangay">Barangay destination · closest recommended</label><select id="public-report-barangay" value={recipientBarangayId} onChange={(event) => { setSelectedBarangayId(event.target.value); setSendTo('barangay'); }}><option value="" disabled>Select a verified barangay</option>{orderedBarangays.map((barangay) => <option key={barangay.id} value={barangay.id}>{barangay.name}{barangay.id === closestBarangay?.id ? ' · Recommended' : ''}</option>)}</select><small>All verified barangays are listed. The closest to the incident pin is listed first and selected by default. This destination is used when barangay routing is selected below.</small></div>
@@ -190,6 +228,20 @@ export default function PublicReportPage() {
           </aside>
         </div>
       </main>
+      {mapPickerOpen && <div className="public-location-modal" role="dialog" aria-modal="true" aria-labelledby="public-location-picker-title">
+        <section className="public-location-dialog">
+          <header><div><h2 id="public-location-picker-title">Choose incident location</h2><p>Click or tap inside Norzagaray to place the incident pin.</p></div><button type="button" aria-label="Close map picker" onClick={() => setMapPickerOpen(false)}><X size={18} /></button></header>
+          <div className="public-location-picker-map">
+            <MapContainer center={mapCenter} zoom={14} scrollWheelZoom style={{ width: '100%', height: '100%' }}>
+              <TileLayer url={CARTO_DARK_MAP_URL} attribution={CARTO_ATTRIBUTION} />
+              <IncidentMapClickPicker onPick={setMapLocation} />
+              {mapLocation && <Marker position={[mapLocation.latitude, mapLocation.longitude]} icon={incidentPinIcon} />}
+            </MapContainer>
+          </div>
+          <p className="public-location-picker-coordinate">{mapLocation ? `${mapLocation.latitude.toFixed(5)}, ${mapLocation.longitude.toFixed(5)}` : 'No point selected yet'}</p>
+          <footer><button type="button" className="public-location-cancel" onClick={() => setMapPickerOpen(false)}>Cancel</button><button type="button" className="public-location-confirm" onClick={confirmMapLocation} disabled={!mapLocation}>Use this location</button></footer>
+        </section>
+      </div>}
     </div>
   );
 }
