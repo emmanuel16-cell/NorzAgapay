@@ -9,7 +9,6 @@ type DebugAccount = { id: string; full_name: string; email: string; role: string
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [audience, setAudience] = useState<'mdrrmo' | 'barangay'>('mdrrmo');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showDebugAccounts, setShowDebugAccounts] = useState(false);
@@ -32,7 +31,7 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      await login(email, password, audience);
+      await login(email, password);
       // The login call in AuthContext updates state, we check it here
     } catch (err: any) {
       setError(err.response?.data?.error || 'Login failed. Please try again.');
@@ -149,13 +148,6 @@ export default function LoginPage() {
           </form>
         ) : <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label className="form-label" htmlFor="login-audience">Sign in to</label>
-            <select id="login-audience" className="form-input" value={audience} onChange={(event) => setAudience(event.target.value as 'mdrrmo' | 'barangay')}>
-              <option value="mdrrmo">MDRRMO command center</option>
-              <option value="barangay">Barangay command center</option>
-            </select>
-          </div>
-          <div className="form-group">
             <label className="form-label">Email Address</label>
             <input
               id="login-email"
@@ -233,7 +225,7 @@ export default function LoginPage() {
         )}
 
         <p style={{ textAlign: 'center', marginTop: '20px', fontSize: '12px', color: 'var(--text-muted)' }}>
-          Authorized {audience === 'barangay' ? 'Barangay' : 'MDRRMO'} Personnel
+          For authorized MDRRMO and barangay personnel
         </p>
       </div>
       </main>

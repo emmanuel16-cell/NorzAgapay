@@ -21,7 +21,7 @@ interface AuthContextType {
   user: User | null;
   token: string | null;
   loading: boolean;
-  login: (email: string, password: string, audience?: 'mdrrmo' | 'barangay') => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
   debugLogin: (accountId: string, audience?: 'standard' | 'barangay') => Promise<void>;
   logout: () => void;
   isAdmin: boolean;
@@ -84,12 +84,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .finally(() => setLoading(false));
   }, [token, accountKind]);
 
-  const login = async (email: string, password: string, audience: 'mdrrmo' | 'barangay' = 'mdrrmo') => {
-    const response = audience === 'barangay'
-      ? await authAPI.barangayLogin(email, password)
-      : await authAPI.login(email, password);
+  const login = async (email: string, password: string) => {
+    let response: Awaited<ReturnType<typeof authAPI.login>>;
+    let nextKind: 'mdrrmo' | 'barangay';
+    try {
+      response = await authAPI.login(email, password);
+      nextKind = 'mdrrmo';
+    } catch (mdrrmoError) {
+      const status = (mdrrmoError as { response?: { status?: number } }).response?.status;
+      if (status !== 401) throw mdrrmoError;
+
+      try {
+        response = await authAPI.barangayLogin(email, password);
+        nextKind = 'barangay';
+      } catch (barangayError) {
+        const barangayStatus = (barangayError as { response?: { status?: number } }).response?.status;
+        // Keep the same generic credential error when neither account type accepts the login.
+        throw barangayStatus === 401 ? mdrrmoError : barangayError;
+      }
+    }
     const { token: savedToken, user: loggedInUser } = response.data;
-    const nextKind = audience;
     loggedInUser.account_kind = nextKind;
     localStorage.setItem('norzagapay_account_kind', nextKind);
     localStorage.setItem('norzagapay_token', savedToken);
