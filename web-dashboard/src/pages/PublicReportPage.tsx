@@ -73,6 +73,13 @@ export default function PublicReportPage() {
   }, [barangays, location]);
   const recipientBarangayId = selectedBarangayId || closestBarangay?.id || '';
   const recipientBarangayName = barangays.find((barangay) => barangay.id === recipientBarangayId)?.name;
+  const orderedBarangays = useMemo(() => {
+    return [...barangays].sort((first, second) => {
+      if (first.id === closestBarangay?.id) return -1;
+      if (second.id === closestBarangay?.id) return 1;
+      return first.name.localeCompare(second.name);
+    });
+  }, [barangays, closestBarangay?.id]);
 
   useEffect(() => {
     reportAPI.verifiedBarangays()
@@ -159,8 +166,8 @@ export default function PublicReportPage() {
               <span id="public-report-location-status" className="public-report-location-status" aria-live="polite">{location ? `Location attached · ${location.latitude.toFixed(5)}, ${location.longitude.toFixed(5)}` : 'Use the device at the incident location to add a map pin.'}</span>
               <fieldset className="public-report-routing" disabled={busy}>
                 <legend>Send report to</legend>
+                <div className="public-report-barangay-select"><label htmlFor="public-report-barangay">Barangay destination · closest recommended</label><select id="public-report-barangay" value={recipientBarangayId} onChange={(event) => { setSelectedBarangayId(event.target.value); setSendTo('barangay'); }}><option value="" disabled>Select a verified barangay</option>{orderedBarangays.map((barangay) => <option key={barangay.id} value={barangay.id}>{barangay.name}{barangay.id === closestBarangay?.id ? ' · Recommended' : ''}</option>)}</select><small>All verified barangays are listed. The closest to the incident pin is listed first and selected by default. This destination is used when barangay routing is selected below.</small></div>
                 <label><input type="radio" name="public-report-recipient" value="barangay" checked={sendTo === 'barangay'} onChange={() => setSendTo('barangay')} /><span><strong>{closestBarangay?.name ? `Closest Barangay (${closestBarangay.name})` : 'Closest Barangay'}</strong><small>Based on the incident location. The barangay can escalate to MDRRMO.</small></span></label>
-                {sendTo === 'barangay' && <div className="public-report-barangay-select"><label htmlFor="public-report-barangay">Receiving barangay</label><select id="public-report-barangay" value={recipientBarangayId} onChange={(event) => setSelectedBarangayId(event.target.value)} required><option value="" disabled>Select a verified barangay</option>{barangays.map((barangay) => <option key={barangay.id} value={barangay.id}>{barangay.name}{barangay.id === closestBarangay?.id ? ' · Closest' : ''}</option>)}</select><small>All verified barangays are listed. The closest barangay is selected by default.</small></div>}
                 <label><input type="radio" name="public-report-recipient" value="mdrrmo" checked={sendTo === 'mdrrmo'} onChange={() => setSendTo('mdrrmo')} /><span><strong>MDRRMO</strong><small>A dispatcher can assign the report to a nearby active barangay.</small></span></label>
               </fieldset>
               <label className="public-evidence-label" htmlFor="public-report-evidence"><Upload size={15} aria-hidden="true" /> Add photo or video <span>(optional)</span></label>

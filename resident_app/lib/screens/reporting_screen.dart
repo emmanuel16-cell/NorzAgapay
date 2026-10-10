@@ -124,11 +124,24 @@ class _ReportingScreenState extends State<ReportingScreen> {
 
   String? get _closestBarangayName => _closestBarangay?['name']?.toString();
 
+  List<Map<String, dynamic>> get _routingBarangays {
+    final closestId = _closestBarangay?['id']?.toString();
+    final ordered = List<Map<String, dynamic>>.from(_barangays);
+    ordered.sort((first, second) {
+      final firstId = first['id']?.toString();
+      final secondId = second['id']?.toString();
+      if (firstId == closestId) return -1;
+      if (secondId == closestId) return 1;
+      return (first['name']?.toString() ?? '').compareTo(second['name']?.toString() ?? '');
+    });
+    return ordered;
+  }
+
   String _barangayOptionLabel(Map<String, dynamic> barangay) {
     final name = barangay['name']?.toString() ?? 'Barangay';
     final isClosest = barangay['id']?.toString() ==
         _closestBarangay?['id']?.toString();
-    return isClosest ? '$name · Closest' : name;
+    return isClosest ? '$name · Recommended' : name;
   }
 
   String? get _recipientDestinationId {
@@ -1146,34 +1159,35 @@ class _ReportingScreenState extends State<ReportingScreen> {
                       subtitle: const Text('Based on the incident location. The barangay can escalate to MDRRMO.'),
                       onChanged: (value) => setState(() => _sendTo = value!),
                     ),
-                    if (_sendTo == 'barangay') ...[
-                      DropdownButtonFormField<String>(
-                        value: _recipientDestinationId,
-                        decoration: InputDecoration(
-                          labelText: 'Receiving barangay',
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                        ),
-                        hint: Text(_barangays.isEmpty
-                            ? 'No verified barangays available'
-                            : 'Select a verified barangay'),
-                        items: _barangays
-                            .where((barangay) => barangay['id'] != null)
-                            .map((barangay) => DropdownMenuItem<String>(
-                                  value: barangay['id'].toString(),
-                                  child: Text(_barangayOptionLabel(barangay)),
-                                ))
-                            .toList(),
-                        onChanged: _barangays.isEmpty
-                            ? null
-                            : (value) => setState(() => _recipientBarangayId = value),
+                    DropdownButtonFormField<String>(
+                      value: _recipientDestinationId,
+                      decoration: InputDecoration(
+                        labelText: 'Barangay destination (closest recommended)',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                       ),
-                      const SizedBox(height: 6),
-                      const Text(
-                        'All verified barangays are listed. The closest barangay is selected by default.',
-                        style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-                      ),
-                      const SizedBox(height: 10),
-                    ],
+                      hint: Text(_barangays.isEmpty
+                          ? 'No verified barangays available'
+                          : 'Select a verified barangay'),
+                      items: _routingBarangays
+                          .where((barangay) => barangay['id'] != null)
+                          .map((barangay) => DropdownMenuItem<String>(
+                                value: barangay['id'].toString(),
+                                child: Text(_barangayOptionLabel(barangay)),
+                              ))
+                          .toList(),
+                      onChanged: _barangays.isEmpty
+                          ? null
+                          : (value) => setState(() {
+                                _recipientBarangayId = value;
+                                _sendTo = 'barangay';
+                              }),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'All verified barangays are listed. The closest to the incident pin is listed first and selected by default. This destination is used when barangay routing is selected below.',
+                      style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                    ),
+                    const SizedBox(height: 10),
                     RadioListTile<String>(
                       value: 'mdrrmo',
                       groupValue: _sendTo,
