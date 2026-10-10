@@ -29,7 +29,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { label: 'Incident Monitoring', section: true },
-  { path: '/', icon: <MapPin size={19} strokeWidth={1.8} />, label: 'Command Center' },
+  { path: '/command-center', icon: <MapPin size={19} strokeWidth={1.8} />, label: 'Command Center' },
   { path: '/reports', icon: <AlertTriangle size={19} strokeWidth={1.8} />, label: 'Incidents' },
   { path: '/locations', icon: <MapIcon size={19} strokeWidth={1.8} />, label: 'Command Locations' },
   { path: '/requests', icon: <ClipboardList size={19} strokeWidth={1.8} />, label: 'Assistance Request' },
@@ -92,7 +92,7 @@ export default function DashboardLayout() {
     .slice(0, 2) || 'NA';
 
   const roleNav = user?.account_kind === 'barangay'
-    ? navItems.filter(item => ['Incident Monitoring', '/', '/reports', 'Operations', '/locations'].includes(item.path || item.label))
+    ? navItems.filter(item => ['Incident Monitoring', '/command-center', '/reports', 'Operations', '/locations'].includes(item.path || item.label))
     : isMasterAdmin
     ? navItems
     : user?.role === 'admin'
@@ -100,7 +100,7 @@ export default function DashboardLayout() {
       : user?.role === 'logistics'
         ? navItems.filter(item => ['Operations', '/evacuation-centers', '/municipality-boundary', '/respond-units', '/officers'].includes(item.path || item.label))
         : user?.role === 'dispatcher'
-          ? navItems.filter(item => ['Incident Monitoring', '/', '/reports', '/requests', 'Operations', '/locations', '/respond-units'].includes(item.path || item.label))
+          ? navItems.filter(item => ['Incident Monitoring', '/command-center', '/reports', '/requests', 'Operations', '/locations', '/respond-units'].includes(item.path || item.label))
           : [];
 
   return (
@@ -154,7 +154,7 @@ export default function DashboardLayout() {
               <NavLink
                 key={item.path}
                 to={item.path!}
-                end={item.path === '/'}
+                end={item.path === '/command-center'}
                 className={({ isActive }) => `nav-item ${isActive ? 'active' : ''} ${isCollapsed ? 'collapsed' : ''}`}
                 onClick={() => setMobileOpen(false)}
                 title={isCollapsed ? item.label : undefined}

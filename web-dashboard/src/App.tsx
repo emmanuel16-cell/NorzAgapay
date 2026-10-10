@@ -4,6 +4,8 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import DashboardLayout from './components/DashboardLayout';
 import NotificationManager from './components/NotificationManager';
 import LoginPage from './pages/LoginPage';
+import HomePage from './pages/HomePage';
+import PublicReportPage from './pages/PublicReportPage';
 import CommandCenter from './pages/CommandCenter';
 import VerificationPage from './pages/VerificationPage';
 import ResourceRequestsPage from './pages/ResourceRequestsPage';
@@ -27,28 +29,34 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function LoginRoute() {
+  const { user, loading, canAccessDashboard } = useAuth();
+  if (loading) return <div className="loading-overlay"><div className="spinner" /></div>;
+  if (user && canAccessDashboard) return <Navigate to="/command-center" replace />;
+  return <LoginPage />;
+}
+
 function RoleAccess({ roles, children, allowBarangayDashboard = false }: { roles: string[]; children: React.ReactNode; allowBarangayDashboard?: boolean }) {
   const { user, isMasterAdmin } = useAuth();
   const isBarangay = user?.account_kind === 'barangay';
   const barangayDashboardPage = allowBarangayDashboard && isBarangay && ['admin', 'dispatcher'].includes(user?.role || '');
   if (!isMasterAdmin && !roles.includes(user?.role || '') && !barangayDashboardPage) {
-    return <Navigate to={isBarangay ? '/' : user?.role === 'admin' ? '/users' : user?.role === 'logistics' ? '/evacuation-centers' : '/'} replace />;
+    return <Navigate to={isBarangay ? '/command-center' : user?.role === 'admin' ? '/users' : user?.role === 'logistics' ? '/evacuation-centers' : '/command-center'} replace />;
   }
   return <>{children}</>;
 }
 
 function AppRoutes() {
-  const { user, loading } = useAuth();
-  if (loading) return <div className="loading-overlay"><div className="spinner" /></div>;
-
   return (
     <Routes>
-      <Route path="/login" element={user ? <Navigate to="/" replace /> : <LoginPage />} />
-      <Route path="/" element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
-        <Route index element={<RoleAccess roles={['dispatcher']} allowBarangayDashboard><CommandCenter /></RoleAccess>} />
-        <Route path="weather-monitoring" element={<Navigate to="/" replace />} />
-        <Route path="advisories" element={<Navigate to="/" replace />} />
-        <Route path="earthquakes" element={<Navigate to="/" replace />} />
+      <Route path="/" element={<HomePage />} />
+      <Route path="/report" element={<PublicReportPage />} />
+      <Route path="/login" element={<LoginRoute />} />
+      <Route element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
+        <Route path="command-center" element={<RoleAccess roles={['dispatcher']} allowBarangayDashboard><CommandCenter /></RoleAccess>} />
+        <Route path="weather-monitoring" element={<Navigate to="/command-center" replace />} />
+        <Route path="advisories" element={<Navigate to="/command-center" replace />} />
+        <Route path="earthquakes" element={<Navigate to="/command-center" replace />} />
         <Route path="reports" element={<RoleAccess roles={['dispatcher']} allowBarangayDashboard><ReportsPage /></RoleAccess>} />
         <Route path="locations" element={<RoleAccess roles={['admin', 'dispatcher']} allowBarangayDashboard><CommandLocationsPage /></RoleAccess>} />
         <Route path="requests" element={<RoleAccess roles={['dispatcher']}><ResourceRequestsPage /></RoleAccess>} />

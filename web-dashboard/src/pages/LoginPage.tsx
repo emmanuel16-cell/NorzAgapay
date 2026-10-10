@@ -1,11 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { authAPI, debugAPI, reportAPI } from '../lib/api';
-import { Phone, MapPin, Upload, Siren } from 'lucide-react';
+import { authAPI, debugAPI } from '../lib/api';
+import PublicHeader from '../components/PublicHeader';
 
 type DebugAccount = { id: string; full_name: string; email: string; role: string; audience: 'standard' | 'barangay'; barangay_name?: string };
-type HotlineGroup = { barangay_name: string; entries: Array<{ label?: string; name?: string; phone?: string; number?: string; numbers?: string[]; purpose?: string }> };
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -16,13 +15,6 @@ export default function LoginPage() {
   const [showDebugAccounts, setShowDebugAccounts] = useState(false);
   const [debugAccounts, setDebugAccounts] = useState<DebugAccount[]>([]);
   const [debugLoading, setDebugLoading] = useState(false);
-  const [hotlines, setHotlines] = useState<{ national: Array<{ label: string; phone: string }>; mdrrmo: Array<{ label: string; phone: string; email?: string }>; barangays: HotlineGroup[] }>({ national: [], mdrrmo: [], barangays: [] });
-  const [guestPhone, setGuestPhone] = useState('');
-  const [guestDescription, setGuestDescription] = useState('');
-  const [guestLocation, setGuestLocation] = useState<{ latitude: number; longitude: number } | null>(null);
-  const [guestEvidence, setGuestEvidence] = useState<File | null>(null);
-  const [guestBusy, setGuestBusy] = useState(false);
-  const [guestError, setGuestError] = useState('');
   const [setupRequired, setSetupRequired] = useState(false);
   const [showSetup, setShowSetup] = useState(false);
   const [setupName, setSetupName] = useState('');
@@ -35,13 +27,7 @@ export default function LoginPage() {
       .catch(() => setSetupRequired(false));
   }, []);
 
-  useEffect(() => {
-    reportAPI.publicHotlines()
-      .then((res) => setHotlines(res.data || { national: [], mdrrmo: [], barangays: [] }))
-      .catch(() => setHotlines({ national: [{ label: 'National Emergency Hotline', phone: '911' }], mdrrmo: [], barangays: [] }));
-  }, []);
-
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
@@ -54,7 +40,7 @@ export default function LoginPage() {
     }
   };
 
-  const handleMasterAdminSetup = async (event: React.FormEvent) => {
+  const handleMasterAdminSetup = async (event: FormEvent) => {
     event.preventDefault();
     setError('');
     setLoading(true);
@@ -103,43 +89,11 @@ export default function LoginPage() {
     }
   };
 
-  const requestGuestLocation = () => {
-    setGuestError('');
-    if (!navigator.geolocation) { setGuestError('This browser cannot read your location.'); return; }
-    navigator.geolocation.getCurrentPosition(
-      (position) => setGuestLocation({ latitude: position.coords.latitude, longitude: position.coords.longitude }),
-      () => setGuestError('Allow location access or try again from the incident location.'),
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
-    );
-  };
-
-  const submitGuestReport = async (event: React.FormEvent) => {
-    event.preventDefault();
-    setGuestError('');
-    const phone = guestPhone.replace(/\D/g, '');
-    if (!/^09\d{9}$/.test(phone)) { setGuestError('Enter an 11-digit mobile number starting with 09.'); return; }
-    if (!guestLocation) { setGuestError('Add the incident location before submitting.'); return; }
-    if (guestDescription.trim().length < 8) { setGuestError('Describe the incident in at least 8 characters.'); return; }
-    setGuestBusy(true);
-    try {
-      await reportAPI.guestReport({
-        type: 'emergency', title: 'Resident Incident Report', description: guestDescription.trim(),
-        latitude: guestLocation.latitude, longitude: guestLocation.longitude, contact_number: phone,
-      }, guestEvidence);
-      setGuestDescription(''); setGuestPhone(''); setGuestLocation(null); setGuestEvidence(null);
-      const input = document.getElementById('public-report-evidence') as HTMLInputElement | null;
-      if (input) input.value = '';
-      setGuestError('Report sent to MDRRMO for review.');
-    } catch (error: any) {
-      setGuestError(error?.response?.data?.error || 'The report could not be submitted. Please try again.');
-    } finally { setGuestBusy(false); }
-  };
-
   // Separate effect to handle redirection after login state is updated
-  React.useEffect(() => {
+  useEffect(() => {
     if (user) {
       if (canAccessDashboard) {
-        navigate('/');
+        navigate('/command-center');
       } else {
         setError('This account does not have web dashboard access. Please use the mobile app.');
         logout(); // Log them out immediately
@@ -148,33 +102,9 @@ export default function LoginPage() {
   }, [user, canAccessDashboard, navigate, logout]);
 
   return (
-    <div className="login-page public-intake-page">
-      <section className="public-intake-panel" aria-labelledby="public-report-title">
-        <div className="public-intake-heading"><span><Siren size={19} /></span><div><h2 id="public-report-title">Report an incident</h2><p>Anyone can send a report to MDRRMO without signing in.</p></div></div>
-        <form className="public-report-form" onSubmit={(event) => void submitGuestReport(event)}>
-          <label htmlFor="public-report-phone">Mobile number <b>Required</b></label>
-          <input id="public-report-phone" inputMode="numeric" autoComplete="tel" maxLength={11} placeholder="09XXXXXXXXX" value={guestPhone} onChange={(event) => setGuestPhone(event.target.value.replace(/\D/g, '').slice(0, 11))} required />
-          <label htmlFor="public-report-description">Incident details</label>
-          <textarea id="public-report-description" rows={4} maxLength={2000} placeholder="Describe what happened and who needs help…" value={guestDescription} onChange={(event) => setGuestDescription(event.target.value)} required />
-          <button className={'public-location-button ' + (guestLocation ? 'located' : '')} type="button" onClick={requestGuestLocation}><MapPin size={16} />{guestLocation ? `Location attached · ${guestLocation.latitude.toFixed(5)}, ${guestLocation.longitude.toFixed(5)}` : 'Add current incident location'}</button>
-          <label className="public-evidence-label" htmlFor="public-report-evidence"><Upload size={15} /> Add photo or video (optional)</label>
-          <input id="public-report-evidence" type="file" accept="image/*,video/*" onChange={(event) => setGuestEvidence(event.target.files?.[0] || null)} />
-          {guestError && <p className={guestError.startsWith('Report sent') ? 'public-report-success' : 'public-report-error'} role="status">{guestError}</p>}
-          <button className="btn btn-primary btn-lg public-report-submit" disabled={guestBusy}>{guestBusy ? 'Sending report…' : 'Send report to MDRRMO'}</button>
-          <small>Reports are reviewed by MDRRMO. They may assign response to the barangay best positioned to help.</small>
-        </form>
-        <section className="public-hotlines" aria-labelledby="public-hotlines-title">
-          <h3 id="public-hotlines-title"><Phone size={16} /> Emergency hotlines</h3>
-          <div className="public-hotline-list">
-            {[...(hotlines.national || []), ...(hotlines.mdrrmo || [])].map((line, index) => <a key={`${line.phone}-${index}`} href={`tel:${line.phone}`}><span>{line.label}</span><strong>{line.phone}</strong></a>)}
-            {(hotlines.barangays || []).map((group) => group.entries.flatMap((line, index) => {
-              const phones = [line.phone, line.number, ...(line.numbers || [])].filter((phone): phone is string => Boolean(phone));
-              return phones.map((phone, numberIndex) => <a key={`${group.barangay_name}-${phone}-${index}-${numberIndex}`} href={`tel:${phone}`}><span>{line.label || line.name || line.purpose || group.barangay_name} · Brgy. {group.barangay_name}</span><strong>{phone}</strong></a>);
-            }))}
-          </div>
-          {hotlines.mdrrmo?.[0]?.email && <a className="public-hotline-email" href={`mailto:${hotlines.mdrrmo[0].email}`}>{hotlines.mdrrmo[0].email}</a>}
-        </section>
-      </section>
+    <div className="public-login-page">
+      <PublicHeader />
+      <main className="login-page public-login-main">
       <div className="login-card">
         <button className="login-logo" type="button" onClick={toggleDebugAccounts} title="Click logo to toggle Debug Quick Login">
           <img src="/NA-icon.png" alt="NorzAgapay" />
@@ -306,6 +236,7 @@ export default function LoginPage() {
           Authorized {audience === 'barangay' ? 'Barangay' : 'MDRRMO'} Personnel
         </p>
       </div>
+      </main>
     </div>
   );
 }
