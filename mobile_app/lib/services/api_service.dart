@@ -10,6 +10,9 @@ import '../models/broadcast_post.dart';
 class ApiService {
   static const String baseUrl = 'https://norzagapay-backend.onrender.com/api';
 
+  static String _reportPath(String reportId, bool centralAssignment) =>
+      '${centralAssignment ? 'assigned-reports' : 'reports'}/$reportId';
+
   static Map<String, String> _headers(String? token) {
     final headers = {
       'Content-Type': 'application/json',
@@ -169,7 +172,7 @@ class ApiService {
 
   static Future<List<IncidentReport>> getResolvedReports(String token) async {
     final res = await http.get(
-      Uri.parse('$baseUrl/barangay/reports/resolved'),
+      Uri.parse('$baseUrl/barangay/reports?status=resolved'),
       headers: _headers(token),
     );
     if (res.statusCode == 200) {
@@ -185,17 +188,18 @@ class ApiService {
     String reportId, {
     String? notes,
     String? mdrrmoNotes,
+    bool centralAssignment = false,
     double? latitude,
     double? longitude,
     double? accuracyM,
     DateTime? fixAt,
   }) async {
     final res = await http.patch(
-      Uri.parse('$baseUrl/barangay/reports/$reportId/respond'),
+      Uri.parse('$baseUrl/barangay/${_reportPath(reportId, centralAssignment)}/respond'),
       headers: _headers(token),
       body: jsonEncode({
         'notes': notes,
-        'mdrrmo_notes': mdrrmoNotes,
+        if (!centralAssignment) 'mdrrmo_notes': mdrrmoNotes,
         if (latitude != null) 'latitude': latitude,
         if (longitude != null) 'longitude': longitude,
         if (accuracyM != null) 'accuracy_m': accuracyM,
@@ -217,9 +221,10 @@ class ApiService {
     double? longitude,
     double? accuracyM,
     DateTime? fixAt,
+    bool centralAssignment = false,
   }) async {
     final res = await http.patch(
-      Uri.parse('$baseUrl/barangay/reports/$reportId/arrive'),
+      Uri.parse('$baseUrl/barangay/${_reportPath(reportId, centralAssignment)}/arrive'),
       headers: _headers(token),
       body: jsonEncode({
         'method': method,
@@ -241,8 +246,9 @@ class ApiService {
     String reportId,
     XFile file, {
     bool isVideo = false,
+    bool centralAssignment = false,
   }) async {
-    final uri = Uri.parse('$baseUrl/barangay/reports/$reportId/field-media');
+    final uri = Uri.parse('$baseUrl/barangay/${_reportPath(reportId, centralAssignment)}/field-media');
     final req = http.MultipartRequest('POST', uri);
     req.headers['Authorization'] = 'Bearer $token';
     req.headers['ngrok-skip-browser-warning'] = 'true';
@@ -266,13 +272,14 @@ class ApiService {
     String? notes,
     required String incidentType,
     required String severity,
+    bool centralAssignment = false,
   }) async {
     final ids =
         teamLeaderIds ?? (teamLeaderId != null ? [teamLeaderId] : <String>[]);
     final primaryId = ids.isNotEmpty ? ids.first : '';
     try {
       final res = await http.patch(
-        Uri.parse('$baseUrl/barangay/reports/$reportId/dispatch'),
+        Uri.parse('$baseUrl/barangay/${_reportPath(reportId, centralAssignment)}/dispatch'),
         headers: _headers(token),
         body: jsonEncode({
           'team_leader_id': primaryId,
@@ -297,17 +304,18 @@ class ApiService {
     String token,
     String reportId, {
     required String notes,
+    bool centralAssignment = false,
   }) async {
     try {
       final res = await http.patch(
-        Uri.parse('$baseUrl/barangay/reports/$reportId/escalate'),
+        Uri.parse('$baseUrl/barangay/${_reportPath(reportId, centralAssignment)}/escalate'),
         headers: _headers(token),
         body: jsonEncode({'notes': notes}),
       );
       if (res.statusCode == 200) {
         return IncidentReport.fromJson(jsonDecode(res.body));
       }
-      if (res.statusCode == 404) {
+      if (!centralAssignment && res.statusCode == 404) {
         // Fallback to respond endpoint with mdrrmo_notes
         final fallbackRes = await http.patch(
           Uri.parse('$baseUrl/barangay/reports/$reportId/respond'),
@@ -333,9 +341,10 @@ class ApiService {
     String token,
     String reportId, {
     String? resolvedNotes,
+    bool centralAssignment = false,
   }) async {
     final res = await http.post(
-      Uri.parse('$baseUrl/barangay/reports/$reportId/close'),
+      Uri.parse('$baseUrl/barangay/${_reportPath(reportId, centralAssignment)}/close'),
       headers: _headers(token),
       body: jsonEncode({'resolved_notes': resolvedNotes}),
     );

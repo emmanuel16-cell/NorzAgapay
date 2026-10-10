@@ -133,7 +133,9 @@ class MainNavigationScreenState extends State<MainNavigationScreen>
   }) => [
     _ResidentTab.home,
     _ResidentTab.evacuation,
-    if (isLoggedIn && includeReport) _ResidentTab.report,
+    // Guest residents can open the reporting flow too. The reporting screen
+    // still verifies the municipality boundary before allowing submission.
+    if (!isLoggedIn || includeReport) _ResidentTab.report,
     _ResidentTab.hotline,
     _ResidentTab.profile,
   ];

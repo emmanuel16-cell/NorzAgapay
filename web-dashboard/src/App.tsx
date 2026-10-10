@@ -15,6 +15,7 @@ import AnalyticsPage from './pages/AnalyticsPage';
 import ReportsPage from './pages/ReportsPage';
 import EvacuationCentersPage from './pages/EvacuationCentersPage';
 import MunicipalityBoundaryPage from './pages/MunicipalityBoundaryPage';
+import CommandLocationsPage from './pages/CommandLocationsPage';
 import { MunicipalityBoundaryProvider } from './context/MunicipalityBoundaryContext';
 
 import './index.css';
@@ -26,10 +27,12 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function RoleAccess({ roles, children }: { roles: string[]; children: React.ReactNode }) {
+function RoleAccess({ roles, children, allowBarangayDashboard = false }: { roles: string[]; children: React.ReactNode; allowBarangayDashboard?: boolean }) {
   const { user, isMasterAdmin } = useAuth();
-  if (!isMasterAdmin && !roles.includes(user?.role || '')) {
-    return <Navigate to={user?.role === 'admin' ? '/users' : user?.role === 'logistics' ? '/evacuation-centers' : '/'} replace />;
+  const isBarangay = user?.account_kind === 'barangay';
+  const barangayDashboardPage = allowBarangayDashboard && isBarangay && ['admin', 'dispatcher'].includes(user?.role || '');
+  if (!isMasterAdmin && !roles.includes(user?.role || '') && !barangayDashboardPage) {
+    return <Navigate to={isBarangay ? '/' : user?.role === 'admin' ? '/users' : user?.role === 'logistics' ? '/evacuation-centers' : '/'} replace />;
   }
   return <>{children}</>;
 }
@@ -42,11 +45,12 @@ function AppRoutes() {
     <Routes>
       <Route path="/login" element={user ? <Navigate to="/" replace /> : <LoginPage />} />
       <Route path="/" element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
-        <Route index element={<RoleAccess roles={['dispatcher']}><CommandCenter /></RoleAccess>} />
+        <Route index element={<RoleAccess roles={['dispatcher']} allowBarangayDashboard><CommandCenter /></RoleAccess>} />
         <Route path="weather-monitoring" element={<Navigate to="/" replace />} />
         <Route path="advisories" element={<Navigate to="/" replace />} />
         <Route path="earthquakes" element={<Navigate to="/" replace />} />
-        <Route path="reports" element={<RoleAccess roles={['dispatcher']}><ReportsPage /></RoleAccess>} />
+        <Route path="reports" element={<RoleAccess roles={['dispatcher']} allowBarangayDashboard><ReportsPage /></RoleAccess>} />
+        <Route path="locations" element={<RoleAccess roles={['admin', 'dispatcher']} allowBarangayDashboard><CommandLocationsPage /></RoleAccess>} />
         <Route path="requests" element={<RoleAccess roles={['dispatcher']}><ResourceRequestsPage /></RoleAccess>} />
         <Route path="evacuation-centers" element={<RoleAccess roles={['admin', 'logistics']}><EvacuationCentersPage /></RoleAccess>} />
         <Route path="municipality-boundary" element={<RoleAccess roles={['logistics']}><MunicipalityBoundaryPage /></RoleAccess>} />

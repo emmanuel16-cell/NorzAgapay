@@ -40,6 +40,16 @@ class IncidentReport {
   final String? mdrrmoResponseStatus;
   final String? mdrrmoResponderName;
   final String? mdrrmoCoordinationNotes;
+  final bool isCentralAssignment;
+  final String? assignmentStatus;
+  final String? responseBarangayName;
+  final DateTime? barangayAssignedAt;
+  final DateTime? barangayDispatchedAt;
+  final DateTime? barangayAcceptedAt;
+  final DateTime? barangayArrivedAt;
+  final DateTime? barangayResolvedAt;
+  final DateTime? barangayEscalatedAt;
+  final List<Map<String, dynamic>> barangayAssignments;
   final String? resolvedNotes;
   final String? reviewOutcome;
   final String? reviewReason;
@@ -101,6 +111,16 @@ class IncidentReport {
     this.mdrrmoResponseStatus,
     this.mdrrmoResponderName,
     this.mdrrmoCoordinationNotes,
+    this.isCentralAssignment = false,
+    this.assignmentStatus,
+    this.responseBarangayName,
+    this.barangayAssignedAt,
+    this.barangayDispatchedAt,
+    this.barangayAcceptedAt,
+    this.barangayArrivedAt,
+    this.barangayResolvedAt,
+    this.barangayEscalatedAt,
+    List<Map<String, dynamic>>? barangayAssignments,
     this.resolvedNotes,
     this.reviewOutcome,
     this.reviewReason,
@@ -118,7 +138,8 @@ class IncidentReport {
     List<String>? proofTypes,
   }) : proofUrls = proofUrls ?? (proofUrl != null ? [proofUrl] : []),
        proofTypes = proofTypes ?? [proofType],
-       responderMedia = responderMedia ?? const [];
+       responderMedia = responderMedia ?? const [],
+       barangayAssignments = barangayAssignments ?? const [];
 
   /// Normalized display status from the applicable response channels.
   String get displayStatus {
@@ -127,6 +148,18 @@ class IncidentReport {
     final s = (status ?? '').toLowerCase().trim();
     final m = (mdrrmoResponseStatus ?? '').toLowerCase().trim();
     final b = (barangayResponseStatus ?? '').toLowerCase().trim();
+
+    if (isCentralAssignment && assignmentStatus == 'active') {
+      if (b == 'resolved' || b == 'closed') return 'resolved';
+      if (b == 'responding') return 'responding';
+      return 'pending';
+    }
+    if (isCentralAssignment && assignmentStatus == 'completed') return 'resolved';
+    if (isCentralAssignment && ['escalated', 'reassigned', 'recalled'].contains(assignmentStatus)) {
+      if (m == 'responding') return 'responding';
+      if (m == 'resolved' || m == 'closed') return 'resolved';
+      return 'pending';
+    }
 
     if (isEscalated) {
       if (m == 'responding' || b == 'responding') return 'responding';
@@ -148,20 +181,26 @@ class IncidentReport {
     return 'pending';
   }
 
-  bool get isMdrrmoHandled =>
-      sendTo == 'mdrrmo' ||
-      isEscalated ||
-      status == 'escalated' ||
-      mdrrmoResponseStatus == 'responding' ||
-      mdrrmoResponseStatus == 'resolved';
+  bool get isMdrrmoHandled {
+    if (isCentralAssignment && ['active', 'completed'].contains(assignmentStatus)) return false;
+    return sendTo == 'mdrrmo' ||
+        isEscalated ||
+        status == 'escalated' ||
+        mdrrmoResponseStatus == 'responding' ||
+        mdrrmoResponseStatus == 'resolved';
+  }
 
-  String get handlingUnitName => isMdrrmoHandled
+  String get handlingUnitName => isCentralAssignment && ['active', 'completed'].contains(assignmentStatus)
+      ? (responseBarangayName?.trim().isNotEmpty == true ? 'Barangay $responseBarangayName' : 'the assigned barangay')
+      : isMdrrmoHandled
       ? 'MDRRMO'
       : (barangayName?.trim().isNotEmpty == true
             ? 'Barangay ${barangayName!}'
             : 'your barangay');
 
-  String? get activeResponderName => isMdrrmoHandled
+  String? get activeResponderName => isCentralAssignment && assignmentStatus == 'active'
+      ? (barangayResponderName?.trim().isNotEmpty == true ? barangayResponderName : null)
+      : isMdrrmoHandled
       ? (mdrrmoResponderName?.trim().isNotEmpty == true
             ? mdrrmoResponderName
             : null)
@@ -212,6 +251,16 @@ class IncidentReport {
       'mdrrmo_response_status': mdrrmoResponseStatus,
       'mdrrmo_responder_name': mdrrmoResponderName,
       'mdrrmo_coordination_notes': mdrrmoCoordinationNotes,
+      'is_central_assignment': isCentralAssignment,
+      'assignment_status': assignmentStatus,
+      'response_barangay_name': responseBarangayName,
+      'barangay_assigned_at': barangayAssignedAt?.toIso8601String(),
+      'barangay_dispatched_at': barangayDispatchedAt?.toIso8601String(),
+      'barangay_accepted_at': barangayAcceptedAt?.toIso8601String(),
+      'barangay_arrived_at': barangayArrivedAt?.toIso8601String(),
+      'barangay_resolved_at': barangayResolvedAt?.toIso8601String(),
+      'barangay_escalated_at': barangayEscalatedAt?.toIso8601String(),
+      'barangay_assignments': barangayAssignments,
       'resolved_notes': resolvedNotes,
       'review_outcome': reviewOutcome,
       'review_reason': reviewReason,
@@ -342,6 +391,18 @@ class IncidentReport {
       mdrrmoResponseStatus: json['mdrrmo_response_status'],
       mdrrmoResponderName: json['mdrrmo_responder_name'],
       mdrrmoCoordinationNotes: json['mdrrmo_coordination_notes'],
+      isCentralAssignment: json['is_central_assignment'] == true,
+      assignmentStatus: json['assignment_status']?.toString(),
+      responseBarangayName: json['response_barangay_name']?.toString(),
+      barangayAssignedAt: json['barangay_assigned_at'] == null ? null : DateTime.tryParse(json['barangay_assigned_at'].toString()),
+      barangayDispatchedAt: json['barangay_dispatched_at'] == null ? null : DateTime.tryParse(json['barangay_dispatched_at'].toString()),
+      barangayAcceptedAt: json['barangay_accepted_at'] == null ? null : DateTime.tryParse(json['barangay_accepted_at'].toString()),
+      barangayArrivedAt: json['barangay_arrived_at'] == null ? null : DateTime.tryParse(json['barangay_arrived_at'].toString()),
+      barangayResolvedAt: json['barangay_resolved_at'] == null ? null : DateTime.tryParse(json['barangay_resolved_at'].toString()),
+      barangayEscalatedAt: json['barangay_escalated_at'] == null ? null : DateTime.tryParse(json['barangay_escalated_at'].toString()),
+      barangayAssignments: json['barangay_assignments'] is List
+          ? (json['barangay_assignments'] as List).whereType<Map>().map((entry) => Map<String, dynamic>.from(entry)).toList()
+          : const [],
       resolvedNotes: json['resolved_notes'],
       reviewOutcome: json['review_outcome']?.toString(),
       reviewReason: json['review_reason']?.toString(),
@@ -421,6 +482,16 @@ class IncidentReport {
       mdrrmoResponseStatus: mdrrmoResponseStatus,
       mdrrmoResponderName: mdrrmoResponderName,
       mdrrmoCoordinationNotes: mdrrmoCoordinationNotes,
+      isCentralAssignment: isCentralAssignment,
+      assignmentStatus: assignmentStatus,
+      responseBarangayName: responseBarangayName,
+      barangayAssignedAt: barangayAssignedAt,
+      barangayDispatchedAt: barangayDispatchedAt,
+      barangayAcceptedAt: barangayAcceptedAt,
+      barangayArrivedAt: barangayArrivedAt,
+      barangayResolvedAt: barangayResolvedAt,
+      barangayEscalatedAt: barangayEscalatedAt,
+      barangayAssignments: barangayAssignments,
       resolvedNotes: resolvedNotes,
       reviewOutcome: reviewOutcome,
       reviewReason: reviewReason,

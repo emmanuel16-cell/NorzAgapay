@@ -37,16 +37,17 @@ export const OTP_TTL_SECONDS = 600; // 10 minutes
 
 // Responder locations are short-lived operational telemetry, never persisted to users.
 export const RESPONDER_GPS_KEY_PREFIX = 'responder-live:';
+export const BARANGAY_RESPONDER_GPS_KEY_PREFIX = 'barangay-responder-live:';
 export const RESPONDER_GPS_TTL_SECONDS = 30;
 
 export interface ResponderGpsLocation {
   latitude: number;
   longitude: number;
+  accuracyM?: number | null;
   timestamp: string;
 }
 
-export async function setResponderGpsLocation(userId: string, location: ResponderGpsLocation): Promise<void> {
-  const key = `${RESPONDER_GPS_KEY_PREFIX}${userId}`;
+async function setGpsLocation(key: string, location: ResponderGpsLocation): Promise<void> {
   if (redisClient) {
     try {
       await redisClient.set(key, JSON.stringify(location), { ex: RESPONDER_GPS_TTL_SECONDS });
@@ -60,8 +61,7 @@ export async function setResponderGpsLocation(userId: string, location: Responde
   });
 }
 
-export async function getResponderGpsLocation(userId: string): Promise<ResponderGpsLocation | null> {
-  const key = `${RESPONDER_GPS_KEY_PREFIX}${userId}`;
+async function getGpsLocation(key: string): Promise<ResponderGpsLocation | null> {
   if (redisClient) {
     try {
       const raw = await redisClient.get<string>(key);
@@ -79,8 +79,7 @@ export async function getResponderGpsLocation(userId: string): Promise<Responder
   return entry.data;
 }
 
-export async function deleteResponderGpsLocation(userId: string): Promise<void> {
-  const key = `${RESPONDER_GPS_KEY_PREFIX}${userId}`;
+async function deleteGpsLocation(key: string): Promise<void> {
   if (redisClient) {
     try {
       await redisClient.del(key);
@@ -90,6 +89,20 @@ export async function deleteResponderGpsLocation(userId: string): Promise<void> 
   }
   memoryResponderGpsStore.delete(key);
 }
+
+export const setResponderGpsLocation = (userId: string, location: ResponderGpsLocation) =>
+  setGpsLocation(`${RESPONDER_GPS_KEY_PREFIX}${userId}`, location);
+export const getResponderGpsLocation = (userId: string) =>
+  getGpsLocation(`${RESPONDER_GPS_KEY_PREFIX}${userId}`);
+export const deleteResponderGpsLocation = (userId: string) =>
+  deleteGpsLocation(`${RESPONDER_GPS_KEY_PREFIX}${userId}`);
+
+export const setBarangayResponderGpsLocation = (userId: string, location: ResponderGpsLocation) =>
+  setGpsLocation(`${BARANGAY_RESPONDER_GPS_KEY_PREFIX}${userId}`, location);
+export const getBarangayResponderGpsLocation = (userId: string) =>
+  getGpsLocation(`${BARANGAY_RESPONDER_GPS_KEY_PREFIX}${userId}`);
+export const deleteBarangayResponderGpsLocation = (userId: string) =>
+  deleteGpsLocation(`${BARANGAY_RESPONDER_GPS_KEY_PREFIX}${userId}`);
 
 export interface ResidentOtpRecord {
   otp: string;

@@ -343,6 +343,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         longitude: longitude,
         accuracyM: accuracyM,
         fixAt: fixAt,
+        centralAssignment: _report.isCentralAssignment,
       );
       if (mounted) {
         setState(() => _report = updated);
@@ -732,9 +733,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
             ),
             const SizedBox(height: 8),
             ElevatedButton(
-              onPressed: _hasAssignedResponder
-                  ? () => Navigator.pop(ctx, 'escalate_mdrrmo')
-                  : null,
+              onPressed: () => Navigator.pop(ctx, 'escalate_mdrrmo'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFFEF4444),
                 foregroundColor: Colors.white,
@@ -752,9 +751,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                   const Icon(Icons.emergency_rounded, size: 20),
                   const SizedBox(width: 10),
                   Text(
-                    _hasAssignedResponder
-                        ? 'Escalate to MDRRMO'
-                        : 'Dispatch a Responder First',
+                    'Report to MDRRMO',
                     style: const TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.bold,
@@ -1206,6 +1203,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                                 : notesController.text.trim(),
                             incidentType: classificationType!,
                             severity: classificationSeverity!,
+                            centralAssignment: _report.isCentralAssignment,
                           );
                           setState(() => _report = updated);
                           if (mounted) {
@@ -1258,16 +1256,6 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
   // ── Dispatcher: Escalate to MDRRMO Modal ────────────────────────────────────
   Future<void> _showEscalateModal() async {
     final auth = Provider.of<AuthService>(context, listen: false);
-    if (!_hasAssignedResponder) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Dispatch a responder before escalating this incident to MDRRMO.',
-          ),
-        ),
-      );
-      return;
-    }
     if (auth.token == null) return;
     final notesController = TextEditingController();
 
@@ -1364,6 +1352,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           auth.token!,
           _report.id,
           notes: notesController.text.trim(),
+          centralAssignment: _report.isCentralAssignment,
         );
         setState(() => _report = updated);
         if (mounted) {
@@ -1452,6 +1441,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         fixAt: acceptanceLocation == null
             ? null
             : _locationFixTime(acceptanceLocation),
+        centralAssignment: _report.isCentralAssignment,
       );
       setState(() => _report = updated);
       _syncArrivalMonitoring();
@@ -1570,6 +1560,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         auth.token!,
         _report.id,
         notes: text,
+        centralAssignment: _report.isCentralAssignment,
       );
       if (mounted) {
         setState(() => _report = updated);
@@ -1945,6 +1936,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           auth.token!,
           _report.id,
           resolvedNotes: notesController.text.trim(),
+          centralAssignment: _report.isCentralAssignment,
         );
         setState(() => _report = updated);
         if (mounted) {
@@ -3827,6 +3819,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         _report.id,
         file,
         isVideo: isVideo,
+        centralAssignment: _report.isCentralAssignment,
       );
 
       if (mounted) {

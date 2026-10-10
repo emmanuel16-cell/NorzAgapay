@@ -16,6 +16,8 @@ import {
   Sun,
   Megaphone,
   Map as MapIcon,
+  Menu,
+  X,
 } from 'lucide-react';
 
 interface NavItem {
@@ -29,6 +31,7 @@ const navItems: NavItem[] = [
   { label: 'Incident Monitoring', section: true },
   { path: '/', icon: <MapPin size={19} strokeWidth={1.8} />, label: 'Command Center' },
   { path: '/reports', icon: <AlertTriangle size={19} strokeWidth={1.8} />, label: 'Incidents' },
+  { path: '/locations', icon: <MapIcon size={19} strokeWidth={1.8} />, label: 'Command Locations' },
   { path: '/requests', icon: <ClipboardList size={19} strokeWidth={1.8} />, label: 'Assistance Request' },
   { label: 'Operations', section: true },
   { path: '/evacuation-centers', icon: <Tent size={19} strokeWidth={1.8} />, label: 'Evacuation Centers' },
@@ -48,6 +51,7 @@ export default function DashboardLayout() {
   const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
     return localStorage.getItem('sidebar_collapsed') === 'true';
   });
+  const [mobileOpen, setMobileOpen] = useState(false);
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     return localStorage.getItem('dashboard_theme') === 'light' ? 'light' : 'dark';
   });
@@ -87,19 +91,22 @@ export default function DashboardLayout() {
     .toUpperCase()
     .slice(0, 2) || 'NA';
 
-  const roleNav = isMasterAdmin
+  const roleNav = user?.account_kind === 'barangay'
+    ? navItems.filter(item => ['Incident Monitoring', '/', '/reports', 'Operations', '/locations'].includes(item.path || item.label))
+    : isMasterAdmin
     ? navItems
     : user?.role === 'admin'
-      ? navItems.filter(item => ['Operations', '/officers', 'Administration', '/verification/barangay', '/users', '/alert-broadcasts', '/analytics'].includes(item.path || item.label))
+      ? navItems.filter(item => ['Operations', '/locations', '/officers', 'Administration', '/verification/barangay', '/users', '/alert-broadcasts', '/analytics'].includes(item.path || item.label))
       : user?.role === 'logistics'
         ? navItems.filter(item => ['Operations', '/evacuation-centers', '/municipality-boundary', '/respond-units', '/officers'].includes(item.path || item.label))
         : user?.role === 'dispatcher'
-          ? navItems.filter(item => ['Incident Monitoring', '/', '/reports', '/requests', 'Operations', '/respond-units'].includes(item.path || item.label))
+          ? navItems.filter(item => ['Incident Monitoring', '/', '/reports', '/requests', 'Operations', '/locations', '/respond-units'].includes(item.path || item.label))
           : [];
 
   return (
     <div className={`app-layout ${isCollapsed ? 'sidebar-collapsed' : ''}`}>
-      <aside className={`sidebar ${isCollapsed ? 'collapsed' : ''}`}>
+      {mobileOpen && <button type="button" className="mobile-sidebar-backdrop" aria-label="Close menu" onClick={() => setMobileOpen(false)} />}
+      <aside className={`sidebar ${isCollapsed ? 'collapsed' : ''} ${mobileOpen ? 'open' : ''}`}>
         <div className="sidebar-header">
           <div
             className="sidebar-brand"
@@ -149,6 +156,7 @@ export default function DashboardLayout() {
                 to={item.path!}
                 end={item.path === '/'}
                 className={({ isActive }) => `nav-item ${isActive ? 'active' : ''} ${isCollapsed ? 'collapsed' : ''}`}
+                onClick={() => setMobileOpen(false)}
                 title={isCollapsed ? item.label : undefined}
               >
                 <span className="nav-icon">{item.icon}</span>
@@ -218,6 +226,11 @@ export default function DashboardLayout() {
       </aside>
 
       <main className="main-content">
+        <div className="mobile-dashboard-header">
+          <button type="button" aria-label={mobileOpen ? 'Close navigation menu' : 'Open navigation menu'} onClick={() => setMobileOpen(!mobileOpen)}>{mobileOpen ? <X size={21} /> : <Menu size={21} />}</button>
+          <strong>{user?.account_kind === 'barangay' ? user.barangay_name || 'Barangay Command' : 'NorzAgapay Command'}</strong>
+          <button type="button" aria-label="Sign out" onClick={handleLogout}><LogOut size={18} /></button>
+        </div>
         <Outlet />
       </main>
     </div>

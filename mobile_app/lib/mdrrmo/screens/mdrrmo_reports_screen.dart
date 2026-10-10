@@ -129,7 +129,7 @@ class _MdrrmoReportsScreenState extends State<MdrrmoReportsScreen>
       final reports = await ApiService.getMdrrmoReports(token)
           .timeout(const Duration(seconds: 20));
       if (mounted && loadSequence == _loadSequence) {
-        _syncResponderGpsTracking(reports);
+        _syncResponderGpsTracking();
         setState(() {
           _reports = reports;
           _error = null;
@@ -146,7 +146,7 @@ class _MdrrmoReportsScreenState extends State<MdrrmoReportsScreen>
     }
   }
 
-  void _syncResponderGpsTracking(List<MdrrmoReport> reports) {
+  void _syncResponderGpsTracking() {
     final auth = context.read<AuthProvider>();
     final user = auth.user;
     final token = auth.token;
@@ -156,19 +156,9 @@ class _MdrrmoReportsScreenState extends State<MdrrmoReportsScreen>
       return;
     }
 
-    final hasActiveDispatch = reports.any((report) => report.assignments.any((assignment) {
-      final assignedResponderId = assignment['responder_id']?.toString();
-      final status = assignment['status']?.toString();
-      return assignedResponderId == user.id &&
-          (status == 'assigned' || status == 'responding') &&
-          assignment['arrived_at'] == null;
-    }));
-
-    if (hasActiveDispatch) {
-      unawaited(gps.startTracking(user.id, token));
-    } else {
-      gps.stopTracking();
-    }
+    // Fresh position is also used for the office-pin availability list when
+    // the responder is idle. The backend keeps it only in short-lived cache.
+    unawaited(gps.startTracking(user.id, token));
   }
 
   List<MdrrmoReport> _forTab(int index) {

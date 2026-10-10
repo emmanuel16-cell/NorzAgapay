@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { config } from '../config';
 import { supabaseAdmin } from '../config/supabase';
+import { getVerifiedBarangayIds } from '../services/verifiedBarangayService';
 
 const router = Router();
 
@@ -33,16 +34,24 @@ router.get('/accounts', debugOnly, async (req: Request, res: Response) => {
       return;
     }
     if (audience === 'barangay') {
+      const verifiedBarangayIds = await getVerifiedBarangayIds();
+      if (!verifiedBarangayIds.length) {
+        res.json({ accounts: [] });
+        return;
+      }
       const { data, error } = await supabaseAdmin
         .from('barangay_users')
         .select('id, full_name, email, role, barangay_id, is_active, barangays!barangay_id(name)')
         .eq('is_active', true)
+        .in('role', ['admin', 'dispatcher'])
+        .in('barangay_id', verifiedBarangayIds)
         .order('full_name');
       if (error) throw error;
       res.json({
         accounts: data.map((user: any) => ({
           ...user,
           audience,
+          coordination_verified: true,
           // Flatten so the Flutter client sees `barangay_name` directly
           barangay_name: (user.barangays as any)?.name ?? null,
           barangays: undefined,
@@ -120,12 +129,17 @@ router.post('/quick-login', debugOnly, async (req: Request, res: Response) => {
       return;
     }
     if (audience === 'barangay') {
+      const verifiedBarangayIds = await getVerifiedBarangayIds();
       const { data: user, error } = await supabaseAdmin
         .from('barangay_users')
         .select('id, full_name, email, phone, role, barangay_id, is_active')
-        .eq('id', accountId).eq('is_active', true).single();
+        .eq('id', accountId).eq('is_active', true).in('role', ['admin', 'dispatcher']).single();
       if (error || !user) {
         res.status(404).json({ error: 'Active account not found' });
+        return;
+      }
+      if (!verifiedBarangayIds.includes(user.barangay_id)) {
+        res.status(403).json({ error: 'This barangay is not active for dashboard access.' });
         return;
       }
       const { data: barangay } = await supabaseAdmin
@@ -134,7 +148,7 @@ router.post('/quick-login', debugOnly, async (req: Request, res: Response) => {
         { userId: user.id, barangayId: user.barangay_id, role: user.role, debug: true },
         config.jwtSecret, { expiresIn: '1h' },
       );
-      res.json({ token, user: { ...user, barangay_name: barangay?.name || '', municipality: barangay?.municipality || 'Norzagaray' } });
+      res.json({ token, user: { ...user, barangay_name: barangay?.name || '', municipality: barangay?.municipality || 'Norzagaray', coordination_verified: true } });
       return;
     }
     const { data: user, error } = await supabaseAdmin

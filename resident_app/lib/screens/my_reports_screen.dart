@@ -11,7 +11,8 @@ import 'report_detail_screen.dart';
 import 'reporting_screen.dart';
 
 class MyReportsScreen extends StatefulWidget {
-  const MyReportsScreen({super.key});
+  final String? guestPhone;
+  const MyReportsScreen({super.key, this.guestPhone});
 
   @override
   State<MyReportsScreen> createState() => _MyReportsScreenState();
@@ -51,9 +52,10 @@ class _MyReportsScreenState extends State<MyReportsScreen> {
     });
 
     final profile = OfflineService.getProfile();
-    if (profile == null) {
+    final contactNumber = widget.guestPhone ?? profile?['contact_number']?.toString();
+    if (contactNumber == null || contactNumber.isEmpty) {
       setState(() {
-        _errorMessage = 'Profile not found. Please complete your profile.';
+        _errorMessage = 'Sign in or submit a report with your mobile number to view reports.';
         _isLoading = false;
       });
       return;
@@ -64,7 +66,7 @@ class _MyReportsScreenState extends State<MyReportsScreen> {
         Uri.parse(
           '${AppConstants.apiBaseUrl}/incident-reports/resident',
         ).replace(
-          queryParameters: {'contact_number': profile['contact_number']},
+          queryParameters: {'contact_number': contactNumber},
         ),
         headers: {'ngrok-skip-browser-warning': 'true'},
       );
@@ -99,7 +101,7 @@ class _MyReportsScreenState extends State<MyReportsScreen> {
     switch (_reportFilter) {
       case 'Barangay':
         return report.type != 'community' &&
-            (report.sendTo ?? 'barangay') == 'barangay';
+            report.barangayAssignments.isNotEmpty;
       case 'MDRRMO':
         return report.type != 'community' && report.sendTo == 'mdrrmo';
       case 'Community':

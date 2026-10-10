@@ -126,6 +126,7 @@ class GpsService extends ChangeNotifier {
       'userId': userId,
       'latitude': latitude,
       'longitude': longitude,
+      'accuracy_m': location?.accuracy,
     });
   }
 

@@ -27,7 +27,8 @@ async function publishEvent(io: SocketIOServer, event: OutboxEvent): Promise<voi
   if (bErr) throw bErr;
   const { data: mReport, error: mErr } = await supabaseAdmin.from('mdrrmo_reports').select('*').eq('id', event.report_id).maybeSingle();
   if (mErr) throw mErr;
-  let report = (bReport || mReport) as any;
+  const isCentralReport = Boolean(mReport);
+  let report = (mReport || bReport) as any;
   if (!report) {
     // The report was deleted after its event was queued; there is no audience
     // left to notify, so acknowledge this outbox row.
@@ -38,8 +39,21 @@ async function publishEvent(io: SocketIOServer, event: OutboxEvent): Promise<voi
   if (report.reporter_type === 'resident') addUserRoom(rooms, report.reporter_id);
 
   const routedToMdrrmo = isVisibleToMdrrmo(report);
-  const routedToBarangay = report.send_to !== 'mdrrmo' || isEscalatedForMdrrmo(report);
-  if (report.barangay_id && routedToBarangay) {
+  if (isCentralReport) {
+    // The central record's barangay_id describes incident geography. Only an
+    // active operational assignment grants a barangay room access to it.
+    const { data: activeBarangayAssignment, error: barangayAssignmentError } = await supabaseAdmin
+      .from('mdrrmo_report_barangay_assignments')
+      .select('barangay_id, responder_ids')
+      .eq('report_id', report.id)
+      .eq('assignment_status', 'active')
+      .maybeSingle();
+    if (barangayAssignmentError) throw barangayAssignmentError;
+    if (activeBarangayAssignment?.barangay_id) {
+      rooms.add(`barangay:${activeBarangayAssignment.barangay_id}`);
+      for (const responderId of activeBarangayAssignment.responder_ids || []) addUserRoom(rooms, responderId);
+    }
+  } else if (report.barangay_id && (report.send_to !== 'mdrrmo' || isEscalatedForMdrrmo(report))) {
     rooms.add(`barangay:${report.barangay_id}`);
   }
   if (routedToMdrrmo) rooms.add('dashboard_staff');

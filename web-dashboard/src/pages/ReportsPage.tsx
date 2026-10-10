@@ -4,6 +4,7 @@ import { format, formatDistanceToNowStrict } from 'date-fns';
 import { AlertTriangle, CheckCircle2, Download, Image as ImageIcon, MapPin, Paperclip, Phone, Send, UserRound, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { reportAPI, socket } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
 import { INCIDENT_SEVERITY_OPTIONS, INCIDENT_TYPE_OPTIONS } from '../lib/incidentClassification';
 import { getMdrrmoReportGroup, isVisibleToMdrrmo } from '../lib/mdrrmoReportVisibility';
 
@@ -12,6 +13,12 @@ type ReportStage = 'pending' | 'responding' | 'resolved';
 type CrewMember = { unit_member_id: string; name: string; member_role: string; selected_at?: string };
 type Assignment = { responder_id: string; status: string; assigned_at?: string; accepted_at?: string; arrived_at?: string; resolved_at?: string; responder?: { full_name?: string; phone?: string } | null; crew?: CrewMember[] };
 type FieldAssessment = { situation: string; people: string; actions: string; risks: string };
+type BarangayAssignment = {
+  id: string; barangay_id: string; barangay_name?: string | null; assignment_status: string;
+  response_status?: string; assignment_notes?: string | null; assigned_at?: string;
+  dispatched_at?: string | null; accepted_at?: string | null; arrived_at?: string | null;
+  resolved_at?: string | null; resolved_notes?: string | null; escalation_notes?: string | null;
+};
 
 interface IncidentReport {
   id: string; type: string; title?: string; specifics?: string; description?: string; status: string;
@@ -31,11 +38,23 @@ interface IncidentReport {
   dispatched_at?: string | null; accepted_at?: string | null; arrived_at?: string | null;
   arrival_recorded_at?: string | null; resolved_at?: string | null; mdrrmo_assignments?: Assignment[];
   reporter?: { id: string; full_name: string; role: string } | null;
+  is_central_assignment?: boolean; assignment_id?: string; assignment_status?: string; assignment_notes?: string;
+  assigned_team_leader_ids?: string[]; active_barangay_assignment?: BarangayAssignment | null; barangay_assignments?: BarangayAssignment[];
+  barangay_dispatched_at?: string | null; barangay_responded_at?: string | null; barangay_resolved_notes?: string | null;
 }
 type ResponderOption = { id: string; full_name: string; phone?: string | null; unit_type?: string | null; unit_id: string; unit_name: string };
 
 const isVideo = (url?: string | null, type?: string | null) => type === 'video' || Boolean(url && /\.(mp4|mov|webm|3gp|mkv|avi)(\?.*)?$/i.test(url));
 const getStage = (report: IncidentReport): ReportStage => {
+  const latestBarangayAssignment = report.barangay_assignments?.[0];
+  if (latestBarangayAssignment?.assignment_status === 'completed' || latestBarangayAssignment?.response_status === 'resolved') return 'resolved';
+  if (latestBarangayAssignment?.assignment_status === 'active' && latestBarangayAssignment.response_status === 'responding') return 'responding';
+  if (report.is_central_assignment) {
+    const barangayStatus = String(report.barangay_response_status || report.response_status || report.status || '').toLowerCase();
+    if (['resolved', 'closed'].includes(barangayStatus) || report.assignment_status === 'completed') return 'resolved';
+    if (barangayStatus === 'responding' || report.barangay_arrived_at) return 'responding';
+    return 'pending';
+  }
   const status = String(report.status || '').toLowerCase();
   const isEscalated = getGroup(report) === 'escalated';
   const mdrrmoResponse = String(report.mdrrmo_response_status || (
@@ -80,6 +99,8 @@ const parseAssessment = (notes?: string | null): FieldAssessment => {
 };
 
 export default function ReportsPage() {
+  const { user } = useAuth();
+  const isBarangay = user?.account_kind === 'barangay';
   const [searchParams, setSearchParams] = useSearchParams();
   const [currentTime, setCurrentTime] = useState(() => new Date().toLocaleTimeString());
   const [reports, setReports] = useState<IncidentReport[]>([]);
@@ -98,18 +119,22 @@ export default function ReportsPage() {
   const [saving, setSaving] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [preview, setPreview] = useState<{ url: string; video: boolean } | null>(null);
+  const [assignmentReport, setAssignmentReport] = useState<IncidentReport | null>(null);
+  const [destinations, setDestinations] = useState<Array<{ id: string; name: string }>>([]);
+  const [destinationId, setDestinationId] = useState('');
+  const [assignmentNotes, setAssignmentNotes] = useState('');
 
   const fetchReports = async () => {
     try {
       setLoading(true);
-      const response = await reportAPI.mdrrmoQueue();
+      const response = isBarangay ? await reportAPI.barangayReports() : await reportAPI.mdrrmoQueue();
       setReports(Array.isArray(response.data) ? response.data : []);
     } catch (error) {
       console.error('Failed to fetch reports', error);
       toast.error('Failed to load incident reports');
     } finally { setLoading(false); }
   };
-  useEffect(() => { void fetchReports(); }, []);
+  useEffect(() => { void fetchReports(); }, [isBarangay]);
   useEffect(() => {
     const timer = window.setInterval(() => setCurrentTime(new Date().toLocaleTimeString()), 1000);
     return () => window.clearInterval(timer);
@@ -117,15 +142,19 @@ export default function ReportsPage() {
   useEffect(() => {
     const handleUpdate = (updated: IncidentReport) => {
       if (!updated?.id) return;
+      void fetchReports();
       setReports((current) => {
-        if (!isVisibleToMdrrmo(updated)) return current.filter((item) => item.id !== updated.id);
+        if (!isBarangay && !isVisibleToMdrrmo(updated)) return current.filter((item) => item.id !== updated.id);
         return current.some((item) => item.id === updated.id)
           ? current.map((item) => item.id === updated.id ? { ...item, ...updated } : item)
           : [...current, updated];
       });
     };
-    socket.on('incident_report:updated', handleUpdate);
     const handleLifecycle = () => { void fetchReports(); };
+    socket.on('incident_report:updated', handleUpdate);
+    socket.on('barangay:report_updated', handleUpdate);
+    socket.on('barangay:report_assigned', handleUpdate);
+    socket.on('barangay:report_assignment_removed', handleLifecycle);
     socket.on('connect', handleLifecycle);
     socket.on('incident:lifecycle', handleLifecycle);
     socket.on('incident_report:new', handleLifecycle);
@@ -133,11 +162,14 @@ export default function ReportsPage() {
     return () => {
       socket.off('connect', handleLifecycle);
       socket.off('incident_report:updated', handleUpdate);
+      socket.off('barangay:report_updated', handleUpdate);
+      socket.off('barangay:report_assigned', handleUpdate);
+      socket.off('barangay:report_assignment_removed', handleLifecycle);
       socket.off('incident:lifecycle', handleLifecycle);
       socket.off('incident_report:new', handleLifecycle);
       socket.off('barangay:escalated', handleLifecycle);
     };
-  }, []);
+  }, [isBarangay]);
   useEffect(() => {
     const id = searchParams.get('id');
     if (!id || !reports.length) return;
@@ -145,7 +177,7 @@ export default function ReportsPage() {
     if (target) { setSelectedId(target.id); setGroup(getGroup(target)); setStage(getStage(target)); }
   }, [searchParams, reports]);
 
-  const inGroup = useMemo(() => reports.filter((item) => getGroup(item) === group), [reports, group]);
+  const inGroup = useMemo(() => isBarangay ? reports : reports.filter((item) => getGroup(item) === group), [reports, group, isBarangay]);
   const counts = useMemo(() => ({
     pending: inGroup.filter((item) => getStage(item) === 'pending').length,
     responding: inGroup.filter((item) => getStage(item) === 'responding').length,
@@ -170,17 +202,19 @@ export default function ReportsPage() {
     setIncidentType(report.incident_type || '');
     setSeverity(report.severity || '');
     setDispatchNotes(report.mdrrmo_dispatch_notes || '');
-    setResponderIds((report.mdrrmo_assignments || []).filter((item) => item.status !== 'removed').map((item) => item.responder_id));
+    setResponderIds(isBarangay
+      ? (report.assigned_team_leader_ids || [])
+      : (report.mdrrmo_assignments || []).filter((item) => item.status !== 'removed').map((item) => item.responder_id));
     setResponderError(''); setDispatchReport(report);
     try {
       setLoadingResponders(true);
-      const response = await reportAPI.mdrrmoResponders();
+      const response = isBarangay ? await reportAPI.barangayResponders() : await reportAPI.mdrrmoResponders();
       const available: ResponderOption[] = response.data.responders || [];
       setResponders(available);
       setResponderIds((current) => current.filter((id) => available.some((item) => item.id === id)));
     } catch (error) {
       console.error('Could not load responders', error);
-      setResponderError('Could not load active MDRRMO responders.'); setResponders([]);
+      setResponderError(isBarangay ? 'Could not load this barangay’s active responders.' : 'Could not load active MDRRMO responders.'); setResponders([]);
     } finally { setLoadingResponders(false); }
   };
   const submitDispatch = async () => {
@@ -189,8 +223,12 @@ export default function ReportsPage() {
     }
     try {
       setSaving(true);
-      await reportAPI.dispatchToMdrrmo(dispatchReport.id, { incident_type: incidentType, severity, responder_ids: responderIds, notes: dispatchNotes.trim() });
-      toast.success('Incident classified and assigned to MDRRMO responders.');
+      if (isBarangay) {
+        await reportAPI.dispatchToBarangay(dispatchReport.id, { incident_type: incidentType || 'other', severity: severity || 'moderate', team_leader_ids: responderIds, notes: dispatchNotes.trim() });
+      } else {
+        await reportAPI.dispatchToMdrrmo(dispatchReport.id, { incident_type: incidentType, severity, responder_ids: responderIds, notes: dispatchNotes.trim() });
+      }
+      toast.success(isBarangay ? 'Incident dispatched to barangay responders.' : 'Incident classified and assigned to MDRRMO responders.');
       setDispatchReport(null); setStage('pending'); await fetchReports();
     } catch (error: any) {
       console.error('Dispatch failed', error);
@@ -201,6 +239,60 @@ export default function ReportsPage() {
       ].filter(Boolean).join(' · ');
       const message = response?.error || 'Failed to dispatch report to MDRRMO responders';
       toast.error(diagnostics ? `${message} (${diagnostics})` : message);
+    } finally { setSaving(false); }
+  };
+  const openBarangayAssignment = async (report: IncidentReport) => {
+    setAssignmentReport(report);
+    setDestinationId(report.active_barangay_assignment?.barangay_id || '');
+    setAssignmentNotes(report.active_barangay_assignment?.assignment_notes || '');
+    try {
+      const response = await reportAPI.barangayDestinations();
+      setDestinations(response.data.barangays || []);
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error || 'Could not load active barangay destinations.');
+      setAssignmentReport(null);
+    }
+  };
+  const submitBarangayAssignment = async () => {
+    if (!assignmentReport || !destinationId || assignmentNotes.trim().length < 3) {
+      toast.error('Choose a barangay and provide response notes.'); return;
+    }
+    try {
+      setSaving(true);
+      if (assignmentReport.active_barangay_assignment) {
+        await reportAPI.reassignBarangay(assignmentReport.id, { barangay_id: destinationId, notes: assignmentNotes.trim() });
+      } else {
+        await reportAPI.assignBarangay(assignmentReport.id, { barangay_id: destinationId, notes: assignmentNotes.trim() });
+      }
+      toast.success('Report assigned to the selected barangay.');
+      setAssignmentReport(null);
+      await fetchReports();
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error || 'Could not assign this report to a barangay.');
+    } finally { setSaving(false); }
+  };
+  const recallBarangayAssignment = async (report: IncidentReport) => {
+    const notes = window.prompt('Reason for recalling this assignment:')?.trim();
+    if (!notes) return;
+    try {
+      setSaving(true);
+      await reportAPI.recallBarangay(report.id, notes);
+      toast.success('Barangay assignment recalled to the MDRRMO queue.');
+      await fetchReports();
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error || 'Could not recall the barangay assignment.');
+    } finally { setSaving(false); }
+  };
+  const escalateBarangayAssignment = async (report: IncidentReport) => {
+    const notes = window.prompt('Why does this report need MDRRMO response?')?.trim();
+    if (!notes) return;
+    try {
+      setSaving(true);
+      await reportAPI.escalateBarangayAssignment(report.id, notes);
+      toast.success('Report returned to the MDRRMO queue.');
+      await fetchReports();
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error || 'Could not return this report to MDRRMO.');
     } finally { setSaving(false); }
   };
   const markInvalid = async (report: IncidentReport) => {
@@ -252,13 +344,13 @@ export default function ReportsPage() {
   return (
     <main className="reports-workspace-v2">
       <header className="reports-page-header-v2">
-        <div><h1>Incidents Reports</h1><span>Dispatcher workspace</span></div>
+        <div><h1>Incidents Reports</h1><span>{isBarangay ? `Barangay response workspace · ${user?.barangay_name || 'Your barangay'}` : 'Dispatcher workspace'}</span></div>
         <div className="reports-live-indicator"><i /> Live <span>·</span> {currentTime}</div>
       </header>
-      <nav className="reports-group-tabs-v2" aria-label="Report type">
+      {!isBarangay && <nav className="reports-group-tabs-v2" aria-label="Report type">
         <button type="button" className={group === 'resident' ? 'active' : ''} onClick={() => selectGroup('resident')}>Resident Reports <span>{residentCount}</span></button>
         <button type="button" className={group === 'escalated' ? 'active' : ''} onClick={() => selectGroup('escalated')}>Escalate Reports <span>{escalatedCount}</span></button>
-      </nav>
+      </nav>}
       <nav className="reports-stage-tabs-v2" aria-label="Report status">
         {([['pending', 'Pending'], ['responding', 'Responding'], ['resolved', 'Resolved']] as Array<[ReportStage, string]>).map(([value, label]) => (
           <button key={value} type="button" className={'stage-' + value + (stage === value ? ' active' : '')} onClick={() => selectStage(value)}>{label} <span>{counts[value]}</span></button>
@@ -324,19 +416,41 @@ export default function ReportsPage() {
 
               <section className="reports-detail-section-v2"><h3>Reported location</h3><div className="reports-location-card-v2"><MapPin size={20} /><div><strong>{locationName}</strong><span>{locationNote}</span></div>{hasPin(selected) && <small>Map pin available</small>}</div></section>
 
+              {!isBarangay && Boolean(selected.barangay_assignments?.length) && <section className="reports-detail-section-v2">
+                <h3>Barangay assignment history</h3>
+                <div className="reports-assignment-history-v2">
+                  {selected.barangay_assignments!.map((item) => <article key={item.id}>
+                    <div><strong>{item.barangay_name || 'Barangay'}</strong><span>{item.assignment_status.replaceAll('_', ' ')} · {item.response_status || 'pending'}</span></div>
+                    <time>{item.assigned_at ? dateTime(item.assigned_at) : 'Assignment time unavailable'}</time>
+                    {item.assignment_notes && <p><b>Assignment notes:</b> {item.assignment_notes}</p>}
+                    {item.escalation_notes && <p><b>Returned to MDRRMO:</b> {item.escalation_notes}</p>}
+                    {item.resolved_notes && <p><b>Barangay resolution:</b> {item.resolved_notes}</p>}
+                  </article>)}
+                </div>
+              </section>}
+
               {stage !== 'pending' && <>
                 {getGroup(selected) === 'escalated' && selected.mdrrmo_coordination_notes && <section className="reports-detail-section-v2"><h3>Escalation notes</h3><div className="reports-text-card-v2">{selected.mdrrmo_coordination_notes}</div></section>}
                 <section className="reports-detail-section-v2"><h3>Responder and response timeline</h3><div className="reports-timeline-grid-v2">
-                  <div className="reports-assignee-stack-v2">{activeAssignments.length ? activeAssignments.map((item) => <div className="reports-assignee-card-v2" key={item.responder_id}>
+                  <div className="reports-assignee-stack-v2">{isBarangay ? <div className="reports-assignee-card-v2">
+                    <strong>{selected.barangay_responder_name || 'Barangay responders'}</strong><span>{selected.response_barangay_name || user?.barangay_name || 'Your barangay'}</span><em>{stage === 'resolved' ? 'Resolved' : selected.barangay_accepted_at ? 'Accepted' : selected.barangay_dispatched_at ? 'Dispatched' : 'Assigned'}</em>
+                  </div> : activeAssignments.length ? activeAssignments.map((item) => <div className="reports-assignee-card-v2" key={item.responder_id}>
                     <strong>{item.responder?.full_name || selected.mdrrmo_responder_name || 'Assigned responder'}</strong><span>MDRRMO Team Leader</span><em>{stage === 'resolved' ? 'Resolved' : item.status === 'responding' ? 'Accepted' : 'Assigned'}</em>
                     {item.crew?.length ? <div className="reports-assignment-crew-v2"><b>Accepted crew</b>{item.crew.map((member) => <span key={member.unit_member_id}>{member.name} · {member.member_role.replaceAll('_', ' ')}</span>)}</div> : <small className="reports-crew-pending-v2">Crew is selected when the Team Leader accepts.</small>}
                   </div>) : <div className="reports-assignee-card-v2"><strong>{selected.mdrrmo_responder_name || 'Assigned responder'}</strong><span>MDRRMO Team Leader</span><em>Assigned</em></div>}</div>
                   <div className="reports-timeline-card-v2">{([
                     ['Report received', selected.created_at],
+                    ...(isBarangay ? [['Assigned to barangay', selected.created_at] as [string, string | null | undefined]] : []),
+                    ...(isBarangay ? [['Dispatched to responders', selected.barangay_dispatched_at] as [string, string | null | undefined]] : []),
+                    ...(isBarangay ? [['Accepted by responder', selected.barangay_accepted_at] as [string, string | null | undefined]] : []),
+                    ...(isBarangay ? [['Arrived at incident area', selected.barangay_arrived_at] as [string, string | null | undefined]] : []),
+                    ...(isBarangay ? [['Incident resolved', selected.barangay_resolved_at] as [string, string | null | undefined]] : []),
+                    ...(!isBarangay ? [
                       ['Dispatched to MDRRMO', selected.mdrrmo_dispatched_at || (getGroup(selected) === 'resident' ? selected.dispatched_at : null)],
-                    ['Accepted by responder', selected.accepted_at || assignment?.accepted_at],
-                    ['Arrived at incident area', selected.arrived_at || assignment?.arrived_at],
-                    ['Incident resolved', selected.resolved_at || assignment?.resolved_at],
+                      ['Accepted by responder', selected.accepted_at || assignment?.accepted_at],
+                      ['Arrived at incident area', selected.arrived_at || assignment?.arrived_at],
+                      ['Incident resolved', selected.resolved_at || assignment?.resolved_at],
+                    ] as Array<[string, string | null | undefined]> : []),
                   ] as Array<[string, string | null | undefined]>).filter(([, value]) => Boolean(value)).map(([label, value]) => <div key={label}><CheckCircle2 size={14} /><span>{label}</span><time title={dateTime(value)}>{timeAgo(value)}</time></div>)}</div>
                 </div></section>
                 <section className="reports-detail-section-v2"><h3>Field assessment</h3><div className="reports-assessment-grid-v2">{([
@@ -349,17 +463,38 @@ export default function ReportsPage() {
                     return <button type="button" key={item.url + index} onClick={() => setPreview({ url: item.url, video })} aria-label={'Open field attachment ' + (index + 1)}>{video ? <span className="reports-video-thumb">▶ Video</span> : <img src={item.url} alt={'Responder field evidence ' + (index + 1)} />}</button>;
                   })}</div> : <div className="reports-no-media-v2">No responder field media submitted yet.</div>}
                 </section>
-                {stage === 'resolved' && <section className="reports-resolve-notes-v2"><strong>Resolve notes</strong><p>{selected.resolved_notes?.trim() || 'No resolve notes provided.'}</p></section>}
+                {stage === 'resolved' && <section className="reports-resolve-notes-v2"><strong>Resolve notes</strong><p>{selected.resolved_notes?.trim() || selected.barangay_assignments?.[0]?.resolved_notes?.trim() || 'No resolve notes provided.'}</p></section>}
               </>}
             </div>
             {stage === 'pending' && <footer className="reports-detail-actions-v2">
-                {getGroup(selected) === 'resident' && !selected.mdrrmo_dispatched_at && <button type="button" className="reports-invalid-button-v2" onClick={() => void markInvalid(selected)}>Mark invalid</button>}
-                <button type="button" className="reports-dispatch-button-v2" onClick={() => void openDispatch(selected)} disabled={saving}><Send size={17} /> {selected.mdrrmo_dispatched_at ? 'Update dispatch' : 'Dispatch to MDRRMO'}</button>
+                {!isBarangay && getGroup(selected) === 'resident' && !selected.mdrrmo_dispatched_at && <button type="button" className="reports-invalid-button-v2" onClick={() => void markInvalid(selected)}>Mark invalid</button>}
+                {isBarangay && selected.is_central_assignment ? <>
+                  <button type="button" className="reports-invalid-button-v2" onClick={() => void escalateBarangayAssignment(selected)} disabled={saving}>Return to MDRRMO</button>
+                  <button type="button" className="reports-dispatch-button-v2" onClick={() => void openDispatch(selected)} disabled={saving}><Send size={17} /> Dispatch to barangay responders</button>
+                </> : isBarangay ? <span className="reports-legacy-note-v2">This older report is read-only in the central assignment workflow.</span> : <>
+                  {selected.active_barangay_assignment ? <>
+                    <button type="button" className="reports-invalid-button-v2" onClick={() => void recallBarangayAssignment(selected)} disabled={saving}>Recall barangay assignment</button>
+                    <button type="button" className="reports-dispatch-button-v2" onClick={() => void openBarangayAssignment(selected)} disabled={saving}>Reassign barangay</button>
+                  </> : <button type="button" className="reports-invalid-button-v2" onClick={() => void openBarangayAssignment(selected)} disabled={saving}>Assign to barangay</button>}
+                  {!selected.active_barangay_assignment && <button type="button" className="reports-dispatch-button-v2" onClick={() => void openDispatch(selected)} disabled={saving}><Send size={17} /> {selected.mdrrmo_dispatched_at ? 'Update MDRRMO dispatch' : 'Dispatch to MDRRMO responders'}</button>}
+                </>}
+            </footer>}
+            {stage === 'responding' && !isBarangay && selected.active_barangay_assignment && <footer className="reports-detail-actions-v2">
+              <button type="button" className="reports-invalid-button-v2" onClick={() => void recallBarangayAssignment(selected)} disabled={saving}>Recall barangay assignment</button>
+              <button type="button" className="reports-dispatch-button-v2" onClick={() => void openBarangayAssignment(selected)} disabled={saving}>Reassign barangay</button>
+            </footer>}
+            {stage === 'responding' && isBarangay && selected.is_central_assignment && user?.role === 'dispatcher' && <footer className="reports-detail-actions-v2">
+              <button type="button" className="reports-invalid-button-v2" onClick={() => void escalateBarangayAssignment(selected)} disabled={saving}>Return to MDRRMO</button>
+              <button type="button" className="reports-dispatch-button-v2" onClick={() => {
+                const notes = window.prompt('Resolution notes for this incident:')?.trim();
+                if (!notes) return;
+                setSaving(true); void reportAPI.closeBarangayAssignment(selected.id, notes).then(() => fetchReports()).then(() => toast.success('Incident resolved.')).catch((error: any) => toast.error(error?.response?.data?.error || 'Could not resolve the incident.')).finally(() => setSaving(false));
+              }} disabled={saving}>Resolve incident</button>
             </footer>}
             {stage === 'resolved' && <footer className="reports-detail-actions-v2">
-              <button type="button" className="reports-dispatch-button-v2" onClick={() => void downloadResolutionPdf(selected)} disabled={downloadingPdf}>
+              {selected.resolved_at && <button type="button" className="reports-dispatch-button-v2" onClick={() => void downloadResolutionPdf(selected)} disabled={downloadingPdf}>
                 <Download size={17} /> {downloadingPdf ? 'Preparing document…' : 'Download resolution document'}
-              </button>
+              </button>}
             </footer>}
           </>}
         </section>
@@ -376,6 +511,18 @@ export default function ReportsPage() {
           <div className="reports-responder-list-heading-v2"><strong>Active MDRRMO responders</strong>{responders.length > 0 && <button type="button" onClick={() => setResponderIds(responderIds.length === responders.length ? [] : responders.map((item) => item.id))}>{responderIds.length === responders.length ? 'Deselect all' : 'Select all'}</button>}</div>
           <div className="reports-responder-list-v2">{loadingResponders ? <p>Loading active responders…</p> : responderError ? <p className="error">{responderError}</p> : responders.length === 0 ? <p>No units are active for dispatch today.</p> : responders.map((item) => <label key={item.id}><input type="checkbox" checked={responderIds.includes(item.id)} onChange={(event) => setResponderIds((current) => event.target.checked ? [...current, item.id] : current.filter((id) => id !== item.id))} /><span><strong>{item.full_name}</strong><small>{[item.unit_name, item.unit_type, item.phone].filter(Boolean).join(' · ')}</small></span></label>)}</div>
           <footer><button type="button" className="reports-invalid-button-v2" onClick={() => setDispatchReport(null)}>Cancel</button><button type="button" className="reports-dispatch-button-v2" disabled={saving || loadingResponders || !incidentType || !severity || responderIds.length === 0} onClick={() => void submitDispatch()}>{saving ? 'Saving dispatch…' : 'Send responders'}</button></footer>
+        </section>
+      </div>}
+
+      {assignmentReport && <div className="reports-modal-backdrop-v2" onClick={() => !saving && setAssignmentReport(null)}>
+        <section className="reports-dispatch-modal-v2" role="dialog" aria-modal="true" aria-labelledby="barangay-assignment-title" onClick={(event) => event.stopPropagation()}>
+          <header><div><span className="reports-eyebrow-v2">MDRRMO triage</span><h2 id="barangay-assignment-title">{assignmentReport.active_barangay_assignment ? 'Reassign report' : 'Assign to barangay'}</h2></div><button type="button" aria-label="Close" onClick={() => setAssignmentReport(null)}><X size={19} /></button></header>
+          <div className="reports-modal-report-v2"><strong>{assignmentReport.title || 'Incident report'}</strong><br />Incident location: {assignmentReport.barangay_name || 'Norzagaray'}</div>
+          <label htmlFor="assignment-destination-v2">Response barangay</label>
+          <select id="assignment-destination-v2" value={destinationId} onChange={(event) => setDestinationId(event.target.value)}><option value="">Choose an active barangay</option>{destinations.map((barangay) => <option key={barangay.id} value={barangay.id}>{barangay.name}</option>)}</select>
+          <label htmlFor="assignment-notes-v2">Instructions and context <span>(required)</span></label>
+          <textarea id="assignment-notes-v2" rows={4} maxLength={1000} value={assignmentNotes} onChange={(event) => setAssignmentNotes(event.target.value)} placeholder="Explain why this barangay is best positioned to respond and include any MDRRMO guidance…" />
+          <footer><button type="button" className="reports-invalid-button-v2" onClick={() => setAssignmentReport(null)} disabled={saving}>Cancel</button><button type="button" className="reports-dispatch-button-v2" onClick={() => void submitBarangayAssignment()} disabled={saving || !destinationId || assignmentNotes.trim().length < 3}>{saving ? 'Saving assignment…' : 'Assign report'}</button></footer>
         </section>
       </div>}
 

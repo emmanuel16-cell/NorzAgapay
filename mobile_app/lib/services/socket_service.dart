@@ -71,6 +71,7 @@ class SocketService extends ChangeNotifier {
     if (_newReportCallbacks.isNotEmpty) return;
     final handler = _newReportHandler;
     if (handler != null) {
+      _socket?.off('barangay:report_assigned', handler);
       _socket?.off('barangay:report_received', handler);
       _socket?.off('incident_report:new', handler);
     }
@@ -100,6 +101,7 @@ class SocketService extends ChangeNotifier {
     }
 
     _newReportHandler = handle;
+    _socket?.on('barangay:report_assigned', handle);
     _socket?.on('barangay:report_received', handle);
     _socket?.on('incident_report:new', handle);
   }
@@ -172,11 +174,29 @@ class SocketService extends ChangeNotifier {
     if (barangayId != null) _socket?.emit('join:barangay', barangayId);
   }
 
+  void emitBarangayResponderLocation({
+    required String userId,
+    required double latitude,
+    required double longitude,
+    double? accuracyM,
+  }) {
+    if (!_isConnected || _socket == null) return;
+    _socket!.emit('barangay:gps:update', {
+      'userId': userId,
+      'latitude': latitude,
+      'longitude': longitude,
+      'accuracy_m': accuracyM,
+    });
+  }
+
   void onReportUpdated(Function(dynamic data) callback) {
     _socket?.on('incident:lifecycle', (data) {
       callback(data);
     });
     _socket?.on('barangay:report_updated', (data) {
+      callback(data);
+    });
+    _socket?.on('barangay:report_assignment_removed', (data) {
       callback(data);
     });
     _socket?.on('incident_report:updated', (data) {

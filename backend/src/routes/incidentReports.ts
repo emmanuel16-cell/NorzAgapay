@@ -7,7 +7,6 @@ import { supabaseAdmin } from '../config/supabase';
 import { AuthPayload, AuthRequest, authenticate, authorize } from '../middleware/auth';
 import { io } from '../server';
 import { isEscalatedForMdrrmo, isVisibleToMdrrmo } from '../services/mdrrmoReportVisibility';
-import { isBarangayVerified } from '../services/verifiedBarangayService';
 import { estimateReportTimings } from '../services/reportTiming';
 import {
   getMunicipalityBoundaryConfiguration,
@@ -242,6 +241,31 @@ async function fetchReportById(id: string) {
   return { report: null, table: null };
 }
 
+async function emitReportUpdateToBarangayScope(report: any, formatted: any, table: 'barangay_reports' | 'mdrrmo_reports') {
+  let barangayIds: string[] = [];
+  if (table === 'mdrrmo_reports') {
+    const { data: assignment, error } = await supabaseAdmin
+      .from('mdrrmo_report_barangay_assignments')
+      .select('barangay_id')
+      .eq('report_id', report.id)
+      .eq('assignment_status', 'active')
+      .maybeSingle();
+    if (error) {
+      console.error('Could not resolve report assignment for scoped socket update:', error);
+      return;
+    }
+    if (assignment?.barangay_id) barangayIds = [assignment.barangay_id];
+  } else if (report.barangay_id) {
+    // Legacy locally owned reports remain scoped to their existing barangay.
+    barangayIds = [report.barangay_id];
+  }
+
+  for (const barangayId of barangayIds) {
+    io.to(`barangay:${barangayId}`).emit('incident_report:updated', formatted);
+    io.to(`barangay:${barangayId}`).emit('barangay:report_updated', formatted);
+  }
+}
+
 function combineResidentReportCopies(barangayReport: any, mdrrmoReport: any) {
   return {
     ...barangayReport,
@@ -281,6 +305,70 @@ function mergeResidentReportCopies(barangayReports: any[], mdrrmoReports: any[])
   }
 
   return [...reportsBySource.values()];
+}
+
+async function attachResidentBarangayAssignmentState(reports: any[]) {
+  const reportIds = [...new Set(reports.map((report) => report.id).filter(Boolean))];
+  if (!reportIds.length) return reports;
+  const { data: assignments, error } = await supabaseAdmin
+    .from('mdrrmo_report_barangay_assignments')
+    .select('id, report_id, barangay_id, assignment_status, response_status, assigned_at, dispatched_at, accepted_at, arrived_at, resolved_at, resolved_notes, escalated_at, responder_name')
+    .in('report_id', reportIds)
+    .order('assigned_at', { ascending: false });
+  if (error) throw error;
+  if (!assignments?.length) return reports;
+
+  const barangayIds = [...new Set(assignments.map((item: any) => item.barangay_id).filter(Boolean))];
+  const { data: barangays, error: barangayError } = barangayIds.length
+    ? await supabaseAdmin.from('barangays').select('id, name').in('id', barangayIds)
+    : { data: [], error: null } as any;
+  if (barangayError) throw barangayError;
+  const barangayNames = new Map((barangays || []).map((barangay: any) => [barangay.id, barangay.name]));
+  const byReport = new Map<string, any[]>();
+  for (const assignment of assignments) {
+    const history = byReport.get(assignment.report_id) || [];
+    history.push({ ...assignment, barangay_name: barangayNames.get(assignment.barangay_id) || null });
+    byReport.set(assignment.report_id, history);
+  }
+
+  return reports.map((report) => {
+    const history = byReport.get(report.id);
+    if (!history?.length) return report;
+    const current = history.find((item) => item.assignment_status === 'active') || history[0];
+    const publicHistory = history.map((item) => ({
+      id: item.id,
+      barangay_id: item.barangay_id,
+      barangay_name: item.barangay_name,
+      assignment_status: item.assignment_status,
+      response_status: item.response_status,
+      assigned_at: item.assigned_at,
+      dispatched_at: item.dispatched_at,
+      accepted_at: item.accepted_at,
+      arrived_at: item.arrived_at,
+      resolved_at: item.resolved_at,
+      resolved_notes: item.resolved_notes,
+      escalated_at: item.escalated_at,
+    }));
+    return {
+      ...report,
+      is_central_assignment: true,
+      assignment_id: current.id,
+      assignment_status: current.assignment_status,
+      response_barangay_id: current.barangay_id,
+      response_barangay_name: current.barangay_name,
+      barangay_assigned_at: current.assigned_at,
+      barangay_response_status: current.response_status || 'pending',
+      barangay_responder_name: current.responder_name || report.barangay_responder_name || null,
+      barangay_dispatched_at: current.dispatched_at,
+      barangay_accepted_at: current.accepted_at,
+      barangay_arrived_at: current.arrived_at,
+      barangay_resolved_at: current.resolved_at,
+      barangay_resolved_notes: current.resolved_notes,
+      barangay_escalated_at: current.escalated_at,
+      mdrrmo_response_status: report.mdrrmo_response_status || report.response_status || 'pending',
+      barangay_assignments: publicHistory,
+    };
+  });
 }
 
 async function fetchResidentReportById(id: string) {
@@ -377,29 +465,32 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
       latitude, 
       longitude, 
       proof_type,
-      reporter_type,
       reporter_name: submittedReporterName,
       reporter_email: submittedReporterEmail,
       full_name,
       first_name,
       last_name,
-      contact_number,
-      barangay_id,
-      send_to
+      contact_number
     } = req.body;
 
-    const targetSendTo = (send_to === 'barangay' || send_to === 'mdrrmo')
-      ? send_to
-      : (type === 'emergency' && !barangay_id ? 'mdrrmo' : 'barangay');
+    // Resident reports always enter the MDRRMO queue first. Keep accepting the
+    // legacy `send_to` field from installed clients, but never let it choose
+    // the operational owner.
+    const targetSendTo = 'mdrrmo';
 
     // Basic validation
-    if (!type || !title || !latitude || !longitude) {
+    const parsedLatitude = Number(latitude);
+    const parsedLongitude = Number(longitude);
+    if (!type || !title || latitude === undefined || latitude === null || latitude === '' ||
+        longitude === undefined || longitude === null || longitude === '' ||
+        !Number.isFinite(parsedLatitude) || parsedLatitude < -90 || parsedLatitude > 90 ||
+        !Number.isFinite(parsedLongitude) || parsedLongitude < -180 || parsedLongitude > 180) {
       res.status(400).json({ error: 'Missing required fields: type, title, latitude, longitude' });
       return;
     }
 
     let residentProfile: { full_name?: string | null; email?: string | null; phone?: string | null } | null = null;
-    if (reporter_type === 'resident' && req.user?.userId) {
+    if (req.user?.role === 'resident' && req.user.userId) {
       const { data, error } = await supabaseAdmin
         .from('resident_user')
         .select('full_name, email, phone')
@@ -416,7 +507,13 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
     const profilePhone = typeof residentProfile?.phone === 'string' && !residentProfile.phone.includes('@')
       ? residentProfile.phone.trim()
       : '';
-    const reporterPhone = profilePhone || (submittedContact.includes('@') ? null : submittedContact || null);
+    const submittedPhoneDigits = submittedContact.replace(/\D/g, '');
+    const reporterPhone = profilePhone || (submittedContact.includes('@') ? null : submittedPhoneDigits || null);
+    const isSignedInResident = req.user?.role === 'resident' && Boolean(req.user.userId);
+    if (!isSignedInResident && !/^09\d{9}$/.test(submittedPhoneDigits)) {
+      res.status(400).json({ error: 'A valid 11-digit mobile number starting with 09 is required to submit a report without an account.' });
+      return;
+    }
     const rawClientRequestId = typeof req.body.client_request_id === 'string'
       ? req.body.client_request_id.trim()
       : '';
@@ -506,9 +603,12 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
     }
 
     // Resolve barangay: use provided or nearest by lat/lng
-    let resolvedBarangayId = barangay_id || null;
-    const lat = parseFloat(latitude);
-    const lng = parseFloat(longitude);
+    // Location barangay is derived from the incident coordinates, not from the
+    // resident's old routing selection. Response destination is stored later
+    // as a separate MDRRMO assignment.
+    let resolvedBarangayId: string | null = null;
+    const lat = parsedLatitude;
+    const lng = parsedLongitude;
 
     const boundaryConfig = await getMunicipalityBoundaryConfiguration();
     if (boundaryConfig.enabled && !isPointInBoundary(lat, lng, boundaryConfig.geometry)) {
@@ -518,7 +618,7 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
       return;
     }
 
-    if (!resolvedBarangayId && lat && lng) {
+    if (!resolvedBarangayId) {
       const { data: barangays } = await supabaseAdmin
         .from('barangays')
         .select('id, latitude, longitude')
@@ -535,13 +635,6 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
           const dist = 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
           if (dist < minDist) { minDist = dist; resolvedBarangayId = b.id; }
         }
-      }
-    }
-
-    if (targetSendTo === 'barangay') {
-      if (!resolvedBarangayId || !await isBarangayVerified(resolvedBarangayId)) {
-        res.status(403).json({ error: 'This barangay is not yet approved to receive reports through NorzAgapay. Please route the report to MDRRMO or choose an approved barangay.' });
-        return;
       }
     }
 
@@ -583,7 +676,7 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
       ? `${specifics} [SEND_TO:${targetSendTo}]` 
       : `[SEND_TO:${targetSendTo}]`;
 
-    const targetTable = targetSendTo === 'mdrrmo' ? 'mdrrmo_reports' : 'barangay_reports';
+    const targetTable = 'mdrrmo_reports';
     const reportInsertPayload: any = {
       type,
       title,
@@ -595,12 +688,11 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
       proof_type: primaryProofType,
       proof_urls: proofUrls,
       proof_types: proofTypes,
-      reporter_type: reporter_type || 'resident',
+      reporter_type: isSignedInResident ? 'resident' : 'guest',
       reporter_id: req.user?.userId || null,
       reporter_name: reporterName,
       reporter_phone: reporterPhone,
       barangay_id: resolvedBarangayId,
-      ...(targetSendTo === 'barangay' ? { status: 'pending' } : {}),
       response_status: 'pending',
       client_submitted_at: clientSubmittedAt,
       incident_occurred_at: incidentOccurredAt,
@@ -645,17 +737,7 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
         formattedReport,
       );
     }
-    // Emit one local-queue event per barangay. Barangay clients can be members
-    // of both room aliases, so sending both aliases to both rooms duplicates
-    // this alert several times for a single report.
-    const localBarangayIds = new Set(
-      [resolvedBarangayId, barangay_id].filter(
-        (id): id is string => typeof id === 'string' && id.length > 0,
-      ),
-    );
-    for (const localBarangayId of localBarangayIds) {
-      io.to(`barangay:${localBarangayId}`).emit('barangay:report_received', formattedReport);
-    }
+    // Barangays receive the report only after an MDRRMO assignment is saved.
     if (formattedReport.reporter_type === 'resident' && formattedReport.reporter_id) {
       io.to(`user:${formattedReport.reporter_id}`).emit('incident_report:updated', formattedReport);
     }
@@ -707,7 +789,8 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response) => {
         const reports = mergeResidentReportCopies(bRes.data || [], mRes.data || []);
         reports.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-        res.json(reports.map((r: any) => formatIncidentReport(r, bMap)));
+        const formatted = reports.map((r: any) => formatIncidentReport(r, bMap));
+        res.json(await attachResidentBarangayAssignmentState(formatted));
     } catch (err) {
         console.error('Fetch user reports error:', err);
         res.status(500).json({ error: 'Internal server error' });
@@ -738,8 +821,10 @@ router.get('/resident', optionalAuthenticate, async (req: AuthRequest, res: Resp
       bQuery = bQuery.eq('reporter_id', req.user.userId);
       mQuery = mQuery.eq('reporter_id', req.user.userId);
     } else {
-      bQuery = bQuery.eq('reporter_phone', String(contact_number));
-      mQuery = mQuery.eq('reporter_phone', String(contact_number));
+      bQuery = supabaseAdmin.from('barangay_reports').select('*')
+        .in('reporter_type', ['resident', 'guest']).eq('reporter_phone', String(contact_number));
+      mQuery = supabaseAdmin.from('mdrrmo_reports').select('*')
+        .in('reporter_type', ['resident', 'guest']).eq('reporter_phone', String(contact_number));
     }
 
     const [bRes, mRes, bMap] = await Promise.all([bQuery, mQuery, getBarangayNameMap()]);
@@ -770,7 +855,7 @@ router.get('/resident', optionalAuthenticate, async (req: AuthRequest, res: Resp
       for (const responder of responders || []) responderNames.set(responder.id, responder.full_name);
     }
 
-    res.json(reportRows.map((report: any) => {
+    const formattedReports = reportRows.map((report: any) => {
       const assigned = new Set<string>();
       const match = report.barangay_response_notes?.match(/\[ASSIGNED:([^\]]+)\]/);
       if (match?.[1]) {
@@ -784,7 +869,8 @@ router.get('/resident', optionalAuthenticate, async (req: AuthRequest, res: Resp
         barangay_responder_name: names.join(', ') || null,
         expected_timings: estimateReportTimings(report, relevantHistory),
       }, bMap);
-    }));
+    });
+    res.json(await attachResidentBarangayAssignmentState(formattedReports));
   } catch (err) {
     console.error('Fetch resident reports error:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -794,7 +880,7 @@ router.get('/resident', optionalAuthenticate, async (req: AuthRequest, res: Resp
 router.get('/resident/:id', optionalAuthenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const report = await fetchResidentReportById(req.params.id);
-    if (!report || report.reporter_type !== 'resident') {
+    if (!report || !['resident', 'guest'].includes(String(report.reporter_type))) {
       res.status(404).json({ error: 'Incident report not found.' });
       return;
     }
@@ -816,10 +902,12 @@ router.get('/resident/:id', optionalAuthenticate, async (req: AuthRequest, res: 
     const timingHistory = await getResidentReportTimingHistory(
       report.barangay_id ? [report.barangay_id] : [],
     );
-    res.json(formatIncidentReport({
+    const formatted = formatIncidentReport({
       ...report,
       expected_timings: estimateReportTimings(report, timingHistory),
-    }, bMap));
+    }, bMap);
+    const [reportWithAssignment] = await attachResidentBarangayAssignmentState([formatted]);
+    res.json(reportWithAssignment);
   } catch (error) {
     console.error('Fetch resident incident report error:', error);
     res.status(500).json({ error: 'Could not refresh incident status.' });
@@ -840,7 +928,7 @@ router.post('/:id/evidence', optionalAuthenticate, upload.any(), async (req: Aut
     }
 
     const { report } = await fetchReportById(req.params.id);
-    if (!report || report.reporter_type !== 'resident') {
+    if (!report || !['resident', 'guest'].includes(String(report.reporter_type))) {
       res.status(404).json({ error: 'Incident report not found.' });
       return;
     }
@@ -882,7 +970,7 @@ router.post('/:id/evidence', optionalAuthenticate, upload.any(), async (req: Aut
 router.patch('/:id/evidence-failed', optionalAuthenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { report, table } = await fetchReportById(req.params.id);
-    if (!report || report.reporter_type !== 'resident' || !table) {
+    if (!report || !['resident', 'guest'].includes(String(report.reporter_type)) || !table) {
       res.status(404).json({ error: 'Incident report not found.' });
       return;
     }
@@ -911,7 +999,7 @@ router.patch('/:id/evidence-failed', optionalAuthenticate, async (req: AuthReque
  * GET /api/incident-reports
  * List all incident reports (Admin and master admin only)
  */
-router.get('/', optionalAuthenticate, async (req: AuthRequest, res: Response) => {
+router.get('/', authenticate, authorize('dispatcher', 'admin'), async (req: AuthRequest, res: Response) => {
     try {
         const { type } = req.query;
         let bQuery = supabaseAdmin.from('barangay_reports').select('*');
@@ -1051,10 +1139,7 @@ router.patch('/:id', optionalAuthenticate, upload.any(), async (req: AuthRequest
     }, bMap);
 
     io.to('dashboard_staff').emit('incident_report:updated', formatted);
-    if (formatted.barangay_id) {
-      io.to(`barangay:${formatted.barangay_id}`).emit('incident_report:updated', formatted);
-      io.to(`barangay:${formatted.barangay_id}`).emit('barangay:report_updated', formatted);
-    }
+    await emitReportUpdateToBarangayScope(updatedReport, formatted, targetTable);
 
     res.json(formatted);
   } catch (err) {
@@ -1134,10 +1219,7 @@ router.post('/:id/field-media', optionalAuthenticate, upload.single('media'), as
     const formatted = formatIncidentReport(updatedReport, bMap);
 
     io.to('dashboard_staff').emit('incident_report:updated', formatted);
-    if (formatted.barangay_id) {
-      io.to(`barangay:${formatted.barangay_id}`).emit('incident_report:updated', formatted);
-      io.to(`barangay:${formatted.barangay_id}`).emit('barangay:report_updated', formatted);
-    }
+    await emitReportUpdateToBarangayScope(updatedReport, formatted, targetTable);
 
     res.json(formatted);
   } catch (err) {

@@ -11,8 +11,9 @@ import { DispatcherVerificationService } from './services/dispatcherVerification
 import { startIncidentEventRelay } from './services/incidentEventRelay';
 import { startDispatcherPushRelay } from './services/dispatcherPushNotifications';
 import { startMdrrmoResponderPushRelay } from './services/mdrrmoResponderPushNotifications';
+import { startMdrrmoBarangayAssignmentPushRelay } from './services/mdrrmoBarangayAssignmentPushNotifications';
 import { startResidentPushRelay } from './services/residentPushNotifications';
-import { deleteResponderGpsLocation, RESPONDER_GPS_TTL_SECONDS, setResponderGpsLocation } from './config/redis';
+import { deleteResponderGpsLocation, RESPONDER_GPS_TTL_SECONDS, setBarangayResponderGpsLocation, setResponderGpsLocation } from './config/redis';
 import { getActiveResponderTargets, getCurrentResponderLiveLocations, ResponderIncidentTarget } from './services/responderLiveLocation';
 
 // Import routes
@@ -102,12 +103,11 @@ async function canUseBarangaySocket(socket: any): Promise<boolean> {
   if (error || !account || account.is_active !== true || account.barangay_id !== decoded.barangayId) return false;
   if (normalizeSocketRole(account.role) !== normalizeSocketRole(decoded.role)) return false;
   try {
-    const isVerified = await DispatcherVerificationService.isBarangayActive(decoded.barangayId);
-    if (isVerified) return true;
+    return await DispatcherVerificationService.isBarangayActive(decoded.barangayId);
   } catch (err) {
     console.warn('DispatcherVerificationService.isBarangayActive check warning:', err);
+    return false;
   }
-  return account.is_active === true;
 }
 
 // ============================================
@@ -303,7 +303,7 @@ io.on('connection', (socket) => {
         ? await getActiveResponderTargets(decoded.userId)
         : new Map<string, ResponderIncidentTarget[]>();
       const assignments = targetsByResponder.get(decoded.userId) || [];
-      if (!responder || assignments.length === 0) {
+      if (!responder) {
         await deleteResponderGpsLocation(decoded.userId);
         io.to('role:dispatcher').to('role:master_admin').emit('mdrrmo:responder_location', {
           responderId: decoded.userId,
@@ -311,9 +311,21 @@ io.on('connection', (socket) => {
         });
         return;
       }
-
-      const location = { latitude, longitude, timestamp: new Date().toISOString() };
+      const accuracyM = Number(data?.accuracy_m);
+      const location = {
+        latitude,
+        longitude,
+        accuracyM: Number.isFinite(accuracyM) && accuracyM >= 0 ? accuracyM : null,
+        timestamp: new Date().toISOString(),
+      };
       await setResponderGpsLocation(decoded.userId, location);
+      if (assignments.length === 0) {
+        io.to('role:dispatcher').to('role:admin').to('role:master_admin').emit('mdrrmo:availability_changed', {
+          responderId: decoded.userId,
+          expiresInSeconds: RESPONDER_GPS_TTL_SECONDS,
+        });
+        return;
+      }
       io.to('role:dispatcher').to('role:master_admin').emit('mdrrmo:responder_location', {
         responderId: decoded.userId,
         responderName: responder.full_name || 'Responder',
@@ -322,6 +334,35 @@ io.on('connection', (socket) => {
         expiresInSeconds: RESPONDER_GPS_TTL_SECONDS,
       });
     })().catch((error) => console.error('Responder live location update failed:', error));
+  });
+
+  // Barangay responder presence uses the same short-lived GPS cache but never
+  // broadcasts coordinates; authorized dashboards query a pin-scoped list.
+  socket.on('barangay:gps:update', (data: any) => {
+    void (async () => {
+      const decoded = getSocketTokenPayload(socket);
+      const latitude = data?.latitude;
+      const longitude = data?.longitude;
+      if (!decoded?.barangayId || normalizeSocketRole(decoded.role || '') !== 'responder' ||
+          data?.userId !== decoded.userId || typeof latitude !== 'number' || !Number.isFinite(latitude) ||
+          latitude < -90 || latitude > 90 || typeof longitude !== 'number' || !Number.isFinite(longitude) ||
+          longitude < -180 || longitude > 180) return;
+      if (!await canUseBarangaySocket(socket)) return;
+      const { data: account, error } = await supabaseAdmin.from('barangay_users')
+        .select('id, barangay_id, role, is_active').eq('id', decoded.userId).maybeSingle();
+      if (error) throw error;
+      if (!account || account.barangay_id !== decoded.barangayId || account.role !== 'responder' || account.is_active !== true) return;
+      const accuracyM = Number(data?.accuracy_m);
+      await setBarangayResponderGpsLocation(decoded.userId, {
+        latitude, longitude,
+        accuracyM: Number.isFinite(accuracyM) && accuracyM >= 0 ? accuracyM : null,
+        timestamp: new Date().toISOString(),
+      });
+      io.to(`barangay:${decoded.barangayId}`).emit('barangay:availability_changed', {
+        responderId: decoded.userId,
+        expiresInSeconds: RESPONDER_GPS_TTL_SECONDS,
+      });
+    })().catch((error) => console.error('Barangay responder location update failed:', error));
   });
 
   // A dashboard dispatcher/master admin can request only currently dispatched,
@@ -501,6 +542,7 @@ if (require.main === module) {
     startIncidentEventRelay(io);
     startDispatcherPushRelay();
     startMdrrmoResponderPushRelay();
+    startMdrrmoBarangayAssignmentPushRelay();
     startResidentPushRelay();
     console.log(`
     ╔══════════════════════════════════════════════╗

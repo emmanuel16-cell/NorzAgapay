@@ -8,7 +8,7 @@ import { z } from 'zod';
 import { randomInt } from 'crypto';
 import { config } from '../config';
 import { supabaseAdmin } from '../config/supabase';
-import { setOtp, getOtp, deleteOtp } from '../config/redis';
+import { setOtp, getOtp, deleteOtp, getBarangayResponderGpsLocation, RESPONDER_GPS_TTL_SECONDS } from '../config/redis';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { io } from '../server';
 import { DispatcherVerificationService, normalizePositionDesignation } from '../services/dispatcherVerificationService';
@@ -321,6 +321,97 @@ router.get('/list', async (req: Request, res: Response) => {
   }
 });
 
+router.get('/location', authenticateBarangay, async (req: any, res: Response): Promise<void> => {
+  try {
+    const [{ data: barangay, error: barangayError }, { data: office, error: officeError }] = await Promise.all([
+      supabaseAdmin.from('barangays').select('id, name, location_latitude, location_longitude, location_address')
+        .eq('id', req.barangayUser.barangayId).maybeSingle(),
+      supabaseAdmin.from('mdrrmo_command_locations').select('*').eq('location_key', 'office').maybeSingle(),
+    ]);
+    if (barangayError) throw barangayError;
+    if (officeError) throw officeError;
+    res.json({ barangay: barangay || null, office: office || null });
+  } catch (error) {
+    console.error('Load scoped command locations failed:', error);
+    res.status(500).json({ error: 'Could not load command locations.' });
+  }
+});
+
+router.put('/location', authenticateBarangay, requireRole(['admin']), async (req: any, res: Response): Promise<void> => {
+  const parsed = z.object({
+    latitude: z.number().min(-90).max(90),
+    longitude: z.number().min(-180).max(180),
+    address: z.string().trim().max(240).nullable().optional(),
+  }).strict().safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Enter valid barangay location coordinates.', details: parsed.error.flatten() });
+    return;
+  }
+  try {
+    const { data, error } = await supabaseAdmin.from('barangays').update({
+      location_latitude: parsed.data.latitude,
+      location_longitude: parsed.data.longitude,
+      location_address: parsed.data.address || null,
+    }).eq('id', req.barangayUser.barangayId)
+      .select('id, name, location_latitude, location_longitude, location_address').single();
+    if (error) throw error;
+    io.to('dashboard_staff').emit('command:locations_updated', { type: 'barangay', barangay: data });
+    io.to(`barangay:${req.barangayUser.barangayId}`).emit('command:locations_updated', { type: 'barangay', barangay: data });
+    res.json({ barangay: data });
+  } catch (error) {
+    console.error('Save barangay location failed:', error);
+    res.status(500).json({ error: 'Could not save the barangay location.' });
+  }
+});
+
+router.get('/location/available-responders', authenticateBarangay, requireRole(['admin','dispatcher']), async (req: any, res: Response): Promise<void> => {
+  try {
+    const [{ data: barangay, error: barangayError }, { data: responders, error: respondersError }] = await Promise.all([
+      supabaseAdmin.from('barangays').select('location_latitude, location_longitude').eq('id', req.barangayUser.barangayId).maybeSingle(),
+      supabaseAdmin.from('barangay_users').select('id, full_name, phone, role')
+        .eq('barangay_id', req.barangayUser.barangayId).eq('role', 'responder').eq('is_active', true),
+    ]);
+    if (barangayError) throw barangayError;
+    if (respondersError) throw respondersError;
+    if (barangay?.location_latitude == null || barangay?.location_longitude == null || !responders?.length) {
+      res.json({ responders: [] });
+      return;
+    }
+    const responderIds = responders.map((row: any) => row.id);
+    const [{ data: centralAssignments, error: assignmentError }, { data: localReports, error: localError }] = await Promise.all([
+      supabaseAdmin.from('mdrrmo_report_barangay_assignments').select('responder_ids')
+        .eq('barangay_id', req.barangayUser.barangayId).eq('assignment_status', 'active'),
+      supabaseAdmin.from('barangay_reports').select('response_notes, responded_by, barangay_responded_by')
+        .eq('barangay_id', req.barangayUser.barangayId).in('response_status', ['pending','responding']),
+    ]);
+    if (assignmentError) throw assignmentError;
+    if (localError) throw localError;
+    const busy = new Set<string>();
+    for (const assignment of centralAssignments || []) for (const id of assignment.responder_ids || []) busy.add(id);
+    for (const report of localReports || []) {
+      const primary = report.responded_by || report.barangay_responded_by;
+      if (primary) busy.add(primary);
+      const match = String(report.response_notes || '').match(/^\[ASSIGNED:([^\]]+)\]/);
+      if (match) match[1].split(',').map((id) => id.trim()).filter(Boolean).forEach((id) => busy.add(id));
+    }
+    const nowMs = Date.now();
+    const available = await Promise.all(responders.map(async (responder: any) => {
+      if (busy.has(responder.id)) return null;
+      const location = await getBarangayResponderGpsLocation(responder.id);
+      if (!location || !Number.isFinite(location.accuracyM) || Number(location.accuracyM) > 50) return null;
+      const ageMs = nowMs - Date.parse(location.timestamp);
+      if (!Number.isFinite(ageMs) || ageMs < 0 || ageMs > RESPONDER_GPS_TTL_SECONDS * 1000) return null;
+      const distanceM = distanceMeters(Number(barangay.location_latitude), Number(barangay.location_longitude), location.latitude, location.longitude);
+      if (distanceM > 100) return null;
+      return { id: responder.id, full_name: responder.full_name, phone: responder.phone, distance_m: Math.round(distanceM), last_seen: location.timestamp };
+    }));
+    res.json({ responders: available.filter(Boolean).sort((a: any, b: any) => a.distance_m - b.distance_m) });
+  } catch (error) {
+    console.error('Load barangay available responders failed:', error);
+    res.status(500).json({ error: 'Could not load available barangay responders.' });
+  }
+});
+
 // Public: residents can look up the published hotline list for a barangay.
 router.get('/hotlines/:barangayId', async (req: Request, res: Response) => {
   try {
@@ -355,6 +446,37 @@ router.get('/hotlines', async (_req: Request, res: Response) => {
   } catch (err) {
     console.error('Fetch all barangay hotlines error:', err);
     res.status(500).json({ error: 'Failed to fetch barangay hotlines.' });
+  }
+});
+
+router.get('/public-hotlines', async (_req: Request, res: Response) => {
+  try {
+    const verifiedIds = await getVerifiedBarangayIds();
+    const [{ data: barangays, error: barangaysError }, { data: hotlineRows, error: hotlineError }] = await Promise.all([
+      verifiedIds.length
+        ? supabaseAdmin.from('barangays').select('id, name').in('id', verifiedIds).order('name', { ascending: true })
+        : Promise.resolve({ data: [], error: null } as any),
+      verifiedIds.length
+        ? supabaseAdmin.from('barangay_hotline_settings').select('barangay_id, hotlines').in('barangay_id', verifiedIds)
+        : Promise.resolve({ data: [], error: null } as any),
+    ]);
+    if (barangaysError) throw barangaysError;
+    if (hotlineError) throw hotlineError;
+    const names = new Map((barangays || []).map((row: any) => [row.id, row.name]));
+    const barangayHotlines = (hotlineRows || []).flatMap((row: any) => {
+      const entries = Array.isArray(row.hotlines) ? row.hotlines : [];
+      return entries.length && names.has(row.barangay_id)
+        ? [{ barangay_id: row.barangay_id, barangay_name: names.get(row.barangay_id), entries }]
+        : [];
+    });
+    res.json({
+      national: [{ label: 'National Emergency Hotline', phone: '911' }],
+      mdrrmo: [{ label: 'MDRRMO Norzagaray', phone: '09052470355', email: 'norzagarayrescue2015@gmail.com', facebook: 'https://www.facebook.com/RescueNgGaray' }],
+      barangays: barangayHotlines,
+    });
+  } catch (error) {
+    console.error('Fetch public hotline directory failed:', error);
+    res.status(500).json({ error: 'Could not load the public hotline directory.' });
   }
 });
 
@@ -1277,6 +1399,22 @@ router.get('/team', authenticateBarangay, async (req: any, res: Response) => {
   }
 });
 
+router.get('/team/responders', authenticateBarangay, requireRole(['admin', 'dispatcher']), async (req: any, res: Response) => {
+  try {
+    const { data, error } = await supabaseAdmin.from('barangay_users')
+      .select('id, full_name, phone, role, is_active')
+      .eq('barangay_id', req.barangayUser.barangayId)
+      .eq('role', 'responder').eq('is_active', true).order('full_name', { ascending: true });
+    if (error) throw error;
+    res.json({ responders: (data || []).map((row: any) => ({
+      ...row, unit_id: req.barangayUser.barangayId, unit_name: 'Barangay response team',
+    })) });
+  } catch (error) {
+    console.error('Load barangay dashboard responders failed:', error);
+    res.status(500).json({ error: 'Could not load this barangay’s active responders.' });
+  }
+});
+
 // ─── POST /api/barangay/team ─────────────────────────────────────────────────
 // Only barangay administrators may add team accounts.
 
@@ -1662,7 +1800,7 @@ router.get('/reports', authenticateBarangay, requireRole(['admin', 'dispatcher',
       }
     }
 
-    res.json(data.map((report: any) => {
+    const legacyReports = data.map((report: any) => {
       let assignedIds: string[] = [];
       const notes = report.barangay_response_notes || report.response_notes || '';
       if (notes) {
@@ -1696,10 +1834,246 @@ router.get('/reports', authenticateBarangay, requireRole(['admin', 'dispatcher',
         assigned_team_leader_ids: assignedIds,
         barangay_responder_name: responderName || responderNames.get(report.barangay_responded_by) || null,
       });
-    }));
+    });
+
+    let assignmentQuery = supabaseAdmin.from('mdrrmo_report_barangay_assignments')
+      .select('*').eq('barangay_id', req.barangayUser.barangayId)
+      .in('assignment_status', status === 'resolved' ? ['completed'] : status ? ['active'] : ['active', 'completed'])
+      .order('assigned_at', { ascending: false });
+    if (status) assignmentQuery = (assignmentQuery as any).eq('response_status', status);
+    const { data: assignments, error: assignmentsError } = await assignmentQuery;
+    if (assignmentsError) throw assignmentsError;
+    const centralReportIds = [...new Set((assignments || []).map((row: any) => row.report_id))];
+    const [{ data: centralRows, error: centralError }, { data: assignedBarangay, error: assignedBarangayError }] = await Promise.all([
+      centralReportIds.length
+        ? supabaseAdmin.from('mdrrmo_reports').select('*').in('id', centralReportIds)
+        : Promise.resolve({ data: [], error: null } as any),
+      supabaseAdmin.from('barangays').select('id, name').eq('id', req.barangayUser.barangayId).maybeSingle(),
+    ]);
+    if (centralError) throw centralError;
+    if (assignedBarangayError) throw assignedBarangayError;
+    const centralById = new Map((centralRows || []).map((row: any) => [row.id, row]));
+    const centralIds = new Set(centralReportIds);
+    const centralResponderIds = [...new Set((assignments || []).flatMap((row: any) => row.responder_ids || []))];
+    const centralResponderNames = new Map<string, string>();
+    if (centralResponderIds.length) {
+      const { data: responders, error: respondersError } = await supabaseAdmin.from('barangay_users')
+        .select('id, full_name').eq('barangay_id', req.barangayUser.barangayId).in('id', centralResponderIds);
+      if (respondersError) throw respondersError;
+      for (const responder of responders || []) centralResponderNames.set(responder.id, responder.full_name);
+    }
+    const centralReports = (assignments || []).flatMap((assignment: any) => {
+      const report: any = centralById.get(assignment.report_id);
+      if (!report) return [];
+      const assignedIds: string[] = assignment.responder_ids || [];
+      return [formatIncidentReport({
+        ...report,
+        is_central_assignment: true,
+        assignment_id: assignment.id,
+        assignment_status: assignment.assignment_status,
+        assignment_notes: assignment.assignment_notes,
+        response_status: assignment.response_status,
+        barangay_response_status: assignment.response_status,
+        barangay_response_notes: assignment.response_notes,
+        barangay_responded_by: assignment.responded_by,
+        barangay_responded_at: assignment.responded_at,
+        barangay_dispatched_at: assignment.dispatched_at,
+        barangay_accepted_at: assignment.accepted_at,
+        barangay_arrived_at: assignment.arrived_at,
+        barangay_resolved_at: assignment.resolved_at,
+        barangay_resolved_notes: assignment.resolved_notes,
+        assigned_team_leader_ids: assignedIds,
+        barangay_responder_name: assignment.responder_name || assignedIds.map((id) => centralResponderNames.get(id)).filter(Boolean).join(', '),
+        response_barangay_id: assignment.barangay_id,
+        response_barangay_name: assignedBarangay?.name || null,
+        incident_barangay_id: report.barangay_id,
+        incident_barangay_name: report.barangay_name || null,
+        created_at: report.created_at,
+      })];
+    });
+    res.json([...legacyReports.filter((report: any) => !centralIds.has(report.id)), ...centralReports]
+      .sort((a: any, b: any) => Date.parse(b.created_at || '') - Date.parse(a.created_at || '')));
   } catch (err) {
     console.error('Fetch barangay reports error:', err);
     res.status(500).json({ error: 'Failed to fetch reports' });
+  }
+});
+
+async function updateCentralBarangayAssignment(req: any, res: Response, action: string, payload: Record<string, unknown>): Promise<void> {
+  try {
+    const { data: assignmentId, error } = await supabaseAdmin.rpc('update_mdrrmo_report_barangay_lifecycle_v1', {
+      p_report_id: req.params.id,
+      p_barangay_id: req.barangayUser.barangayId,
+      p_actor_id: req.barangayUser.userId,
+      p_action: action,
+      p_payload: { ...payload, actor_role: req.barangayUser.role },
+    });
+    if (error) throw error;
+    const [{ data: report, error: reportError }, { data: assignment, error: assignmentError }] = await Promise.all([
+      supabaseAdmin.from('mdrrmo_reports').select('*').eq('id', req.params.id).single(),
+      supabaseAdmin.from('mdrrmo_report_barangay_assignments').select('*').eq('id', assignmentId).maybeSingle(),
+    ]);
+    if (reportError) throw reportError;
+    if (assignmentError) throw assignmentError;
+    const [{ data: barangay, error: barangayError }, { data: responderRows, error: responderError }] = await Promise.all([
+      supabaseAdmin.from('barangays').select('name').eq('id', req.barangayUser.barangayId).maybeSingle(),
+      assignment?.responder_ids?.length
+        ? supabaseAdmin.from('barangay_users').select('id, full_name').eq('barangay_id', req.barangayUser.barangayId).in('id', assignment.responder_ids)
+        : Promise.resolve({ data: [], error: null } as any),
+    ]);
+    if (barangayError) throw barangayError;
+    if (responderError) throw responderError;
+    const responderNames = (responderRows || []).map((row: any) => row.full_name).filter(Boolean).join(', ');
+    const result = formatIncidentReport({
+      ...report,
+      is_central_assignment: true,
+      assignment_id: assignment?.id || assignmentId,
+      assignment_status: assignment?.assignment_status,
+      assignment_notes: assignment?.assignment_notes,
+      response_status: assignment?.response_status || 'pending',
+      barangay_response_status: assignment?.response_status || 'pending',
+      barangay_response_notes: assignment?.response_notes,
+      barangay_responded_by: assignment?.responded_by,
+      barangay_responded_at: assignment?.responded_at,
+      barangay_dispatched_at: assignment?.dispatched_at,
+      barangay_accepted_at: assignment?.accepted_at,
+      barangay_arrived_at: assignment?.arrived_at,
+      barangay_resolved_at: assignment?.resolved_at,
+      barangay_resolved_notes: assignment?.resolved_notes,
+      assigned_team_leader_ids: assignment?.responder_ids || [],
+      barangay_responder_name: assignment?.responder_name || responderNames || null,
+      response_barangay_id: req.barangayUser.barangayId,
+      response_barangay_name: barangay?.name || null,
+      incident_barangay_id: report.barangay_id,
+      incident_barangay_name: report.barangay_name || null,
+    });
+    io.to('dashboard_staff').emit('mdrrmo:report_updated', result);
+    io.to('dashboard_staff').emit('incident_report:updated', result);
+    if (action === 'escalate') {
+      io.to(`barangay:${req.barangayUser.barangayId}`).emit('barangay:report_escalated', result);
+    } else {
+      io.to(`barangay:${req.barangayUser.barangayId}`).emit('barangay:report_updated', result);
+      io.to(`barangay:${req.barangayUser.barangayId}`).emit('incident:lifecycle', result);
+    }
+    if (report.reporter_id) io.to(`user:${report.reporter_id}`).emit('incident_report:updated', result);
+    res.json(result);
+  } catch (error: any) {
+    console.error(`Barangay central assignment ${action} failed:`, error);
+    const code = String(error?.code || '');
+    const status = code === 'P0002' ? 404 : code === '42501' ? 403 : ['P0001', '23505'].includes(code) ? 409 : code === '22023' ? 400 : 500;
+    res.status(status).json({ error: error?.message || `Could not ${action} this report.` });
+  }
+}
+
+router.patch('/assigned-reports/:id/dispatch', authenticateBarangay, requireRole(['dispatcher']), async (req: any, res: Response) => {
+  const ids: string[] = Array.isArray(req.body?.team_leader_ids) && req.body.team_leader_ids.length
+    ? req.body.team_leader_ids : req.body?.team_leader_id ? [req.body.team_leader_id] : [];
+  const incidentType = String(req.body?.incident_type || 'other');
+  const severity = String(req.body?.severity || 'moderate');
+  if (!ids.length || !['flash_flood','fire','earthquake','medical_emergency','typhoon','other'].includes(incidentType) ||
+      !['low','moderate','high','critical'].includes(severity)) {
+    res.status(400).json({ error: 'Choose at least one responder, incident type, and severity before dispatching.' });
+    return;
+  }
+  void updateCentralBarangayAssignment(req, res, 'dispatch', {
+    responder_ids: ids,
+    incident_type: incidentType,
+    severity,
+    notes: typeof req.body?.notes === 'string' ? req.body.notes.trim() : '',
+  });
+});
+
+router.patch('/assigned-reports/:id/respond', authenticateBarangay, requireRole(['responder']), async (req: any, res: Response) => {
+  void updateCentralBarangayAssignment(req, res, 'respond', {
+    notes: typeof req.body?.notes === 'string' ? req.body.notes.trim() : '',
+  });
+});
+
+router.patch('/assigned-reports/:id/arrive', authenticateBarangay, requireRole(['responder']), async (req: any, res: Response) => {
+  const parsed = z.object({
+    method: z.enum(['gps','manual']),
+    latitude: z.number().min(-90).max(90).optional(),
+    longitude: z.number().min(-180).max(180).optional(),
+    accuracy_m: z.number().min(0).optional(),
+    fix_at: z.string().optional(),
+  }).safeParse(req.body);
+  if (!parsed.success || (parsed.data.latitude === undefined) !== (parsed.data.longitude === undefined)) {
+    res.status(400).json({ error: 'Invalid arrival details. Send valid paired coordinates or choose manual arrival.' });
+    return;
+  }
+  if (parsed.data.method === 'gps') {
+    if (parsed.data.latitude === undefined || parsed.data.longitude === undefined || parsed.data.accuracy_m === undefined || !parsed.data.fix_at) {
+      res.status(400).json({ error: 'A recent GPS location with accuracy is required.' });
+      return;
+    }
+    const { data: report, error } = await supabaseAdmin.from('mdrrmo_reports').select('latitude, longitude').eq('id', req.params.id).maybeSingle();
+    if (error) { res.status(500).json({ error: 'Could not verify the incident location.' }); return; }
+    if (!report) { res.status(404).json({ error: 'Incident report not found.' }); return; }
+    const validation = validateArrivalFix(Number(report.latitude), Number(report.longitude), {
+      latitude: parsed.data.latitude, longitude: parsed.data.longitude, accuracyM: parsed.data.accuracy_m, fixAt: new Date(parsed.data.fix_at),
+    });
+    if (!validation.valid) { res.status(400).json({ error: validation.error }); return; }
+  }
+  void updateCentralBarangayAssignment(req, res, 'arrive', parsed.data as Record<string, unknown>);
+});
+
+router.post('/assigned-reports/:id/close', authenticateBarangay, requireRole(['dispatcher','responder']), async (req: any, res: Response) => {
+  void updateCentralBarangayAssignment(req, res, 'resolve', {
+    notes: typeof req.body?.resolved_notes === 'string' ? req.body.resolved_notes.trim() : '',
+  });
+});
+
+router.patch('/assigned-reports/:id/escalate', authenticateBarangay, requireRole(['dispatcher']), async (req: any, res: Response) => {
+  const notes = typeof req.body?.notes === 'string' ? req.body.notes.trim() : '';
+  if (notes.length < 3) { res.status(400).json({ error: 'Escalation notes are required.' }); return; }
+  void updateCentralBarangayAssignment(req, res, 'escalate', { notes });
+});
+
+router.post('/assigned-reports/:id/field-media', authenticateBarangay, requireRole(['dispatcher','responder']), upload.single('media'), async (req: any, res: Response) => {
+  try {
+    const { data: assignment, error: assignmentError } = await supabaseAdmin.from('mdrrmo_report_barangay_assignments')
+      .select('id, responder_ids, response_status').eq('report_id', req.params.id)
+      .eq('barangay_id', req.barangayUser.barangayId).eq('assignment_status', 'active').maybeSingle();
+    if (assignmentError) throw assignmentError;
+    if (!assignment) { res.status(404).json({ error: 'Active incident assignment not found.' }); return; }
+    if (assignment.response_status === 'resolved') { res.status(409).json({ error: 'Resolved incidents cannot receive new field media.' }); return; }
+    if (req.barangayUser.role === 'responder' && !(assignment.responder_ids || []).includes(req.barangayUser.userId)) {
+      res.status(403).json({ error: 'This incident has not been assigned to your responder account.' }); return;
+    }
+    const file = req.file;
+    if (!file) { res.status(400).json({ error: 'No media file provided.' }); return; }
+    const ext = (file.originalname.split('.').pop() || 'jpg').toLowerCase();
+    const isVideo = req.body?.type === 'video' || file.mimetype?.startsWith('video/') || ['mp4','mov','webm','3gp','mkv','avi'].includes(ext);
+    const timestamp = Date.now();
+    const filename = `reports/field-media/${req.params.id}_barangay_${timestamp}.${ext}`;
+    const { error: uploadError } = await supabaseAdmin.storage.from(config.supabaseBucketName).upload(filename, file.buffer, {
+      contentType: file.mimetype, upsert: true,
+    });
+    if (uploadError) throw uploadError;
+    const { data: { publicUrl } } = supabaseAdmin.storage.from(config.supabaseBucketName).getPublicUrl(filename);
+    const [{ data: userRow }, { data: report, error: reportError }] = await Promise.all([
+      supabaseAdmin.from('barangay_users').select('full_name, role').eq('id', req.barangayUser.userId).maybeSingle(),
+      supabaseAdmin.from('mdrrmo_reports').select('responder_media, reporter_id').eq('id', req.params.id).single(),
+    ]);
+    if (reportError) throw reportError;
+    const media = Array.isArray(report.responder_media) ? report.responder_media : [];
+    const item = {
+      id: `media_${timestamp}`, url: publicUrl, type: isVideo ? 'video' : 'image',
+      uploader_id: req.barangayUser.userId, uploader_name: userRow?.full_name || 'Barangay responder',
+      role: userRow?.role || req.barangayUser.role, created_at: new Date().toISOString(),
+    };
+    const { data: updated, error: updateError } = await supabaseAdmin.from('mdrrmo_reports')
+      .update({ responder_media: [...media, item] })
+      .eq('id', req.params.id).select('*').single();
+    if (updateError) throw updateError;
+    const result = formatIncidentReport({ ...updated, is_central_assignment: true, assignment_id: assignment.id });
+    io.to('dashboard_staff').emit('incident_report:updated', result);
+    io.to(`barangay:${req.barangayUser.barangayId}`).emit('barangay:report_updated', result);
+    if (report.reporter_id) io.to(`user:${report.reporter_id}`).emit('incident_report:updated', result);
+    res.json(result);
+  } catch (error) {
+    console.error('Central assigned report media upload failed:', error);
+    res.status(500).json({ error: 'Could not save field documentation.' });
   }
 });
 
@@ -1959,16 +2333,6 @@ router.patch('/reports/:id/escalate', authenticateBarangay, requireRole(['dispat
     if (assignedReport.mdrrmo_dispatched_at || assignedReport.mdrrmo_accepted_at || assignedReport.mdrrmo_arrived_at ||
         assignedReport.mdrrmo_resolved_at || ['responding', 'resolved'].includes(String(assignedReport.mdrrmo_response_status || '').toLowerCase())) {
       res.status(409).json({ error: 'The MDRRMO response cycle has already started.' });
-      return;
-    }
-    if (!assignedReport.incident_type || !assignedReport.severity) {
-      res.status(409).json({ error: 'Classify the incident type and severity before escalating it to MDRRMO.' });
-      return;
-    }
-    const hasAssignedResponder = Boolean(assignedReport.barangay_responded_by) ||
-      Boolean(assignedReport.barangay_response_notes?.match(/^\[ASSIGNED:[^\]]+\]/));
-    if (!hasAssignedResponder) {
-      res.status(409).json({ error: 'Dispatch a responder before escalating this incident to MDRRMO.' });
       return;
     }
     if (await hasActiveMdrrmoEscalation(req.params.id)) {

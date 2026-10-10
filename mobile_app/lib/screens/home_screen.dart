@@ -8,6 +8,7 @@ import '../services/socket_service.dart';
 import '../services/api_service.dart';
 import '../services/dispatcher_push_service.dart';
 import '../services/notification_sound_service.dart';
+import '../services/barangay_responder_gps_service.dart';
 import '../models/incident_report.dart';
 import 'reports_screen.dart';
 import 'report_detail_screen.dart';
@@ -33,6 +34,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   StreamSubscription<DispatcherReportAlert>? _reportAlertSubscription;
   StreamSubscription<String>? _pushOpenedSubscription;
   final Set<String> _openedPushReportIds = {};
+  final BarangayResponderGpsService _barangayGpsService = BarangayResponderGpsService();
 
   @override
   void initState() {
@@ -54,6 +56,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           token: auth.token!,
           userId: auth.currentUser!.id,
         );
+        if (auth.currentUser!.isResponder) {
+          unawaited(_barangayGpsService.start(socket, auth.currentUser!.id));
+        }
         socket.onCoordinationAccessChanged(auth.onCoordinationAccessUpdate);
         if (auth.currentUser!.isDispatcher) {
           socket.onNewReport(_handleSocketNewReport);
@@ -171,6 +176,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       try {
         final socket = Provider.of<SocketService>(context, listen: false);
         socket.ensureConnected();
+        if (auth.currentUser?.isResponder == true) {
+          unawaited(_barangayGpsService.start(socket, auth.currentUser!.id));
+        }
       } catch (_) {}
       final token = auth.token;
       final user = auth.currentUser;
@@ -183,12 +191,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
         );
       }
+    } else if (state == AppLifecycleState.inactive || state == AppLifecycleState.paused) {
+      _barangayGpsService.stop();
     }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _barangayGpsService.stop();
     _socketService?.removeNewReportListener(_handleSocketNewReport);
     _reportAlertSubscription?.cancel();
     _pushOpenedSubscription?.cancel();

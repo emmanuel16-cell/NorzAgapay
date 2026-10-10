@@ -522,7 +522,11 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
       ),
       (
         'MDRRMO coordination',
-        _report.sendTo == 'mdrrmo'
+        _report.isCentralAssignment && _report.assignmentStatus == 'active'
+            ? 'MDRRMO assigned response to ${_report.responseBarangayName == null ? 'a barangay team' : 'Barangay ${_report.responseBarangayName}'}.'
+            : _report.assignmentStatus == 'escalated'
+            ? 'The barangay sent this report back to MDRRMO.'
+            : _report.sendTo == 'mdrrmo'
             ? 'Your report was routed directly to MDRRMO.'
             : _report.mdrrmoCoordinationNotes?.trim().isNotEmpty == true
             ? _report.mdrrmoCoordinationNotes!
@@ -655,6 +659,14 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
       if (_report.clientSubmittedAt != null)
         ('First submit attempt (device time)', _report.clientSubmittedAt, ''),
       ('Report received', _report.createdAt, ''),
+      for (final assignment in _report.barangayAssignments) ...[
+        if (assignment['assigned_at'] != null) ('Assigned to Barangay ${assignment['barangay_name'] ?? 'response team'}', DateTime.tryParse(assignment['assigned_at'].toString()), ''),
+        if (assignment['dispatched_at'] != null) ('Barangay responders dispatched', DateTime.tryParse(assignment['dispatched_at'].toString()), ''),
+        if (assignment['accepted_at'] != null) ('Accepted by barangay responder', DateTime.tryParse(assignment['accepted_at'].toString()), ''),
+        if (assignment['arrived_at'] != null) ('Arrived at incident area', DateTime.tryParse(assignment['arrived_at'].toString()), ''),
+        if (assignment['escalated_at'] != null) ('Barangay reported back to MDRRMO', DateTime.tryParse(assignment['escalated_at'].toString()), ''),
+        if (assignment['resolved_at'] != null) ('Barangay resolved incident', DateTime.tryParse(assignment['resolved_at'].toString()), ''),
+      ],
       ('Dispatcher reviewed', _report.dispatcherReviewedAt, ''),
       ('Responder dispatched', _report.dispatchedAt, ''),
       (

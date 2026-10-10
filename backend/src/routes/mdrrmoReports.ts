@@ -9,6 +9,8 @@ import { distanceMeters, validateArrivalFix, validateRecentGpsFix } from '../ser
 import { IncidentResolutionPdfService, IncompleteResolutionReportError } from '../services/incidentResolutionPdfService';
 import { isEscalatedForMdrrmo, isVisibleToMdrrmo } from '../services/mdrrmoReportVisibility';
 import { getDispatchableRespondUnits } from '../services/respondUnitAvailability';
+import { getVerifiedBarangayIds } from '../services/verifiedBarangayService';
+import { getBarangayResponderGpsLocation, getResponderGpsLocation, RESPONDER_GPS_TTL_SECONDS } from '../config/redis';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -25,7 +27,9 @@ function parseList(value: unknown): string[] {
   }
 }
 
-function isResolved(report: any): boolean {
+function isResolved(report: any, barangayAssignments: any[] = []): boolean {
+  if (barangayAssignments.some((assignment) =>
+    assignment.assignment_status === 'completed' && assignment.response_status === 'resolved')) return true;
   const responseStatus = String(report.response_status || report.mdrrmo_response_status || '').toLowerCase();
   return responseStatus === 'resolved' ||
     (!responseStatus && !isEscalatedForMdrrmo(report) && ['resolved', 'closed'].includes(String(report.status).toLowerCase()));
@@ -180,6 +184,18 @@ router.get('/queue', authenticate, authorize('dispatcher', 'admin', 'responder')
 
     let reports = combined;
     const allAssignments = await getAssignments(reports.map((report: any) => report.id));
+    const reportIds = reports.map((report: any) => report.id);
+    const { data: barangayAssignments, error: barangayAssignmentsError } = reportIds.length
+      ? await supabaseAdmin.from('mdrrmo_report_barangay_assignments')
+        .select('*').in('report_id', reportIds).order('assigned_at', { ascending: false })
+      : { data: [], error: null } as any;
+    if (barangayAssignmentsError) throw barangayAssignmentsError;
+    const destinationIds = [...new Set((barangayAssignments || []).map((row: any) => row.barangay_id).filter(Boolean))];
+    const { data: destinationRows, error: destinationError } = destinationIds.length
+      ? await supabaseAdmin.from('barangays').select('id, name').in('id', destinationIds)
+      : { data: [], error: null } as any;
+    if (destinationError) throw destinationError;
+    const destinationNames = new Map((destinationRows || []).map((row: any) => [row.id, row.name]));
 
     if (req.user!.role === 'responder') {
       reports = reports.filter((report: any) => allAssignments.some((assignment: any) =>
@@ -187,9 +203,20 @@ router.get('/queue', authenticate, authorize('dispatcher', 'admin', 'responder')
     }
 
     const status = typeof req.query.status === 'string' ? req.query.status : undefined;
-    if (status === 'pending') reports = reports.filter((report: any) => !isResolved(report) && String(report.response_status || report.mdrrmo_response_status || '').toLowerCase() !== 'responding');
-    else if (status === 'responding') reports = reports.filter((report: any) => !isResolved(report) && ['responding'].includes(String(report.response_status || report.mdrrmo_response_status || '').toLowerCase()));
-    else if (status === 'resolved') reports = reports.filter((report: any) => isResolved(report));
+    if (status === 'pending') reports = reports.filter((report: any) => {
+      const assignments = (barangayAssignments || []).filter((item: any) => item.report_id === report.id);
+      const activeBarangay = assignments.find((item: any) => item.assignment_status === 'active');
+      const mdrrmoStatus = String(report.response_status || report.mdrrmo_response_status || '').toLowerCase();
+      return !isResolved(report, assignments) && mdrrmoStatus !== 'responding' && activeBarangay?.response_status !== 'responding';
+    });
+    else if (status === 'responding') reports = reports.filter((report: any) => {
+      const assignments = (barangayAssignments || []).filter((item: any) => item.report_id === report.id);
+      const activeBarangay = assignments.find((item: any) => item.assignment_status === 'active');
+      const mdrrmoStatus = String(report.response_status || report.mdrrmo_response_status || '').toLowerCase();
+      return !isResolved(report, assignments) && (mdrrmoStatus === 'responding' || activeBarangay?.response_status === 'responding');
+    });
+    else if (status === 'resolved') reports = reports.filter((report: any) =>
+      isResolved(report, (barangayAssignments || []).filter((item: any) => item.report_id === report.id)));
 
     const residentIds = [...new Set(reports.map((report: any) => report.reporter_id).filter(Boolean))];
     const residentsById = new Map<string, any>();
@@ -204,6 +231,9 @@ router.get('/queue', authenticate, authorize('dispatcher', 'admin', 'responder')
 
     res.json(reports.map((report: any) => {
       const assignments = allAssignments.filter((assignment: any) => assignment.report_id === report.id);
+      const reportBarangayAssignments = (barangayAssignments || [])
+        .filter((assignment: any) => assignment.report_id === report.id)
+        .map((assignment: any) => ({ ...assignment, barangay_name: destinationNames.get(assignment.barangay_id) || null }));
       const resident = residentsById.get(report.reporter_id);
       return formatReport({
         ...report,
@@ -211,6 +241,8 @@ router.get('/queue', authenticate, authorize('dispatcher', 'admin', 'responder')
         reporter_phone: report.reporter_phone || resident?.phone || null,
         reporter_email: report.reporter_email || resident?.email || null,
         mdrrmo_assignments: assignments,
+        barangay_assignments: reportBarangayAssignments,
+        active_barangay_assignment: reportBarangayAssignments.find((assignment: any) => assignment.assignment_status === 'active') || null,
         assigned_responder_ids: assignments.map((assignment: any) => assignment.responder_id),
         mdrrmo_responder_name: assignments.map((assignment: any) => assignment.responder?.full_name).filter(Boolean).join(', ') || report.responder_name || report.mdrrmo_responder_name || null,
       });
@@ -218,6 +250,235 @@ router.get('/queue', authenticate, authorize('dispatcher', 'admin', 'responder')
   } catch (err) {
     console.error('Fetch MDRRMO report queue error:', err);
     res.status(500).json({ error: 'Could not load the MDRRMO report queue.' });
+  }
+});
+
+router.get('/barangay-destinations', authenticate, authorize('dispatcher', 'admin'), async (_req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const verifiedIds = await getVerifiedBarangayIds();
+    if (!verifiedIds.length) { res.json({ barangays: [] }); return; }
+    const { data, error } = await supabaseAdmin.from('barangays')
+      .select('id, name, municipality, location_latitude, location_longitude')
+      .in('id', verifiedIds).order('name', { ascending: true });
+    if (error) throw error;
+    res.json({ barangays: data || [] });
+  } catch (error) {
+    console.error('Load MDRRMO barangay destinations failed:', error);
+    res.status(500).json({ error: 'Could not load active barangay destinations.' });
+  }
+});
+
+async function changeBarangayAssignment(req: AuthRequest, res: Response, action: 'assign' | 'reassign' | 'recall'): Promise<void> {
+  try {
+    const barangayId = action === 'recall' ? null : String(req.body?.barangay_id || '').trim();
+    const notes = typeof req.body?.notes === 'string' ? req.body.notes.trim() : '';
+    if (action !== 'recall' && !barangayId) {
+      res.status(400).json({ error: 'Choose a destination barangay.' });
+      return;
+    }
+    if ((action === 'reassign' || action === 'recall') && notes.length < 3) {
+      res.status(400).json({ error: 'Enter a reason of at least 3 characters.' });
+      return;
+    }
+    if (action === 'assign' && notes.length < 3) {
+      res.status(400).json({ error: 'Add assignment notes so the barangay has response context.' });
+      return;
+    }
+    if (barangayId && !await getVerifiedBarangayIds().then((ids) => ids.includes(barangayId))) {
+      res.status(403).json({ error: 'This barangay is not active and eligible for assignment.' });
+      return;
+    }
+    let previousBarangayId: string | null = null;
+    if (action !== 'assign') {
+      const { data: previous, error: previousError } = await supabaseAdmin
+        .from('mdrrmo_report_barangay_assignments')
+        .select('barangay_id')
+        .eq('report_id', req.params.id)
+        .eq('assignment_status', 'active')
+        .maybeSingle();
+      if (previousError) throw previousError;
+      previousBarangayId = previous?.barangay_id || null;
+    }
+    const { data: assignmentId, error } = await supabaseAdmin.rpc('set_mdrrmo_report_barangay_assignment_v1', {
+      p_report_id: req.params.id,
+      p_barangay_id: barangayId,
+      p_actor_id: req.user!.userId,
+      p_action: action,
+      p_notes: notes || null,
+    });
+    if (error) throw error;
+
+    const [{ data: report, error: reportError }, { data: assignment, error: assignmentError }] = await Promise.all([
+      supabaseAdmin.from('mdrrmo_reports').select('*').eq('id', req.params.id).single(),
+      supabaseAdmin.from('mdrrmo_report_barangay_assignments').select('*').eq('id', assignmentId).maybeSingle(),
+    ]);
+    if (reportError) throw reportError;
+    if (assignmentError) throw assignmentError;
+    let barangayName: string | null = null;
+    if (assignment?.barangay_id) {
+      const { data: barangay, error: barangayError } = await supabaseAdmin.from('barangays').select('name').eq('id', assignment.barangay_id).maybeSingle();
+      if (barangayError) throw barangayError;
+      barangayName = barangay?.name || null;
+    }
+    const payload = formatReport({
+      ...report,
+      active_barangay_assignment: assignment?.assignment_status === 'active' ? { ...assignment, barangay_name: barangayName } : null,
+    });
+    io.to('dashboard_staff').emit('mdrrmo:report_updated', payload);
+    io.to('dashboard_staff').emit('incident_report:updated', payload);
+    if (assignment?.barangay_id) {
+      io.to(`barangay:${assignment.barangay_id}`).emit('barangay:report_assigned', payload);
+      io.to(`barangay:${assignment.barangay_id}`).emit('barangay:report_updated', payload);
+    }
+    if (previousBarangayId && (action === 'recall' || previousBarangayId !== assignment?.barangay_id)) {
+      io.to(`barangay:${previousBarangayId}`).emit('barangay:report_assignment_removed', {
+        reportId: req.params.id,
+      });
+    }
+    if (report.reporter_id) io.to(`user:${report.reporter_id}`).emit('incident_report:updated', payload);
+    res.json({ message: action === 'recall' ? 'Barangay assignment recalled.' : 'Report assigned to barangay.', report: payload, assignment });
+  } catch (error: any) {
+    console.error(`MDRRMO barangay ${action} failed:`, error);
+    const code = String(error?.code || '');
+    const status = code === 'P0002' ? 404 : code === '42501' ? 403 : code === 'P0001' || code === '23505' ? 409 : code === '22023' ? 400 : 500;
+    res.status(status).json({ error: error?.message || 'Could not change the barangay assignment.' });
+  }
+}
+
+router.post('/:id/assign-barangay', authenticate, authorize('dispatcher', 'admin'), (req: AuthRequest, res: Response) => {
+  void changeBarangayAssignment(req, res, 'assign');
+});
+router.post('/:id/reassign-barangay', authenticate, authorize('dispatcher', 'admin'), (req: AuthRequest, res: Response) => {
+  void changeBarangayAssignment(req, res, 'reassign');
+});
+router.post('/:id/recall-barangay', authenticate, authorize('dispatcher', 'admin'), (req: AuthRequest, res: Response) => {
+  void changeBarangayAssignment(req, res, 'recall');
+});
+
+router.get('/command-locations', authenticate, authorize('dispatcher', 'admin'), async (_req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const [{ data: office, error: officeError }, { data: barangays, error: barangaysError }] = await Promise.all([
+      supabaseAdmin.from('mdrrmo_command_locations').select('*').eq('location_key', 'office').maybeSingle(),
+      supabaseAdmin.from('barangays').select('id, name, location_latitude, location_longitude, location_address').order('name', { ascending: true }),
+    ]);
+    if (officeError) throw officeError;
+    if (barangaysError) throw barangaysError;
+    const eligibleIds = new Set(await getVerifiedBarangayIds());
+    res.json({
+      office: office || null,
+      barangays: (barangays || []).filter((row: any) => eligibleIds.has(row.id)),
+    });
+  } catch (error) {
+    console.error('Load command locations failed:', error);
+    res.status(500).json({ error: 'Could not load command locations.' });
+  }
+});
+
+router.put('/command-locations/office', authenticate, authorize('admin'), async (req: AuthRequest, res: Response): Promise<void> => {
+  const parsed = z.object({
+    latitude: z.number().min(-90).max(90),
+    longitude: z.number().min(-180).max(180),
+    address: z.string().trim().max(240).nullable().optional(),
+  }).strict().safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Enter valid MDRRMO office coordinates.', details: parsed.error.flatten() });
+    return;
+  }
+  try {
+    const { data, error } = await supabaseAdmin.from('mdrrmo_command_locations').upsert({
+      location_key: 'office', ...parsed.data, updated_by: req.user!.userId, updated_at: new Date().toISOString(),
+    }, { onConflict: 'location_key' }).select('*').single();
+    if (error) throw error;
+    io.emit('command:locations_updated', { type: 'office' });
+    res.json({ office: data });
+  } catch (error) {
+    console.error('Save MDRRMO office location failed:', error);
+    res.status(500).json({ error: 'Could not save the MDRRMO office location.' });
+  }
+});
+
+router.get('/available-responders', authenticate, authorize('dispatcher', 'admin'), async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const locationType = String(req.query.location_type || '');
+    const barangayId = String(req.query.barangay_id || '');
+    let target: { latitude: number; longitude: number; label: string } | null = null;
+    if (locationType === 'office') {
+      const { data, error } = await supabaseAdmin.from('mdrrmo_command_locations')
+        .select('latitude, longitude').eq('location_key', 'office').maybeSingle();
+      if (error) throw error;
+      if (data) target = { latitude: Number(data.latitude), longitude: Number(data.longitude), label: 'MDRRMO office' };
+    } else if (locationType === 'barangay') {
+      if (!barangayId || !(await getVerifiedBarangayIds()).includes(barangayId)) {
+        res.status(403).json({ error: 'This barangay location is unavailable.' });
+        return;
+      }
+      const { data, error } = await supabaseAdmin.from('barangays')
+        .select('name, location_latitude, location_longitude').eq('id', barangayId).maybeSingle();
+      if (error) throw error;
+      if (data?.location_latitude != null && data.location_longitude != null) {
+        target = { latitude: Number(data.location_latitude), longitude: Number(data.location_longitude), label: `Barangay ${data.name}` };
+      }
+    } else {
+      res.status(400).json({ error: 'Choose an office or barangay location.' });
+      return;
+    }
+    if (!target) { res.json({ responders: [], location: null }); return; }
+
+    const isBarangayPin = locationType === 'barangay';
+    const { data: responders, error: respondersError } = isBarangayPin
+      ? await supabaseAdmin.from('barangay_users')
+        .select('id, full_name, phone').eq('barangay_id', barangayId).eq('role', 'responder').eq('is_active', true)
+      : await supabaseAdmin.from('users')
+        .select('id, full_name, phone, unit_type').eq('role', 'responder').eq('status', 'active');
+    if (respondersError) throw respondersError;
+    const responderRows = responders || [];
+    if (!responderRows.length) { res.json({ responders: [], location: target.label }); return; }
+    const ids = responderRows.map((row: any) => row.id);
+    const busy = new Set<string>();
+    if (isBarangayPin) {
+      const [central, local] = await Promise.all([
+        supabaseAdmin.from('mdrrmo_report_barangay_assignments').select('responder_ids')
+          .eq('barangay_id', barangayId).eq('assignment_status', 'active'),
+        supabaseAdmin.from('barangay_reports').select('response_notes, barangay_response_notes, responded_by, barangay_responded_by')
+          .eq('barangay_id', barangayId).in('response_status', ['pending', 'responding']),
+      ]);
+      if (central.error) throw central.error;
+      if (local.error) throw local.error;
+      for (const assignment of central.data || []) {
+        for (const responderId of assignment.responder_ids || []) busy.add(responderId);
+      }
+      for (const report of local.data || []) {
+        const primary = report.barangay_responded_by || report.responded_by;
+        if (primary) busy.add(primary);
+        const notes = report.barangay_response_notes || report.response_notes || '';
+        const match = String(notes).match(/^\[ASSIGNED:([^\]]+)\]/);
+        if (match) match[1].split(',').map((id) => id.trim()).filter(Boolean).forEach((id) => busy.add(id));
+      }
+    } else {
+      const { data: activeRows, error: activeError } = await supabaseAdmin.from('mdrrmo_report_assignments')
+        .select('responder_id').in('responder_id', ids).in('status', ['assigned','responding']);
+      if (activeError) throw activeError;
+      for (const row of activeRows || []) busy.add(row.responder_id);
+    }
+    const nowMs = Date.now();
+    const locations = await Promise.all(responderRows.map(async (responder: any) => ({
+      responder,
+      location: isBarangayPin
+        ? await getBarangayResponderGpsLocation(responder.id)
+        : await getResponderGpsLocation(responder.id),
+    })));
+    const available = locations.flatMap(({ responder, location }) => {
+      if (busy.has(responder.id) || !location || !Number.isFinite(location.accuracyM) || Number(location.accuracyM) > 50) return [];
+      const ageMs = nowMs - Date.parse(location.timestamp);
+      if (!Number.isFinite(ageMs) || ageMs < 0 || ageMs > RESPONDER_GPS_TTL_SECONDS * 1000) return [];
+      const distanceM = distanceMeters(target!.latitude, target!.longitude, location.latitude, location.longitude);
+      if (distanceM > 100) return [];
+      return [{ id: responder.id, full_name: responder.full_name, phone: responder.phone, unit_type: responder.unit_type || null, distance_m: Math.round(distanceM), last_seen: location.timestamp }];
+    }).sort((a: any, b: any) => a.distance_m - b.distance_m);
+    res.json({ responders: available, location: target.label });
+  } catch (error) {
+    console.error('Load available MDRRMO responders failed:', error);
+    res.status(500).json({ error: 'Could not load available responders.' });
   }
 });
 
@@ -328,6 +589,20 @@ const dispatchMdrrmoReport = async (req: AuthRequest, res: Response): Promise<vo
     const currentResponseStatus = String(report.response_status || report.mdrrmo_response_status || 'pending').toLowerCase();
     if (currentResponseStatus !== 'pending') {
       res.status(409).json({ error: 'Only a pending MDRRMO report can be dispatched.' });
+      return;
+    }
+    const { data: barangayAssignments, error: barangayAssignmentError } = await supabaseAdmin
+      .from('mdrrmo_report_barangay_assignments')
+      .select('id, barangay_id, assignment_status, response_status')
+      .eq('report_id', report.id)
+      .in('assignment_status', ['active', 'completed']);
+    if (barangayAssignmentError) throw barangayAssignmentError;
+    if ((barangayAssignments || []).some((assignment: any) => assignment.assignment_status === 'active')) {
+      res.status(409).json({ error: 'Recall the active barangay assignment before dispatching MDRRMO responders.' });
+      return;
+    }
+    if ((barangayAssignments || []).some((assignment: any) => assignment.assignment_status === 'completed' && assignment.response_status === 'resolved')) {
+      res.status(409).json({ error: 'A report resolved by its assigned barangay cannot be dispatched to MDRRMO responders.' });
       return;
     }
     if (report.accepted_at || report.arrived_at || report.resolved_at ||

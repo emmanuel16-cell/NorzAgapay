@@ -131,6 +131,27 @@ interface LiveResponderLocation {
   assignments: LiveResponderAssignment[];
 }
 
+interface CommandLocationPin {
+  id: string;
+  name: string;
+  type: 'office' | 'barangay';
+  latitude: number;
+  longitude: number;
+  address?: string | null;
+  barangay_id?: string;
+}
+
+interface AvailableResponderPin {
+  id: string;
+  full_name: string;
+  phone?: string | null;
+  distance_m: number;
+  last_seen?: string;
+}
+
+const commandOfficePinIcon = L.divIcon({ className: 'dashboard-command-pin office', html: '<span>MDRRMO</span>', iconSize: [82, 38], iconAnchor: [41, 19] });
+const commandBarangayPinIcon = L.divIcon({ className: 'dashboard-command-pin barangay', html: '<span>BARANGAY</span>', iconSize: [86, 38], iconAnchor: [43, 19] });
+
 const LIVE_LOCATION_MAX_AGE_MS = 30_000;
 
 function normalizeLiveResponderLocation(value: any): LiveResponderLocation | null {
@@ -747,6 +768,7 @@ function LiveResponderOverlays({
 
 export default function CommandCenter() {
   const { user } = useAuth();
+  const isBarangayDashboard = user?.account_kind === 'barangay';
   const { boundary } = useMunicipalityBoundary();
   const navigate = useNavigate();
 
@@ -771,6 +793,10 @@ export default function CommandCenter() {
   const [reportMetrics, setReportMetrics] = useState<Array<Pick<IncidentItem, 'report_kind' | 'status'>>>([]);
   const [dispatchUnits, setDispatchUnits] = useState<DispatchUnitItem[]>([]);
   const [activeDispatchCount, setActiveDispatchCount] = useState(0);
+  const [commandLocationPins, setCommandLocationPins] = useState<CommandLocationPin[]>([]);
+  const [availableResponderPins, setAvailableResponderPins] = useState<AvailableResponderPin[]>([]);
+  const [selectedAvailabilityPin, setSelectedAvailabilityPin] = useState<CommandLocationPin | null>(null);
+  const [availabilityLoading, setAvailabilityLoading] = useState(false);
   const [liveResponderLocations, setLiveResponderLocations] = useState<LiveResponderLocation[]>([]);
   const [selectedResponderId, setSelectedResponderId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -811,6 +837,11 @@ export default function CommandCenter() {
 
     let active = true;
     setAssistanceRequestsLoading(true);
+    if (isBarangayDashboard) {
+      setAssistanceRequests([]);
+      setAssistanceRequestsLoading(false);
+      return;
+    }
     requestAPI.list({ incident_id: selectedIncidentId })
       .then((response) => {
         if (active) setAssistanceRequests(Array.isArray(response.data.requests) ? response.data.requests : []);
@@ -822,16 +853,16 @@ export default function CommandCenter() {
       .finally(() => { if (active) setAssistanceRequestsLoading(false); });
 
     return () => { active = false; };
-  }, [activeModalType, selectedIncidentId]);
+  }, [activeModalType, selectedIncidentId, isBarangayDashboard]);
 
   // Fetch data
   const fetchData = async () => {
     try {
       setLoading(true);
       const [reportsRes, unitsRes, queueRes] = await Promise.allSettled([
-        reportAPI.list(),
-        respondUnitAPI.list(),
-        reportAPI.mdrrmoQueue(),
+        isBarangayDashboard ? reportAPI.barangayReports() : reportAPI.list(),
+        isBarangayDashboard ? Promise.resolve({ data: [] }) : respondUnitAPI.list(),
+        isBarangayDashboard ? Promise.resolve({ data: [] }) : reportAPI.mdrrmoQueue(),
       ]);
 
       const items: IncidentItem[] = [];
@@ -839,13 +870,13 @@ export default function CommandCenter() {
 
       if (reportsRes.status === 'fulfilled' && Array.isArray(reportsRes.value.data)) {
         reportsRes.value.data.forEach((r: any) => {
-          if (!isVisibleToMdrrmo(r)) return;
+          if (!isBarangayDashboard && !isVisibleToMdrrmo(r)) return;
           const lat = parseFloat(r.latitude);
           const lng = parseFloat(r.longitude);
           const reportStatus = String(r.status || '').toLowerCase();
           const barangayStatus = String(r.barangay_response_status || '').toLowerCase();
           const mdrrmoStatus = String(r.mdrrmo_response_status || r.response_status || '').toLowerCase();
-          const reportGroup = getMdrrmoReportGroup(r);
+          const reportGroup = isBarangayDashboard ? 'resident' : getMdrrmoReportGroup(r);
           const isEscalated = reportGroup === 'escalated';
           const mdrrmoCycleStatus = mdrrmoStatus || (isEscalated
             ? r.mdrrmo_resolved_at ? 'resolved' : r.mdrrmo_accepted_at || r.mdrrmo_arrived_at ? 'responding' : 'pending'
@@ -853,10 +884,12 @@ export default function CommandCenter() {
           const barangayCycleStatus = barangayStatus || (isEscalated
             ? r.barangay_resolved_at ? 'resolved' : r.barangay_accepted_at || r.barangay_arrived_at ? 'responding' : 'pending'
             : reportStatus);
-          const isResolved = ['resolved', 'closed'].includes(mdrrmoCycleStatus) &&
-            (!isEscalated || ['resolved', 'closed'].includes(barangayCycleStatus));
-          const isResponding = mdrrmoCycleStatus === 'responding';
-          const isArrived = Boolean(r.mdrrmo_arrived_at) ||
+          const barangayDashboardStatus = String(r.barangay_response_status || r.response_status || r.status || '').toLowerCase();
+          const isResolved = isBarangayDashboard
+            ? ['resolved', 'closed'].includes(barangayDashboardStatus)
+            : ['resolved', 'closed'].includes(mdrrmoCycleStatus) && (!isEscalated || ['resolved', 'closed'].includes(barangayCycleStatus));
+          const isResponding = isBarangayDashboard ? barangayDashboardStatus === 'responding' : mdrrmoCycleStatus === 'responding';
+          const isArrived = isBarangayDashboard ? Boolean(r.barangay_arrived_at) : Boolean(r.mdrrmo_arrived_at) ||
             (!isEscalated && !r.mdrrmo_response_status && Boolean(r.arrived_at));
           const stage: ReportStage = isResolved
             ? 'resolved'
@@ -867,7 +900,7 @@ export default function CommandCenter() {
                 : 'pending';
 
           metrics.push({ report_kind: reportGroup, status: stage });
-          if (!lat || !lng) return; // keep coordinate-less reports in the metrics, but not on the map
+          if (!Number.isFinite(lat) || !Number.isFinite(lng)) return; // keep coordinate-less reports in the metrics, but not on the map
 
           items.push({
             id: r.id,
@@ -965,12 +998,70 @@ export default function CommandCenter() {
     }
   };
 
+  const openAvailabilityForPin = async (pin: CommandLocationPin) => {
+    setSelectedAvailabilityPin(pin);
+    setAvailableResponderPins([]);
+    if (isBarangayDashboard && pin.type === 'office') return;
+    setAvailabilityLoading(true);
+    try {
+      const response = isBarangayDashboard
+        ? await reportAPI.availableBarangayResponders()
+        : await reportAPI.availableResponders({ location_type: pin.type, ...(pin.type === 'barangay' ? { barangay_id: pin.barangay_id || pin.id } : {}) });
+      setAvailableResponderPins(Array.isArray(response.data.responders) ? response.data.responders : []);
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error || 'Could not load responders near this location.');
+    } finally { setAvailabilityLoading(false); }
+  };
+
+  useEffect(() => {
+    let active = true;
+    const loadLocations = async () => {
+      try {
+        if (isBarangayDashboard) {
+          const response = await reportAPI.barangayLocation();
+          if (!active) return;
+          const pins: CommandLocationPin[] = [];
+          const office = response.data.office;
+          const own = response.data.barangay;
+          if (office?.latitude != null && office?.longitude != null) pins.push({
+            id: 'office', name: 'MDRRMO office', type: 'office', latitude: Number(office.latitude), longitude: Number(office.longitude), address: office.address,
+          });
+          if (own?.location_latitude != null && own?.location_longitude != null) pins.push({
+            id: own.id, barangay_id: own.id, name: `Barangay ${own.name || user?.barangay_name || ''}`.trim(), type: 'barangay', latitude: Number(own.location_latitude), longitude: Number(own.location_longitude), address: own.location_address,
+          });
+          setCommandLocationPins(pins);
+        } else {
+          const response = await reportAPI.commandLocations();
+          if (!active) return;
+          const pins: CommandLocationPin[] = [];
+          const office = response.data.office;
+          if (office?.latitude != null && office?.longitude != null) pins.push({
+            id: 'office', name: 'MDRRMO office', type: 'office', latitude: Number(office.latitude), longitude: Number(office.longitude), address: office.address,
+          });
+          for (const row of response.data.barangays || []) {
+            if (row.location_latitude == null || row.location_longitude == null) continue;
+            pins.push({ id: row.id, barangay_id: row.id, name: `Barangay ${row.name}`, type: 'barangay', latitude: Number(row.location_latitude), longitude: Number(row.location_longitude), address: row.location_address });
+          }
+          setCommandLocationPins(pins.filter((pin) => Number.isFinite(pin.latitude) && Number.isFinite(pin.longitude)));
+        }
+      } catch (error) {
+        console.error('Could not load command location pins:', error);
+        if (active) setCommandLocationPins([]);
+      }
+    };
+    const refresh = () => { void loadLocations(); };
+    refresh();
+    socket.on('command:locations_updated', refresh);
+    return () => { active = false; socket.off('command:locations_updated', refresh); };
+  }, [isBarangayDashboard, user?.barangay_name]);
+
   useEffect(() => {
     fetchData();
-    const requestLiveLocations = () => socket.emit('mdrrmo:requestResponderLocations');
+    const requestLiveLocations = () => { if (!isBarangayDashboard) socket.emit('mdrrmo:requestResponderLocations'); };
     const handleRefresh = () => {
       void fetchData();
       requestLiveLocations();
+      if (selectedAvailabilityPin) void openAvailabilityForPin(selectedAvailabilityPin);
     };
     const handleLiveLocation = (payload: any) => {
       if (payload?.responderId && Array.isArray(payload.assignments) && payload.assignments.length === 0) {
@@ -1007,6 +1098,12 @@ export default function CommandCenter() {
     socket.on('barangay:escalated', handleRefresh);
     socket.on('incident_report:mdrrmo_responding', handleRefresh);
     socket.on('incident_report:updated', handleRefresh);
+    socket.on('barangay:report_updated', handleRefresh);
+    socket.on('barangay:report_assigned', handleRefresh);
+    socket.on('barangay:report_assignment_removed', handleRefresh);
+    socket.on('barangay:availability_changed', handleRefresh);
+    socket.on('mdrrmo:availability_changed', handleRefresh);
+    socket.on('command:locations_updated', handleRefresh);
     socket.on('incident:lifecycle', handleRefresh);
     socket.on('task:statusChanged', handleRefresh);
     socket.on('mdrrmo:responder_location', handleLiveLocation);
@@ -1021,12 +1118,35 @@ export default function CommandCenter() {
       socket.off('barangay:escalated', handleRefresh);
       socket.off('incident_report:mdrrmo_responding', handleRefresh);
       socket.off('incident_report:updated', handleRefresh);
+      socket.off('barangay:report_updated', handleRefresh);
+      socket.off('barangay:report_assigned', handleRefresh);
+      socket.off('barangay:report_assignment_removed', handleRefresh);
+      socket.off('barangay:availability_changed', handleRefresh);
+      socket.off('mdrrmo:availability_changed', handleRefresh);
+      socket.off('command:locations_updated', handleRefresh);
       socket.off('incident:lifecycle', handleRefresh);
       socket.off('task:statusChanged', handleRefresh);
       socket.off('mdrrmo:responder_location', handleLiveLocation);
       socket.off('mdrrmo:responder_locations', handleLiveLocations);
     };
-  }, []);
+  }, [isBarangayDashboard, selectedAvailabilityPin]);
+
+  useEffect(() => {
+    const pin = selectedAvailabilityPin;
+    if (!pin || (isBarangayDashboard && pin.type === 'office')) return;
+    const refreshAvailability = async () => {
+      try {
+        const response = isBarangayDashboard
+          ? await reportAPI.availableBarangayResponders()
+          : await reportAPI.availableResponders({ location_type: pin.type, ...(pin.type === 'barangay' ? { barangay_id: pin.barangay_id || pin.id } : {}) });
+        setAvailableResponderPins(Array.isArray(response.data.responders) ? response.data.responders : []);
+      } catch (error) {
+        console.error('Could not refresh pin-scoped responder availability:', error);
+      }
+    };
+    const timer = window.setInterval(() => void refreshAvailability(), 10_000);
+    return () => window.clearInterval(timer);
+  }, [isBarangayDashboard, selectedAvailabilityPin]);
 
   // Stats calculation — real counts, no demo padding
   const stats = useMemo(() => {
@@ -1064,6 +1184,7 @@ export default function CommandCenter() {
   // Fit the initial and filtered map view to every report and visible unit point.
   const visiblePinPoints = useMemo((): [number, number][] => {
     const points = visibleIncidents.map((incident) => [incident.latitude, incident.longitude] as [number, number]);
+    commandLocationPins.forEach((pin) => points.push([pin.latitude, pin.longitude]));
     if (filters.responding) {
       dispatchUnits.forEach((unit) => {
         if (!boundary.enabled || isCoordinateInsideBoundary(unit.latitude, unit.longitude, boundary.geometry)) {
@@ -1073,10 +1194,12 @@ export default function CommandCenter() {
       visibleLiveResponders.forEach((responder) => points.push([responder.latitude, responder.longitude]));
     }
     return points;
-  }, [visibleIncidents, dispatchUnits, visibleLiveResponders, filters.responding, boundary]);
+  }, [visibleIncidents, commandLocationPins, dispatchUnits, visibleLiveResponders, filters.responding, boundary]);
 
   const selectedResponder = visibleLiveResponders.find((responder) => responder.responderId === selectedResponderId) || null;
-  const selectedMapDot = selectedIncident
+  const selectedMapDot = selectedAvailabilityPin
+    ? { key: `command-location:${selectedAvailabilityPin.id}`, position: [selectedAvailabilityPin.latitude, selectedAvailabilityPin.longitude] as [number, number] }
+    : selectedIncident
     ? { key: `incident:${selectedIncident.id}`, position: [selectedIncident.latitude, selectedIncident.longitude] as [number, number] }
     : selectedUnit
       ? { key: `unit:${selectedUnit.id}`, position: [selectedUnit.latitude, selectedUnit.longitude] as [number, number] }
@@ -1086,14 +1209,17 @@ export default function CommandCenter() {
 
   const mapFitKey = useMemo(() => [
     ...visibleIncidents.map((incident) => `report:${incident.id}:${incident.latitude}:${incident.longitude}`),
+    ...commandLocationPins.map((pin) => `command-location:${pin.id}:${pin.latitude}:${pin.longitude}`),
     ...(filters.responding ? dispatchUnits
       .filter((unit) => !boundary.enabled || isCoordinateInsideBoundary(unit.latitude, unit.longitude, boundary.geometry))
       .map((unit) => `unit:${unit.id}:${unit.latitude}:${unit.longitude}`) : []),
     ...visibleLiveResponders.map((responder) => `responder:${responder.responderId}`),
-  ].sort().join('|'), [visibleIncidents, dispatchUnits, filters.responding, boundary, visibleLiveResponders]);
+  ].sort().join('|'), [visibleIncidents, commandLocationPins, dispatchUnits, filters.responding, boundary, visibleLiveResponders]);
 
   // Click Handlers
   const handleOpenIncidentPin = (item: IncidentItem) => {
+    setSelectedAvailabilityPin(null);
+    setAvailableResponderPins([]);
     setSelectedResponderId(null);
     setSelectedUnit(null);
     setSelectedIncident(item);
@@ -1113,6 +1239,8 @@ export default function CommandCenter() {
   };
 
   const handleOpenUnitPin = (unit: DispatchUnitItem) => {
+    setSelectedAvailabilityPin(null);
+    setAvailableResponderPins([]);
     setSelectedResponderId(null);
     setSelectedIncident(null);
     setSelectedVisualUrl(null);
@@ -1267,6 +1395,10 @@ export default function CommandCenter() {
 
   const handleDispatch = (overrideConfirm = false) => {
     if (!selectedIncident) return;
+    if (isBarangayDashboard) {
+      navigate(`/reports?id=${encodeURIComponent(selectedIncident.id)}&status=${selectedIncident.status === 'resolved' ? 'resolved' : selectedIncident.status === 'responding' || selectedIncident.status === 'arrived' ? 'responding' : 'pending'}`);
+      return;
+    }
 
     // Check if Barangay is currently responding
     const isBarangayResponding =
@@ -1414,6 +1546,24 @@ export default function CommandCenter() {
 
           <ClusteredIncidentMarkers incidents={visibleIncidents} selectedId={selectedIncident?.id} onSelect={handleOpenIncidentPin} />
 
+          {commandLocationPins.map((pin) => (
+            <Marker
+              key={`command-location-pin-${pin.id}`}
+              position={[pin.latitude, pin.longitude]}
+              icon={pin.type === 'office' ? commandOfficePinIcon : commandBarangayPinIcon}
+              zIndexOffset={1800}
+              eventHandlers={{ click: () => void openAvailabilityForPin(pin) }}
+            >
+              <Popup className="command-map-cluster-popup" minWidth={220}>
+                <div className="command-pin-popup">
+                  <strong>{pin.name}</strong>
+                  {pin.address && <span>{pin.address}</span>}
+                  <small>{isBarangayDashboard && pin.type === 'office' ? 'Responder availability is limited to the MDRRMO dashboard.' : 'Click this pin to see available responders within 100 meters.'}</small>
+                </div>
+              </Popup>
+            </Marker>
+          ))}
+
           {/* Dispatch Units Markers */}
           {filters.responding &&
             dispatchUnits.map((u) => (
@@ -1464,6 +1614,15 @@ export default function CommandCenter() {
           )}
           <MunicipalityBoundaryMapLayer boundary={boundary} />
         </MapContainer>
+
+        {selectedAvailabilityPin && <aside className="command-availability-panel" aria-live="polite">
+          <header><div><strong>{selectedAvailabilityPin.name}</strong><span>Available responders within 100 m</span></div><button type="button" aria-label="Close responder list" onClick={() => { setSelectedAvailabilityPin(null); setAvailableResponderPins([]); }}>×</button></header>
+          {isBarangayDashboard && selectedAvailabilityPin.type === 'office'
+            ? <p>Only MDRRMO command-center users can view MDRRMO responder availability.</p>
+            : availabilityLoading ? <p>Checking active assignments and fresh GPS…</p>
+              : availableResponderPins.length === 0 ? <p>No responders currently meet the availability and location requirements.</p>
+                : <ul>{availableResponderPins.map((responder) => <li key={responder.id}><span><strong>{responder.full_name}</strong>{responder.phone && <a href={`tel:${responder.phone}`}>{responder.phone}</a>}</span><small>{responder.distance_m} m away</small></li>)}</ul>}
+        </aside>}
 
         {!(activeModalType === 'escalated' || (activeModalType === 'incident' && selectedIncident?.status !== 'pending')) && <CurrentWeatherPanel />}
 
@@ -1653,7 +1812,7 @@ export default function CommandCenter() {
                   </div>
                 </div>
                 {selectedIncident.status === 'pending' && <div className="selection-actions">
-                  <button className="selection-invalid-btn" onClick={() => setInvalidReviewStep('choice')}>Invalid Report</button>
+                  {!isBarangayDashboard && <button className="selection-invalid-btn" onClick={() => setInvalidReviewStep('choice')}>Invalid Report</button>}
                   {!selectedIncident.mdrrmo_dispatched && (
                     <button type="button" className="selection-dispatch-btn" onClick={() => handleDispatch()} disabled={dispatching}>
                       {dispatching ? 'Dispatching…' : 'Dispatch'}
@@ -1917,9 +2076,9 @@ export default function CommandCenter() {
 
                 {selectedIncident.status === 'pending' && !selectedIncident.mdrrmo_dispatched && (
                   <div className="selection-actions escalated-selection-actions">
-                    <button type="button" className="selection-dispatch-btn" onClick={() => handleDispatch()} disabled={dispatching}>
+                    {!isBarangayDashboard && <button type="button" className="selection-dispatch-btn" onClick={() => handleDispatch()} disabled={dispatching}>
                       {dispatching ? 'Dispatching…' : 'Dispatch'}
-                    </button>
+                    </button>}
                   </div>
                 )}
 

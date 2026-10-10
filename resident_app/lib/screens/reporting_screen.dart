@@ -54,6 +54,10 @@ class ReportingScreen extends StatefulWidget {
 }
 
 class _ReportingScreenState extends State<ReportingScreen> {
+  bool get _hasSignedInProfile {
+    final token = OfflineService.getProfile()?['token']?.toString();
+    return token != null && token.isNotEmpty;
+  }
   late final String _reportType;
   String? _selectedCategory;
   String? _selectedSpecific;
@@ -72,6 +76,7 @@ class _ReportingScreenState extends State<ReportingScreen> {
   int _earlierMinutes = 30;
   bool _keepCurrentLocationForSubmit = false;
   final TextEditingController _descController = TextEditingController();
+  final TextEditingController _guestPhoneController = TextEditingController();
 
   LatLng? _currentLocation;
   bool _locationCheckComplete = false;
@@ -168,6 +173,7 @@ class _ReportingScreenState extends State<ReportingScreen> {
     _selectedCategory = draft['category']?.toString();
     _selectedSpecific = draft['specifics']?.toString();
     _descController.text = draft['description']?.toString() ?? '';
+    _guestPhoneController.text = draft['guest_phone']?.toString() ?? '';
     _sendTo = draft['send_to']?.toString() ?? 'barangay';
     _selectedBarangayId = draft['barangay_id']?.toString();
     _selectedBarangayName = draft['barangay_name']?.toString();
@@ -233,10 +239,8 @@ class _ReportingScreenState extends State<ReportingScreen> {
     'proof_paths': _proofs.map((proof) => proof.file.path).toList(),
     'proof_types': _proofs.map((proof) => proof.type).toList(),
     'proof_durations': _proofs.map((proof) => proof.durationSeconds).toList(),
-    'send_to': _sendTo,
-    'barangay_id': _selectedBarangayId,
-    'barangay_name': _selectedBarangayName,
-    'contact_number': OfflineService.getProfile()?['contact_number'],
+    'send_to': 'mdrrmo',
+    'guest_phone': _guestPhoneController.text,
   };
 
   Future<void> _confirmExit() async {
@@ -754,14 +758,13 @@ class _ReportingScreenState extends State<ReportingScreen> {
       ).showSnackBar(const SnackBar(content: Text('Please select a Category')));
       return;
     }
-    if ((_reportType == 'community' || _sendTo == 'barangay') &&
-        _selectedBarangayId == null) {
+    final profile = OfflineService.getProfile();
+    final token = profile?['token']?.toString();
+    final isSignedIn = token != null && token.isNotEmpty;
+    final guestPhone = PhoneNumberUtils.digitsOnly(_guestPhoneController.text);
+    if (!isSignedIn && !PhoneNumberUtils.isValid(guestPhone)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Set your barangay in Settings before submitting this report.',
-          ),
-        ),
+        const SnackBar(content: Text('Enter a valid 11-digit mobile number starting with 09.')),
       );
       return;
     }
@@ -774,21 +777,15 @@ class _ReportingScreenState extends State<ReportingScreen> {
     setState(() => _isUploading = true);
 
     try {
-      final profile = OfflineService.getProfile();
-      if (profile == null) {
-        throw Exception(
-          'Phone number missing. Please set your phone number first.',
-        );
-      }
-
-      final token = profile['token']?.toString();
-      final reporterName = (profile['full_name'] ?? '').toString().trim();
+      final reporterName = (isSignedIn ? profile?['full_name'] : null)?.toString().trim() ?? '';
       final nameParts = reporterName
           .split(RegExp(r'\s+'))
           .where((part) => part.isNotEmpty)
           .toList();
-      final email = (profile['email'] ?? '').toString().trim();
-      final rawPhone = (profile['contact_number'] ?? '').toString().trim();
+      final email = (isSignedIn ? profile?['email'] : null)?.toString().trim() ?? '';
+      final rawPhone = isSignedIn
+          ? (profile?['contact_number'] ?? profile?['phone'] ?? '').toString().trim()
+          : guestPhone;
       final isFirstSubmitAttempt = _clientSubmittedAt == null;
       _clientSubmittedAt ??= DateTime.now().toUtc();
       if (isFirstSubmitAttempt && _incidentTimeChoice == 'just_now') {
@@ -811,21 +808,14 @@ class _ReportingScreenState extends State<ReportingScreen> {
         'longitude': _currentLocation!.longitude.toString(),
         'proof_type': _proofs.first.type,
         'proof_types': jsonEncode(_proofs.map((p) => p.type).toList()),
-        'reporter_type': 'resident',
-        'reporter_name': reporterName,
+        'reporter_type': isSignedIn ? 'resident' : 'guest',
+        'reporter_name': reporterName.isNotEmpty ? reporterName : 'Guest Reporter',
         'reporter_email': email,
         'first_name': nameParts.isNotEmpty ? nameParts.first : '',
         'last_name': nameParts.length > 1 ? nameParts.skip(1).join(' ') : '',
-        'contact_number': rawPhone.contains('@')
-            ? ''
-            : PhoneNumberUtils.digitsOnly(rawPhone),
-        'send_to': _sendTo,
+        'contact_number': rawPhone.contains('@') ? '' : PhoneNumberUtils.digitsOnly(rawPhone),
+        'send_to': 'mdrrmo',
       };
-
-      // Barangay routing
-      if (_selectedBarangayId != null) {
-        fields['barangay_id'] = _selectedBarangayId!;
-      }
 
       // Commit the incident before transferring large evidence files.
       final response = await http
@@ -861,11 +851,6 @@ class _ReportingScreenState extends State<ReportingScreen> {
           );
         }
         if (mounted) {
-          final recipient = _sendTo == 'barangay'
-              ? (_selectedBarangayName == null
-                    ? 'your barangay'
-                    : 'Barangay $_selectedBarangayName')
-              : 'MDRRMO';
           showDialog(
             context: context,
             barrierDismissible: false,
@@ -881,7 +866,7 @@ class _ReportingScreenState extends State<ReportingScreen> {
                 ],
               ),
               content: Text(
-                'Your report is being reviewed by $recipient.',
+                'Your report has been sent to MDRRMO for review.',
                 style: const TextStyle(fontSize: 18, height: 1.4),
               ),
               actions: [
@@ -891,7 +876,9 @@ class _ReportingScreenState extends State<ReportingScreen> {
                     Navigator.pushReplacement(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => const MyReportsScreen(),
+                        builder: (_) => MyReportsScreen(
+                          guestPhone: fields['contact_number'].toString(),
+                        ),
                       ),
                     );
                   },
@@ -1029,193 +1016,29 @@ class _ReportingScreenState extends State<ReportingScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // ── Barangay Selection ─────────────────────────────────
-                    const Text(
-                      'Send Report To',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF1E293B),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    if (_reportType == 'emergency') ...[
-                      Row(
-                        children: [
-                          // Barangay Button (matching user screenshot)
-                          Expanded(
-                            child: SizedBox(
-                              height: 48,
-                              child: ElevatedButton(
-                                onPressed: _selectedBarangayId == null
-                                    ? null
-                                    : () =>
-                                          setState(() => _sendTo = 'barangay'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: _sendTo == 'barangay'
-                                      ? const Color(0xFF1B4F72)
-                                      : Colors.white,
-                                  foregroundColor: _sendTo == 'barangay'
-                                      ? Colors.white
-                                      : const Color(0xFF1B4F72),
-                                  elevation: _sendTo == 'barangay' ? 2 : 0,
-                                  side: BorderSide(
-                                    color: const Color(0xFF1B4F72),
-                                    width: _sendTo == 'barangay' ? 0 : 1.5,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                  ),
-                                ),
-                                child: Text(
-                                  _selectedBarangayName != null
-                                      ? 'Barangay $_selectedBarangayName'
-                                      : 'Set Barangay in Settings',
-                                  style: const TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          // MDRRMO Button (matching user screenshot)
-                          Expanded(
-                            child: SizedBox(
-                              height: 48,
-                              child: ElevatedButton(
-                                onPressed: () =>
-                                    setState(() => _sendTo = 'mdrrmo'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: _sendTo == 'mdrrmo'
-                                      ? const Color(0xFFE53935)
-                                      : Colors.white,
-                                  foregroundColor: _sendTo == 'mdrrmo'
-                                      ? Colors.white
-                                      : const Color(0xFFE53935),
-                                  elevation: _sendTo == 'mdrrmo' ? 2 : 0,
-                                  side: BorderSide(
-                                    color: const Color(0xFFE53935),
-                                    width: _sendTo == 'mdrrmo' ? 0 : 1.5,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                ),
-                                child: const Text(
-                                  'MDRRMO',
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            const Icon(
-                              Icons.info_outline,
-                              size: 15,
-                              color: Color(0xFF1E88E5),
-                            ),
-                            const SizedBox(width: 5),
-                            Expanded(
-                              child: Text(
-                                _sendTo == 'barangay'
-                                    ? (_selectedBarangayName != null
-                                          ? 'Report will be sent to $_selectedBarangayName (Only your barangay will see this)'
-                                          : 'Report will be sent to your Barangay')
-                                    : 'Report will be sent to MDRRMO (Only MDRRMO will see this)',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: Color(0xFF1E88E5),
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ),
-                          ],
+                    if (!_hasSignedInProfile) ...[
+                      TextField(
+                        controller: _guestPhoneController,
+                        keyboardType: TextInputType.phone,
+                        inputFormatters: PhoneNumberUtils.inputFormatters,
+                        decoration: const InputDecoration(
+                          labelText: 'Mobile number *',
+                          hintText: '09XXXXXXXXX',
+                          helperText: 'Required so MDRRMO can contact you about this report.',
+                          prefixIcon: Icon(Icons.phone),
+                          border: OutlineInputBorder(),
                         ),
                       ),
+                      const SizedBox(height: 18),
                     ] else ...[
                       Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 14,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          border: Border.all(color: Colors.grey.shade300),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(
-                              Icons.location_city,
-                              color: Color(0xFF1B4F72),
-                              size: 20,
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                _selectedBarangayName == null
-                                    ? 'Barangay not set in Settings'
-                                    : 'Barangay $_selectedBarangayName',
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  color: Color(0xFF1E293B),
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                            const Text(
-                              'Change in Settings',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: Color(0xFF64748B),
-                              ),
-                            ),
-                          ],
-                        ),
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(color: const Color(0xFFEFF6FF), borderRadius: BorderRadius.circular(8)),
+                        child: const Text('This report will be sent to MDRRMO for review.', style: TextStyle(color: Color(0xFF1B4F72), fontWeight: FontWeight.w600)),
                       ),
-                      Padding(
-                        padding: const EdgeInsets.only(top: 6),
-                        child: Row(
-                          children: [
-                            const Icon(
-                              Icons.info_outline,
-                              size: 14,
-                              color: Color(0xFF1E88E5),
-                            ),
-                            const SizedBox(width: 4),
-                            Expanded(
-                              child: Text(
-                                _selectedBarangayName == null
-                                    ? 'Set your barangay in Settings to route this report.'
-                                    : 'Report will be sent to $_selectedBarangayName and MDRRMO',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: Color(0xFF1E88E5),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                      const SizedBox(height: 18),
                     ],
-
-                    const SizedBox(height: 18),
 
                     if (_reportType == 'community') ...[
                       DropdownButtonFormField<String>(
@@ -1625,6 +1448,7 @@ class _ReportingScreenState extends State<ReportingScreen> {
   @override
   void dispose() {
     _descController.dispose();
+    _guestPhoneController.dispose();
     super.dispose();
   }
 }

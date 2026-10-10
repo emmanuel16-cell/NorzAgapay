@@ -15,7 +15,8 @@ class ReportHubScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final profile = OfflineService.getProfile();
-    final name = profile?['full_name'] as String? ?? 'Resident';
+    final isSignedIn = OfflineService.isLoggedIn();
+    final name = isSignedIn ? (profile?['full_name'] as String? ?? 'Resident') : 'Guest';
     final barangay = profile?['barangay_name'] as String?;
 
     return Scaffold(
@@ -58,7 +59,7 @@ class ReportHubScreen extends StatelessWidget {
                       color: Colors.white.withValues(alpha: 0.15),
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(Icons.verified_user_rounded, color: Colors.white, size: 26),
+                    child: Icon(isSignedIn ? Icons.verified_user_rounded : Icons.person_outline_rounded, color: Colors.white, size: 26),
                   ),
                   const SizedBox(width: 14),
                   Expanded(
@@ -75,7 +76,9 @@ class ReportHubScreen extends StatelessWidget {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          barangay != null
+                          !isSignedIn
+                              ? 'Guest report • mobile number required'
+                              : barangay != null
                               ? 'Verified Resident • Barangay $barangay'
                               : 'Verified Resident of Norzagaray',
                           style: const TextStyle(color: Colors.white70, fontSize: 12),
@@ -102,8 +105,8 @@ class ReportHubScreen extends StatelessWidget {
             _ReportingOptionCard(
               title: 'Emergency Incident',
               subtitle:
-                  'Life-threatening emergencies, severe floods, major fires, or medical crises. Direct high-priority dispatch to MDRRMO and Barangay.',
-              badge: 'High Priority Dispatch',
+                  'Life-threatening emergencies, severe floods, major fires, or medical crises. Every report is received by MDRRMO for response coordination.',
+              badge: 'MDRRMO Intake',
               icon: Icons.emergency_rounded,
               accentColor: const Color(0xFFDC2626),
               onTap: () {
@@ -121,8 +124,8 @@ class ReportHubScreen extends StatelessWidget {
             _ReportingOptionCard(
               title: 'Community Incident',
               subtitle:
-                  'Non-life threatening community concerns: drainage blocks, fallen trees, road hazards, cracked pavement, or minor flooding.',
-              badge: 'Barangay Action',
+                  'Non-life threatening community concerns: drainage blocks, fallen trees, road hazards, cracked pavement, or minor flooding. MDRRMO may assign it to your barangay for local response.',
+              badge: 'MDRRMO Intake',
               icon: Icons.home_repair_service_rounded,
               accentColor: const Color(0xFFD97706),
               onTap: () {

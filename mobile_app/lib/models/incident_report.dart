@@ -64,6 +64,12 @@ class IncidentReport {
   final double? arrivalDistanceM;
   final DateTime? resolvedAt;
   final String resolutionPdfStatus;
+  final bool isCentralAssignment;
+  final String? assignmentId;
+  final String? assignmentStatus;
+  final String? assignmentNotes;
+  final String? responseBarangayId;
+  final String? responseBarangayName;
 
   IncidentReport({
     required this.id,
@@ -115,6 +121,12 @@ class IncidentReport {
     this.arrivalDistanceM,
     this.resolvedAt,
     this.resolutionPdfStatus = 'missing',
+    this.isCentralAssignment = false,
+    this.assignmentId,
+    this.assignmentStatus,
+    this.assignmentNotes,
+    this.responseBarangayId,
+    this.responseBarangayName,
   })  : proofUrls = proofUrls ?? (proofUrl != null ? [proofUrl] : []),
         proofTypes = proofTypes ?? [proofType],
         responderMedia = responderMedia ?? const [];
@@ -272,6 +284,12 @@ class IncidentReport {
       arrivalDistanceM: (json['arrival_distance_m'] as num?)?.toDouble(),
       resolvedAt: _channelDate(json, 'barangay', 'resolved_at', 'resolved_at'),
       resolutionPdfStatus: json['resolution_pdf_status']?.toString() ?? 'missing',
+      isCentralAssignment: json['is_central_assignment'] == true,
+      assignmentId: json['assignment_id']?.toString(),
+      assignmentStatus: json['assignment_status']?.toString(),
+      assignmentNotes: json['assignment_notes']?.toString(),
+      responseBarangayId: json['response_barangay_id']?.toString(),
+      responseBarangayName: json['response_barangay_name']?.toString(),
     );
   }
 
@@ -322,6 +340,12 @@ class IncidentReport {
       'arrival_distance_m': arrivalDistanceM,
       'resolved_at': resolvedAt?.toIso8601String(),
       'resolution_pdf_status': resolutionPdfStatus,
+      'is_central_assignment': isCentralAssignment,
+      'assignment_id': assignmentId,
+      'assignment_status': assignmentStatus,
+      'assignment_notes': assignmentNotes,
+      'response_barangay_id': responseBarangayId,
+      'response_barangay_name': responseBarangayName,
     };
   }
 }

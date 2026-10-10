@@ -31,7 +31,7 @@ api.interceptors.response.use(
   (res) => res,
   (err) => {
     const url = String(err.config?.url || '');
-    const isLoginRequest = /\/auth\/login(?:$|\?)/.test(url);
+    const isLoginRequest = /\/(?:auth\/login|barangay\/login)(?:$|\?)/.test(url);
     if (err.response?.status === 401 && !isLoginRequest) {
       localStorage.removeItem('norzagapay_token');
       localStorage.removeItem('norzagapay_user');
@@ -46,6 +46,8 @@ export default api;
 // Auth
 export const authAPI = {
   login: (email: string, password: string) => api.post('/auth/login', { email, password }),
+  barangayLogin: (email: string, password: string) => api.post('/barangay/login', { email, password }),
+  barangayMe: () => api.get('/barangay/me'),
   masterAdminSetupStatus: () => api.get('/auth/master-admin-setup/status'),
   createMasterAdmin: (data: { full_name: string; email: string; password: string }) => api.post('/auth/master-admin-setup', data),
   register: (data: any) => api.post('/auth/register', data),
@@ -53,8 +55,8 @@ export const authAPI = {
 };
 
 export const debugAPI = {
-  accounts: () => api.get('/debug/accounts?audience=standard'),
-  quickLogin: (accountId: string) => api.post('/debug/quick-login', { accountId, audience: 'standard' }),
+  accounts: (audience: 'standard' | 'barangay' = 'standard') => api.get('/debug/accounts', { params: { audience } }),
+  quickLogin: (accountId: string, audience: 'standard' | 'barangay' = 'standard') => api.post('/debug/quick-login', { accountId, audience }),
 };
 
 // Public broadcast feed and the persisted MDRRMO post manager.
@@ -181,6 +183,31 @@ export const reportAPI = {
   list: (params?: any) => api.get('/incident-reports', { params }),
   get: (id: string) => api.get(`/incident-reports/${id}`),
   mdrrmoQueue: () => api.get('/mdrrmo/reports/queue'),
+  barangayReports: (params?: any) => api.get('/barangay/reports', { params }),
+  barangayResponders: () => api.get('/barangay/team/responders'),
+  dispatchToBarangay: (id: string, data: { team_leader_ids: string[]; incident_type: string; severity: string; notes?: string }) => api.patch(`/barangay/assigned-reports/${id}/dispatch`, data),
+  respondBarangayAssignment: (id: string, notes?: string) => api.patch(`/barangay/assigned-reports/${id}/respond`, { notes }),
+  arriveBarangayAssignment: (id: string, data: { method: 'gps' | 'manual'; latitude?: number; longitude?: number; accuracy_m?: number; fix_at?: string }) => api.patch(`/barangay/assigned-reports/${id}/arrive`, data),
+  closeBarangayAssignment: (id: string, resolved_notes: string) => api.post(`/barangay/assigned-reports/${id}/close`, { resolved_notes }),
+  escalateBarangayAssignment: (id: string, notes: string) => api.patch(`/barangay/assigned-reports/${id}/escalate`, { notes }),
+  assignBarangay: (id: string, data: { barangay_id: string; notes: string }) => api.post(`/mdrrmo/reports/${id}/assign-barangay`, data),
+  reassignBarangay: (id: string, data: { barangay_id: string; notes: string }) => api.post(`/mdrrmo/reports/${id}/reassign-barangay`, data),
+  recallBarangay: (id: string, notes: string) => api.post(`/mdrrmo/reports/${id}/recall-barangay`, { notes }),
+  barangayDestinations: () => api.get('/mdrrmo/reports/barangay-destinations'),
+  commandLocations: () => api.get('/mdrrmo/reports/command-locations'),
+  availableResponders: (params: { location_type: 'office' | 'barangay'; barangay_id?: string }) => api.get('/mdrrmo/reports/available-responders', { params }),
+  barangayLocation: () => api.get('/barangay/location'),
+  availableBarangayResponders: () => api.get('/barangay/location/available-responders'),
+  saveBarangayLocation: (data: { latitude: number; longitude: number; address?: string | null }) => api.put('/barangay/location', data),
+  saveOfficeLocation: (data: { latitude: number; longitude: number; address?: string | null }) => api.put('/mdrrmo/reports/command-locations/office', data),
+  guestReport: (data: { type: string; title: string; description: string; latitude: number; longitude: number; contact_number: string; incident_time_choice?: string; incident_occurred_at?: string | null; incident_time_precision?: string }, evidence?: File | null) => {
+    const body = new FormData();
+    Object.entries(data).forEach(([key, value]) => body.append(key, value == null ? '' : String(value)));
+    body.append('send_to', 'mdrrmo');
+    if (evidence) { body.append('proof', evidence); body.append('proof_type', evidence.type.startsWith('video/') ? 'video' : 'image'); }
+    return api.post('/incident-reports', body, { headers: { 'Content-Type': 'multipart/form-data' } });
+  },
+  publicHotlines: () => api.get('/barangay/public-hotlines'),
   downloadMdrrmoResolutionPdf: (id: string) => api.get(`/mdrrmo/reports/${id}/resolution-pdf`, { responseType: 'blob' }),
   mdrrmoResponders: () => api.get<{ responders: Array<{ id: string; full_name: string; phone?: string | null; unit_type?: string | null; unit_id: string; unit_name: string }> }>('/mdrrmo/reports/responders'),
   dispatchToMdrrmo: (id: string, data: { responder_ids: string[]; incident_type: string; severity: string; notes?: string }) => api.post(`/mdrrmo/reports/${id}/dispatch`, data),
