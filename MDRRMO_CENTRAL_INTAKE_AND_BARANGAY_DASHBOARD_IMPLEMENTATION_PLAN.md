@@ -2,11 +2,11 @@
 
 ## Goal
 
-Route every new resident incident report to MDRRMO first. MDRRMO reviews the incident and either dispatches municipal responders or assigns it to an approved barangay that can handle it. Barangay users can sign in to the web dashboard and work only on reports assigned to their barangay.
+Let residents choose the closest active barangay or MDRRMO when submitting an incident report. A barangay can escalate its assigned report to MDRRMO; an MDRRMO dispatcher can route an MDRRMO report to the closest active barangay. Keep barangay users scoped to reports assigned to their barangay.
 
 ## Current-state findings
 
-- `backend/src/routes/incidentReports.ts` currently honors the resident app's `send_to` choice and inserts reports into either `mdrrmo_reports` or `barangay_reports`. The report's `barangay_id` is resolved from its location and is also used by the barangay workflow today.
+- `backend/src/routes/incidentReports.ts` stores new reports as canonical `mdrrmo_reports` records. The resident's `send_to` choice determines whether the record receives an immediate closest-active-barangay assignment or enters the MDRRMO queue without one; `barangay_id` continues to describe incident geography.
 - MDRRMO reports already have a central queue in `backend/src/routes/mdrrmoReports.ts`. Barangay operations use a separate `barangay_reports` table and `/api/barangay/reports` endpoints.
 - Barangay authentication already exists at `/api/barangay/login`. Its token includes `barangayId`, and `authenticateBarangay` rechecks the account and barangay activation. Most barangay report queries filter using that token scope.
 - The web dashboard currently signs in through the MDRRMO auth flow. `AuthContext` only grants dashboard access to MDRRMO roles, and `App.tsx` routes are written for MDRRMO roles. Barangay users cannot currently use this dashboard session.
@@ -16,9 +16,9 @@ Route every new resident incident report to MDRRMO first. MDRRMO reviews the inc
 
 ## Recommended workflow and data rules
 
-1. Every new report enters the MDRRMO queue, regardless of any `send_to` value sent by an older client. The report's location barangay remains recorded for geography and filtering.
-2. MDRRMO decides whether to dispatch municipal responders or assign the report to one approved, active barangay. The destination is an operational assignment and may differ from the barangay where the incident occurred.
-3. Keep the incident as one canonical `mdrrmo_reports` record. Add a barangay assignment record with the destination, assigning MDRRMO user, assignment time, notes, and assignment lifecycle. Do not use `barangay_id` as the assignment destination or create an unlinked duplicate report.
+1. Every new report is one canonical `mdrrmo_reports` record. A resident choosing MDRRMO enters the central queue; a resident choosing the closest barangay receives an active assignment to the nearest approved, active barangay with a known location. The report's location barangay remains recorded for geography and filtering.
+2. MDRRMO can dispatch municipal responders or assign an MDRRMO-routed report to an approved, active barangay. Offer the nearest eligible barangay first, ranked by distance from the incident coordinates, while allowing a dispatcher to select another destination.
+3. Keep the incident as one canonical `mdrrmo_reports` record. Use the barangay assignment record for both resident-selected local routing and MDRRMO assignments, retaining the assignment source, destination, time, notes, and lifecycle. Do not use `barangay_id` as the assignment destination or create an unlinked duplicate report.
 4. Allow only one active barangay assignment per report. MDRRMO can reassign or recall an open assignment with a recorded reason. Completed or closed incidents cannot be silently reassigned.
 5. The assigned barangay can dispatch its own responders, update field status, document the result, resolve the incident, or report/escalate it directly to MDRRMO. Escalation ends the active barangay assignment, returns the incident to the MDRRMO queue immediately with its history and notes, and has no separate assistance-request approval step. MDRRMO retains the full incident view and authority over assignment and reassignment.
 6. Keep municipal responder lifecycle separate from barangay response lifecycle so the two dispatch paths do not overwrite each other's status, timestamps, or notes. Resident tracking presents one coherent timeline assembled from the central report and its assignment history.
@@ -35,19 +35,19 @@ Route every new resident incident report to MDRRMO first. MDRRMO reviews the inc
 
 ### 2. Centralize all new report intake
 
-- Change `POST /api/incident-reports` so every new resident report is inserted into `mdrrmo_reports`, including reports submitted by older clients with `send_to=barangay`.
+- Change `POST /api/incident-reports` so every new resident report is inserted into `mdrrmo_reports`; validate `send_to`, and create an active closest-barangay assignment when the resident selects `barangay`.
 - Continue resolving and storing the incident's geographic barangay. Stop treating that field as proof that a barangay owns the report.
 - Preserve idempotency (`client_request_id`), evidence uploads, reporter details, coordinates, and resident tracking behavior during the routing change.
 - Add a public resident incident-reporting option beside the web dashboard login. Residents can submit a report without creating an account; require and validate a mobile number on this guest form and store it as the report contact number.
 - Below the public web reporting option, show a hotline directory available without login. Include published MDRRMO hotlines and hotlines added by barangays, labeled with the responsible barangay; load the list from a public read-only endpoint and keep hotline management restricted to authorized users.
 - Keep incident reporting in `resident_app` available without login. Require a valid mobile number when the reporter is not signed in; for signed-in residents, use their account contact details. The backend must enforce this distinction and reject guest submissions with a missing or invalid number.
-- Update the resident app to remove the recipient choice and show that reports are reviewed by MDRRMO before local assignment. Keep server-side behavior authoritative for old app versions.
-- Notify only the MDRRMO queue at intake. Notify the assigned barangay only after MDRRMO records an assignment.
+- Give residents the same `Closest barangay` / `MDRRMO` choice in `resident_app` and the public web report form. Explain that a barangay can escalate to MDRRMO and an MDRRMO dispatcher can route its reports to a nearby barangay.
+- Notify the selected operational queue at intake. For resident-selected local routing, notify only the assigned barangay and report owner; for MDRRMO routing, notify MDRRMO.
 
 ### 3. Add MDRRMO assignment controls
 
 - Add an “Assign to Barangay” action to the MDRRMO report detail view alongside the existing municipal dispatch path.
-- Load eligible destinations from the server using verified/active barangay status. Show both the incident location barangay and the selected response barangay to prevent confusion.
+- Load eligible destinations from the server using verified/active barangay status, sorted by distance from the incident location. Preselect and label the nearest eligible destination while allowing dispatcher choice. Show both the incident location barangay and the selected response barangay.
 - Require a destination and assignment notes; provide reassign and recall actions with a reason. Show current assignment, assignment history, and barangay response progress to MDRRMO users.
 - Publish assignment changes to the MDRRMO dashboard, resident timeline, and only the destination barangay's scoped realtime room.
 - Keep false-report review, municipal dispatch, and assignment as distinct actions with clear server validation so only one response path is active at a time.
@@ -78,8 +78,8 @@ Route every new resident incident report to MDRRMO first. MDRRMO reviews the inc
 
 ### 6. Rollout and completion checks
 
-- Apply the database migration before enabling the new intake and dashboard paths. Roll out the backend before the web and mobile clients; old resident clients remain compatible because the backend ignores their recipient choice.
-- Verify that every new report first appears in MDRRMO, and that a report assigned to a different barangay preserves its original geographic barangay.
+- Apply the database migrations before enabling the new intake and dashboard paths. Roll out the backend before the web and mobile clients; reports remain canonical and server-side routing validates the resident's selected destination.
+- Verify that a resident-selected closest-barangay report appears only in that barangay's queue and can be escalated to MDRRMO, while an MDRRMO-selected report appears in the MDRRMO queue and can be assigned to the nearest eligible barangay.
 - Verify that a barangay can list and update only its active assignments; attempts to access another barangay's report, media, export, or mutation return an authorization failure.
 - Verify that MDRRMO can assign, reassign, recall, and track reports, while the resident sees the complete report timeline.
 - Verify existing municipal dispatch, direct barangay-to-MDRRMO escalation, evidence uploads, legacy report history, and both dashboard login paths continue to work through the transition.
@@ -90,7 +90,9 @@ Route every new resident incident report to MDRRMO first. MDRRMO reviews the inc
 
 ## Acceptance criteria
 
-- All newly submitted resident reports enter the MDRRMO queue first, independent of client version or `send_to` payload.
+- Resident reporting offers `Closest barangay` and `MDRRMO` in the resident app and public web form.
+- A closest-barangay choice creates one canonical report and assigns it to the nearest active, verified barangay based on incident coordinates; the barangay can escalate that report directly to MDRRMO.
+- An MDRRMO choice enters the MDRRMO queue; dispatchers can assign the nearest active, verified barangay or choose another eligible barangay.
 - Residents can submit reports from beside the web login without an account, with a mandatory valid mobile number.
 - A public hotline directory appears below the web guest reporting option and includes published barangay-added hotlines labeled with their barangay names.
 - `resident_app` does not require login to submit a report; guest submissions require a valid mobile number, while signed-in submissions use the resident's account details.
@@ -109,5 +111,5 @@ Route every new resident incident report to MDRRMO first. MDRRMO reviews the inc
 
 ## Out of scope for the first implementation
 
-- Automatic assignment based only on incident coordinates. MDRRMO makes the capability decision and chooses the destination.
+- Automatic assignment of MDRRMO-routed reports based only on coordinates. MDRRMO dispatchers choose whether to assign those reports to a barangay.
 - Giving barangay accounts access to municipality-wide or other-barangay data, even though they use the shared dashboard interface.

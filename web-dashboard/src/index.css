@@ -3849,6 +3849,13 @@ tbody tr:last-child td { border-bottom: none; }
 .public-location-button:hover { background: #153254; }
 .public-location-button.located { color: #9ff1d3; border-color: #318568; }
 .public-report-location-status { color: #91a9ca; font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; }
+.public-report-routing { display: grid; gap: 8px; margin: 8px 0; padding: 12px; border: 1px solid #385276; border-radius: 10px; }
+.public-report-routing legend { padding: 0 5px; color: #dce8fb; font-size: 12px; font-weight: 700; }
+.public-report-routing label { display: flex; min-width: 0; align-items: flex-start; gap: 9px; padding: 9px; border-radius: 8px; background: #10213d; cursor: pointer; }
+.public-report-routing input { flex: 0 0 auto; margin-top: 3px; accent-color: #44c5e3; }
+.public-report-routing label span { display: grid; gap: 3px; }
+.public-report-routing label strong { color: #f3f7ff; font-size: 13px; }
+.public-report-routing label small { color: #91a9ca; font-size: 11px; line-height: 1.45; }
 .public-report-form > input[type=file] { width: 100%; max-width: 100%; min-height: 42px; color: #a9bddb; font: inherit; font-size: 12px; }
 .public-evidence-label { display: flex; min-height: 36px; align-items: center; gap: 7px; color: #dce8fb; font-size: 12px; font-weight: 650; cursor: pointer; }
 .public-evidence-label span { color: #9aafce; font-weight: 400; }

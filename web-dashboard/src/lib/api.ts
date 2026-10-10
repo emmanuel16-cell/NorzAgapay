@@ -193,17 +193,16 @@ export const reportAPI = {
   assignBarangay: (id: string, data: { barangay_id: string; notes: string }) => api.post(`/mdrrmo/reports/${id}/assign-barangay`, data),
   reassignBarangay: (id: string, data: { barangay_id: string; notes: string }) => api.post(`/mdrrmo/reports/${id}/reassign-barangay`, data),
   recallBarangay: (id: string, notes: string) => api.post(`/mdrrmo/reports/${id}/recall-barangay`, { notes }),
-  barangayDestinations: () => api.get('/mdrrmo/reports/barangay-destinations'),
+  barangayDestinations: (reportId: string) => api.get('/mdrrmo/reports/barangay-destinations', { params: { report_id: reportId } }),
   commandLocations: () => api.get('/mdrrmo/reports/command-locations'),
   availableResponders: (params: { location_type: 'office' | 'barangay'; barangay_id?: string }) => api.get('/mdrrmo/reports/available-responders', { params }),
   barangayLocation: () => api.get('/barangay/location'),
   availableBarangayResponders: () => api.get('/barangay/location/available-responders'),
   saveBarangayLocation: (data: { latitude: number; longitude: number; address?: string | null }) => api.put('/barangay/location', data),
   saveOfficeLocation: (data: { latitude: number; longitude: number; address?: string | null }) => api.put('/mdrrmo/reports/command-locations/office', data),
-  guestReport: (data: { type: string; title: string; description: string; latitude: number; longitude: number; contact_number: string; incident_time_choice?: string; incident_occurred_at?: string | null; incident_time_precision?: string }, evidence?: File | null) => {
+  guestReport: (data: { type: string; title: string; description: string; latitude: number; longitude: number; contact_number: string; send_to: 'barangay' | 'mdrrmo'; incident_time_choice?: string; incident_occurred_at?: string | null; incident_time_precision?: string }, evidence?: File | null) => {
     const body = new FormData();
     Object.entries(data).forEach(([key, value]) => body.append(key, value == null ? '' : String(value)));
-    body.append('send_to', 'mdrrmo');
     if (evidence) { body.append('proof', evidence); body.append('proof_type', evidence.type.startsWith('video/') ? 'video' : 'image'); }
     return api.post('/incident-reports', body, { headers: { 'Content-Type': 'multipart/form-data' } });
   },

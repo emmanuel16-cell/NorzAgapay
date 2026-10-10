@@ -9,6 +9,7 @@ import { distanceMeters, validateArrivalFix, validateRecentGpsFix } from '../ser
 import { IncidentResolutionPdfService, IncompleteResolutionReportError } from '../services/incidentResolutionPdfService';
 import { isEscalatedForMdrrmo, isVisibleToMdrrmo } from '../services/mdrrmoReportVisibility';
 import { getDispatchableRespondUnits } from '../services/respondUnitAvailability';
+import { getBarangayCoordinates, distanceMeters as distanceBetweenCoordinates } from '../services/nearestBarangay';
 import { getVerifiedBarangayIds } from '../services/verifiedBarangayService';
 import { getBarangayResponderGpsLocation, getResponderGpsLocation, RESPONDER_GPS_TTL_SECONDS } from '../config/redis';
 
@@ -182,7 +183,7 @@ router.get('/queue', authenticate, authorize('dispatcher', 'admin', 'responder')
     // Use mdrrmo_reports exclusively
     const combined: any[] = (newData || []).map((r: any) => ({ ...r, _source: 'mdrrmo_reports' }));
 
-    let reports = combined;
+    let reports = combined.filter((report: any) => isMdrrmoReport(report));
     const allAssignments = await getAssignments(reports.map((report: any) => report.id));
     const reportIds = reports.map((report: any) => report.id);
     const { data: barangayAssignments, error: barangayAssignmentsError } = reportIds.length
@@ -255,13 +256,45 @@ router.get('/queue', authenticate, authorize('dispatcher', 'admin', 'responder')
 
 router.get('/barangay-destinations', authenticate, authorize('dispatcher', 'admin'), async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
+    let origin: { latitude: number; longitude: number } | null = null;
+    const reportId = typeof _req.query.report_id === 'string' ? _req.query.report_id.trim() : '';
+    if (reportId) {
+      const { data: report, error: reportError } = await supabaseAdmin
+        .from('mdrrmo_reports')
+        .select('id, type, specifics, description, latitude, longitude, status, coordination_notes, review_outcome')
+        .eq('id', reportId)
+        .maybeSingle();
+      if (reportError) throw reportError;
+      if (!report) { res.status(404).json({ error: 'MDRRMO report not found.' }); return; }
+      if (!isMdrrmoReport(report)) { res.status(403).json({ error: 'This report has not been routed to MDRRMO.' }); return; }
+      const latitude = Number(report.latitude);
+      const longitude = Number(report.longitude);
+      if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 ||
+          !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+        res.status(400).json({ error: 'This report does not have valid incident coordinates.' });
+        return;
+      }
+      origin = { latitude, longitude };
+    }
     const verifiedIds = await getVerifiedBarangayIds();
     if (!verifiedIds.length) { res.json({ barangays: [] }); return; }
     const { data, error } = await supabaseAdmin.from('barangays')
-      .select('id, name, municipality, location_latitude, location_longitude')
+      .select('id, name, municipality, latitude, longitude, location_latitude, location_longitude')
       .in('id', verifiedIds).order('name', { ascending: true });
     if (error) throw error;
-    res.json({ barangays: data || [] });
+    const destinations = (data || []).map((barangay: any) => {
+      const location = getBarangayCoordinates(barangay);
+      const distance = origin && location ? distanceBetweenCoordinates(origin, location) : null;
+      return { ...barangay, distance_meters: distance };
+    });
+    if (origin) {
+      destinations.sort((left: any, right: any) => {
+        if (left.distance_meters == null) return right.distance_meters == null ? left.name.localeCompare(right.name) : 1;
+        if (right.distance_meters == null) return -1;
+        return left.distance_meters - right.distance_meters;
+      });
+    }
+    res.json({ barangays: destinations });
   } catch (error) {
     console.error('Load MDRRMO barangay destinations failed:', error);
     res.status(500).json({ error: 'Could not load active barangay destinations.' });

@@ -87,7 +87,7 @@ class _ReportingScreenState extends State<ReportingScreen> {
   List<Map<String, dynamic>> _barangays = [];
   String? _selectedBarangayId;
   String? _selectedBarangayName;
-  String _sendTo = 'barangay'; // 'barangay' or 'mdrrmo'
+  String _sendTo = 'mdrrmo'; // 'barangay' or 'mdrrmo'
 
   final Map<String, List<String>> _communityCategories = {
     'Community Safety Concerns': [
@@ -174,7 +174,10 @@ class _ReportingScreenState extends State<ReportingScreen> {
     _selectedSpecific = draft['specifics']?.toString();
     _descController.text = draft['description']?.toString() ?? '';
     _guestPhoneController.text = draft['guest_phone']?.toString() ?? '';
-    _sendTo = draft['send_to']?.toString() ?? 'barangay';
+    final savedRecipient = draft['send_to']?.toString();
+    _sendTo = const {'barangay', 'mdrrmo'}.contains(savedRecipient)
+        ? savedRecipient!
+        : 'mdrrmo';
     _selectedBarangayId = draft['barangay_id']?.toString();
     _selectedBarangayName = draft['barangay_name']?.toString();
     final latitude = double.tryParse(draft['latitude']?.toString() ?? '');
@@ -239,7 +242,7 @@ class _ReportingScreenState extends State<ReportingScreen> {
     'proof_paths': _proofs.map((proof) => proof.file.path).toList(),
     'proof_types': _proofs.map((proof) => proof.type).toList(),
     'proof_durations': _proofs.map((proof) => proof.durationSeconds).toList(),
-    'send_to': 'mdrrmo',
+    'send_to': _sendTo,
     'guest_phone': _guestPhoneController.text,
   };
 
@@ -814,7 +817,7 @@ class _ReportingScreenState extends State<ReportingScreen> {
         'first_name': nameParts.isNotEmpty ? nameParts.first : '',
         'last_name': nameParts.length > 1 ? nameParts.skip(1).join(' ') : '',
         'contact_number': rawPhone.contains('@') ? '' : PhoneNumberUtils.digitsOnly(rawPhone),
-        'send_to': 'mdrrmo',
+        'send_to': _sendTo,
       };
 
       // Commit the incident before transferring large evidence files.
@@ -866,7 +869,9 @@ class _ReportingScreenState extends State<ReportingScreen> {
                 ],
               ),
               content: Text(
-                'Your report has been sent to MDRRMO for review.',
+                _sendTo == 'barangay'
+                    ? 'Your report has been sent to the closest active barangay. They can escalate it to MDRRMO if more support is needed.'
+                    : 'Your report has been sent to MDRRMO for review. The dispatcher can assign a nearby active barangay if appropriate.',
                 style: const TextStyle(fontSize: 18, height: 1.4),
               ),
               actions: [
@@ -1024,7 +1029,7 @@ class _ReportingScreenState extends State<ReportingScreen> {
                         decoration: const InputDecoration(
                           labelText: 'Mobile number *',
                           hintText: '09XXXXXXXXX',
-                          helperText: 'Required so MDRRMO can contact you about this report.',
+                          helperText: 'Required so responders can contact you about this report.',
                           prefixIcon: Icon(Icons.phone),
                           border: OutlineInputBorder(),
                         ),
@@ -1035,10 +1040,38 @@ class _ReportingScreenState extends State<ReportingScreen> {
                         width: double.infinity,
                         padding: const EdgeInsets.all(14),
                         decoration: BoxDecoration(color: const Color(0xFFEFF6FF), borderRadius: BorderRadius.circular(8)),
-                        child: const Text('This report will be sent to MDRRMO for review.', style: TextStyle(color: Color(0xFF1B4F72), fontWeight: FontWeight.w600)),
+                        child: Text(
+                          _sendTo == 'barangay'
+                              ? 'This report will go to the closest active barangay. Its dispatcher can escalate it to MDRRMO if more support is needed.'
+                              : 'This report will go to MDRRMO. A dispatcher can assign it to a nearby active barangay.',
+                          style: const TextStyle(color: Color(0xFF1B4F72), fontWeight: FontWeight.w600),
+                        ),
                       ),
                       const SizedBox(height: 18),
                     ],
+
+                    const Text(
+                      'Send report to',
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
+                    ),
+                    const SizedBox(height: 6),
+                    RadioListTile<String>(
+                      value: 'barangay',
+                      groupValue: _sendTo,
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Closest barangay'),
+                      subtitle: const Text('Based on the incident location. The barangay can escalate to MDRRMO.'),
+                      onChanged: (value) => setState(() => _sendTo = value!),
+                    ),
+                    RadioListTile<String>(
+                      value: 'mdrrmo',
+                      groupValue: _sendTo,
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('MDRRMO'),
+                      subtitle: const Text('A dispatcher can assign the report to a nearby active barangay.'),
+                      onChanged: (value) => setState(() => _sendTo = value!),
+                    ),
+                    const SizedBox(height: 12),
 
                     if (_reportType == 'community') ...[
                       DropdownButtonFormField<String>(

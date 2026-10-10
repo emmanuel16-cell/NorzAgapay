@@ -38,13 +38,13 @@ The screenshot is a visual reference for the header arrangement, colors, brandin
 
 - Add a concise public hero that identifies Norz-Agapay as the local emergency reporting and response service.
 - Provide a prominent **Report Incident** action that matches the header destination.
-- Include short, plain-language guidance on submitting a report and what information to prepare. Keep claims consistent with the existing MDRRMO-first intake flow.
+- Include short, plain-language guidance on submitting a report and choosing the closest active barangay or MDRRMO.
 - Use the established dark navy, gold, cyan, and emergency red palette. Keep the page focused on the two requested paths rather than duplicating dashboard operations UI.
 
 ## Public report page
 
 - Extract or refactor the public guest reporting form from `LoginPage` into a reusable public-report component/page.
-- Retain its current submission behavior, mandatory mobile number, location capture, optional evidence attachment, submission feedback, and public hotline directory.
+- Retain the mandatory mobile number, location capture, optional evidence attachment, submission feedback, public hotline directory, and resident destination choice.
 - Keep `/login` focused on account login, with a link to `/report` so residents arriving there can still find the public reporting path.
 - Ensure public reporting works without a dashboard account and does not expose internal report management data.
 

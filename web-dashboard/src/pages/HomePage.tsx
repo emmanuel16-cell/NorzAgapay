@@ -4,8 +4,8 @@ import PublicHeader from '../components/PublicHeader';
 
 const reportSteps = [
   { icon: MapPin, title: 'Share the location', description: 'Pin the incident location so responders know where help is needed.' },
-  { icon: ShieldCheck, title: 'Send clear details', description: 'Add a mobile number and a short description so the report can be reviewed.' },
-  { icon: CheckCircle2, title: 'MDRRMO reviews it', description: 'MDRRMO reviews each report and coordinates the appropriate response.' },
+  { icon: ShieldCheck, title: 'Choose who receives it', description: 'Send it to the closest active barangay or directly to MDRRMO.' },
+  { icon: CheckCircle2, title: 'Follow the response', description: 'A barangay can escalate to MDRRMO, and MDRRMO can assign a nearby barangay.' },
 ];
 
 export default function HomePage() {
@@ -17,7 +17,7 @@ export default function HomePage() {
           <div className="public-home-hero-content">
             <span className="public-home-eyebrow">NORZAGARAY EMERGENCY RESPONSE</span>
             <h1 id="public-home-title">When help is needed, <span>start here.</span></h1>
-            <p className="public-home-intro">Send an incident report to MDRRMO with its location and details. The command center will review it and coordinate the response.</p>
+            <p className="public-home-intro">Share the incident location and details, then choose whether the closest active barangay or MDRRMO should receive your report.</p>
             <div className="public-home-hero-actions">
               <Link className="public-home-primary-action" to="/report">Report an incident <ArrowRight size={19} aria-hidden="true" /></Link>
               <Link className="public-home-secondary-action" to="/login">Command center login</Link>

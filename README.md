@@ -111,16 +111,16 @@ NorzAgapay/
 ## 🔄 Core Operational Workflows
 
 ### 1. Incident Reporting to Resolution
-1. **Resident Submission**: A resident submits an incident report via `resident_app` with high-accuracy GPS coordinates, category, description, and attached camera photos.
-2. **Triage & Verification**: Barangay-routed reports appear in the barangay’s scoped workspace in `mobile_app`; MDRRMO-routed reports appear in the MDRRMO web dashboard. The appropriate dispatcher reviews the report.
+1. **Resident Submission**: A resident submits an incident report via `resident_app` or the public web form with an incident location and chooses either the closest active barangay or MDRRMO.
+2. **Triage & Verification**: A closest-barangay report appears in that barangay’s scoped workspace and can be escalated to MDRRMO. An MDRRMO report appears in the MDRRMO queue, where a dispatcher can assign the nearest active barangay or select another eligible barangay.
 3. **Responder Dispatch**: The dispatcher assigns an active responder. A dispatch alert appears in the responder area of `mobile_app`.
 4. **Field Response**: The Tanod accepts the dispatch, checks the incident location and coordinates, and updates status to `En Route`, then `On Scene`.
 5. **Resolution & Documentation**: Upon resolving the incident, the Tanod uploads proof media and remarks. The status transitions to `Resolved`, immediately updating the resident's tracking timeline and the MDRRMO Command Center.
 
 ### 2. Multi-Tier Escalation Pipeline
-1. If an incident (e.g., severe flash flood or structure fire) exceeds the response capability of the barangay, the Barangay Administrator triggers an **Escalation Request** with justification notes.
-2. The incident escalates to the **MDRRMO Web Command Center** (`web-dashboard`) with high-priority visual markers.
-3. MDRRMO command reviews the situation, approves the escalation, and mobilizes municipal emergency units (e.g., BFP, PNP, Municipal Rescue).
+1. If an incident exceeds the barangay's response capability, its dispatcher escalates it to MDRRMO with justification notes.
+2. The incident returns to the **MDRRMO Web Command Center** (`web-dashboard`) immediately with its assignment history and escalation notes.
+3. MDRRMO command reviews the incident and either dispatches municipal responders or assigns it to a suitable active barangay.
 
 ### 3. Evacuation Stations
 1. Authorized barangay and MDRRMO accounts add a station with its name, address, barangay, and map coordinates in `mobile_app` or `web-dashboard`.
@@ -149,6 +149,8 @@ NorzAgapay/
    - `evacuation_centers_migration.sql` (Evacuation shelter tables)
    - `add_send_to_to_incident_reports.sql` (Targeted recipient routing)
    - `add_multiple_proof_and_field_media.sql` (Multi-photo attachments)
+   - `20261010_mdrrmo_barangay_assignment_locations.sql` (Central assignments and official locations)
+   - `20261010_resident_barangay_routing.sql` (Resident-selected barangay assignment audit)
 4. Ensure **Realtime** is enabled on the `incidents`, `incident_reports`, `alerts`, `evacuation_centers`, and `activity_feed` tables.
 5. Create a public Supabase Storage bucket matching `SUPABASE_BUCKET_NAME` (defaults to `norzagapay-files`) for report and broadcast media uploads.
 

@@ -114,7 +114,7 @@ class _MyReportsScreenState extends State<MyReportsScreen> {
   List<Map<String, dynamic>> get _filteredDrafts =>
       OfflineService.getDrafts().where((draft) {
         final type = draft['type']?.toString();
-        final sendTo = draft['send_to']?.toString() ?? 'barangay';
+        final sendTo = draft['send_to']?.toString() ?? 'mdrrmo';
         switch (_reportFilter) {
           case 'Barangay':
             return type != 'community' && sendTo == 'barangay';

@@ -19,6 +19,7 @@ const emptyHotlines: PublicHotlines = { national: [], mdrrmo: [], barangays: [] 
 export default function PublicReportPage() {
   const [hotlines, setHotlines] = useState<PublicHotlines>(emptyHotlines);
   const [guestPhone, setGuestPhone] = useState('');
+  const [sendTo, setSendTo] = useState<'barangay' | 'mdrrmo'>('mdrrmo');
   const [description, setDescription] = useState('');
   const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [evidence, setEvidence] = useState<File | null>(null);
@@ -62,7 +63,7 @@ export default function PublicReportPage() {
     try {
       await reportAPI.guestReport({
         type: 'emergency', title: 'Resident Incident Report', description: description.trim(),
-        latitude: location.latitude, longitude: location.longitude, contact_number: phone,
+        latitude: location.latitude, longitude: location.longitude, contact_number: phone, send_to: sendTo,
       }, evidence);
       setDescription('');
       setGuestPhone('');
@@ -71,7 +72,9 @@ export default function PublicReportPage() {
       const input = document.getElementById('public-report-evidence') as HTMLInputElement | null;
       if (input) input.value = '';
       setSubmitted(true);
-      setMessage('Report sent to MDRRMO for review.');
+      setMessage(sendTo === 'barangay'
+        ? 'Report sent to the closest active barangay. It can be escalated to MDRRMO if more support is needed.'
+        : 'Report sent to MDRRMO for review. A dispatcher can assign it to a nearby active barangay.');
     } catch (error: any) {
       setMessage(error?.response?.data?.error || 'The report could not be submitted. Please try again.');
     } finally {
@@ -86,7 +89,7 @@ export default function PublicReportPage() {
         <div className="public-report-intro">
           <span className="public-home-eyebrow">PUBLIC INCIDENT REPORTING</span>
           <h1>Tell us what is happening.</h1>
-          <p>Share a mobile number, incident location, and clear details. MDRRMO will review the report and coordinate the response.</p>
+          <p>Share a mobile number, incident location, and clear details. Choose whether the closest active barangay or MDRRMO should receive the report.</p>
           <p className="public-report-login-note">Already have an operations account? <Link to="/login">Log in to the command center</Link>.</p>
         </div>
         <div className="public-report-content-grid">
@@ -102,11 +105,15 @@ export default function PublicReportPage() {
                 <MapPin size={16} aria-hidden="true" />{location ? 'Update incident location' : 'Add current incident location'}
               </button>
               <span id="public-report-location-status" className="public-report-location-status" aria-live="polite">{location ? `Location attached · ${location.latitude.toFixed(5)}, ${location.longitude.toFixed(5)}` : 'Use the device at the incident location to add a map pin.'}</span>
+              <fieldset className="public-report-routing" disabled={busy}>
+                <legend>Send report to</legend>
+                <label><input type="radio" name="public-report-recipient" value="barangay" checked={sendTo === 'barangay'} onChange={() => setSendTo('barangay')} /><span><strong>Closest barangay</strong><small>Based on the incident location. The barangay can escalate to MDRRMO.</small></span></label>
+                <label><input type="radio" name="public-report-recipient" value="mdrrmo" checked={sendTo === 'mdrrmo'} onChange={() => setSendTo('mdrrmo')} /><span><strong>MDRRMO</strong><small>A dispatcher can assign the report to a nearby active barangay.</small></span></label>
+              </fieldset>
               <label className="public-evidence-label" htmlFor="public-report-evidence"><Upload size={15} aria-hidden="true" /> Add photo or video <span>(optional)</span></label>
               <input id="public-report-evidence" type="file" accept="image/*,video/*" onChange={(event) => setEvidence(event.target.files?.[0] || null)} />
               {message && <p className={submitted ? 'public-report-success' : 'public-report-error'} role="status">{message}</p>}
-              <button type="submit" className="btn btn-primary btn-lg public-report-submit" disabled={busy}>{busy ? 'Sending report…' : 'Send report to MDRRMO'}</button>
-              <small>Reports are reviewed by MDRRMO. They may assign a response to the barangay best positioned to help.</small>
+              <button type="submit" className="btn btn-primary btn-lg public-report-submit" disabled={busy}>{busy ? 'Sending report…' : `Send report to ${sendTo === 'barangay' ? 'closest barangay' : 'MDRRMO'}`}</button>
             </form>
           </section>
           <aside className="public-hotlines-panel" aria-labelledby="public-hotlines-title">

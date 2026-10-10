@@ -57,7 +57,7 @@ async function sendAssignmentAlert(client: Messaging, event: AssignmentPushEvent
 
   const [{ data: assignment, error: assignmentError }, { data: report, error: reportError }, verifiedIds] = await Promise.all([
     supabaseAdmin.from('mdrrmo_report_barangay_assignments')
-      .select('assignment_status, barangay_id').eq('id', event.assignment_id).maybeSingle(),
+      .select('assignment_status, barangay_id, assigned_by, assignment_notes').eq('id', event.assignment_id).maybeSingle(),
     supabaseAdmin.from('mdrrmo_reports')
       .select('id, title').eq('id', event.report_id).maybeSingle(),
     getVerifiedBarangayIds(),
@@ -98,13 +98,17 @@ async function sendAssignmentAlert(client: Messaging, event: AssignmentPushEvent
   }
 
   const title = typeof report.title === 'string' ? report.title : 'Incident report';
+  const residentSelectedBarangay = !assignment.assigned_by &&
+    String(assignment.assignment_notes || '').toLowerCase().includes('resident selected the closest active barangay');
   for (let start = 0; start < tokens.length; start += 500) {
     const tokenBatch = tokens.slice(start, start + 500);
     const response = await client.sendEachForMulticast({
       tokens: tokenBatch,
       notification: {
         title: 'New report assigned to your barangay',
-        body: 'MDRRMO assigned an incident report to your barangay. Open Norz-Agapay to review it.',
+        body: residentSelectedBarangay
+          ? 'A resident selected your barangay as the closest response team. Open Norz-Agapay to review the report.'
+          : 'MDRRMO assigned an incident report to your barangay. Open Norz-Agapay to review it.',
       },
       data: { type: 'incident_report', report_id: report.id, report_title: title },
       android: {

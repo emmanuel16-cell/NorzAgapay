@@ -19,6 +19,11 @@ type BarangayAssignment = {
   dispatched_at?: string | null; accepted_at?: string | null; arrived_at?: string | null;
   resolved_at?: string | null; resolved_notes?: string | null; escalation_notes?: string | null;
 };
+type BarangayDestination = {
+  id: string;
+  name: string;
+  distance_meters?: number | null;
+};
 
 interface IncidentReport {
   id: string; type: string; title?: string; specifics?: string; description?: string; status: string;
@@ -85,6 +90,9 @@ const incidentTimeLabel = (report: IncidentReport) => {
   return `Incident occurred: ${dateTime(report.incident_occurred_at)} (${report.incident_time_precision})`;
 };
 const hasPin = (report: IncidentReport) => report.latitude != null && report.longitude != null && Number.isFinite(Number(report.latitude)) && Number.isFinite(Number(report.longitude));
+const formatDistance = (distance?: number | null) => distance == null || !Number.isFinite(distance)
+  ? 'distance unavailable'
+  : distance < 1000 ? `${Math.round(distance)} m away` : `${(distance / 1000).toFixed(1)} km away`;
 const parseAssessment = (notes?: string | null): FieldAssessment => {
   const text = String(notes || '').replace(/\[RESPONDER_MEDIA:[\s\S]*?\]/gi, '').trim();
   const marker = text.match(/\[(?:MDRRMO )?FIELD ASSESSMENT\]/i);
@@ -121,7 +129,7 @@ export default function ReportsPage() {
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [preview, setPreview] = useState<{ url: string; video: boolean } | null>(null);
   const [assignmentReport, setAssignmentReport] = useState<IncidentReport | null>(null);
-  const [destinations, setDestinations] = useState<Array<{ id: string; name: string }>>([]);
+  const [destinations, setDestinations] = useState<BarangayDestination[]>([]);
   const [destinationId, setDestinationId] = useState('');
   const [assignmentNotes, setAssignmentNotes] = useState('');
 
@@ -186,6 +194,7 @@ export default function ReportsPage() {
   }), [inGroup]);
   const visible = useMemo(() => inGroup.filter((item) => getStage(item) === stage), [inGroup, stage]);
   const selected = visible.find((item) => item.id === selectedId) || visible[0] || null;
+  const nearestDestination = destinations.find((item) => item.distance_meters != null) || null;
 
   const clearLink = () => {
     if (!searchParams.has('id') && !searchParams.has('status')) return;
@@ -244,11 +253,16 @@ export default function ReportsPage() {
   };
   const openBarangayAssignment = async (report: IncidentReport) => {
     setAssignmentReport(report);
+    setDestinations([]);
     setDestinationId(report.active_barangay_assignment?.barangay_id || '');
     setAssignmentNotes(report.active_barangay_assignment?.assignment_notes || '');
     try {
-      const response = await reportAPI.barangayDestinations();
-      setDestinations(response.data.barangays || []);
+      const response = await reportAPI.barangayDestinations(report.id);
+      const available: BarangayDestination[] = response.data.barangays || [];
+      setDestinations(available);
+      if (!report.active_barangay_assignment) {
+        setDestinationId(available.find((item) => item.distance_meters != null)?.id || '');
+      }
     } catch (error: any) {
       toast.error(error?.response?.data?.error || 'Could not load active barangay destinations.');
       setAssignmentReport(null);
@@ -519,8 +533,12 @@ export default function ReportsPage() {
         <section className="reports-dispatch-modal-v2" role="dialog" aria-modal="true" aria-labelledby="barangay-assignment-title" onClick={(event) => event.stopPropagation()}>
           <header><div><span className="reports-eyebrow-v2">MDRRMO triage</span><h2 id="barangay-assignment-title">{assignmentReport.active_barangay_assignment ? 'Reassign report' : 'Assign to barangay'}</h2></div><button type="button" aria-label="Close" onClick={() => setAssignmentReport(null)}><X size={19} /></button></header>
           <div className="reports-modal-report-v2"><strong>{assignmentReport.title || 'Incident report'}</strong><br />Incident location: {assignmentReport.barangay_name || 'Norzagaray'}</div>
+          {nearestDestination && <div className="reports-modal-report-v2">
+            <strong>Nearest active barangay:</strong> {nearestDestination.name} ({formatDistance(nearestDestination.distance_meters)})
+            {destinationId !== nearestDestination.id && <button type="button" onClick={() => setDestinationId(nearestDestination.id)}>Use nearest barangay</button>}
+          </div>}
           <label htmlFor="assignment-destination-v2">Response barangay</label>
-          <select id="assignment-destination-v2" value={destinationId} onChange={(event) => setDestinationId(event.target.value)}><option value="">Choose an active barangay</option>{destinations.map((barangay) => <option key={barangay.id} value={barangay.id}>{barangay.name}</option>)}</select>
+          <select id="assignment-destination-v2" value={destinationId} onChange={(event) => setDestinationId(event.target.value)}><option value="">Choose an active barangay</option>{destinations.map((barangay) => <option key={barangay.id} value={barangay.id}>{barangay.name}{barangay.distance_meters != null ? ` · ${formatDistance(barangay.distance_meters)}` : ''}</option>)}</select>
           <label htmlFor="assignment-notes-v2">Instructions and context <span>(required)</span></label>
           <textarea id="assignment-notes-v2" rows={4} maxLength={1000} value={assignmentNotes} onChange={(event) => setAssignmentNotes(event.target.value)} placeholder="Explain why this barangay is best positioned to respond and include any MDRRMO guidance…" />
           <footer><button type="button" className="reports-invalid-button-v2" onClick={() => setAssignmentReport(null)} disabled={saving}>Cancel</button><button type="button" className="reports-dispatch-button-v2" onClick={() => void submitBarangayAssignment()} disabled={saving || !destinationId || assignmentNotes.trim().length < 3}>{saving ? 'Saving assignment…' : 'Assign report'}</button></footer>
