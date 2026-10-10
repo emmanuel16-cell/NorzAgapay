@@ -306,7 +306,7 @@ router.get('/list', async (req: Request, res: Response) => {
       : null;
     const { data, error } = await supabaseAdmin
       .from('barangays')
-      .select('id, name, municipality, latitude, longitude')
+      .select('id, name, municipality, latitude, longitude, location_latitude, location_longitude')
       .order('name', { ascending: true });
 
     if (error) throw error;

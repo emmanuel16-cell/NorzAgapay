@@ -181,6 +181,7 @@ export const blockedRouteAPI = {
 // Reports
 export const reportAPI = {
   list: (params?: any) => api.get('/incident-reports', { params }),
+  verifiedBarangays: () => api.get('/barangay/list', { params: { verified_only: true } }),
   get: (id: string) => api.get(`/incident-reports/${id}`),
   mdrrmoQueue: () => api.get('/mdrrmo/reports/queue'),
   barangayReports: (params?: any) => api.get('/barangay/reports', { params }),

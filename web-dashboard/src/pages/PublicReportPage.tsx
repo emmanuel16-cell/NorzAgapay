@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { MapPin, Phone, Siren, Upload } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import PublicHeader from '../components/PublicHeader';
@@ -13,11 +13,37 @@ type PublicHotlines = {
   mdrrmo: Array<{ label: string; phone: string; email?: string }>;
   barangays: HotlineGroup[];
 };
+type BarangayLocation = {
+  name: string;
+  latitude?: number | string | null;
+  longitude?: number | string | null;
+  location_latitude?: number | string | null;
+  location_longitude?: number | string | null;
+};
+
+function validCoordinates(latitude: unknown, longitude: unknown) {
+  const parsedLatitude = Number(latitude);
+  const parsedLongitude = Number(longitude);
+  if (latitude == null || longitude == null || !Number.isFinite(parsedLatitude) ||
+      parsedLatitude < -90 || parsedLatitude > 90 || !Number.isFinite(parsedLongitude) ||
+      parsedLongitude < -180 || parsedLongitude > 180) return null;
+  return { latitude: parsedLatitude, longitude: parsedLongitude };
+}
+
+function distanceMeters(from: { latitude: number; longitude: number }, to: { latitude: number; longitude: number }) {
+  const radians = Math.PI / 180;
+  const latitudeDelta = (to.latitude - from.latitude) * radians;
+  const longitudeDelta = (to.longitude - from.longitude) * radians;
+  const a = Math.sin(latitudeDelta / 2) ** 2 + Math.cos(from.latitude * radians) *
+    Math.cos(to.latitude * radians) * Math.sin(longitudeDelta / 2) ** 2;
+  return 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(Math.max(0, 1 - a)));
+}
 
 const emptyHotlines: PublicHotlines = { national: [], mdrrmo: [], barangays: [] };
 
 export default function PublicReportPage() {
   const [hotlines, setHotlines] = useState<PublicHotlines>(emptyHotlines);
+  const [barangays, setBarangays] = useState<BarangayLocation[]>([]);
   const [guestPhone, setGuestPhone] = useState('');
   const [sendTo, setSendTo] = useState<'barangay' | 'mdrrmo'>('mdrrmo');
   const [description, setDescription] = useState('');
@@ -27,7 +53,27 @@ export default function PublicReportPage() {
   const [message, setMessage] = useState('');
   const [submitted, setSubmitted] = useState(false);
 
+  const closestBarangayName = useMemo(() => {
+    if (!location) return null;
+    let nearest: BarangayLocation | null = null;
+    let nearestDistance = Number.POSITIVE_INFINITY;
+    for (const barangay of barangays) {
+      const coordinates = validCoordinates(barangay.location_latitude, barangay.location_longitude) ??
+        validCoordinates(barangay.latitude, barangay.longitude);
+      if (!coordinates) continue;
+      const distance = distanceMeters(location, coordinates);
+      if (distance < nearestDistance) {
+        nearest = barangay;
+        nearestDistance = distance;
+      }
+    }
+    return nearest?.name || null;
+  }, [barangays, location]);
+
   useEffect(() => {
+    reportAPI.verifiedBarangays()
+      .then((response) => setBarangays(Array.isArray(response.data) ? response.data : []))
+      .catch(() => setBarangays([]));
     reportAPI.publicHotlines()
       .then((response) => {
         const data = response.data || {};
@@ -107,7 +153,7 @@ export default function PublicReportPage() {
               <span id="public-report-location-status" className="public-report-location-status" aria-live="polite">{location ? `Location attached · ${location.latitude.toFixed(5)}, ${location.longitude.toFixed(5)}` : 'Use the device at the incident location to add a map pin.'}</span>
               <fieldset className="public-report-routing" disabled={busy}>
                 <legend>Send report to</legend>
-                <label><input type="radio" name="public-report-recipient" value="barangay" checked={sendTo === 'barangay'} onChange={() => setSendTo('barangay')} /><span><strong>Closest barangay</strong><small>Based on the incident location. The barangay can escalate to MDRRMO.</small></span></label>
+                <label><input type="radio" name="public-report-recipient" value="barangay" checked={sendTo === 'barangay'} onChange={() => setSendTo('barangay')} /><span><strong>{closestBarangayName ? `Closest Barangay (${closestBarangayName})` : 'Closest Barangay'}</strong><small>Based on the incident location. The barangay can escalate to MDRRMO.</small></span></label>
                 <label><input type="radio" name="public-report-recipient" value="mdrrmo" checked={sendTo === 'mdrrmo'} onChange={() => setSendTo('mdrrmo')} /><span><strong>MDRRMO</strong><small>A dispatcher can assign the report to a nearby active barangay.</small></span></label>
               </fieldset>
               <label className="public-evidence-label" htmlFor="public-report-evidence"><Upload size={15} aria-hidden="true" /> Add photo or video <span>(optional)</span></label>

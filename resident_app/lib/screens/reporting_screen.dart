@@ -89,6 +89,57 @@ class _ReportingScreenState extends State<ReportingScreen> {
   String? _selectedBarangayName;
   String _sendTo = 'mdrrmo'; // 'barangay' or 'mdrrmo'
 
+  String? get _closestBarangayName {
+    final incidentLocation = _currentLocation;
+    if (incidentLocation == null) return null;
+
+    Map<String, dynamic>? nearest;
+    var nearestDistance = double.infinity;
+    for (final barangay in _barangays) {
+      final officialLatitude = _validCoordinate(barangay['location_latitude'], -90, 90);
+      final officialLongitude = _validCoordinate(barangay['location_longitude'], -180, 180);
+      final useOfficialLocation = officialLatitude != null && officialLongitude != null;
+      final latitude = useOfficialLocation
+          ? officialLatitude
+          : _validCoordinate(barangay['latitude'], -90, 90);
+      final longitude = useOfficialLocation
+          ? officialLongitude
+          : _validCoordinate(barangay['longitude'], -180, 180);
+      if (latitude == null || longitude == null) continue;
+
+      final distance = _distanceMeters(
+        incidentLocation.latitude!,
+        incidentLocation.longitude!,
+        latitude,
+        longitude,
+      );
+      if (distance < nearestDistance) {
+        nearest = barangay;
+        nearestDistance = distance;
+      }
+    }
+    final name = nearest?['name']?.toString().trim();
+    return name == null || name.isEmpty ? null : name;
+  }
+
+  double? _validCoordinate(dynamic value, double minimum, double maximum) {
+    final coordinate = double.tryParse(value?.toString() ?? '');
+    if (coordinate == null || !coordinate.isFinite || coordinate < minimum || coordinate > maximum) {
+      return null;
+    }
+    return coordinate;
+  }
+
+  double _distanceMeters(double latitude1, double longitude1, double latitude2, double longitude2) {
+    const radians = pi / 180;
+    final latitudeDelta = (latitude2 - latitude1) * radians;
+    final longitudeDelta = (longitude2 - longitude1) * radians;
+    final a = pow(sin(latitudeDelta / 2), 2) +
+        cos(latitude1 * radians) * cos(latitude2 * radians) *
+        pow(sin(longitudeDelta / 2), 2);
+    return 6371000 * 2 * atan2(sqrt(a), sqrt(max(0, 1 - a)));
+  }
+
   final Map<String, List<String>> _communityCategories = {
     'Community Safety Concerns': [
       'Minor Flooding',
@@ -1059,7 +1110,11 @@ class _ReportingScreenState extends State<ReportingScreen> {
                       value: 'barangay',
                       groupValue: _sendTo,
                       contentPadding: EdgeInsets.zero,
-                      title: const Text('Closest barangay'),
+                      title: Text(
+                        _closestBarangayName == null
+                            ? 'Closest Barangay'
+                            : 'Closest Barangay ($_closestBarangayName)',
+                      ),
                       subtitle: const Text('Based on the incident location. The barangay can escalate to MDRRMO.'),
                       onChanged: (value) => setState(() => _sendTo = value!),
                     ),
