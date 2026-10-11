@@ -3842,8 +3842,8 @@ tbody tr:last-child td { border-bottom: none; }
 .public-report-form { display: grid; gap: 9px; }
 .public-report-form > label, .public-report-field-label { margin-top: 4px; color: #dce8fb; font-size: 12px; font-weight: 700; }
 .public-report-form > label b, .public-report-field-label b { margin-left: 6px; color: #ff9b9f; font-size: 10px; text-transform: uppercase; }
-.public-report-form > input:not([type=file]), .public-report-form > textarea { width: 100%; min-width: 0; padding: 11px 12px; border: 1px solid #385276; border-radius: 9px; outline: none; color: #f3f7ff; background: #0b1b35; font: inherit; font-size: 16px; }
-.public-report-form > input:focus, .public-report-form > textarea:focus { border-color: #44c5e3; box-shadow: 0 0 0 3px #26b7dd25; }
+.public-report-form > input:not([type=file]), .public-report-form > textarea, .public-report-form > select { width: 100%; min-width: 0; padding: 11px 12px; border: 1px solid #385276; border-radius: 9px; outline: none; color: #f3f7ff; background: #0b1b35; font: inherit; font-size: 16px; }
+.public-report-form > input:focus, .public-report-form > textarea:focus, .public-report-form > select:focus { border-color: #44c5e3; box-shadow: 0 0 0 3px #26b7dd25; }
 .public-report-form > textarea { resize: vertical; }
 .public-location-button { display: flex; width: 100%; min-height: 46px; align-items: center; justify-content: center; gap: 8px; padding: 9px 12px; border: 1px solid #36547d; border-radius: 9px; color: #cce3ff; background: #102543; font: inherit; font-size: 13px; font-weight: 650; text-align: center; cursor: pointer; }
 .public-location-button:hover { background: #153254; }
@@ -3871,15 +3871,12 @@ tbody tr:last-child td { border-bottom: none; }
 .public-incident-pin span { width: 6px; height: 6px; border-radius: 50%; background: #fff; }
 .public-report-routing { display: grid; gap: 8px; margin: 8px 0; padding: 12px; border: 1px solid #385276; border-radius: 10px; }
 .public-report-routing legend { padding: 0 5px; color: #dce8fb; font-size: 12px; font-weight: 700; }
-.public-report-routing label { display: flex; min-width: 0; align-items: flex-start; gap: 9px; padding: 9px; border-radius: 8px; background: #10213d; cursor: pointer; }
-.public-report-routing input { flex: 0 0 auto; margin-top: 3px; accent-color: #44c5e3; }
-.public-report-routing label span { display: grid; gap: 3px; }
-.public-report-routing label strong { color: #f3f7ff; font-size: 13px; }
-.public-report-routing label small { color: #91a9ca; font-size: 11px; line-height: 1.45; }
-.public-report-barangay-select { display: grid; gap: 6px; padding: 2px 9px 8px 34px; }
-.public-report-barangay-select label { display: block; padding: 0; color: #dce8fb; background: transparent; font-size: 11px; font-weight: 700; cursor: default; }
-.public-report-barangay-select select { width: 100%; min-height: 42px; padding: 9px 11px; border: 1px solid #385276; border-radius: 8px; color: #f3f7ff; background: #0b1b35; font: inherit; font-size: 13px; }
-.public-report-barangay-select small { color: #91a9ca; font-size: 11px; line-height: 1.45; }
+.public-report-routing-choice { display: flex; min-width: 0; align-items: flex-start; gap: 9px; padding: 9px; border-radius: 8px; background: #10213d; }
+.public-report-routing-indicator { position: relative; width: 16px; height: 16px; flex: 0 0 auto; margin-top: 2px; border: 2px solid #44c5e3; border-radius: 50%; }
+.public-report-routing-indicator::after { position: absolute; inset: 3px; border-radius: 50%; background: #44c5e3; content: ''; }
+.public-report-routing-choice > span:last-child { display: grid; gap: 3px; }
+.public-report-routing-choice strong { color: #f3f7ff; font-size: 13px; }
+.public-report-routing-choice small { color: #91a9ca; font-size: 11px; line-height: 1.45; }
 .public-report-form > input[type=file] { width: 100%; max-width: 100%; min-height: 42px; color: #a9bddb; font: inherit; font-size: 12px; }
 .public-evidence-label { display: flex; min-height: 36px; align-items: center; gap: 7px; color: #dce8fb; font-size: 12px; font-weight: 650; cursor: pointer; }
 .public-evidence-label span { color: #9aafce; font-weight: 400; }

@@ -550,7 +550,7 @@ router.get('/responders', authenticate, authorize('dispatcher', 'admin'), async 
 });
 
 const dispatchSchema = z.object({
-  incident_type: z.enum(['flash_flood', 'fire', 'earthquake', 'medical_emergency', 'typhoon', 'other']),
+  incident_type: z.enum(['not_sure', 'flash_flood', 'fire', 'earthquake', 'medical_emergency', 'typhoon', 'other']),
   severity: z.enum(['low', 'moderate', 'high', 'critical']),
   responder_ids: z.array(z.string().uuid()).min(1).max(50),
   notes: z.string().trim().max(1000).optional().default(''),

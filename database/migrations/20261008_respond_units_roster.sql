@@ -427,7 +427,7 @@ DECLARE
   v_dispatchable_count INTEGER;
 BEGIN
   IF p_actor_id IS NULL OR p_incident_type IS NULL
-     OR p_incident_type NOT IN ('flash_flood','fire','earthquake','medical_emergency','typhoon','other')
+     OR p_incident_type NOT IN ('not_sure','flash_flood','fire','earthquake','medical_emergency','typhoon','other')
      OR p_severity IS NULL OR p_severity NOT IN ('low','moderate','high','critical')
      OR p_responder_ids IS NULL OR cardinality(p_responder_ids) < 1
      OR cardinality(p_responder_ids) <> (SELECT count(DISTINCT id) FROM unnest(p_responder_ids) AS ids(id))

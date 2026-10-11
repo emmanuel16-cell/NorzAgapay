@@ -1970,7 +1970,7 @@ router.patch('/assigned-reports/:id/dispatch', authenticateBarangay, requireRole
     ? req.body.team_leader_ids : req.body?.team_leader_id ? [req.body.team_leader_id] : [];
   const incidentType = String(req.body?.incident_type || 'other');
   const severity = String(req.body?.severity || 'moderate');
-  if (!ids.length || !['flash_flood','fire','earthquake','medical_emergency','typhoon','other'].includes(incidentType) ||
+  if (!ids.length || !['not_sure','flash_flood','fire','earthquake','medical_emergency','typhoon','other'].includes(incidentType) ||
       !['low','moderate','high','critical'].includes(severity)) {
     res.status(400).json({ error: 'Choose at least one responder, incident type, and severity before dispatching.' });
     return;
@@ -2202,7 +2202,7 @@ router.post('/reports/:id/field-media', authenticateBarangay, requireRole(['disp
 router.patch('/reports/:id/dispatch', authenticateBarangay, requireRole(['dispatcher']), async (req: any, res: Response) => {
   try {
     const { team_leader_id, team_leader_ids, notes, incident_type, severity } = req.body;
-    const validTypes = ['flash_flood', 'fire', 'earthquake', 'medical_emergency', 'typhoon', 'other'];
+    const validTypes = ['not_sure', 'flash_flood', 'fire', 'earthquake', 'medical_emergency', 'typhoon', 'other'];
     const validSeverities = ['low', 'moderate', 'high', 'critical'];
     if (!validTypes.includes(incident_type) || !validSeverities.includes(severity)) {
       res.status(400).json({ error: 'Choose an incident type and severity before dispatching.' });

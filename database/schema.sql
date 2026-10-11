@@ -30,7 +30,7 @@ DO $$ BEGIN
         CREATE TYPE user_status AS ENUM ('active', 'inactive', 'pending_verification', 'occupied', 'rejected');
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'incident_type') THEN
-        CREATE TYPE incident_type AS ENUM ('flash_flood', 'fire', 'earthquake', 'medical_emergency', 'typhoon', 'other');
+        CREATE TYPE incident_type AS ENUM ('not_sure', 'flash_flood', 'fire', 'earthquake', 'medical_emergency', 'typhoon', 'other');
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'severity_level') THEN
         CREATE TYPE severity_level AS ENUM ('low', 'moderate', 'high', 'critical');
@@ -2527,7 +2527,7 @@ DECLARE
   v_dispatchable_count INTEGER;
 BEGIN
   IF p_actor_id IS NULL OR p_incident_type IS NULL
-     OR p_incident_type NOT IN ('flash_flood', 'fire', 'earthquake', 'medical_emergency', 'typhoon', 'other')
+     OR p_incident_type NOT IN ('not_sure', 'flash_flood', 'fire', 'earthquake', 'medical_emergency', 'typhoon', 'other')
      OR p_severity IS NULL OR p_severity NOT IN ('low', 'moderate', 'high', 'critical')
      OR p_responder_ids IS NULL OR cardinality(p_responder_ids) < 1
      OR cardinality(p_responder_ids) <> (SELECT count(DISTINCT id) FROM unnest(p_responder_ids) AS ids(id)) THEN
@@ -3631,7 +3631,7 @@ DECLARE
   v_dispatchable_count INTEGER;
 BEGIN
   IF p_actor_id IS NULL OR p_incident_type IS NULL
-     OR p_incident_type NOT IN ('flash_flood','fire','earthquake','medical_emergency','typhoon','other')
+     OR p_incident_type NOT IN ('not_sure','flash_flood','fire','earthquake','medical_emergency','typhoon','other')
      OR p_severity IS NULL OR p_severity NOT IN ('low','moderate','high','critical')
      OR p_responder_ids IS NULL OR cardinality(p_responder_ids) < 1
      OR cardinality(p_responder_ids) <> (SELECT count(DISTINCT id) FROM unnest(p_responder_ids) AS ids(id))

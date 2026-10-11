@@ -1,4 +1,5 @@
 export const INCIDENT_TYPE_OPTIONS = [
+  { value: 'not_sure', label: 'Not sure' },
   { value: 'flash_flood', label: 'Flood / Flash Flood' },
   { value: 'fire', label: 'Fire' },
   { value: 'earthquake', label: 'Earthquake' },
