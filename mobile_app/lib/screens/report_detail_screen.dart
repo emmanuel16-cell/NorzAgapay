@@ -219,23 +219,6 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     }
   }
 
-  Future<LocationData?> _getAcceptanceLocation() async {
-    try {
-      if (!await _locationService.serviceEnabled()) return null;
-      var permission = await _locationService.hasPermission();
-      if (permission == PermissionStatus.denied) {
-        permission = await _locationService.requestPermission();
-      }
-      if (permission != PermissionStatus.granted &&
-          permission != PermissionStatus.grantedLimited)
-        return null;
-      return await _locationService.getLocation();
-    } catch (error) {
-      debugPrint('Acceptance location capture error: $error');
-      return null;
-    }
-  }
-
   bool _canMonitorArrival() {
     final user = Provider.of<AuthService>(context, listen: false).currentUser;
     return user?.isResponder == true &&
@@ -406,11 +389,10 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     final rows = <(String, DateTime?, String)>[
       ('Report received', _report.createdAt, ''),
       ('Dispatcher reviewed', _report.dispatcherReviewedAt, ''),
-      ('Responder dispatched', _report.dispatchedAt, ''),
       (
-        'Responder accepted',
-        _report.acceptedAt,
-        'Response to acceptance: ${_formatElapsed(_report.createdAt, _report.acceptedAt)}',
+        'Response dispatched and accepted automatically',
+        _report.acceptedAt ?? _report.dispatchedAt,
+        'Response to dispatch: ${_formatElapsed(_report.createdAt, _report.acceptedAt ?? _report.dispatchedAt)}',
       ),
       (
         'Arrived at incident area',
@@ -480,7 +462,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           Padding(
             padding: const EdgeInsets.only(top: 4, left: 16),
             child: Text(
-              'Responder distance at acceptance: ${_formatDistance(_report.travelDistanceM!)} from incident${_report.travelDistanceAccuracyM == null ? '' : ' · GPS accuracy ±${_report.travelDistanceAccuracyM!.round()} m'}',
+              'Responder distance at arrival: ${_formatDistance(_report.travelDistanceM!)} from incident${_report.travelDistanceAccuracyM == null ? '' : ' · GPS accuracy ±${_report.travelDistanceAccuracyM!.round()} m'}',
               style: const TextStyle(fontSize: 11, color: Color(0xFF0369A1)),
             ),
           ),
@@ -1211,8 +1193,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                               SnackBar(
                                 content: Text(
                                   ids.length == 1
-                                      ? 'Dispatched to $selectedNames! Incident will appear in their pending queue.'
-                                      : 'Dispatched to $selectedNames (${ids.length} responders).',
+                                      ? 'Dispatched to $selectedNames. Response is accepted automatically and underway.'
+                                      : 'Dispatched to $selectedNames (${ids.length} responders). Response is underway.',
                                 ),
                                 backgroundColor: const Color(0xFF10B981),
                               ),
@@ -1425,45 +1407,96 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     );
   }
 
-  // ── Responder: Accept Incident ───────────────────────────────────────────
-  Future<void> _handleTeamLeaderAccept() async {
-    setState(() => _isProcessing = true);
+  // ── Responder: Manage Barangay Crew ──────────────────────────────────────
+  Future<void> _manageResponseCrew() async {
     final auth = Provider.of<AuthService>(context, listen: false);
+    final token = auth.token;
+    if (token == null || !_report.isCentralAssignment) return;
+    setState(() => _isProcessing = true);
     try {
-      final acceptanceLocation = await _getAcceptanceLocation();
-      final updated = await ApiService.respondToReport(
-        auth.token!,
-        _report.id,
-        notes: 'Accepted by Responder ${auth.currentUser?.fullName ?? ""}',
-        latitude: acceptanceLocation?.latitude,
-        longitude: acceptanceLocation?.longitude,
-        accuracyM: acceptanceLocation?.accuracy,
-        fixAt: acceptanceLocation == null
-            ? null
-            : _locationFixTime(acceptanceLocation),
-        centralAssignment: _report.isCentralAssignment,
-      );
-      setState(() => _report = updated);
-      _syncArrivalMonitoring();
-      if (mounted) {
+      final roster = await ApiService.getBarangayCrewRoster(token);
+      if (!mounted) return;
+      if (roster.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              updated.travelDistanceM == null
-                  ? 'Incident accepted. Travel distance could not be captured from GPS.'
-                  : 'Incident accepted. Starting distance: ${_formatDistance(updated.travelDistanceM!)}.',
-            ),
-            backgroundColor: Color(0xFF10B981),
-          ),
+          const SnackBar(content: Text('No active crew members are available in your barangay roster.')),
         );
+        return;
       }
-    } catch (e) {
+      final selected = <String, String>{
+        for (final member in _report.barangayCrewMembers)
+          if (member['member_id'] != null)
+            member['member_id'].toString(): member['crew_role']?.toString() ?? 'member',
+      };
+      final chosen = await showDialog<Map<String, String>>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: const Text('Barangay response crew'),
+            content: SizedBox(
+              width: 480,
+              height: MediaQuery.of(context).size.height * 0.48,
+              child: ListView(
+                children: roster.map((member) {
+                  final id = member['id']?.toString() ?? '';
+                  final name = member['full_name']?.toString() ?? 'Barangay member';
+                  final role = selected[id];
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Checkbox(
+                      value: role != null,
+                      onChanged: (checked) => setDialogState(() {
+                        if (checked == true && selected.length < 20) {
+                          selected[id] = 'member';
+                        } else {
+                          selected.remove(id);
+                        }
+                      }),
+                    ),
+                    title: Text(name),
+                    subtitle: Text(member['account_role']?.toString() ?? 'Barangay account'),
+                    trailing: role == null ? null : DropdownButton<String>(
+                      value: role,
+                      items: const [
+                        DropdownMenuItem(value: 'team_leader', child: Text('Team leader')),
+                        DropdownMenuItem(value: 'driver', child: Text('Driver')),
+                        DropdownMenuItem(value: 'first_aider', child: Text('First aider')),
+                        DropdownMenuItem(value: 'radio_operator', child: Text('Radio operator')),
+                        DropdownMenuItem(value: 'member', child: Text('Member')),
+                      ],
+                      onChanged: (value) {
+                        if (value != null) setDialogState(() => selected[id] = value);
+                      },
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+              FilledButton(
+                onPressed: selected.isEmpty ? null : () => Navigator.pop(dialogContext, Map<String, String>.from(selected)),
+                child: const Text('Save crew'),
+              ),
+            ],
+          ),
+        ),
+      );
+      if (chosen == null || !mounted) return;
+      final updated = await ApiService.saveBarangayResponseCrew(
+        token,
+        _report.id,
+        chosen.entries.map((entry) => {'member_id': entry.key, 'crew_role': entry.value}).toList(),
+      );
+      if (!mounted) return;
+      setState(() => _report = updated);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Barangay response crew saved.'), backgroundColor: Color(0xFF10B981)),
+      );
+    } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error accepting incident: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('Could not update the response crew: $error'), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -1985,7 +2018,13 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         _selectedTabIndex == 0 &&
         canManage &&
         _report.isPending &&
-        (isDispatcher || isResponder);
+        isDispatcher;
+    final showCrewAction = _selectedTabIndex == 0 &&
+        isResponder &&
+        isAssignedResponder &&
+        _report.isCentralAssignment &&
+        _report.isResponding &&
+        !_report.isArrived;
     final showRespondingAction =
         ((_selectedTabIndex == 2 && canManage) ||
             (_selectedTabIndex == 1 && canManage && isAssignedResponder)) &&
@@ -2049,28 +2088,49 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                           ? null
                           : isDispatcher
                           ? _showDispatcherActionDialog
-                          : _handleTeamLeaderAccept,
+                          : _manageResponseCrew,
                       icon: Icon(
                         isDispatcher ? Icons.send : Icons.check_circle_outline,
                         size: 16,
                       ),
                       label: Text(
-                        isDispatcher
-                            ? 'Dispatch / Provide Initial Assistance'
-                            : 'Accept & Respond',
+                        'Dispatch / Provide Initial Assistance',
                         style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 11,
                         ),
                       ),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: isDispatcher
-                            ? const Color(0xFF0284C7)
-                            : const Color(0xFF10B981),
+                        backgroundColor: const Color(0xFF0284C7),
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10),
                         ),
+                      ),
+                    ),
+                  ),
+                ),
+              )
+            : showCrewAction
+            ? SafeArea(
+                top: false,
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFF5F6FA),
+                    border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
+                  ),
+                  child: SizedBox(
+                    width: double.infinity,
+                    height: 42,
+                    child: ElevatedButton.icon(
+                      onPressed: _isProcessing ? null : _manageResponseCrew,
+                      icon: const Icon(Icons.groups_outlined, size: 16),
+                      label: const Text('Manage Response Crew', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF10B981),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       ),
                     ),
                   ),
@@ -2396,7 +2456,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                                 const SizedBox(height: 2),
                                 Text(
                                   _report.barangayResponseNotes ??
-                                      'Please review details and tap Accept & Respond below to begin initial response.',
+                                      'This assignment was accepted automatically when it was dispatched. Add your crew from your barangay roster.',
                                   style: const TextStyle(
                                     color: Color(0xFF334155),
                                     fontSize: 13,
@@ -2442,7 +2502,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                                 ),
                                 const SizedBox(height: 2),
                                 const Text(
-                                  'Awaiting Responder acceptance. You may re-dispatch or escalate if necessary.',
+                                  'Response started automatically when dispatched. Barangay responders can now add their crew members.',
                                   style: TextStyle(
                                     color: Color(0xFF475569),
                                     fontSize: 12,
@@ -2710,6 +2770,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
               if (_selectedTabIndex == 1) ...[
                 // Barangay Response & Coordination History
                 if (_report.barangayResponderName != null ||
+                    _report.barangayCrewMembers.isNotEmpty ||
                     (_report.barangayResponseNotes != null &&
                         !(_report.cleanBarangayNotes?.contains(
                               'FIELD ASSESSMENT',
@@ -2747,6 +2808,19 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                             ),
                           ),
                           const SizedBox(height: 8),
+                        ],
+                        if (_report.barangayCrewMembers.isNotEmpty) ...[
+                          const Text('Barangay response crew', style: TextStyle(color: Color(0xFF0F172A), fontWeight: FontWeight.w700)),
+                          const SizedBox(height: 5),
+                          for (final member in _report.barangayCrewMembers)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 3),
+                              child: Text(
+                                '${member['member_name'] ?? 'Barangay member'} · ${(member['crew_role'] ?? 'member').toString().replaceAll('_', ' ')}',
+                                style: const TextStyle(color: Color(0xFF475569), fontSize: 12),
+                              ),
+                            ),
+                          const SizedBox(height: 6),
                         ],
 
                         // SOS Assistance Request (matching Image 1 inside Response & Coordination Log)

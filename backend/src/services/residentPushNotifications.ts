@@ -136,18 +136,19 @@ async function sendStatusUpdate(
   const reportTitle = event.report_title.trim() || 'Incident report';
   const status = event.display_status.trim() || 'updated';
   const notificationSound = notificationSoundForStatus(status);
-  const accepted = status.toLowerCase() === 'responder accepted';
-  const dispatched = status.toLowerCase() === 'responder dispatched';
+  const normalizedStatus = status.toLowerCase();
+  const accepted = normalizedStatus.includes('accepted') || normalizedStatus.includes('responding');
+  const dispatched = normalizedStatus.includes('dispatched');
   const etaSeconds = accepted ? await estimateAcceptedResponderArrival(event) : null;
   const notificationTitle = accepted
-    ? 'Responder heading to your location'
+    ? 'Response underway'
     : dispatched
       ? 'Responder assigned to your report'
       : 'Incident report update';
   const notificationBody = accepted
-    ? `A responder has accepted the dispatch for “${reportTitle}” and is heading to your location.${etaSeconds === null ? '' : ` Estimated arrival: ${formatEta(etaSeconds)}.`}`
+    ? `The response for “${reportTitle}” was accepted automatically when it was dispatched. Responders are on their way.${etaSeconds === null ? '' : ` Estimated arrival: ${formatEta(etaSeconds)}.`}`
     : dispatched
-      ? `A dispatcher assigned your report “${reportTitle}” to a responder. We will notify you when they accept and head your way.`
+      ? `A dispatcher assigned your report “${reportTitle}” to responders. Their response is accepted automatically and is underway.`
       : `Your report “${reportTitle}” is ${status}.`;
   for (let start = 0; start < tokens.length; start += 500) {
     const tokenBatch = tokens.slice(start, start + 500);

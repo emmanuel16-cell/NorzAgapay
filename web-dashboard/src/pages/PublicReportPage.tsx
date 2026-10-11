@@ -8,6 +8,13 @@ import { reportAPI } from '../lib/api';
 import { INCIDENT_TYPE_OPTIONS } from '../lib/incidentClassification';
 import { CARTO_ATTRIBUTION, CARTO_DARK_MAP_URL } from '../lib/mapConfig';
 
+function createGuestRequestId() {
+  const bytes = new Uint8Array(16);
+  window.crypto.getRandomValues(bytes);
+  const hex = [...bytes].map((value) => value.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-${((parseInt(hex[16], 16) & 0x3) | 0x8).toString(16)}${hex.slice(17, 20)}-${hex.slice(20)}`;
+}
+
 type HotlineGroup = {
   barangay_name: string;
   entries: Array<{ label?: string; name?: string; phone?: string; number?: string; numbers?: string[]; purpose?: string }>;
@@ -51,6 +58,10 @@ export default function PublicReportPage() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [submitted, setSubmitted] = useState(false);
+  const [trackingReference, setTrackingReference] = useState('');
+  const [submissionRequestId, setSubmissionRequestId] = useState(createGuestRequestId);
+  const [submissionFingerprint, setSubmissionFingerprint] = useState('');
+  const [submissionStartedAt, setSubmissionStartedAt] = useState('');
 
   useEffect(() => {
     reportAPI.publicHotlines()
@@ -128,17 +139,35 @@ export default function PublicReportPage() {
     if (description.trim().length < 8) { setMessage('Describe the incident in at least 8 characters.'); return; }
     setBusy(true);
     try {
-      await reportAPI.guestReport({
+      const fingerprint = JSON.stringify([
+        phone,
+        incidentCategory,
+        description.trim(),
+        location.latitude,
+        location.longitude,
+        evidence ? [evidence.name, evidence.size, evidence.lastModified] : null,
+      ]);
+      const requestId = submissionFingerprint === fingerprint ? submissionRequestId : createGuestRequestId();
+      const submittedAt = submissionFingerprint === fingerprint && submissionStartedAt ? submissionStartedAt : new Date().toISOString();
+      setSubmissionRequestId(requestId);
+      setSubmissionFingerprint(fingerprint);
+      setSubmissionStartedAt(submittedAt);
+      const response = await reportAPI.guestReport({
         type: 'emergency', title: 'Resident Incident Report', description: description.trim(),
         latitude: location.latitude, longitude: location.longitude, contact_number: phone, send_to: 'mdrrmo',
-        incident_type: incidentCategory,
+        incident_type: incidentCategory, client_request_id: requestId, client_submitted_at: submittedAt,
       }, evidence);
+      const reportId = response.data?.report?.id;
+      if (typeof reportId === 'string') setTrackingReference(reportId);
       setDescription('');
       setGuestPhone('');
       setIncidentCategory('not_sure');
       setLocation(null);
       setLocationSource(null);
       setEvidence(null);
+      setSubmissionRequestId(createGuestRequestId());
+      setSubmissionFingerprint('');
+      setSubmissionStartedAt('');
       const input = document.getElementById('public-report-evidence') as HTMLInputElement | null;
       if (input) input.value = '';
       setSubmitted(true);
@@ -158,7 +187,7 @@ export default function PublicReportPage() {
           <span className="public-home-eyebrow">PUBLIC INCIDENT REPORTING</span>
           <h1>Tell us what is happening.</h1>
           <p>Share a mobile number, incident category, location, and clear details. Reports are sent to MDRRMO for review.</p>
-          <p className="public-report-login-note">Already have an operations account? <Link to="/login">Log in to the command center</Link>.</p>
+          <p className="public-report-login-note">Already have an account? <Link to="/login">Sign in to follow your reports or open the command center</Link>.</p>
         </div>
         <div className="public-report-content-grid">
           <section className="public-intake-panel" aria-labelledby="public-report-title">
@@ -188,7 +217,7 @@ export default function PublicReportPage() {
               </fieldset>
               <label className="public-evidence-label" htmlFor="public-report-evidence"><Upload size={15} aria-hidden="true" /> Add photo or video <span>(optional)</span></label>
               <input id="public-report-evidence" type="file" accept="image/*,video/*" onChange={(event) => setEvidence(event.target.files?.[0] || null)} />
-              {message && <p className={submitted ? 'public-report-success' : 'public-report-error'} role="status">{message}</p>}
+              {message && <p className={submitted ? 'public-report-success' : 'public-report-error'} role="status">{message}{submitted && trackingReference && <> <span>Keep this report reference: <strong>{trackingReference}</strong>.</span> <Link to={`/track-report?reference=${encodeURIComponent(trackingReference)}`}>Track this report</Link></>}</p>}
               <button type="submit" className="btn btn-primary btn-lg public-report-submit" disabled={busy}>{busy ? 'Sending report…' : 'Send report to MDRRMO'}</button>
             </form>
           </section>

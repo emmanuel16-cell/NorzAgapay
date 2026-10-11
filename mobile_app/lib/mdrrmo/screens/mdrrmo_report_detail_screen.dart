@@ -41,7 +41,6 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
   bool _arrivalGpsErrorVisible = false;
   final Location _locationService = Location();
   StreamSubscription<LocationData>? _arrivalLocationSubscription;
-  Map<String, dynamic>? _acceptedAssignment;
   bool _incidentTimelineExpanded = false;
   int _assessmentAgencyIndex = 0;
   String _assistanceRequestType = 'goods';
@@ -92,9 +91,6 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
       if (assignment['responder_id']?.toString() == userId &&
           assignment['status'] != 'removed')
         return assignment;
-    }
-    if (_acceptedAssignment?['responder_id']?.toString() == userId) {
-      return _acceptedAssignment;
     }
     return null;
   }
@@ -228,7 +224,7 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
     return DateTime.fromMillisecondsSinceEpoch(timestamp.round(), isUtc: true);
   }
 
-  Future<void> _accept() async {
+  Future<void> _saveCrew() async {
     final auth = context.read<AuthProvider>();
     final token = auth.token;
     final userId = auth.user?.id;
@@ -247,7 +243,7 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
     if (!mounted) return;
     if (!auth.isTeamLeader) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Only the current Team Leader can accept this dispatch.')),
+        const SnackBar(content: Text('Only the current Team Leader can manage this unit response crew.')),
       );
       return;
     }
@@ -258,46 +254,40 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
           const {'radio_operator', 'driver_responder', 'first_aider_responder'}
               .contains(role);
     }).toList();
-    final selectedMemberIds = await _selectCrewMembers(eligibleMembers);
+    final assignment = _myAssignment(userId);
+    final savedCrew = assignment?['crew'] is List
+        ? (assignment!['crew'] as List)
+            .whereType<Map>()
+            .map((member) => Map<String, dynamic>.from(member))
+            .where((member) => member['member_role'] != 'team_leader')
+            .map((member) => member['unit_member_id']?.toString())
+            .whereType<String>()
+            .toList()
+        : <String>[];
+    final selectedMemberIds = await _selectCrewMembers(eligibleMembers, savedCrew);
     if (selectedMemberIds == null || !mounted) return;
 
-    double? responderLatitude;
-    double? responderLongitude;
-    try {
-      final currentLocation = await _locationService.getLocation();
-      responderLatitude = currentLocation.latitude;
-      responderLongitude = currentLocation.longitude;
-    } catch (error) {
-      debugPrint('Could not capture responder position at dispatch acceptance: $error');
-    }
-
     await _run(() async {
-      _report = await ApiService.respondToMdrrmoReport(
+      _report = await ApiService.saveMdrrmoResponseCrew(
         token,
         _report.id,
         memberIds: selectedMemberIds,
-        latitude: responderLatitude,
-        longitude: responderLongitude,
       );
-      _acceptedAssignment = {
-        'responder_id': userId,
-        'status': 'responding',
-        'arrived_at': null,
-      };
       try {
         final reports = await ApiService.getMdrrmoReports(token);
         _report = reports.firstWhere((report) => report.id == _report.id);
-        _acceptedAssignment = null;
       } catch (error) {
-        debugPrint('Could not refresh accepted MDRRMO assignment: $error');
+        debugPrint('Could not refresh MDRRMO response crew: $error');
       }
-    }, 'Report accepted.');
+    }, 'Response crew saved.');
   }
 
   Future<List<String>?> _selectCrewMembers(
     List<Map<String, dynamic>> members,
+    List<String> initialMemberIds,
   ) async {
     final selectedIds = <String>{};
+    selectedIds.addAll(initialMemberIds);
     return showDialog<List<String>>(
       context: context,
       barrierDismissible: false,
@@ -329,7 +319,7 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         const Text(
-                          'Select at least one Driver Responder and one First Aider Responder. The Team Leader is included automatically.',
+                            'Add crew from your municipal MDRRMO unit roster. The Team Leader is included automatically.',
                         ),
                         const SizedBox(height: 12),
                         SizedBox(
@@ -388,7 +378,7 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
                 onPressed: canSubmit
                     ? () => Navigator.pop(dialogContext, selectedIds.toList())
                     : null,
-                child: const Text('Accept dispatch'),
+                child: const Text('Save response crew'),
               ),
             ],
           );
@@ -1015,8 +1005,7 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
         : formatIncidentDateTime(_report.createdAt!);
     final steps = <(String, DateTime?)>[
       ('Report received', _report.createdAt),
-      ('MDRRMO responder dispatched', _report.dispatchedAt),
-      ('Responder accepted', _report.acceptedAt),
+      ('MDRRMO response dispatched and accepted', _report.acceptedAt ?? _report.dispatchedAt),
       ('Arrived at incident area', _report.arrivedAt),
       ('Incident resolved', _report.resolvedAt),
     ];
@@ -1823,12 +1812,12 @@ class _MdrrmoReportDetailScreenState extends State<MdrrmoReportDetailScreen>
     final assignment = _myAssignment(user?.id);
     final assignmentStatus = assignment?['status']?.toString();
     final myArrival = _assignmentArrival(assignment);
-    if (isResponder && auth.isTeamLeader && !_report.isResolved && assignmentStatus == 'assigned')
+    if (isResponder && auth.isTeamLeader && !_report.isResolved && assignmentStatus == 'responding' && myArrival == null)
       return _action(
-        'Accept & Respond',
-        Icons.check_circle_outline,
+        'Manage Response Crew',
+        Icons.groups_outlined,
         const Color(0xFF10B981),
-        _accept,
+        _saveCrew,
       );
     if (isResponder &&
         !_report.isResolved &&

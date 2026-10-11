@@ -433,6 +433,24 @@ router.get('/hotlines/:barangayId', async (req: Request, res: Response) => {
   }
 });
 
+// Authenticated barangay settings view. Unlike the public hotline directory,
+// an administrator/staff member can inspect the current draft list while the
+// barangay account is awaiting activation.
+router.get('/settings/hotlines', authenticateBarangay, requireRole(['admin', 'staff']), async (req: any, res: Response) => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('barangay_hotline_settings')
+      .select('hotlines, updated_at')
+      .eq('barangay_id', req.barangayUser.barangayId)
+      .maybeSingle();
+    if (error) throw error;
+    res.json({ entries: Array.isArray(data?.hotlines) ? data.hotlines : [], updated_at: data?.updated_at || null });
+  } catch (error) {
+    console.error('Load barangay hotline settings failed:', error);
+    res.status(500).json({ error: 'Could not load barangay hotline settings.' });
+  }
+});
+
 // Public: download all published hotline entries for resident offline use.
 router.get('/hotlines', async (_req: Request, res: Response) => {
   try {
@@ -508,6 +526,7 @@ router.put('/hotlines', authenticateBarangay, requireRole(['admin', 'staff']), a
       .single();
 
     if (error) throw error;
+    io.to(`barangay:${req.barangayUser.barangayId}`).emit('hotlines:updated', { entries: data.hotlines || [] });
     res.json({ entries: Array.isArray(data.hotlines) ? data.hotlines : [] });
   } catch (err) {
     console.error('Save barangay hotlines error:', err);
@@ -1415,6 +1434,26 @@ router.get('/team/responders', authenticateBarangay, requireRole(['admin', 'disp
   }
 });
 
+router.get('/team/crew-roster', authenticateBarangay, requireRole(['responder']), async (req: any, res: Response) => {
+  try {
+    const { data, error } = await supabaseAdmin.from('barangay_users')
+      .select('id, full_name, role')
+      .eq('barangay_id', req.barangayUser.barangayId)
+      .in('role', ['responder', 'staff'])
+      .eq('is_active', true)
+      .order('full_name', { ascending: true });
+    if (error) throw error;
+    res.json({ members: (data || []).map((member: any) => ({
+      id: member.id,
+      full_name: member.full_name,
+      account_role: member.role,
+    })) });
+  } catch (error) {
+    console.error('Load barangay responder crew roster failed:', error);
+    res.status(500).json({ error: 'Could not load your barangay crew roster.' });
+  }
+});
+
 // ─── POST /api/barangay/team ─────────────────────────────────────────────────
 // Only barangay administrators may add team accounts.
 
@@ -1541,6 +1580,7 @@ router.patch('/team/:id', authenticateBarangay, requireRole(['admin']), async (r
     if (currentMember.role === 'dispatcher' && parsed.data.role !== 'dispatcher') {
       await DispatcherVerificationService.removeDispatcherRoomAccess(req.barangayUser.barangayId, req.params.id);
     }
+    io.to(`barangay:${req.barangayUser.barangayId}`).emit('team:member_updated', { member: data });
     res.json(data);
   } catch (err) {
     console.error('Update team member error:', err);
@@ -1548,13 +1588,70 @@ router.patch('/team/:id', authenticateBarangay, requireRole(['admin']), async (r
   }
 });
 
+router.patch('/team/:id/active', authenticateBarangay, requireRole(['admin']), async (req: any, res: Response) => {
+  const parsed = z.object({ is_active: z.boolean() }).safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Provide a valid active state.' });
+    return;
+  }
+  if (req.params.id === req.barangayUser.userId) {
+    res.status(409).json({ error: 'You cannot deactivate your own barangay administrator account.' });
+    return;
+  }
+  try {
+    const { data: member, error: memberError } = await supabaseAdmin
+      .from('barangay_users')
+      .select('id, role')
+      .eq('id', req.params.id)
+      .eq('barangay_id', req.barangayUser.barangayId)
+      .neq('role', 'admin')
+      .maybeSingle();
+    if (memberError) throw memberError;
+    if (!member) {
+      res.status(404).json({ error: 'Team member not found.' });
+      return;
+    }
+    if (parsed.data.is_active && member.role === 'dispatcher') {
+      const coordination = await DispatcherVerificationService.getByUserId(req.barangayUser.userId);
+      if (coordination?.status !== 'verified' || !(await DispatcherVerificationService.isBarangayActive(req.barangayUser.barangayId))) {
+        res.status(403).json({ error: 'The Barangay Account Request must be active before activating a dispatcher.' });
+        return;
+      }
+    }
+    const { data, error } = await supabaseAdmin
+      .from('barangay_users')
+      .update({ is_active: parsed.data.is_active })
+      .eq('id', req.params.id)
+      .eq('barangay_id', req.barangayUser.barangayId)
+      .neq('role', 'admin')
+      .select('id, full_name, email, phone, role, barangay_id, is_active, created_at, added_by')
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) {
+      res.status(404).json({ error: 'Team member not found.' });
+      return;
+    }
+    if (!data.is_active) await DispatcherVerificationService.removeDispatcherRoomAccess(req.barangayUser.barangayId, data.id);
+    io.to(`barangay:${req.barangayUser.barangayId}`).emit('team:member_updated', { member: data });
+    res.json(data);
+  } catch (error: any) {
+    console.error('Set barangay team member active state failed:', error);
+    res.status(500).json({ error: error?.message || 'Could not update team member access.' });
+  }
+});
+
 router.delete('/team/:id', authenticateBarangay, requireRole(['admin']), async (req: any, res: Response) => {
+  if (req.params.id === req.barangayUser.userId) {
+    res.status(409).json({ error: 'You cannot deactivate your own barangay administrator account.' });
+    return;
+  }
   try {
     const { error } = await supabaseAdmin
       .from('barangay_users')
       .update({ is_active: false })
       .eq('id', req.params.id)
-      .eq('barangay_id', req.barangayUser.barangayId);
+      .eq('barangay_id', req.barangayUser.barangayId)
+      .neq('role', 'admin');
 
     if (error) throw error;
 
@@ -1714,11 +1811,67 @@ router.get('/reports/resolved', authenticateBarangay, requireRole(['admin', 'sta
       .limit(5000);
     if (newError) throw newError;
 
-    const resolvedReports = combined.filter((report: any) =>
+    let resolvedReports = combined.filter((report: any) =>
       report.response_status === 'resolved' ||
       report.barangay_response_status === 'resolved' ||
       (!report.barangay_response_status && !report.response_status && ['resolved', 'closed'].includes(String(report.status).toLowerCase())),
     );
+    if (req.barangayUser.role === 'responder') {
+      const responderId = req.barangayUser.userId;
+      resolvedReports = resolvedReports.filter((report: any) => {
+        if (report.barangay_responded_by === responderId || report.responded_by === responderId) return true;
+        const assignedMatch = String(report.barangay_response_notes || report.response_notes || '').match(/\[ASSIGNED:([^\]]+)\]/);
+        return Boolean(assignedMatch?.[1]?.split(',').map((id: string) => id.trim()).includes(responderId));
+      });
+    }
+
+    let centralAssignmentQuery = supabaseAdmin.from('mdrrmo_report_barangay_assignments')
+      .select('*')
+      .eq('barangay_id', req.barangayUser.barangayId)
+      .eq('assignment_status', 'completed')
+      .eq('response_status', 'resolved')
+      .order('resolved_at', { ascending: false, nullsFirst: false });
+    const { data: centralAssignments, error: centralAssignmentsError } = await centralAssignmentQuery;
+    if (centralAssignmentsError) throw centralAssignmentsError;
+    const scopedCentralAssignments = req.barangayUser.role === 'responder'
+      ? (centralAssignments || []).filter((assignment: any) => (assignment.responder_ids || []).includes(req.barangayUser.userId))
+      : centralAssignments || [];
+    const centralIds = [...new Set(scopedCentralAssignments.map((assignment: any) => assignment.report_id))];
+    const [{ data: centralRows, error: centralReportsError }, { data: barangay, error: barangayError }] = await Promise.all([
+      centralIds.length
+        ? supabaseAdmin.from('mdrrmo_reports').select('*').in('id', centralIds)
+        : Promise.resolve({ data: [], error: null } as any),
+      supabaseAdmin.from('barangays').select('name').eq('id', req.barangayUser.barangayId).maybeSingle(),
+    ]);
+    if (centralReportsError) throw centralReportsError;
+    if (barangayError) throw barangayError;
+    const centralById = new Map((centralRows || []).map((report: any) => [report.id, report]));
+    const centralResolvedReports = scopedCentralAssignments.flatMap((assignment: any) => {
+      const report: any = centralById.get(assignment.report_id);
+      if (!report) return [];
+      return [formatIncidentReport({
+        ...report,
+        is_central_assignment: true,
+        assignment_id: assignment.id,
+        assignment_status: assignment.assignment_status,
+        assignment_notes: assignment.assignment_notes,
+        response_status: assignment.response_status,
+        barangay_response_status: assignment.response_status,
+        barangay_response_notes: assignment.response_notes,
+        barangay_responded_by: assignment.responded_by,
+        barangay_responded_at: assignment.responded_at,
+        barangay_dispatched_at: assignment.dispatched_at,
+        barangay_accepted_at: assignment.accepted_at,
+        barangay_arrived_at: assignment.arrived_at,
+        barangay_resolved_at: assignment.resolved_at,
+        barangay_resolved_notes: assignment.resolved_notes,
+        assigned_team_leader_ids: assignment.responder_ids || [],
+        response_barangay_id: assignment.barangay_id,
+        response_barangay_name: barangay?.name || null,
+        incident_barangay_id: report.barangay_id,
+        incident_barangay_name: report.barangay_name || null,
+      })];
+    });
     const residentIds = [...new Set(resolvedReports.map((report: any) => report.reporter_id).filter(Boolean))];
     const residents = new Map<string, any>();
     if (residentIds.length) {
@@ -1727,7 +1880,7 @@ router.get('/reports/resolved', authenticateBarangay, requireRole(['admin', 'sta
       if (residentError) throw residentError;
       for (const resident of residentRows || []) residents.set(resident.id, resident);
     }
-    res.json(resolvedReports.map((report: any) => {
+    const formattedLegacyReports = resolvedReports.filter((report: any) => !centralById.has(report.id)).map((report: any) => {
       const resident = residents.get(report.reporter_id);
       return formatIncidentReport({
         ...report,
@@ -1735,7 +1888,9 @@ router.get('/reports/resolved', authenticateBarangay, requireRole(['admin', 'sta
         reporter_phone: report.reporter_phone || resident?.phone || null,
         reporter_email: report.reporter_email || resident?.email || null,
       });
-    }));
+    });
+    res.json([...formattedLegacyReports, ...centralResolvedReports]
+      .sort((first: any, second: any) => Date.parse(second.barangay_resolved_at || second.resolved_at || second.created_at || '') - Date.parse(first.barangay_resolved_at || first.resolved_at || first.created_at || '')));
   } catch (err) {
     console.error('Barangay resolved reports error:', err);
     res.status(500).json({ error: 'Failed to fetch resolved reports.' });
@@ -1862,6 +2017,20 @@ router.get('/reports', authenticateBarangay, requireRole(['admin', 'dispatcher',
       if (respondersError) throw respondersError;
       for (const responder of responders || []) centralResponderNames.set(responder.id, responder.full_name);
     }
+    const centralAssignmentIds = (assignments || []).map((row: any) => row.id).filter(Boolean);
+    const { data: centralCrewRows, error: centralCrewError } = centralAssignmentIds.length
+      ? await supabaseAdmin.from('mdrrmo_report_barangay_crew_members')
+        .select('assignment_id, member_id, member_name_snapshot, crew_role, selected_at')
+        .eq('barangay_id', req.barangayUser.barangayId).in('assignment_id', centralAssignmentIds)
+        .order('selected_at', { ascending: true })
+      : { data: [], error: null } as any;
+    if (centralCrewError) throw centralCrewError;
+    const barangayCrewByAssignment = new Map<string, any[]>();
+    for (const member of centralCrewRows || []) {
+      const members = barangayCrewByAssignment.get(member.assignment_id) || [];
+      members.push({ member_id: member.member_id, member_name: member.member_name_snapshot, crew_role: member.crew_role });
+      barangayCrewByAssignment.set(member.assignment_id, members);
+    }
     const centralReports = (assignments || []).flatMap((assignment: any) => {
       const report: any = centralById.get(assignment.report_id);
       if (!report) return [];
@@ -1882,6 +2051,7 @@ router.get('/reports', authenticateBarangay, requireRole(['admin', 'dispatcher',
         barangay_arrived_at: assignment.arrived_at,
         barangay_resolved_at: assignment.resolved_at,
         barangay_resolved_notes: assignment.resolved_notes,
+        barangay_crew_members: barangayCrewByAssignment.get(assignment.id) || [],
         assigned_team_leader_ids: assignedIds,
         barangay_responder_name: assignment.responder_name || assignedIds.map((id) => centralResponderNames.get(id)).filter(Boolean).join(', '),
         response_barangay_id: assignment.barangay_id,
@@ -1891,8 +2061,14 @@ router.get('/reports', authenticateBarangay, requireRole(['admin', 'dispatcher',
         created_at: report.created_at,
       })];
     });
-    res.json([...legacyReports.filter((report: any) => !centralIds.has(report.id)), ...centralReports]
-      .sort((a: any, b: any) => Date.parse(b.created_at || '') - Date.parse(a.created_at || '')));
+    let scopedReports = [...legacyReports.filter((report: any) => !centralIds.has(report.id)), ...centralReports];
+    if (req.barangayUser.role === 'responder') {
+      const responderId = req.barangayUser.userId;
+      scopedReports = scopedReports.filter((report: any) =>
+        report.barangay_responded_by === responderId || report.responded_by === responderId ||
+        (Array.isArray(report.assigned_team_leader_ids) && report.assigned_team_leader_ids.includes(responderId)));
+    }
+    res.json(scopedReports.sort((a: any, b: any) => Date.parse(b.created_at || '') - Date.parse(a.created_at || '')));
   } catch (err) {
     console.error('Fetch barangay reports error:', err);
     res.status(500).json({ error: 'Failed to fetch reports' });
@@ -1983,10 +2159,165 @@ router.patch('/assigned-reports/:id/dispatch', authenticateBarangay, requireRole
   });
 });
 
-router.patch('/assigned-reports/:id/respond', authenticateBarangay, requireRole(['responder']), async (req: any, res: Response) => {
-  void updateCentralBarangayAssignment(req, res, 'respond', {
-    notes: typeof req.body?.notes === 'string' ? req.body.notes.trim() : '',
-  });
+router.patch('/assigned-reports/:id/crew', authenticateBarangay, requireRole(['responder']), async (req: any, res: Response): Promise<void> => {
+  const parsed = z.object({
+    members: z.array(z.object({
+      member_id: z.string().uuid(),
+      crew_role: z.enum(['team_leader', 'driver', 'first_aider', 'radio_operator', 'member']),
+    }).strict()).min(1).max(20),
+  }).strict().safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Choose at least one member from your barangay roster and assign a crew role.', details: parsed.error.flatten() });
+    return;
+  }
+  try {
+    const { data: result, error: crewError } = await supabaseAdmin.rpc('set_mdrrmo_report_barangay_crew_v1', {
+      p_report_id: req.params.id,
+      p_barangay_id: req.barangayUser.barangayId,
+      p_responder_id: req.barangayUser.userId,
+      p_members: parsed.data.members,
+    });
+    if (crewError) throw crewError;
+    const assignmentId = result?.assignment_id;
+    if (!assignmentId) { res.status(404).json({ error: 'The active barangay assignment was not found.' }); return; }
+
+    const [{ data: report, error: reportError }, { data: assignment, error: assignmentError }, { data: crewRows, error: membersError }, { data: barangay, error: barangayError }] = await Promise.all([
+      supabaseAdmin.from('mdrrmo_reports').select('*').eq('id', req.params.id).maybeSingle(),
+      supabaseAdmin.from('mdrrmo_report_barangay_assignments').select('*').eq('id', assignmentId).maybeSingle(),
+      supabaseAdmin.from('mdrrmo_report_barangay_crew_members')
+        .select('member_id, member_name_snapshot, crew_role, selected_at')
+        .eq('assignment_id', assignmentId).order('selected_at', { ascending: true }),
+      supabaseAdmin.from('barangays').select('name').eq('id', req.barangayUser.barangayId).maybeSingle(),
+    ]);
+    if (reportError) throw reportError;
+    if (assignmentError) throw assignmentError;
+    if (membersError) throw membersError;
+    if (barangayError) throw barangayError;
+    if (!report || !assignment) { res.status(404).json({ error: 'The active barangay assignment was not found.' }); return; }
+
+    const payload = formatIncidentReport({
+      ...report,
+      is_central_assignment: true,
+      assignment_id: assignment.id,
+      assignment_status: assignment.assignment_status,
+      assignment_notes: assignment.assignment_notes,
+      response_status: assignment.response_status,
+      barangay_response_status: assignment.response_status,
+      barangay_response_notes: assignment.response_notes,
+      barangay_responded_by: assignment.responded_by,
+      barangay_responded_at: assignment.responded_at,
+      barangay_dispatched_at: assignment.dispatched_at,
+      barangay_accepted_at: assignment.accepted_at,
+      barangay_arrived_at: assignment.arrived_at,
+      barangay_resolved_at: assignment.resolved_at,
+      barangay_resolved_notes: assignment.resolved_notes,
+      barangay_crew_members: (crewRows || []).map((member: any) => ({
+        member_id: member.member_id,
+        member_name: member.member_name_snapshot,
+        crew_role: member.crew_role,
+      })),
+      assigned_team_leader_ids: assignment.responder_ids || [],
+      barangay_responder_name: assignment.responder_name || null,
+      response_barangay_id: assignment.barangay_id,
+      response_barangay_name: barangay?.name || null,
+      incident_barangay_id: report.barangay_id,
+      incident_barangay_name: report.barangay_name || null,
+    });
+    io.to('dashboard_staff').emit('mdrrmo:report_updated', payload);
+    io.to('dashboard_staff').emit('incident_report:updated', payload);
+    io.to(`barangay:${req.barangayUser.barangayId}`).emit('barangay:report_updated', payload);
+    res.json(payload);
+  } catch (error: any) {
+    console.error('Save barangay response crew failed:', error);
+    const code = String(error?.code || '');
+    if (['PGRST202', '42883', '42P01', '42703', 'PGRST204', 'PGRST205', 'PGRST200'].includes(code)) {
+      res.status(503).json({
+        error: 'Barangay response-crew database objects are missing. Apply database/migrations/20261012_auto_accept_response_crews.sql, then retry.',
+        code: 'BARANGAY_CREW_SCHEMA_MISSING',
+      });
+      return;
+    }
+    const status = code === 'P0002' ? 409 : code === '42501' ? 403 : code === '22023' ? 400 : 500;
+    res.status(status).json({ error: error?.message || 'Could not save the barangay response crew.' });
+  }
+});
+
+router.patch('/assigned-reports/:id/field-notes', authenticateBarangay, requireRole(['responder']), async (req: any, res: Response): Promise<void> => {
+  const parsed = z.object({ notes: z.string().trim().min(1).max(5000) }).strict().safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Enter the field assessment before saving it.', details: parsed.error.flatten() });
+    return;
+  }
+  try {
+    const { data: assignment, error: assignmentError } = await supabaseAdmin
+      .from('mdrrmo_report_barangay_assignments')
+      .select('*')
+      .eq('report_id', req.params.id)
+      .eq('barangay_id', req.barangayUser.barangayId)
+      .eq('assignment_status', 'active')
+      .maybeSingle();
+    if (assignmentError) throw assignmentError;
+    if (!assignment || assignment.response_status !== 'responding') {
+      res.status(409).json({ error: 'Field notes are available only for an active dispatched response.' });
+      return;
+    }
+    if (!(assignment.responder_ids || []).includes(req.barangayUser.userId)) {
+      res.status(403).json({ error: 'This report is not assigned to your responder account.' });
+      return;
+    }
+    const previous = String(assignment.response_notes || '');
+    const dispatcherNotes = previous.replace(/\n?\[BARANGAY FIELD NOTES\][\s\S]*$/i, '').trim();
+    const responseNotes = [dispatcherNotes, `[BARANGAY FIELD NOTES]\n${parsed.data.notes}`].filter(Boolean).join('\n');
+    const now = new Date().toISOString();
+    const { error: updateError } = await supabaseAdmin.from('mdrrmo_report_barangay_assignments')
+      .update({ response_notes: responseNotes, responded_by: req.barangayUser.userId, responded_at: now, updated_at: now })
+      .eq('id', assignment.id).eq('barangay_id', req.barangayUser.barangayId);
+    if (updateError) throw updateError;
+    const { error: actorError } = await supabaseAdmin.from('mdrrmo_reports')
+      .update({ lifecycle_actor_id: req.barangayUser.userId, lifecycle_actor_role: 'barangay_responder' })
+      .eq('id', req.params.id);
+    if (actorError) throw actorError;
+    const [{ data: report, error: reportError }, { data: updatedAssignment, error: updatedAssignmentError }, { data: crewRows, error: crewError }, { data: barangay, error: barangayError }] = await Promise.all([
+      supabaseAdmin.from('mdrrmo_reports').select('*').eq('id', req.params.id).maybeSingle(),
+      supabaseAdmin.from('mdrrmo_report_barangay_assignments').select('*').eq('id', assignment.id).maybeSingle(),
+      supabaseAdmin.from('mdrrmo_report_barangay_crew_members')
+        .select('member_id, member_name_snapshot, crew_role').eq('assignment_id', assignment.id),
+      supabaseAdmin.from('barangays').select('name').eq('id', req.barangayUser.barangayId).maybeSingle(),
+    ]);
+    if (reportError) throw reportError;
+    if (updatedAssignmentError) throw updatedAssignmentError;
+    if (crewError) throw crewError;
+    if (barangayError) throw barangayError;
+    if (!report || !updatedAssignment) { res.status(404).json({ error: 'The active barangay assignment was not found.' }); return; }
+    const payload = formatIncidentReport({
+      ...report,
+      is_central_assignment: true,
+      assignment_id: updatedAssignment.id,
+      assignment_status: updatedAssignment.assignment_status,
+      assignment_notes: updatedAssignment.assignment_notes,
+      response_status: updatedAssignment.response_status,
+      barangay_response_status: updatedAssignment.response_status,
+      barangay_response_notes: responseNotes,
+      barangay_responded_by: updatedAssignment.responded_by,
+      barangay_responder_name: updatedAssignment.responder_name || null,
+      barangay_dispatched_at: updatedAssignment.dispatched_at,
+      barangay_accepted_at: updatedAssignment.accepted_at,
+      barangay_arrived_at: updatedAssignment.arrived_at,
+      barangay_crew_members: (crewRows || []).map((member: any) => ({
+        member_id: member.member_id,
+        member_name: member.member_name_snapshot,
+        crew_role: member.crew_role,
+      })),
+      assigned_team_leader_ids: updatedAssignment.responder_ids || [],
+      response_barangay_id: updatedAssignment.barangay_id,
+      response_barangay_name: barangay?.name || null,
+    });
+    io.to(`barangay:${req.barangayUser.barangayId}`).emit('barangay:report_updated', payload);
+    res.json(payload);
+  } catch (error: any) {
+    console.error('Save barangay response field notes failed:', error);
+    res.status(500).json({ error: 'Could not save the field notes.' });
+  }
 });
 
 router.patch('/assigned-reports/:id/arrive', authenticateBarangay, requireRole(['responder']), async (req: any, res: Response) => {
@@ -2242,11 +2573,12 @@ router.patch('/reports/:id/dispatch', authenticateBarangay, requireRole(['dispat
       .update({
         incident_type,
         severity,
-        response_status: 'pending',
+        response_status: 'responding',
         response_notes: encodedNotes,
         responded_by: primaryLeaderId,
         responded_at: reviewedAndDispatchedAt,
         dispatched_at: reviewedAndDispatchedAt,
+        accepted_at: reviewedAndDispatchedAt,
         lifecycle_actor_id: req.barangayUser.userId,
         lifecycle_actor_role: 'barangay_dispatcher',
       })
@@ -2268,7 +2600,8 @@ router.patch('/reports/:id/dispatch', authenticateBarangay, requireRole(['dispat
     const payload = {
       ...data,
       barangay_name: barangayName,
-      barangay_response_status: 'pending',
+      barangay_response_status: 'responding',
+      barangay_accepted_at: reviewedAndDispatchedAt,
       incident_type,
       severity,
       barangay_responded_by: primaryLeaderId,
@@ -2431,7 +2764,7 @@ router.patch('/reports/:id/escalate', authenticateBarangay, requireRole(['dispat
 });
 
 // ─── PATCH /api/barangay/reports/:id/respond ────────────────────────────────
-// Mark initial response dispatched or accepted by responder
+// Record field notes for an automatically accepted dispatched response.
 
 router.patch('/reports/:id/respond', authenticateBarangay, requireRole(['dispatcher', 'responder']), async (req: any, res: Response) => {
   try {
@@ -2448,11 +2781,7 @@ router.patch('/reports/:id/respond', authenticateBarangay, requireRole(['dispatc
       res.status(400).json({ error: 'Invalid response details.', details: parsed.error.flatten() });
       return;
     }
-    const { notes, mdrrmo_notes, latitude, longitude, accuracy_m, fix_at } = parsed.data;
-    if ((latitude === undefined) !== (longitude === undefined)) {
-      res.status(400).json({ error: 'Send both GPS coordinates or neither.' });
-      return;
-    }
+    const { notes, mdrrmo_notes } = parsed.data;
     const { data: currentReport, error: currentError } = await supabaseAdmin
       .from('barangay_reports')
       .select('*')
@@ -2467,6 +2796,9 @@ router.patch('/reports/:id/respond', authenticateBarangay, requireRole(['dispatc
       if (respondedBy !== req.barangayUser.userId && !assignedIds.includes(req.barangayUser.userId)) {
         res.status(403).json({ error: 'This incident has not been assigned to your responder account' }); return;
       }
+      if (String(currentReport.response_status || currentReport.barangay_response_status || '').toLowerCase() !== 'responding') {
+        res.status(409).json({ error: 'A dispatcher must dispatch this incident before field updates can be saved.' }); return;
+      }
     }
     const actionAt = new Date().toISOString();
     const updatePayload: any = {
@@ -2476,23 +2808,6 @@ router.patch('/reports/:id/respond', authenticateBarangay, requireRole(['dispatc
       lifecycle_actor_id: req.barangayUser.userId,
       lifecycle_actor_role: req.barangayUser.role === 'dispatcher' ? 'barangay_dispatcher' : 'barangay_responder',
     };
-    if (req.barangayUser.role === 'responder') {
-      updatePayload.accepted_at = currentReport.accepted_at || actionAt;
-      updatePayload.barangay_accepted_at = currentReport.accepted_at || actionAt;
-    }
-    if (req.barangayUser.role === 'responder' && !currentReport.accepted_at &&
-        latitude !== undefined && longitude !== undefined && accuracy_m !== undefined && fix_at) {
-      const fixAt = new Date(fix_at);
-      const fix = { latitude, longitude, accuracyM: accuracy_m, fixAt };
-      const validFix = validateRecentGpsFix(fix);
-      if (validFix.valid && currentReport.latitude != null && currentReport.longitude != null) {
-        updatePayload.travel_distance_m = Math.round(
-          distanceMeters(currentReport.latitude, currentReport.longitude, latitude, longitude) * 10,
-        ) / 10;
-        updatePayload.travel_distance_accuracy_m = Math.round(accuracy_m * 10) / 10;
-        updatePayload.travel_distance_fix_at = new Date(Math.min(fixAt.getTime(), Date.now())).toISOString();
-      }
-    }
     if (notes !== undefined && notes !== null) {
       const assignmentMarker = currentNotes.match(/^\[ASSIGNED:[^\]]+\]/)?.[0];
       updatePayload.barangay_response_notes = [assignmentMarker, notes].filter(Boolean).join(' ');
@@ -2509,7 +2824,7 @@ router.patch('/reports/:id/respond', authenticateBarangay, requireRole(['dispatc
       response_status: isEscalatedReport ? 'resolved' : 'responding',
       responded_by: req.barangayUser.userId,
       responded_at: updatePayload.barangay_responded_at,
-      accepted_at: updatePayload.barangay_accepted_at || null,
+      accepted_at: currentReport.accepted_at || null,
       response_notes: updatePayload.barangay_response_notes || null,
       lifecycle_actor_id: req.barangayUser.userId,
       lifecycle_actor_role: updatePayload.lifecycle_actor_role,
@@ -2617,7 +2932,7 @@ router.patch('/reports/:id/arrive', authenticateBarangay, requireRole(['responde
     }
     const currentStatus = currentReport.response_status || currentReport.barangay_response_status;
     if (currentReport.resolved_at || currentStatus !== 'responding') {
-      res.status(409).json({ error: 'Accept the dispatch before marking arrival.' });
+      res.status(409).json({ error: 'Dispatch the incident before marking arrival.' });
       return;
     }
     if (currentReport.arrived_at) {
@@ -2668,7 +2983,7 @@ router.patch('/reports/:id/arrive', authenticateBarangay, requireRole(['responde
     }
 
     const updatePayload = {
-      accepted_at: currentReport.accepted_at || now.toISOString(),
+      accepted_at: currentReport.accepted_at || currentReport.dispatched_at || now.toISOString(),
       arrived_at: fixAt.toISOString(),
       arrival_recorded_at: now.toISOString(),
       arrival_method: parsed.data.method,
@@ -3413,6 +3728,8 @@ router.post('/broadcasts/:id/repost', authenticateBarangay, requireRole(['admin'
       throw error || new Error('Failed to save the repost.');
     }
 
+    io.to(`barangay:${req.barangayUser.barangayId}`).emit('broadcast:new', data);
+
     res.status(201).json({
       id: data.id,
       barangay_id: data.barangay_id,
@@ -3495,6 +3812,7 @@ router.patch('/broadcasts/:id/pin', authenticateBarangay, requireRole(['admin', 
       res.status(404).json({ error: 'Barangay broadcast not found.' });
       return;
     }
+    io.to(`barangay:${req.barangayUser.barangayId}`).emit('broadcast:new', data);
     res.json({
       id: data.id,
       barangay_id: data.barangay_id,
@@ -3703,6 +4021,8 @@ router.patch('/broadcasts/:id', authenticateBarangay, requireRole(['admin', 'sta
       return;
     }
 
+    io.to(`barangay:${req.barangayUser.barangayId}`).emit('broadcast:new', data);
+
     res.json({
       id: data.id,
       barangay_id: data.barangay_id,
@@ -3745,6 +4065,8 @@ router.delete('/broadcasts/:id', authenticateBarangay, requireRole(['admin', 'st
       res.status(404).json({ error: 'Barangay broadcast not found.' });
       return;
     }
+
+    io.to(`barangay:${req.barangayUser.barangayId}`).emit('broadcast:removed', { id: data.id });
 
     res.status(200).json({ success: true, id: data.id, message: 'Broadcast deleted' });
   } catch (err: any) {

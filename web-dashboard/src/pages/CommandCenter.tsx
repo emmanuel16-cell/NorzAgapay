@@ -1354,8 +1354,8 @@ export default function CommandCenter() {
         .map((responder) => responder.officer_name || responder.full_name)
         .join(', ');
       toast.success(selectedMdrrmoResponderIds.length === 1
-        ? `Dispatched to ${assignedNames}. The report is in their pending queue.`
-        : `Dispatched to ${assignedNames} (${selectedMdrrmoResponderIds.length} responders).`);
+        ? `Dispatched to ${assignedNames}. The response is accepted and underway.`
+        : `Dispatched to ${assignedNames}; response is underway (${selectedMdrrmoResponderIds.length} responders).`);
       setMdrrmoDispatchIncident(null);
       setMdrrmoNotes('');
       closeModal();

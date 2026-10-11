@@ -86,103 +86,8 @@ class _ReportingScreenState extends State<ReportingScreen> {
   bool _isInsideNorzagaray = false;
   bool _isRefreshingLocation = false;
 
-  // Barangay selection & routing
-  List<Map<String, dynamic>> _barangays = [];
-  String? _selectedBarangayId;
-  String? _selectedBarangayName;
-  String? _recipientBarangayId;
-  String _sendTo = 'mdrrmo'; // 'barangay' or 'mdrrmo'
-
-  Map<String, dynamic>? get _closestBarangay {
-    final incidentLocation = _currentLocation;
-    if (incidentLocation == null) return null;
-
-    Map<String, dynamic>? nearest;
-    var nearestDistance = double.infinity;
-    for (final barangay in _barangays) {
-      final officialLatitude = _validCoordinate(barangay['location_latitude'], -90, 90);
-      final officialLongitude = _validCoordinate(barangay['location_longitude'], -180, 180);
-      final useOfficialLocation = officialLatitude != null && officialLongitude != null;
-      final latitude = useOfficialLocation
-          ? officialLatitude
-          : _validCoordinate(barangay['latitude'], -90, 90);
-      final longitude = useOfficialLocation
-          ? officialLongitude
-          : _validCoordinate(barangay['longitude'], -180, 180);
-      if (latitude == null || longitude == null) continue;
-
-      final distance = _distanceMeters(
-        incidentLocation.latitude!,
-        incidentLocation.longitude!,
-        latitude,
-        longitude,
-      );
-      if (distance < nearestDistance) {
-        nearest = barangay;
-        nearestDistance = distance;
-      }
-    }
-    return nearest;
-  }
-
-  String? get _closestBarangayName => _closestBarangay?['name']?.toString();
   String get _locationSourceLabel =>
       _locationSource == 'map' ? 'Chosen on map' : 'Current location';
-
-  List<Map<String, dynamic>> get _routingBarangays {
-    final closestId = _closestBarangay?['id']?.toString();
-    final ordered = List<Map<String, dynamic>>.from(_barangays);
-    ordered.sort((first, second) {
-      final firstId = first['id']?.toString();
-      final secondId = second['id']?.toString();
-      if (firstId == closestId) return -1;
-      if (secondId == closestId) return 1;
-      return (first['name']?.toString() ?? '').compareTo(second['name']?.toString() ?? '');
-    });
-    return ordered;
-  }
-
-  String _barangayOptionLabel(Map<String, dynamic> barangay) {
-    final name = barangay['name']?.toString() ?? 'Barangay';
-    final isClosest = barangay['id']?.toString() ==
-        _closestBarangay?['id']?.toString();
-    return isClosest ? '$name · Recommended' : name;
-  }
-
-  String? get _recipientDestinationId {
-    if (_recipientBarangayId != null &&
-        _barangays.any((barangay) => barangay['id']?.toString() == _recipientBarangayId)) {
-      return _recipientBarangayId;
-    }
-    return _closestBarangay?['id']?.toString();
-  }
-
-  String? get _recipientDestinationName {
-    for (final barangay in _barangays) {
-      if (barangay['id']?.toString() == _recipientDestinationId) {
-        return barangay['name']?.toString();
-      }
-    }
-    return null;
-  }
-
-  double? _validCoordinate(dynamic value, double minimum, double maximum) {
-    final coordinate = double.tryParse(value?.toString() ?? '');
-    if (coordinate == null || !coordinate.isFinite || coordinate < minimum || coordinate > maximum) {
-      return null;
-    }
-    return coordinate;
-  }
-
-  double _distanceMeters(double latitude1, double longitude1, double latitude2, double longitude2) {
-    const radians = pi / 180;
-    final latitudeDelta = (latitude2 - latitude1) * radians;
-    final longitudeDelta = (longitude2 - longitude1) * radians;
-    final a = pow(sin(latitudeDelta / 2), 2) +
-        cos(latitude1 * radians) * cos(latitude2 * radians) *
-        pow(sin(longitudeDelta / 2), 2);
-    return 6371000 * 2 * atan2(sqrt(a), sqrt(max(0, 1 - a)));
-  }
 
   final Map<String, List<String>> _communityCategories = {
     'Community Safety Concerns': [
@@ -218,8 +123,6 @@ class _ReportingScreenState extends State<ReportingScreen> {
     _reportType = widget.reportType;
     _restoreDraft(widget.initialDraft);
     if (_currentLocation == null) _getLocation();
-    _loadBarangays();
-    _loadSavedBarangay();
   }
 
   void _restoreDraft(Map<String, dynamic>? draft) {
@@ -269,13 +172,6 @@ class _ReportingScreenState extends State<ReportingScreen> {
     _selectedSpecific = draft['specifics']?.toString();
     _descController.text = draft['description']?.toString() ?? '';
     _guestPhoneController.text = draft['guest_phone']?.toString() ?? '';
-    final savedRecipient = draft['send_to']?.toString();
-    _sendTo = const {'barangay', 'mdrrmo'}.contains(savedRecipient)
-        ? savedRecipient!
-        : 'mdrrmo';
-    _selectedBarangayId = draft['barangay_id']?.toString();
-    _selectedBarangayName = draft['barangay_name']?.toString();
-    _recipientBarangayId = draft['recipient_barangay_id']?.toString();
     final latitude = double.tryParse(draft['latitude']?.toString() ?? '');
     final longitude = double.tryParse(draft['longitude']?.toString() ?? '');
     if (latitude != null &&
@@ -342,8 +238,7 @@ class _ReportingScreenState extends State<ReportingScreen> {
     'proof_paths': _proofs.map((proof) => proof.file.path).toList(),
     'proof_types': _proofs.map((proof) => proof.type).toList(),
     'proof_durations': _proofs.map((proof) => proof.durationSeconds).toList(),
-    'send_to': _sendTo,
-    'recipient_barangay_id': _recipientBarangayId,
+    'send_to': 'mdrrmo',
     'guest_phone': _guestPhoneController.text,
   };
 
@@ -395,51 +290,6 @@ class _ReportingScreenState extends State<ReportingScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) Navigator.of(context).pop();
     });
-  }
-
-  void _loadSavedBarangay() {
-    final profile = OfflineService.getProfile();
-    // The saved profile is authoritative; stale draft routing must not override it.
-    _selectedBarangayId = profile?['barangay_id']?.toString();
-    _selectedBarangayName = profile?['barangay_name']?.toString();
-    _syncSavedBarangaySelection();
-  }
-
-  void _syncSavedBarangaySelection() {
-    if (_barangays.isEmpty) {
-      _selectedBarangayId = null;
-      _selectedBarangayName = null;
-      return;
-    }
-    final profile = OfflineService.getProfile();
-    final savedId = profile?['barangay_id']?.toString();
-    final savedName = (profile?['barangay_name'] ?? _selectedBarangayName)
-        ?.toString()
-        .trim();
-    final match = _barangays.firstWhere(
-      (b) =>
-          (savedId != null && b['id']?.toString() == savedId) ||
-          (savedName != null &&
-              b['name']?.toString().trim().toLowerCase() ==
-                  savedName.toLowerCase()),
-      orElse: () => <String, dynamic>{},
-    );
-    if (match.isEmpty) {
-      _selectedBarangayId = null;
-      _selectedBarangayName = null;
-      if (mounted) setState(() {});
-      return;
-    }
-    _selectedBarangayId = match['id']?.toString();
-    _selectedBarangayName = match['name']?.toString();
-    if (savedId != _selectedBarangayId && _selectedBarangayId != null) {
-      OfflineService.saveProfile({
-        ...?profile,
-        'barangay_id': _selectedBarangayId,
-        'barangay_name': _selectedBarangayName,
-      });
-    }
-    if (mounted) setState(() {});
   }
 
   Future<void> _getLocation({
@@ -582,42 +432,6 @@ class _ReportingScreenState extends State<ReportingScreen> {
       _locationCheckComplete = true;
       _keepCurrentLocationForSubmit = isInside;
     });
-  }
-
-  Future<void> _loadBarangays() async {
-    // Try cache first
-    final cached = OfflineService.getCachedBarangays()
-        .where((barangay) => barangay['is_verified'] == true)
-        .toList();
-    if (cached.isNotEmpty) {
-      if (mounted) setState(() => _barangays = cached);
-      _syncSavedBarangaySelection();
-    }
-
-    // Fetch fresh list
-    try {
-      final response = await http
-          .get(
-            Uri.parse(
-              '${AppConstants.apiBaseUrl}/barangay/list?verified_only=true',
-            ),
-            headers: {'ngrok-skip-browser-warning': 'true'},
-          )
-          .timeout(const Duration(seconds: 8));
-
-      if (response.statusCode == 200) {
-        final List<dynamic> data = jsonDecode(response.body);
-        final barangays = data
-            .map((e) => Map<String, dynamic>.from(e))
-            .where((barangay) => barangay['is_verified'] == true)
-            .toList();
-        await OfflineService.saveBarangays(barangays);
-        if (mounted) setState(() => _barangays = barangays);
-        _syncSavedBarangaySelection();
-      }
-    } catch (e) {
-      debugPrint('Load barangays error: $e');
-    }
   }
 
   Future<void> _openEmergencyCamera() async {
@@ -1027,9 +841,7 @@ class _ReportingScreenState extends State<ReportingScreen> {
         'first_name': nameParts.isNotEmpty ? nameParts.first : '',
         'last_name': nameParts.length > 1 ? nameParts.skip(1).join(' ') : '',
         'contact_number': rawPhone.contains('@') ? '' : PhoneNumberUtils.digitsOnly(rawPhone),
-        'send_to': _sendTo,
-        if (_sendTo == 'barangay' && _recipientDestinationId != null)
-          'recipient_barangay_id': _recipientDestinationId,
+        'send_to': 'mdrrmo',
       };
 
       // Commit the incident before transferring large evidence files.
@@ -1080,11 +892,9 @@ class _ReportingScreenState extends State<ReportingScreen> {
                   Text('Report Submitted!'),
                 ],
               ),
-              content: Text(
-                _sendTo == 'barangay'
-                    ? 'Your report has been sent to the closest active barangay. They can escalate it to MDRRMO if more support is needed.'
-                    : 'Your report has been sent to MDRRMO for review. The dispatcher can assign a nearby active barangay if appropriate.',
-                style: const TextStyle(fontSize: 18, height: 1.4),
+              content: const Text(
+                'Your report has been sent to MDRRMO for review. A dispatcher can assign a nearby active barangay if appropriate.',
+                style: TextStyle(fontSize: 18, height: 1.4),
               ),
               actions: [
                 TextButton(
@@ -1253,19 +1063,6 @@ class _ReportingScreenState extends State<ReportingScreen> {
                         ),
                       ),
                       const SizedBox(height: 18),
-                    ] else ...[
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(color: const Color(0xFFEFF6FF), borderRadius: BorderRadius.circular(8)),
-                        child: Text(
-                          _sendTo == 'barangay'
-                              ? 'This report will go to ${_recipientDestinationName ?? 'the selected verified barangay'}. Its dispatcher can escalate it to MDRRMO if more support is needed.'
-                              : 'This report will go to MDRRMO. A dispatcher can assign it to a nearby active barangay.',
-                          style: const TextStyle(color: Color(0xFF1B4F72), fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                      const SizedBox(height: 18),
                     ],
 
                     const Text(
@@ -1273,52 +1070,31 @@ class _ReportingScreenState extends State<ReportingScreen> {
                       style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
                     ),
                     const SizedBox(height: 6),
-                    RadioListTile<String>(
-                      value: 'barangay',
-                      groupValue: _sendTo,
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(_closestBarangayName == null
-                          ? 'Closest Barangay'
-                          : 'Closest Barangay ($_closestBarangayName)'),
-                      subtitle: const Text('Based on the incident location. The barangay can escalate to MDRRMO.'),
-                      onChanged: (value) => setState(() => _sendTo = value!),
-                    ),
-                    DropdownButtonFormField<String>(
-                      value: _recipientDestinationId,
-                      decoration: InputDecoration(
-                        labelText: 'Barangay destination (closest recommended)',
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEFF6FF),
+                        border: Border.all(color: const Color(0xFFBFDBFE)),
+                        borderRadius: BorderRadius.circular(8),
                       ),
-                      hint: Text(_barangays.isEmpty
-                          ? 'No verified barangays available'
-                          : 'Select a verified barangay'),
-                      items: _routingBarangays
-                          .where((barangay) => barangay['id'] != null)
-                          .map((barangay) => DropdownMenuItem<String>(
-                                value: barangay['id'].toString(),
-                                child: Text(_barangayOptionLabel(barangay)),
-                              ))
-                          .toList(),
-                      onChanged: _barangays.isEmpty
-                          ? null
-                          : (value) => setState(() {
-                                _recipientBarangayId = value;
-                                _sendTo = 'barangay';
-                              }),
-                    ),
-                    const SizedBox(height: 6),
-                    const Text(
-                      'All verified barangays are listed. The closest to the incident pin is listed first and selected by default. This destination is used when barangay routing is selected below.',
-                      style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-                    ),
-                    const SizedBox(height: 10),
-                    RadioListTile<String>(
-                      value: 'mdrrmo',
-                      groupValue: _sendTo,
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('MDRRMO'),
-                      subtitle: const Text('A dispatcher can assign the report to a nearby active barangay.'),
-                      onChanged: (value) => setState(() => _sendTo = value!),
+                      child: const Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(Icons.radio_button_checked_rounded, color: Color(0xFF0891B2), size: 22),
+                          SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('MDRRMO', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
+                                SizedBox(height: 4),
+                                Text('A dispatcher can assign the report to a nearby active barangay.', style: TextStyle(fontSize: 13, color: Color(0xFF475569), height: 1.4)),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 12),
 

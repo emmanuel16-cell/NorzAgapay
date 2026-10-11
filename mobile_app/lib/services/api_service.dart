@@ -194,8 +194,11 @@ class ApiService {
     double? accuracyM,
     DateTime? fixAt,
   }) async {
+    final endpoint = centralAssignment
+        ? 'assigned-reports/$reportId/field-notes'
+        : 'reports/$reportId/respond';
     final res = await http.patch(
-      Uri.parse('$baseUrl/barangay/${_reportPath(reportId, centralAssignment)}/respond'),
+      Uri.parse('$baseUrl/barangay/$endpoint'),
       headers: _headers(token),
       body: jsonEncode({
         'notes': notes,
@@ -211,6 +214,37 @@ class ApiService {
     }
     final data = jsonDecode(res.body);
     throw Exception(data['error'] ?? 'Failed to respond to report');
+  }
+
+  static Future<List<Map<String, dynamic>>> getBarangayCrewRoster(String token) async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/barangay/team/crew-roster'),
+      headers: _headers(token),
+    );
+    if (res.statusCode == 200) {
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      return (data['members'] as List? ?? const [])
+          .whereType<Map>()
+          .map((member) => Map<String, dynamic>.from(member))
+          .toList();
+    }
+    final data = jsonDecode(res.body);
+    throw Exception(data['error'] ?? 'Failed to load the barangay crew roster');
+  }
+
+  static Future<IncidentReport> saveBarangayResponseCrew(
+    String token,
+    String reportId,
+    List<Map<String, String>> members,
+  ) async {
+    final res = await http.patch(
+      Uri.parse('$baseUrl/barangay/assigned-reports/$reportId/crew'),
+      headers: _headers(token),
+      body: jsonEncode({'members': members}),
+    );
+    if (res.statusCode == 200) return IncidentReport.fromJson(jsonDecode(res.body));
+    final data = jsonDecode(res.body);
+    throw Exception(data['error'] ?? 'Failed to save the barangay response crew');
   }
 
   static Future<IncidentReport> markReportArrived(

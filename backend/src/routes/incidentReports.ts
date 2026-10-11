@@ -8,8 +8,6 @@ import { AuthPayload, AuthRequest, authenticate, authorize } from '../middleware
 import { io } from '../server';
 import { isEscalatedForMdrrmo, isVisibleToMdrrmo } from '../services/mdrrmoReportVisibility';
 import { estimateReportTimings } from '../services/reportTiming';
-import { getNearestBarangay } from '../services/nearestBarangay';
-import { getVerifiedBarangayIds } from '../services/verifiedBarangayService';
 import {
   getMunicipalityBoundaryConfiguration,
   isPointInBoundary,
@@ -17,59 +15,6 @@ import {
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
-
-async function findNearestActiveBarangay(latitude: number, longitude: number, selectedBarangayId?: string) {
-  const verifiedIds = await getVerifiedBarangayIds();
-  if (!verifiedIds.length) return null;
-  const { data, error } = await supabaseAdmin
-    .from('barangays')
-    .select('id, name, latitude, longitude, location_latitude, location_longitude')
-    .in('id', verifiedIds);
-  if (error) throw error;
-  const eligibleBarangays = data || [];
-  if (selectedBarangayId) {
-    return eligibleBarangays.find((barangay: any) => barangay.id === selectedBarangayId) || null;
-  }
-  return getNearestBarangay({ latitude, longitude }, eligibleBarangays);
-}
-
-async function ensureResidentBarangayAssignment(report: any, preferredBarangayId?: string | null) {
-  if (isEscalatedForMdrrmo(report) || String(report.source_type || '').toLowerCase() === 'escalated') return null;
-  const { data: active, error: activeError } = await supabaseAdmin
-    .from('mdrrmo_report_barangay_assignments')
-    .select('*')
-    .eq('report_id', report.id)
-    .eq('assignment_status', 'active')
-    .maybeSingle();
-  if (activeError) throw activeError;
-  if (active) return active;
-
-  const latitude = Number(report.latitude);
-  const longitude = Number(report.longitude);
-  let nearest: { id: string } | null = null;
-  if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
-    nearest = await findNearestActiveBarangay(latitude, longitude, preferredBarangayId || undefined);
-  }
-  if (!nearest) throw new Error('No active barangay with a location is available for this incident.');
-
-  const { data: assignmentId, error: assignmentError } = await supabaseAdmin.rpc(
-    'assign_mdrrmo_report_to_barangay_from_resident_v1',
-    {
-      p_report_id: report.id,
-      p_barangay_id: nearest.id,
-      p_notes: 'Resident selected an active verified barangay when submitting this report.',
-    },
-  );
-  if (assignmentError) throw assignmentError;
-
-  const { data: assignment, error: readError } = await supabaseAdmin
-    .from('mdrrmo_report_barangay_assignments')
-    .select('id, barangay_id, assignment_status, response_status, assignment_notes, assigned_at')
-    .eq('id', assignmentId)
-    .maybeSingle();
-  if (readError) throw readError;
-  return assignment;
-}
 
 function reportWasRoutedToBarangay(report: any): boolean {
   const marker = `${report?.specifics || ''}\n${report?.description || ''}`.match(/\[SEND_TO:([^\]]+)\]/i)?.[1];
@@ -371,15 +316,26 @@ function mergeResidentReportCopies(barangayReports: any[], mdrrmoReports: any[])
 async function attachResidentBarangayAssignmentState(reports: any[]) {
   const reportIds = [...new Set(reports.map((report) => report.id).filter(Boolean))];
   if (!reportIds.length) return reports;
-  const { data: assignments, error } = await supabaseAdmin
-    .from('mdrrmo_report_barangay_assignments')
-    .select('id, report_id, barangay_id, assignment_status, response_status, assigned_at, dispatched_at, accepted_at, arrived_at, resolved_at, resolved_notes, escalated_at, responder_name')
-    .in('report_id', reportIds)
-    .order('assigned_at', { ascending: false });
-  if (error) throw error;
-  if (!assignments?.length) return reports;
+  const [assignmentResult, eventResult] = await Promise.all([
+    supabaseAdmin.from('mdrrmo_report_barangay_assignments')
+      .select('id, report_id, barangay_id, assignment_status, response_status, assigned_at, dispatched_at, accepted_at, arrived_at, resolved_at, resolved_notes, escalated_at, responder_name')
+      .in('report_id', reportIds)
+      .order('assigned_at', { ascending: false }),
+    supabaseAdmin.from('mdrrmo_report_barangay_assignment_events')
+      .select('report_id, from_barangay_id, to_barangay_id, event_type, created_at')
+      .in('report_id', reportIds)
+      .order('created_at', { ascending: true }),
+  ]);
+  if (assignmentResult.error) throw assignmentResult.error;
+  if (eventResult.error) throw eventResult.error;
+  const assignments = assignmentResult.data || [];
+  const assignmentEvents = eventResult.data || [];
+  if (!assignments.length && !assignmentEvents.length) return reports;
 
-  const barangayIds = [...new Set(assignments.map((item: any) => item.barangay_id).filter(Boolean))];
+  const barangayIds = [...new Set([
+    ...assignments.map((item: any) => item.barangay_id),
+    ...assignmentEvents.flatMap((item: any) => [item.from_barangay_id, item.to_barangay_id]),
+  ].filter(Boolean))];
   const { data: barangays, error: barangayError } = barangayIds.length
     ? await supabaseAdmin.from('barangays').select('id, name').in('id', barangayIds)
     : { data: [], error: null } as any;
@@ -391,10 +347,21 @@ async function attachResidentBarangayAssignmentState(reports: any[]) {
     history.push({ ...assignment, barangay_name: barangayNames.get(assignment.barangay_id) || null });
     byReport.set(assignment.report_id, history);
   }
+  const eventsByReport = new Map<string, any[]>();
+  for (const event of assignmentEvents) {
+    const history = eventsByReport.get(event.report_id) || [];
+    history.push({
+      ...event,
+      from_barangay_name: barangayNames.get(event.from_barangay_id) || null,
+      to_barangay_name: barangayNames.get(event.to_barangay_id) || null,
+    });
+    eventsByReport.set(event.report_id, history);
+  }
 
   return reports.map((report) => {
     const history = byReport.get(report.id);
-    if (!history?.length) return report;
+    const publicEvents = eventsByReport.get(report.id) || [];
+    if (!history?.length) return publicEvents.length ? { ...report, barangay_assignment_events: publicEvents } : report;
     const current = history.find((item) => item.assignment_status === 'active') || history[0];
     const publicHistory = history.map((item) => ({
       id: item.id,
@@ -428,6 +395,7 @@ async function attachResidentBarangayAssignmentState(reports: any[]) {
       barangay_escalated_at: current.escalated_at,
       mdrrmo_response_status: report.mdrrmo_response_status || report.response_status || 'pending',
       barangay_assignments: publicHistory,
+      barangay_assignment_events: publicEvents,
     };
   });
 }
@@ -513,7 +481,7 @@ async function persistIncidentEvidence(
 
 /**
  * POST /api/incident-reports
- * Handles report submission from mobile and resident apps.
+ * Handles report submission from public, mobile, and resident clients.
  * Supports multipart/form-data for multiple proof files.
  */
 router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, res: Response): Promise<void> => {
@@ -534,14 +502,11 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
       contact_number
     } = req.body;
 
-    // The backend validates the selected active barangay, defaulting to the
-    // closest one when no explicit recipient was selected.
-    const targetSendTo = String(req.body.send_to || '').trim().toLowerCase() === 'barangay'
-      ? 'barangay'
-      : 'mdrrmo';
-    const selectedResponseBarangayId = typeof req.body.recipient_barangay_id === 'string'
-      ? req.body.recipient_barangay_id.trim()
-      : '';
+    // New reports always enter central MDRRMO intake. Keep the submitted
+    // destination only out of this write path so older clients cannot bypass
+    // central triage; historical report records and retry responses retain
+    // their original destination and assignment history.
+    const targetSendTo = 'mdrrmo';
 
     // Basic validation
     const parsedLatitude = Number(latitude);
@@ -664,10 +629,13 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
         const bMap = await getBarangayNameMap();
         let formattedExisting = formatIncidentReport(existing, bMap);
         if (reportWasRoutedToBarangay(existing) && existing.source_type !== undefined) {
-          const assignment = await ensureResidentBarangayAssignment(
-            existing,
-            selectedResponseBarangayId || undefined,
-          );
+          const { data: assignment, error: assignmentError } = await supabaseAdmin
+            .from('mdrrmo_report_barangay_assignments')
+            .select('*')
+            .eq('report_id', existing.id)
+            .eq('assignment_status', 'active')
+            .maybeSingle();
+          if (assignmentError) throw assignmentError;
           if (assignment?.barangay_id) {
             const assignmentBarangay = bMap.get(assignment.barangay_id) || null;
             formattedExisting = {
@@ -688,9 +656,9 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
       }
     }
 
-    // Keep the incident's geographic barangay separate from the response
-    // destination. The latter is an active assignment when the resident picks
-    // the closest barangay.
+    // Keep the incident's geographic barangay separate from its response
+    // destination. The new report remains in the central MDRRMO queue until a
+    // dispatcher creates a barangay assignment.
     let resolvedBarangayId: string | null = null;
     const lat = parsedLatitude;
     const lng = parsedLongitude;
@@ -721,16 +689,6 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
           if (dist < minDist) { minDist = dist; resolvedBarangayId = b.id; }
         }
       }
-    }
-
-    const nearestResponseBarangay = targetSendTo === 'barangay'
-      ? await findNearestActiveBarangay(lat, lng, selectedResponseBarangayId || undefined)
-      : null;
-    if (targetSendTo === 'barangay' && !nearestResponseBarangay) {
-      res.status(409).json({ error: selectedResponseBarangayId
-        ? 'That barangay is not currently verified and active. Choose another verified barangay or send the report to MDRRMO.'
-        : 'No active verified barangay with a location is available. Choose MDRRMO instead.' });
-      return;
     }
 
     const rawFiles: Express.Multer.File[] = (req.files as Express.Multer.File[]) || (req.file ? [req.file] : []);
@@ -795,11 +753,9 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
       evidence_status: uploadedFiles.length > 0 || providedProofTypes.length > 0 ? 'pending' : 'ready',
       client_request_id: clientRequestId,
     };
-    if (targetSendTo === 'mdrrmo') {
-      reportInsertPayload.source_type = 'direct';
-      reportInsertPayload.severity = req.body.severity || 'moderate';
-      reportInsertPayload.incident_type = req.body.incident_type || 'other';
-    }
+    reportInsertPayload.source_type = 'direct';
+    reportInsertPayload.severity = req.body.severity || 'moderate';
+    reportInsertPayload.incident_type = req.body.incident_type || 'not_sure';
     if (reporterEmail) {
       reportInsertPayload.reporter_email = reporterEmail;
     }
@@ -824,29 +780,14 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
       proof_types: proofTypes.length > 0 ? proofTypes : ((report as any)?.proof_types || []),
     }, bMap);
 
-    if (targetSendTo === 'barangay') {
-      const assignment = await ensureResidentBarangayAssignment(report, nearestResponseBarangay!.id);
-      if (!assignment?.barangay_id) throw new Error('The report was saved but its barangay assignment could not be confirmed.');
-      formattedReport = {
-        ...formattedReport,
-        active_barangay_assignment: {
-          ...assignment,
-          barangay_name: bMap.get(assignment.barangay_id) || null,
-        },
-      };
-      io.to(`barangay:${assignment.barangay_id}`).emit('barangay:report_assigned', formattedReport);
-      io.to(`barangay:${assignment.barangay_id}`).emit('barangay:report_updated', formattedReport);
-    } else {
-      // MDRRMO receives only reports residents routed to its queue.
-      io.to(['dashboard_staff', 'role:dispatcher']).emit('incident_report:new', formattedReport);
-    }
+    // Dispatch notifications always enter central MDRRMO intake. A dispatcher
+    // can assign the report to a barangay after reviewing the central record.
+    io.to(['dashboard_staff', 'role:dispatcher']).emit('incident_report:new', formattedReport);
     if (formattedReport.reporter_type === 'resident' && formattedReport.reporter_id) {
       io.to(`user:${formattedReport.reporter_id}`).emit('incident_report:updated', formattedReport);
     }
     res.status(201).json({
-      message: targetSendTo === 'barangay'
-        ? `Report submitted to ${nearestResponseBarangay!.name || 'the selected active barangay'}.`
-        : 'Report submitted to MDRRMO.',
+      message: 'Report submitted to MDRRMO.',
       report: formattedReport
     });
 
@@ -859,19 +800,17 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
 
     // This is a secondary convenience task. The lifecycle outbox already
     // notified the correctly scoped queue from the report insert transaction.
-    if (targetSendTo === 'mdrrmo') {
-      void supabaseAdmin.from('tasks').insert({
-        title: `🚨 Emergency: ${formattedReport.title}`,
-        description: formattedReport.description || formattedReport.specifics || `Emergency reported at ${formattedReport.barangay_name || 'Norzagaray'}.`,
-        task_type: 'general_labor',
-        status: 'pending',
-        latitude: formattedReport.latitude,
-        longitude: formattedReport.longitude,
-        address: formattedReport.address || formattedReport.barangay_name || 'Norzagaray, Bulacan',
-      }).then(({ error }) => {
-        if (error) console.warn('Could not create the optional initial task:', error.message);
-      });
-    }
+    void supabaseAdmin.from('tasks').insert({
+      title: `🚨 Emergency: ${formattedReport.title}`,
+      description: formattedReport.description || formattedReport.specifics || `Emergency reported at ${formattedReport.barangay_name || 'Norzagaray'}.`,
+      task_type: 'general_labor',
+      status: 'pending',
+      latitude: formattedReport.latitude,
+      longitude: formattedReport.longitude,
+      address: formattedReport.address || formattedReport.barangay_name || 'Norzagaray, Bulacan',
+    }).then(({ error }) => {
+      if (error) console.warn('Could not create the optional initial task:', error.message);
+    });
   } catch (err) {
     console.error('Incident report submission error:', err);
     res.status(500).json({ error: 'Internal server error.' });

@@ -638,15 +638,15 @@ const dispatchMdrrmoReport = async (req: AuthRequest, res: Response): Promise<vo
       res.status(409).json({ error: 'A report resolved by its assigned barangay cannot be dispatched to MDRRMO responders.' });
       return;
     }
-    if (report.accepted_at || report.arrived_at || report.resolved_at ||
-        report.mdrrmo_accepted_at || report.mdrrmo_arrived_at || report.mdrrmo_resolved_at) {
-      res.status(409).json({ error: 'Dispatch can only be changed before a responder accepts the report.' });
+    if (report.dispatched_at || report.accepted_at || report.arrived_at || report.resolved_at ||
+        report.mdrrmo_dispatched_at || report.mdrrmo_accepted_at || report.mdrrmo_arrived_at || report.mdrrmo_resolved_at) {
+      res.status(409).json({ error: 'Dispatch can only be changed before a response is dispatched.' });
       return;
     }
     dispatchStage = 'load_current_assignments';
     const currentAssignments = await getAssignments([report.id]);
     if (currentAssignments.some((assignment: any) => assignment.status === 'responding')) {
-      res.status(409).json({ error: 'Dispatch cannot be changed after a responder accepts the report.' });
+      res.status(409).json({ error: 'Dispatch cannot be changed after the response starts.' });
       return;
     }
 
@@ -699,9 +699,9 @@ const dispatchMdrrmoReport = async (req: AuthRequest, res: Response): Promise<vo
       id: null,
       report_id: report.id,
       responder_id: responder.id,
-      status: 'assigned',
+      status: 'responding',
       assigned_at: dispatchTimestamp,
-      accepted_at: null,
+      accepted_at: dispatchTimestamp,
       arrived_at: null,
       resolved_at: null,
       responder: { ...responder, status: 'active' },
@@ -712,6 +712,8 @@ const dispatchMdrrmoReport = async (req: AuthRequest, res: Response): Promise<vo
       incident_type: parsed.data.incident_type,
       severity: parsed.data.severity,
       dispatched_at: dispatchTimestamp,
+      accepted_at: dispatchTimestamp,
+      response_status: 'responding',
       dispatch_notes: parsed.data.notes || null,
       responder_name: responderNames,
       dispatched_by: req.user!.userId,
@@ -790,7 +792,7 @@ const dispatchMdrrmoReport = async (req: AuthRequest, res: Response): Promise<vo
     });
     if (['PGRST202', '42883', '42P01', '42703', 'PGRST204', 'PGRST205', 'PGRST200'].includes(err?.code)) {
       res.status(503).json({
-        error: 'MDRRMO dispatch database objects are missing or out of date. Apply database/migrations/20261008_respond_units_roster.sql, then retry.',
+        error: 'MDRRMO dispatch or response-crew database objects are missing. Apply database/migrations/20261008_respond_units_roster.sql and database/migrations/20261012_auto_accept_response_crews.sql, then retry.',
         code: 'MDRRMO_DISPATCH_SCHEMA_MISSING',
         stage: dispatchStage,
       });
@@ -860,80 +862,64 @@ async function reportForAction(reportId: string) {
   return null;
 }
 
-router.patch('/:id/respond', authenticate, authorize('responder'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.patch('/:id/crew', authenticate, authorize('responder'), async (req: AuthRequest, res: Response): Promise<void> => {
   const parsed = z.object({
     member_ids: z.array(z.string().uuid()).min(2).max(7)
       .refine((ids) => new Set(ids).size === ids.length, 'Choose each crew member once.'),
-    latitude: z.number().min(-90).max(90).optional(),
-    longitude: z.number().min(-180).max(180).optional(),
-  }).refine((body) => (body.latitude === undefined) === (body.longitude === undefined), 'Send both responder coordinates or neither.')
-    .safeParse(req.body);
+  }).safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: 'Choose at least one Driver Responder and one First Aider Responder before accepting.' });
+    res.status(400).json({ error: 'Choose a driver and a first aider from your MDRRMO unit roster.' });
     return;
   }
   try {
     const report = await reportForAction(req.params.id);
     if (!report) { res.status(404).json({ error: 'MDRRMO report not found.' }); return; }
     if (isResolved(report)) { res.status(409).json({ error: 'This report is already resolved.' }); return; }
-    const dispatchedAt = report.dispatched_at || report.mdrrmo_dispatched_at;
     const responseStatus = String(report.response_status || report.mdrrmo_response_status || 'pending').toLowerCase();
-    if (!['pending', 'responding'].includes(responseStatus) || !dispatchedAt) {
-      res.status(409).json({ error: 'A dispatcher must review and assign this report before a responder can accept it.' });
+    if (responseStatus !== 'responding') {
+      res.status(409).json({ error: 'A dispatcher must dispatch the report before its crew can be updated.' });
       return;
     }
     const assignment = await findAssignment(report.id, req.user!.userId);
     if (!assignment) { res.status(403).json({ error: 'This report is not assigned to your responder account.' }); return; }
-    if (assignment.status !== 'assigned') {
-      res.status(409).json({ error: 'Only an assigned report can be accepted.' });
+    if (assignment.status !== 'responding' || assignment.arrived_at) {
+      res.status(409).json({ error: 'Crew can be changed only before arrival on an active response.' });
       return;
     }
 
-    if (parsed.data.latitude !== undefined && parsed.data.longitude !== undefined) {
-      const incidentLatitude = Number(report.latitude);
-      const incidentLongitude = Number(report.longitude);
-      if (Number.isFinite(incidentLatitude) && Number.isFinite(incidentLongitude) &&
-          incidentLatitude !== 0 && incidentLongitude !== 0) {
-        const travelDistanceM = Math.round(distanceMeters(
-          incidentLatitude,
-          incidentLongitude,
-          parsed.data.latitude,
-          parsed.data.longitude,
-        ) * 10) / 10;
-        const { error: distanceError } = await supabaseAdmin
-          .from('mdrrmo_reports')
-          .update({ travel_distance_m: travelDistanceM })
-          .eq('id', report.id);
-        if (distanceError) throw distanceError;
-      }
-    }
-
-    const { error: acceptError } = await supabaseAdmin.rpc('accept_mdrrmo_report_with_crew_v1', {
+    const { error: crewError } = await supabaseAdmin.rpc('set_mdrrmo_response_crew_v1', {
       p_report_id: report.id,
       p_responder_id: req.user!.userId,
       p_member_ids: parsed.data.member_ids,
     });
-    if (acceptError?.code === 'P0002') {
-      res.status(409).json({ error: 'This assignment was accepted or changed by another responder. Refresh the report.' });
+    if (crewError?.code === 'P0002') {
+      res.status(409).json({ error: 'This response or crew assignment changed. Refresh the report.' });
       return;
     }
-    if (acceptError?.code === '42501') {
-      res.status(403).json({ error: 'Only the Team Leader assigned to this unit can accept the dispatch.' });
+    if (crewError?.code === '42501') {
+      res.status(403).json({ error: 'Only the assigned MDRRMO unit Team Leader can manage this crew.' });
       return;
     }
-    if (acceptError?.code === '22023' || acceptError?.code === '23514') {
-      res.status(400).json({ error: acceptError.message || 'Choose a valid crew from your assigned unit.' });
+    if (crewError?.code === '22023' || crewError?.code === '23514') {
+      res.status(400).json({ error: crewError.message || 'Choose a valid crew from your assigned unit.' });
       return;
     }
-    if (acceptError) throw acceptError;
+    if (crewError) throw crewError;
 
     const data = await reportForAction(report.id);
     if (!data) { res.status(404).json({ error: 'MDRRMO report not found.' }); return; }
     const assignments = await getAssignments([report.id]);
     res.json(await emitReportUpdate(data, assignments));
   } catch (err) {
-    console.error('MDRRMO report acceptance error:', err);
-    res.status(500).json({ error: 'Could not accept this MDRRMO report.' });
+    console.error('MDRRMO response crew update error:', err);
+    if (['PGRST202', '42883', '42P01', '42703', 'PGRST204', 'PGRST205', 'PGRST200'].includes((err as any)?.code)) {
+      res.status(503).json({
+        error: 'MDRRMO response-crew database objects are missing. Apply database/migrations/20261012_auto_accept_response_crews.sql, then retry.',
+        code: 'MDRRMO_CREW_SCHEMA_MISSING',
+      });
+      return;
+    }
+    res.status(500).json({ error: 'Could not save the MDRRMO response crew.' });
   }
 });
 
@@ -1021,7 +1007,7 @@ router.patch('/:id/arrive', authenticate, authorize('responder'), async (req: Au
     const report = await reportForAction(req.params.id);
     if (!report) { res.status(404).json({ error: 'MDRRMO report not found.' }); return; }
     const responseStatus = String(report.response_status || report.mdrrmo_response_status || '').toLowerCase();
-    if (responseStatus !== 'responding') { res.status(409).json({ error: 'Accept the report before recording arrival.' }); return; }
+    if (responseStatus !== 'responding') { res.status(409).json({ error: 'A dispatcher must dispatch the report before recording arrival.' }); return; }
     const assignment = await findAssignment(report.id, req.user!.userId);
     if (!assignment || assignment.status !== 'responding') { res.status(403).json({ error: 'This report is not assigned to your responder account.' }); return; }
     if (assignment.arrived_at) {
@@ -1132,7 +1118,7 @@ router.post('/:id/close', authenticate, authorize('responder', 'dispatcher'), as
     if (!report) { res.status(404).json({ error: 'MDRRMO report not found.' }); return; }
     const responseStatus = String(report.response_status || report.mdrrmo_response_status || '').toLowerCase();
     if (responseStatus === 'resolved') { res.status(409).json({ error: 'The MDRRMO response cycle is already resolved.' }); return; }
-    if (responseStatus !== 'responding') { res.status(409).json({ error: 'The MDRRMO response must be accepted before it can be resolved.' }); return; }
+    if (responseStatus !== 'responding') { res.status(409).json({ error: 'The MDRRMO report must be dispatched before it can be resolved.' }); return; }
     let mdrrmoArrivalAt = report.mdrrmo_arrived_at ||
       (!report.barangay_arrived_at ? report.arrived_at : null);
     if (req.user!.role === 'responder') {
@@ -1141,7 +1127,7 @@ router.post('/:id/close', authenticate, authorize('responder', 'dispatcher'), as
       if (!assignment.arrived_at) { res.status(409).json({ error: 'Record your arrival before closing the report.' }); return; }
       mdrrmoArrivalAt = assignment.arrived_at;
     } else if (responseStatus !== 'responding' || !mdrrmoArrivalAt) {
-      res.status(409).json({ error: 'A responder must accept the report and record arrival before it can be closed.' }); return;
+      res.status(409).json({ error: 'The report must be dispatched and a responder must record arrival before it can be closed.' }); return;
     }
     const missingFields = IncidentResolutionPdfService.missingFields(
       { ...report, mdrrmo_arrived_at: mdrrmoArrivalAt },

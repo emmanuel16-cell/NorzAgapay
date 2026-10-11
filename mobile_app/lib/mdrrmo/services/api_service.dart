@@ -124,23 +124,17 @@ class ApiService {
     }
   }
 
-  static Future<MdrrmoReport> respondToMdrrmoReport(
+  static Future<MdrrmoReport> saveMdrrmoResponseCrew(
     String token,
     String reportId, {
     required List<String> memberIds,
-    double? latitude,
-    double? longitude,
   }) async {
     final response = await http.patch(
-      Uri.parse('$baseUrl/mdrrmo/reports/$reportId/respond'),
+      Uri.parse('$baseUrl/mdrrmo/reports/$reportId/crew'),
       headers: _headers(token),
-      body: jsonEncode({
-        'member_ids': memberIds,
-        if (latitude != null && longitude != null) 'latitude': latitude,
-        if (latitude != null && longitude != null) 'longitude': longitude,
-      }),
+      body: jsonEncode({'member_ids': memberIds}),
     );
-    return _mdrrmoReportFromResponse(response, 'Failed to accept report');
+    return _mdrrmoReportFromResponse(response, 'Failed to save response crew');
   }
 
   static Future<MdrrmoReport> markMdrrmoReportArrived(

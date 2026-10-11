@@ -1,0 +1,239 @@
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
+import { BadgeCheck, Download, FileCheck2, FileText, MapPin, Plus, Save, ShieldAlert, Trash2 } from 'lucide-react';
+import toast from 'react-hot-toast';
+import { useAuth } from '../context/AuthContext';
+import { API_BASE, barangayAPI, reportAPI, socket } from '../lib/api';
+
+type HotlineEntry = { purpose: string; numbers: string[] };
+type Verification = {
+  status?: string;
+  reference_no?: string;
+  punong_barangay_name?: string;
+  punong_barangay_position?: string;
+  position_designation?: string;
+  document_url?: string | null;
+  submitted_at?: string | null;
+  rejection_reason?: string | null;
+  correction_reason?: string | null;
+  verification_history?: Array<{ action?: string; timestamp?: string; note?: string; actor?: string }>;
+};
+
+function messageOf(error: any, fallback: string) {
+  return error?.response?.data?.error || fallback;
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
+export default function BarangayAdministrationPage() {
+  const { user, updateUser } = useAuth();
+  const isAdmin = user?.role === 'admin';
+  const canManageHotlines = user?.role === 'admin' || user?.role === 'staff';
+  const active = Boolean(user?.coordination_verified);
+  const [profile, setProfile] = useState({ full_name: user?.full_name || '', phone: user?.phone || '' });
+  const [official, setOfficial] = useState({ official_name: '', official_position: '', position_designation: user?.position_designation || '' });
+  const [verification, setVerification] = useState<Verification | null>(null);
+  const [location, setLocation] = useState({ latitude: '', longitude: '', address: '' });
+  const [hotlines, setHotlines] = useState<HotlineEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const tasks: Promise<any>[] = [];
+      if (isAdmin) tasks.push(barangayAPI.accountRequest());
+      if (active && isAdmin) tasks.push(reportAPI.barangayLocation());
+      if (active && canManageHotlines) tasks.push(barangayAPI.hotlineSettings());
+      const results = await Promise.all(tasks);
+      let index = 0;
+      if (isAdmin) {
+        const response = results[index++];
+        const record = response.data?.verification || null;
+        setVerification(record);
+        updateUser({
+          coordination_verified: Boolean(response.data?.coordination_verified),
+          verification_status: record?.status || user?.verification_status || 'pending_document',
+        });
+        setOfficial({
+          official_name: record?.punong_barangay_name || '',
+          official_position: record?.punong_barangay_position || '',
+          position_designation: record?.position_designation || user?.position_designation || '',
+        });
+      }
+      if (active && isAdmin) {
+        const barangay = results[index++]?.data?.barangay;
+        setLocation({
+          latitude: barangay?.location_latitude == null ? '' : String(barangay.location_latitude),
+          longitude: barangay?.location_longitude == null ? '' : String(barangay.location_longitude),
+          address: barangay?.location_address || '',
+        });
+      }
+      if (active && canManageHotlines) {
+        const entries = results[index]?.data?.entries;
+        setHotlines(Array.isArray(entries) ? entries.map((entry: any) => ({
+          purpose: String(entry.purpose || ''),
+          numbers: Array.isArray(entry.numbers) ? entry.numbers.map(String) : [''],
+        })) : []);
+      }
+      setProfile({ full_name: user?.full_name || '', phone: user?.phone || '' });
+    } catch (loadError: any) {
+      setError(messageOf(loadError, 'Barangay account settings could not be loaded.'));
+    } finally {
+      setLoading(false);
+    }
+  }, [active, canManageHotlines, isAdmin, updateUser, user?.full_name, user?.phone, user?.position_designation, user?.verification_status]);
+
+  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    socket.on('hotlines:updated', load);
+    socket.on('command:locations_updated', load);
+    socket.on('barangay:account_access_changed', load);
+    socket.on('dispatcher:coordination_access_changed', load);
+    return () => {
+      socket.off('hotlines:updated', load);
+      socket.off('command:locations_updated', load);
+      socket.off('barangay:account_access_changed', load);
+      socket.off('dispatcher:coordination_access_changed', load);
+    };
+  }, [load]);
+
+  const status = String(verification?.status || user?.verification_status || 'pending_document').toLowerCase();
+  const statusLabel = useMemo(() => status.replaceAll('_', ' '), [status]);
+  const submittedDocumentUrl = verification?.document_url
+    ? (/^https?:\/\//i.test(verification.document_url) ? verification.document_url : `${API_BASE.replace(/\/api\/?$/, '')}${verification.document_url}`)
+    : null;
+
+  const saveProfile = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setSaving(true);
+    try {
+      const { data } = await barangayAPI.updateProfile({ full_name: profile.full_name.trim(), phone: profile.phone.trim() });
+      updateUser({ full_name: data.full_name, phone: data.phone });
+      toast.success('Profile details saved.');
+    } catch (saveError: any) { toast.error(messageOf(saveError, 'Profile details could not be saved.')); }
+    finally { setSaving(false); }
+  };
+
+  const saveAccount = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setSaving(true);
+    try {
+      const { data } = await barangayAPI.saveAccountRequest(official);
+      setVerification(data.verification || null);
+      toast.success('Barangay Account Request details saved.');
+    } catch (saveError: any) { toast.error(messageOf(saveError, 'Account request details could not be saved.')); }
+    finally { setSaving(false); }
+  };
+
+  const downloadTemplate = async () => {
+    try {
+      const { data } = await barangayAPI.certificateTemplate(true);
+      downloadBlob(data, `Barangay_Account_Request_${(user?.barangay_name || 'Barangay').replace(/[^a-z0-9]+/gi, '_')}.pdf`);
+    } catch (downloadError: any) { toast.error(messageOf(downloadError, 'The account request PDF could not be generated.')); }
+  };
+
+  const uploadCertificate = async (file?: File) => {
+    if (!file) return;
+    if (!/\.(pdf|png|jpe?g)$/i.test(file.name)) { toast.error('Upload a signed PDF, PNG, or JPG file.'); return; }
+    setSaving(true);
+    try {
+      const { data } = await barangayAPI.submitCertificate(file);
+      setVerification(data.verification || verification);
+      toast.success('Signed account request sent to MDRRMO for review.');
+    } catch (uploadError: any) { toast.error(messageOf(uploadError, 'The signed document could not be uploaded.')); }
+    finally { setSaving(false); }
+  };
+
+  const requestActivation = async () => {
+    setSaving(true);
+    try { const { data } = await barangayAPI.requestActivation(); setVerification(data.verification || verification); toast.success(data.message || 'Activation request sent.'); await load(); }
+    catch (requestError: any) { toast.error(messageOf(requestError, 'Activation request could not be sent.')); }
+    finally { setSaving(false); }
+  };
+
+  const resubmit = async () => {
+    setSaving(true);
+    try { const { data } = await barangayAPI.resubmitAccountRequest(); setVerification(data.verification || verification); toast.success(data.message || 'Resubmission started. Upload the corrected signed request.'); }
+    catch (requestError: any) { toast.error(messageOf(requestError, 'The request could not be reopened for resubmission.')); }
+    finally { setSaving(false); }
+  };
+
+  const saveLocation = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setSaving(true);
+    try {
+      const latitude = Number(location.latitude); const longitude = Number(location.longitude);
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) { toast.error('Enter valid latitude and longitude values.'); return; }
+      await reportAPI.saveBarangayLocation({ latitude, longitude, address: location.address.trim() || null });
+      toast.success('Barangay command location saved.');
+    } catch (saveError: any) { toast.error(messageOf(saveError, 'Barangay location could not be saved.')); }
+    finally { setSaving(false); }
+  };
+
+  const saveHotlines = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setSaving(true);
+    const cleanEntries = hotlines.map((entry) => ({
+      purpose: entry.purpose.trim(),
+      numbers: entry.numbers.map((number) => number.trim()).filter(Boolean),
+    }));
+    if (cleanEntries.some((entry) => !entry.purpose || entry.numbers.length === 0)) {
+      toast.error('Each hotline needs a purpose and at least one phone number.'); setSaving(false); return;
+    }
+    try { const { data } = await barangayAPI.saveHotlines(cleanEntries); setHotlines(data.entries || []); toast.success('Barangay hotline directory saved.'); }
+    catch (saveError: any) { toast.error(messageOf(saveError, 'Barangay hotlines could not be saved.')); }
+    finally { setSaving(false); }
+  };
+
+  const updateHotline = (index: number, patch: Partial<HotlineEntry>) => setHotlines((entries) => entries.map((entry, entryIndex) => entryIndex === index ? { ...entry, ...patch } : entry));
+
+  return (
+    <div className="barangay-console-page">
+      <header className="barangay-console-header"><div><span className="workspace-eyebrow">BARANGAY ADMINISTRATION · {user?.barangay_name || 'YOUR BARANGAY'}</span><h1>Account and settings</h1><p>Maintain your account details and the contact information residents use during emergencies.</p></div><button className="workspace-secondary-action" type="button" onClick={() => void load()} disabled={loading}><FileCheck2 size={16} /> Refresh</button></header>
+      {error && <div className="workspace-message workspace-message-error" role="alert">{error}<button type="button" onClick={() => void load()}>Try again</button></div>}
+      {!active && isAdmin && <div className="barangay-console-message"><ShieldAlert /><div><strong>Barangay coordination access: {statusLabel}</strong><p>Operational team, location, and hotline settings become available after MDRRMO activates this barangay. You can prepare or update the account request below.</p></div></div>}
+      {loading && <p className="barangay-console-muted">Loading account settings…</p>}
+
+      {(!isAdmin || active) && <section className="barangay-console-panel"><header><div><h2>My profile</h2><p>Contact details for the signed-in barangay account.</p></div></header><form className="barangay-console-form-grid" onSubmit={(event) => void saveProfile(event)}>
+        <label>Full name<input required minLength={2} maxLength={100} value={profile.full_name} onChange={(event) => setProfile((value) => ({ ...value, full_name: event.target.value }))} /></label>
+        <label>Mobile number<input required type="tel" pattern="09[0-9]{9}" title="Enter 11 digits starting with 09" value={profile.phone} onChange={(event) => setProfile((value) => ({ ...value, phone: event.target.value }))} placeholder="09XXXXXXXXX" /></label>
+        <div className="barangay-console-form-actions"><button className="btn btn-primary" disabled={saving}><Save size={16} /> Save profile</button></div>
+      </form></section>}
+
+      {isAdmin && <section className="barangay-console-panel"><header><div><h2>Barangay Account Request</h2><p>Prepare the authorization, submit the signed document, and follow MDRRMO review.</p></div><span className={`barangay-console-status ${active ? 'active' : status}`}>{active ? 'Active' : statusLabel}</span></header>
+        {verification?.reference_no && <div className="barangay-account-reference"><span>Request reference</span><strong>{verification.reference_no}</strong>{verification.submitted_at && <small>Submitted {new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(verification.submitted_at))}</small>}</div>}
+        {(verification?.rejection_reason || verification?.correction_reason) && <div className="barangay-account-review-note"><strong>MDRRMO feedback</strong><p>{verification.correction_reason || verification.rejection_reason}</p></div>}
+        <form className="barangay-console-form-grid" onSubmit={(event) => void saveAccount(event)}>
+          <label>Administrator designation<input maxLength={120} value={official.position_designation} onChange={(event) => setOfficial((value) => ({ ...value, position_designation: event.target.value }))} placeholder="e.g. Barangay Administrator" /></label>
+          <label>Authorizing official name<input required minLength={2} maxLength={120} value={official.official_name} onChange={(event) => setOfficial((value) => ({ ...value, official_name: event.target.value }))} /></label>
+          <label>Authorizing official position<input required minLength={2} maxLength={120} value={official.official_position} onChange={(event) => setOfficial((value) => ({ ...value, official_position: event.target.value }))} placeholder="Punong Barangay" /></label>
+          <div className="barangay-console-form-actions"><button className="btn btn-primary" disabled={saving}><Save size={16} /> Save request details</button><button className="workspace-secondary-action" type="button" onClick={() => void downloadTemplate()}><Download size={16} /> Download authorization PDF</button></div>
+        </form>
+        {!active && <div className="barangay-account-upload"><FileText size={20} /><div><strong>Signed and sealed request</strong><p>Upload a PDF or clear image of the authorization document after it has been signed.</p>{submittedDocumentUrl && <a href={submittedDocumentUrl} target="_blank" rel="noreferrer">Open previously submitted document</a>}</div><label className="btn btn-outline">{saving ? 'Uploading…' : 'Upload signed document'}<input type="file" accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg" disabled={saving} onChange={(event) => { void uploadCertificate(event.target.files?.[0]); event.currentTarget.value = ''; }} /></label></div>}
+        {status === 'rejected' && <div className="barangay-account-actions"><p>After correcting the issues listed above, reopen the request and upload the revised signed document.</p><button className="btn btn-primary" type="button" disabled={saving} onClick={() => void resubmit()}>Start resubmission</button></div>}
+        {!active && status === 'verified' && <div className="barangay-account-actions"><p>This barangay was approved before and its access was later deactivated. Send MDRRMO a request to reactivate the existing account.</p><button className="btn btn-primary" type="button" disabled={saving} onClick={() => void requestActivation()}>Request activation</button></div>}
+        {!active && status === 'activation_pending' && <div className="barangay-console-message"><BadgeCheck /><div><strong>Activation request is with MDRRMO</strong><p>Your barangay access will return after an administrator reviews this request.</p></div></div>}
+        {Array.isArray(verification?.verification_history) && verification!.verification_history!.length > 0 && <div className="barangay-account-history"><h3>Review history</h3>{[...verification!.verification_history!].reverse().map((item, index) => <article key={`${item.timestamp || item.action}-${index}`}><span>{String(item.action || 'Update').replaceAll('_', ' ')}</span><p>{item.note || item.actor || 'Status updated'}</p><time>{item.timestamp ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(item.timestamp)) : ''}</time></article>)}</div>}
+      </section>}
+
+      {isAdmin && active && <section className="barangay-console-panel"><header><div><h2>Barangay command location</h2><p>Used as the barangay operations location in command maps.</p></div></header><form className="barangay-console-form-grid" onSubmit={(event) => void saveLocation(event)}>
+        <label>Latitude<input required type="number" min={-90} max={90} step="any" value={location.latitude} onChange={(event) => setLocation((value) => ({ ...value, latitude: event.target.value }))} /></label>
+        <label>Longitude<input required type="number" min={-180} max={180} step="any" value={location.longitude} onChange={(event) => setLocation((value) => ({ ...value, longitude: event.target.value }))} /></label>
+        <label className="barangay-console-form-wide">Address or landmark<input maxLength={240} value={location.address} onChange={(event) => setLocation((value) => ({ ...value, address: event.target.value }))} placeholder="Barangay hall or response post" /></label>
+        <div className="barangay-console-form-actions"><button className="btn btn-primary" disabled={saving}><MapPin size={16} /> Save command location</button>{location.latitude && location.longitude && <a target="_blank" rel="noreferrer" href={`https://www.google.com/maps?q=${location.latitude},${location.longitude}`}>View coordinates on map</a>}</div>
+      </form></section>}
+
+      {canManageHotlines && active && <section className="barangay-console-panel"><header><div><h2>Public hotline directory</h2><p>These entries are shown to residents for your barangay.</p></div><button className="workspace-secondary-action" type="button" onClick={() => setHotlines((entries) => [...entries, { purpose: '', numbers: [''] }])}><Plus size={16} /> Add hotline</button></header>
+        <form onSubmit={(event) => void saveHotlines(event)}><div className="barangay-hotline-list">{hotlines.map((entry, index) => <article className="barangay-hotline-row" key={index}><label>Purpose<input required value={entry.purpose} onChange={(event) => updateHotline(index, { purpose: event.target.value })} placeholder="Emergency response" /></label><label>Phone numbers<input required value={entry.numbers.join(', ')} onChange={(event) => updateHotline(index, { numbers: event.target.value.split(',').map((number) => number.trim()) })} placeholder="09XXXXXXXXX, 044..." /></label><button type="button" title="Remove hotline" aria-label="Remove hotline" onClick={() => setHotlines((entries) => entries.filter((_, entryIndex) => entryIndex !== index))}><Trash2 size={17} /></button></article>)}{hotlines.length === 0 && <p className="barangay-console-muted">No public hotline entries yet. Add one to make it available in the resident directory.</p>}</div><div className="barangay-console-form-actions"><button className="btn btn-primary" disabled={saving}><Save size={16} /> Save hotline directory</button></div></form>
+      </section>}
+    </div>
+  );
+}

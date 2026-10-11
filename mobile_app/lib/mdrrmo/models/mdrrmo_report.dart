@@ -96,7 +96,7 @@ class MdrrmoReport {
     if (isResolved) return false;
     final assignment = assignmentFor(responderId);
     if (assignment != null) {
-      // Only 'responding' assignment means the responder has accepted it.
+      // Dispatch marks this assignment as responding and accepted automatically.
       return assignment['status']?.toString() == 'responding';
     }
     // No per-responder assignment data — fall back to the global report status.
@@ -106,13 +106,13 @@ class MdrrmoReport {
   }
 
   /// Returns true when the report is in the Pending tab for this responder.
-  /// A report is "pending" for a responder when it has been dispatched to them
-  /// (assignment status == 'assigned') but not yet accepted.
+  /// A report is pending for a responder only before dispatch. Dispatched
+  /// assignments start in the responding state automatically.
   bool isPendingFor(String? responderId) {
     if (isResolved) return false;
     final assignment = assignmentFor(responderId);
     if (assignment != null) {
-      // Only show in Pending when the assignment is in 'assigned' state.
+      // Only show undispatched assignments in Pending.
       return assignment['status']?.toString() == 'assigned';
     }
     // No assignment data — show in Pending if not globally responding.

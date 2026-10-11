@@ -414,6 +414,21 @@ router.patch('/status', authenticate, async (req: AuthRequest, res: Response): P
 
 router.get('/me', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+    if (req.user!.role === 'resident') {
+      const { data: resident, error: residentError } = await supabaseAdmin
+        .from('resident_user')
+        .select('id, full_name, email, phone, barangay_name, status, verified, last_seen, created_at')
+        .eq('id', req.user!.userId)
+        .maybeSingle();
+      if (residentError) throw residentError;
+      if (!resident) {
+        res.status(404).json({ error: 'Resident account not found.' });
+        return;
+      }
+      res.json({ user: { ...resident, role: 'resident' } });
+      return;
+    }
+
     const { data: user, error } = await supabaseAdmin
       .from('users')
       .select('id, full_name, email, phone, role, unit_type, status, verified, latitude, longitude, last_seen, created_at')

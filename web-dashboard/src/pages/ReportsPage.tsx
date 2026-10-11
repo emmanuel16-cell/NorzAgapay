@@ -448,21 +448,21 @@ export default function ReportsPage() {
                 {getGroup(selected) === 'escalated' && selected.mdrrmo_coordination_notes && <section className="reports-detail-section-v2"><h3>Escalation notes</h3><div className="reports-text-card-v2">{selected.mdrrmo_coordination_notes}</div></section>}
                 <section className="reports-detail-section-v2"><h3>Responder and response timeline</h3><div className="reports-timeline-grid-v2">
                   <div className="reports-assignee-stack-v2">{isBarangay ? <div className="reports-assignee-card-v2">
-                    <strong>{selected.barangay_responder_name || 'Barangay responders'}</strong><span>{selected.response_barangay_name || user?.barangay_name || 'Your barangay'}</span><em>{stage === 'resolved' ? 'Resolved' : selected.barangay_accepted_at ? 'Accepted' : selected.barangay_dispatched_at ? 'Dispatched' : 'Assigned'}</em>
+                    <strong>{selected.barangay_responder_name || 'Barangay responders'}</strong><span>{selected.response_barangay_name || user?.barangay_name || 'Your barangay'}</span><em>{stage === 'resolved' ? 'Resolved' : selected.barangay_accepted_at ? 'Accepted at dispatch' : selected.barangay_dispatched_at ? 'Dispatched' : 'Assigned'}</em>
                   </div> : activeAssignments.length ? activeAssignments.map((item) => <div className="reports-assignee-card-v2" key={item.responder_id}>
-                    <strong>{item.responder?.full_name || selected.mdrrmo_responder_name || 'Assigned responder'}</strong><span>MDRRMO Team Leader</span><em>{stage === 'resolved' ? 'Resolved' : item.status === 'responding' ? 'Accepted' : 'Assigned'}</em>
-                    {item.crew?.length ? <div className="reports-assignment-crew-v2"><b>Accepted crew</b>{item.crew.map((member) => <span key={member.unit_member_id}>{member.name} · {member.member_role.replaceAll('_', ' ')}</span>)}</div> : <small className="reports-crew-pending-v2">Crew is selected when the Team Leader accepts.</small>}
+                    <strong>{item.responder?.full_name || selected.mdrrmo_responder_name || 'Assigned responder'}</strong><span>MDRRMO Team Leader</span><em>{stage === 'resolved' ? 'Resolved' : item.status === 'responding' ? 'Accepted at dispatch' : 'Assigned'}</em>
+                    {item.crew?.length ? <div className="reports-assignment-crew-v2"><b>MDRRMO unit crew</b>{item.crew.map((member) => <span key={member.unit_member_id}>{member.name} · {member.member_role.replaceAll('_', ' ')}</span>)}</div> : <small className="reports-crew-pending-v2">The Team Leader can add members from the assigned municipal unit roster.</small>}
                   </div>) : <div className="reports-assignee-card-v2"><strong>{selected.mdrrmo_responder_name || 'Assigned responder'}</strong><span>MDRRMO Team Leader</span><em>Assigned</em></div>}</div>
                   <div className="reports-timeline-card-v2">{([
                     ['Report received', selected.created_at],
                     ...(isBarangay ? [['Assigned to barangay', selected.created_at] as [string, string | null | undefined]] : []),
                     ...(isBarangay ? [['Dispatched to responders', selected.barangay_dispatched_at] as [string, string | null | undefined]] : []),
-                    ...(isBarangay ? [['Accepted by responder', selected.barangay_accepted_at] as [string, string | null | undefined]] : []),
+                    ...(isBarangay ? [['Accepted automatically at dispatch', selected.barangay_accepted_at] as [string, string | null | undefined]] : []),
                     ...(isBarangay ? [['Arrived at incident area', selected.barangay_arrived_at] as [string, string | null | undefined]] : []),
                     ...(isBarangay ? [['Incident resolved', selected.barangay_resolved_at] as [string, string | null | undefined]] : []),
                     ...(!isBarangay ? [
                       ['Dispatched to MDRRMO', selected.mdrrmo_dispatched_at || (getGroup(selected) === 'resident' ? selected.dispatched_at : null)],
-                      ['Accepted by responder', selected.accepted_at || assignment?.accepted_at],
+                      ['Accepted automatically at dispatch', selected.accepted_at || assignment?.accepted_at],
                       ['Arrived at incident area', selected.arrived_at || assignment?.arrived_at],
                       ['Incident resolved', selected.resolved_at || assignment?.resolved_at],
                     ] as Array<[string, string | null | undefined]> : []),

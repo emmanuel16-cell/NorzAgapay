@@ -4,8 +4,8 @@ import { useAuth } from '../context/AuthContext';
 import {
   MapPin,
   AlertTriangle,
-  Tent,
   ClipboardList,
+  FileText,
   Ambulance,
   CheckCircle2,
   Users,
@@ -18,6 +18,10 @@ import {
   Map as MapIcon,
   Menu,
   X,
+  Building2,
+  Settings,
+  MessageSquareText,
+  Handshake,
 } from 'lucide-react';
 
 interface NavItem {
@@ -31,10 +35,20 @@ const navItems: NavItem[] = [
   { label: 'Incident Monitoring', section: true },
   { path: '/command-center', icon: <MapPin size={19} strokeWidth={1.8} />, label: 'Command Center' },
   { path: '/reports', icon: <AlertTriangle size={19} strokeWidth={1.8} />, label: 'Incidents' },
+  { path: '/my-reports', icon: <FileText size={19} strokeWidth={1.8} />, label: 'My Reports' },
+  { path: '/my-responses', icon: <ClipboardList size={19} strokeWidth={1.8} />, label: 'My Responses' },
+  { path: '/barangay-workspace', icon: <FileText size={19} strokeWidth={1.8} />, label: 'Barangay History' },
+  { label: 'Barangay Operations', section: true },
+  { path: '/barangay-dashboard', icon: <Building2 size={19} strokeWidth={1.8} />, label: 'Barangay Overview' },
+  { path: '/barangay-assistance', icon: <Handshake size={19} strokeWidth={1.8} />, label: 'Assistance Requests' },
+  { path: '/barangay-board', icon: <MessageSquareText size={19} strokeWidth={1.8} />, label: 'Barangay Board' },
+  { label: 'Barangay Administration', section: true },
+  { path: '/barangay-team', icon: <Users size={19} strokeWidth={1.8} />, label: 'Barangay Team' },
+  { path: '/barangay-analytics', icon: <BarChart3 size={19} strokeWidth={1.8} />, label: 'Barangay Analytics' },
+  { path: '/barangay-settings', icon: <Settings size={19} strokeWidth={1.8} />, label: 'Barangay Settings' },
   { path: '/locations', icon: <MapIcon size={19} strokeWidth={1.8} />, label: 'Command Locations' },
   { path: '/requests', icon: <ClipboardList size={19} strokeWidth={1.8} />, label: 'Assistance Request' },
   { label: 'Operations', section: true },
-  { path: '/evacuation-centers', icon: <Tent size={19} strokeWidth={1.8} />, label: 'Evacuation Centers' },
   { path: '/municipality-boundary', icon: <MapIcon size={19} strokeWidth={1.8} />, label: 'Municipality Boundary' },
   { path: '/respond-units', icon: <Ambulance size={19} strokeWidth={1.8} />, label: 'Respond Units' },
   { path: '/officers', icon: <Award size={19} strokeWidth={1.8} />, label: 'Officers' },
@@ -44,6 +58,33 @@ const navItems: NavItem[] = [
   { path: '/alert-broadcasts', icon: <Megaphone size={19} strokeWidth={1.8} />, label: 'Alert Broadcasts' },
   { path: '/analytics', icon: <BarChart3 size={19} strokeWidth={1.8} />, label: 'Analytics' },
 ];
+
+function navigationForRole(role?: string, accountKind?: string, isMasterAdmin = false, coordinationVerified = false): NavItem[] {
+  if (role === 'resident') return navItems.filter((item) => item.path === '/my-reports');
+  if (accountKind === 'barangay') {
+    if (role === 'admin' && !coordinationVerified) return navItems.filter((item) => item.path === '/barangay-settings');
+    const visiblePaths: Record<string, string[]> = {
+      admin: ['/barangay-dashboard', '/command-center', '/reports', '/barangay-assistance', '/barangay-board', '/barangay-team', '/barangay-analytics', '/barangay-settings', '/locations'],
+      dispatcher: ['/barangay-dashboard', '/command-center', '/reports', '/barangay-assistance', '/barangay-board', '/barangay-settings', '/locations'],
+      responder: ['/my-responses', '/barangay-assistance', '/barangay-board', '/barangay-settings'],
+      staff: ['/barangay-workspace', '/barangay-board', '/barangay-settings'],
+    };
+    const paths = visiblePaths[role || ''] || [];
+    return navItems.filter((item) => item.path ? paths.includes(item.path) : paths.some((path) => {
+      if (path === '/barangay-dashboard' || path === '/barangay-assistance' || path === '/barangay-board') return item.label === 'Barangay Operations';
+      if (path === '/barangay-team' || path === '/barangay-analytics' || path === '/barangay-settings') return item.label === 'Barangay Administration';
+      if (path === '/command-center' || path === '/reports') return item.label === 'Incident Monitoring';
+      if (path === '/locations') return item.label === 'Operations';
+      return false;
+    }));
+  }
+  if (role === 'responder') return navItems.filter((item) => item.path === '/my-responses');
+  if (isMasterAdmin) return navItems.filter((item) => !['/my-reports', '/my-responses', '/barangay-workspace'].includes(item.path || ''));
+  if (role === 'admin') return navItems.filter((item) => ['Operations', '/locations', '/officers', 'Administration', '/verification/barangay', '/users', '/alert-broadcasts', '/analytics'].includes(item.path || item.label));
+  if (role === 'logistics') return navItems.filter((item) => ['Operations', '/municipality-boundary', '/respond-units', '/officers'].includes(item.path || item.label));
+  if (role === 'dispatcher') return navItems.filter((item) => ['Incident Monitoring', '/command-center', '/reports', '/requests', 'Operations', '/locations', '/respond-units'].includes(item.path || item.label));
+  return [];
+}
 
 export default function DashboardLayout() {
   const { user, logout, isMasterAdmin } = useAuth();
@@ -91,17 +132,7 @@ export default function DashboardLayout() {
     .toUpperCase()
     .slice(0, 2) || 'NA';
 
-  const roleNav = user?.account_kind === 'barangay'
-    ? navItems.filter(item => ['Incident Monitoring', '/command-center', '/reports', 'Operations', '/locations'].includes(item.path || item.label))
-    : isMasterAdmin
-    ? navItems
-    : user?.role === 'admin'
-      ? navItems.filter(item => ['Operations', '/locations', '/officers', 'Administration', '/verification/barangay', '/users', '/alert-broadcasts', '/analytics'].includes(item.path || item.label))
-      : user?.role === 'logistics'
-        ? navItems.filter(item => ['Operations', '/evacuation-centers', '/municipality-boundary', '/respond-units', '/officers'].includes(item.path || item.label))
-        : user?.role === 'dispatcher'
-          ? navItems.filter(item => ['Incident Monitoring', '/command-center', '/reports', '/requests', 'Operations', '/locations', '/respond-units'].includes(item.path || item.label))
-          : [];
+  const roleNav = navigationForRole(user?.role, user?.account_kind, isMasterAdmin, user?.coordination_verified);
 
   return (
     <div className={`app-layout ${isCollapsed ? 'sidebar-collapsed' : ''}`}>
@@ -228,7 +259,13 @@ export default function DashboardLayout() {
       <main className="main-content">
         <div className="mobile-dashboard-header">
           <button type="button" aria-label={mobileOpen ? 'Close navigation menu' : 'Open navigation menu'} onClick={() => setMobileOpen(!mobileOpen)}>{mobileOpen ? <X size={21} /> : <Menu size={21} />}</button>
-          <strong>{user?.account_kind === 'barangay' ? user.barangay_name || 'Barangay Command' : 'Norz-Agapay Command'}</strong>
+          <strong>{user?.account_kind === 'barangay'
+            ? user.barangay_name || 'Barangay Command'
+            : user?.role === 'resident'
+              ? 'Resident Services'
+              : user?.role === 'responder'
+                ? 'Field Response'
+                : 'Norz-Agapay Command'}</strong>
           <button type="button" aria-label="Sign out" onClick={handleLogout}><LogOut size={18} /></button>
         </div>
         <Outlet />

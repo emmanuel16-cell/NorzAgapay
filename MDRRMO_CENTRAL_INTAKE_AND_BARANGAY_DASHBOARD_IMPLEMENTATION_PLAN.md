@@ -1,5 +1,7 @@
 # MDRRMO Central Intake and Barangay Dashboard Implementation Plan
 
+> **Superseded:** This earlier plan allowed residents to route new reports directly to a barangay and included evacuation-station scope. The current main-branch direction is documented in [WEB_DASHBOARD_CENTRAL_COMMAND_CENTER_REBUILD_PLAN.md](WEB_DASHBOARD_CENTRAL_COMMAND_CENTER_REBUILD_PLAN.md): new reports enter MDRRMO centrally, all user roles receive web workspaces, and evacuation-station features are excluded from the web-dashboard rebuild. Existing submitted records and their original assignment history remain readable.
+
 ## Goal
 
 Let residents choose the closest active barangay or MDRRMO when submitting an incident report. A barangay can escalate its assigned report to MDRRMO; an MDRRMO dispatcher can route an MDRRMO report to the closest active barangay. Keep barangay users scoped to reports assigned to their barangay.

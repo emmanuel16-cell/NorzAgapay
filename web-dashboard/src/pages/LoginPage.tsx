@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { authAPI, debugAPI } from '../lib/api';
 import PublicHeader from '../components/PublicHeader';
@@ -9,6 +9,7 @@ type DebugAccount = { id: string; full_name: string; email: string; role: string
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [loginAccountKind, setLoginAccountKind] = useState<'auto' | 'mdrrmo' | 'barangay' | 'resident'>('auto');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showDebugAccounts, setShowDebugAccounts] = useState(false);
@@ -31,7 +32,7 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      await login(email, password);
+      await login(email, password, loginAccountKind);
       // The login call in AuthContext updates state, we check it here
     } catch (err: any) {
       setError(err.response?.data?.error || 'Login failed. Please try again.');
@@ -46,7 +47,7 @@ export default function LoginPage() {
     try {
       await authAPI.createMasterAdmin({ full_name: setupName, email, password });
       setSetupRequired(false);
-      await login(email, password);
+      await login(email, password, 'mdrrmo');
     } catch (err: any) {
       setError(err.response?.data?.error || 'Master admin setup failed. Please try again.');
       setLoading(false);
@@ -92,7 +93,18 @@ export default function LoginPage() {
   useEffect(() => {
     if (user) {
       if (canAccessDashboard) {
-        navigate('/command-center');
+        const destination = user.account_kind === 'barangay'
+          ? user.role === 'responder' ? '/my-responses' : user.role === 'staff' ? '/barangay-workspace' : user.role === 'admin' && !user.coordination_verified ? '/barangay-settings' : user.role === 'admin' || user.role === 'dispatcher' ? '/barangay-dashboard' : '/command-center'
+          : user.role === 'resident'
+            ? '/my-reports'
+            : user.role === 'responder'
+              ? '/my-responses'
+              : user.role === 'admin'
+                ? '/users'
+                : user.role === 'logistics'
+                  ? '/respond-units'
+                  : '/command-center';
+        navigate(destination);
       } else {
         setError('This account does not have web dashboard access. Please use the mobile app.');
         logout(); // Log them out immediately
@@ -148,6 +160,15 @@ export default function LoginPage() {
           </form>
         ) : <form onSubmit={handleSubmit}>
           <div className="form-group">
+            <label className="form-label" htmlFor="login-account-kind">Account type</label>
+            <select id="login-account-kind" className="form-input" value={loginAccountKind} onChange={(event) => setLoginAccountKind(event.target.value as typeof loginAccountKind)}>
+              <option value="auto">Find my account automatically</option>
+              <option value="resident">Resident</option>
+              <option value="barangay">Barangay team</option>
+              <option value="mdrrmo">MDRRMO team</option>
+            </select>
+          </div>
+          <div className="form-group">
             <label className="form-label">Email Address</label>
             <input
               id="login-email"
@@ -181,6 +202,10 @@ export default function LoginPage() {
             {loading ? 'Signing in...' : 'Sign In'}
           </button>
         </form>}
+
+        {!showSetup && loginAccountKind === 'barangay' && (
+          <Link className="login-setup-toggle barangay-register-link" to="/barangay/register">Need an account? Register your barangay administrator</Link>
+        )}
 
         {!showSetup && setupRequired && (
           <button type="button" className="login-setup-toggle" onClick={() => { setShowSetup(true); setError(''); }}>
@@ -225,7 +250,10 @@ export default function LoginPage() {
         )}
 
         <p style={{ textAlign: 'center', marginTop: '20px', fontSize: '12px', color: 'var(--text-muted)' }}>
-          For authorized MDRRMO and barangay personnel
+          MDRRMO and barangay teams, responders, and residents can sign in here.
+        </p>
+        <p style={{ textAlign: 'center', marginTop: '8px', fontSize: '12px' }}>
+          <Link to="/report">Submit an incident report without signing in</Link>
         </p>
       </div>
       </main>

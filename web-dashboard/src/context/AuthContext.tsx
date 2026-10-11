@@ -1,17 +1,18 @@
-import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import { authAPI, socket, debugAPI } from '../lib/api';
 
 interface User {
   id: string;
   full_name: string;
   email: string;
+  phone?: string | null;
   role: string;
   unit_type?: string;
   status: string;
   verified: boolean;
   position_designation?: string;
   is_active?: boolean;
-  account_kind?: 'mdrrmo' | 'barangay';
+  account_kind?: 'mdrrmo' | 'barangay' | 'resident';
   barangay_id?: string;
   barangay_name?: string;
   coordination_verified?: boolean;
@@ -21,8 +22,10 @@ interface AuthContextType {
   user: User | null;
   token: string | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string, accountKind?: 'auto' | 'mdrrmo' | 'barangay' | 'resident') => Promise<void>;
+  setSession: (token: string, user: User, accountKind: 'mdrrmo' | 'barangay' | 'resident') => void;
   debugLogin: (accountId: string, audience?: 'standard' | 'barangay') => Promise<void>;
+  updateUser: (patch: Partial<User>) => void;
   logout: () => void;
   isAdmin: boolean;
   isMasterAdmin: boolean;
@@ -33,8 +36,10 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(localStorage.getItem('norzagapay_token'));
-  const [accountKind, setAccountKind] = useState<'mdrrmo' | 'barangay'>(() =>
-    localStorage.getItem('norzagapay_account_kind') === 'barangay' ? 'barangay' : 'mdrrmo');
+  const [accountKind, setAccountKind] = useState<'mdrrmo' | 'barangay' | 'resident'>(() => {
+    const savedKind = localStorage.getItem('norzagapay_account_kind');
+    return savedKind === 'barangay' || savedKind === 'resident' ? savedKind : 'mdrrmo';
+  });
   const [user, setUser] = useState<User | null>(() => {
     if (!localStorage.getItem('norzagapay_token')) {
       localStorage.removeItem('norzagapay_user');
@@ -84,25 +89,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .finally(() => setLoading(false));
   }, [token, accountKind]);
 
-  const login = async (email: string, password: string) => {
-    let response: Awaited<ReturnType<typeof authAPI.login>>;
-    let nextKind: 'mdrrmo' | 'barangay';
-    try {
-      response = await authAPI.login(email, password);
-      nextKind = 'mdrrmo';
-    } catch (mdrrmoError) {
-      const status = (mdrrmoError as { response?: { status?: number } }).response?.status;
-      if (status !== 401) throw mdrrmoError;
-
+  const login = async (email: string, password: string, requestedKind: 'auto' | 'mdrrmo' | 'barangay' | 'resident' = 'auto') => {
+    const loginKinds: Array<'mdrrmo' | 'barangay' | 'resident'> = requestedKind === 'auto'
+      ? ['mdrrmo', 'barangay', 'resident']
+      : [requestedKind];
+    let response: Awaited<ReturnType<typeof authAPI.login>> | null = null;
+    let nextKind: 'mdrrmo' | 'barangay' | 'resident' | null = null;
+    let firstUnauthorized: unknown;
+    for (const kind of loginKinds) {
       try {
-        response = await authAPI.barangayLogin(email, password);
-        nextKind = 'barangay';
-      } catch (barangayError) {
-        const barangayStatus = (barangayError as { response?: { status?: number } }).response?.status;
-        // Keep the same generic credential error when neither account type accepts the login.
-        throw barangayStatus === 401 ? mdrrmoError : barangayError;
+        response = kind === 'mdrrmo'
+          ? await authAPI.login(email, password)
+          : kind === 'barangay'
+            ? await authAPI.barangayLogin(email, password)
+            : await authAPI.residentLogin(email, password);
+        nextKind = kind;
+        break;
+      } catch (loginError) {
+        const status = (loginError as { response?: { status?: number } }).response?.status;
+        if (status !== 401) throw loginError;
+        if (!firstUnauthorized) firstUnauthorized = loginError;
       }
     }
+    if (!response || !nextKind) throw firstUnauthorized || new Error('Login failed.');
     const { token: savedToken, user: loggedInUser } = response.data;
     loggedInUser.account_kind = nextKind;
     localStorage.setItem('norzagapay_account_kind', nextKind);
@@ -111,6 +120,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAccountKind(nextKind);
     setToken(savedToken);
     setUser(loggedInUser);
+  };
+
+  const setSession = (savedToken: string, sessionUser: User, nextKind: 'mdrrmo' | 'barangay' | 'resident') => {
+    const nextUser = { ...sessionUser, account_kind: nextKind };
+    localStorage.setItem('norzagapay_account_kind', nextKind);
+    localStorage.setItem('norzagapay_token', savedToken);
+    localStorage.setItem('norzagapay_user', JSON.stringify(nextUser));
+    setAccountKind(nextKind);
+    setToken(savedToken);
+    setUser(nextUser);
   };
 
   const debugLogin = async (accountId: string, audience: 'standard' | 'barangay' = 'standard') => {
@@ -126,6 +145,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(loggedInUser);
   };
 
+  const updateUser = useCallback((patch: Partial<User>) => {
+    setUser((current) => {
+      if (!current) return current;
+      const next = { ...current, ...patch };
+      localStorage.setItem('norzagapay_user', JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
   const logout = () => {
     localStorage.removeItem('norzagapay_token');
     localStorage.removeItem('norzagapay_user');
@@ -137,11 +165,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isAdmin = user?.role === 'admin';
   const isMasterAdmin = user?.role === 'master_admin';
   const canAccessDashboard = user?.account_kind === 'barangay'
-    ? Boolean(user.coordination_verified && ['admin', 'dispatcher'].includes(user.role))
-    : isMasterAdmin || ['admin', 'logistics', 'dispatcher'].includes(user?.role || '');
+    ? Boolean(['admin', 'dispatcher', 'staff', 'responder'].includes(user.role) && (user.coordination_verified || user.role === 'admin'))
+    : user?.role === 'resident' || isMasterAdmin || ['admin', 'logistics', 'dispatcher', 'responder'].includes(user?.role || '');
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, debugLogin, logout, isAdmin, isMasterAdmin, canAccessDashboard }}>
+    <AuthContext.Provider value={{ user, token, loading, login, setSession, debugLogin, updateUser, logout, isAdmin, isMasterAdmin, canAccessDashboard }}>
       {children}
     </AuthContext.Provider>
   );

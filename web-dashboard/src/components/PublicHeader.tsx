@@ -1,4 +1,4 @@
-import { Bell, UserRound } from 'lucide-react';
+import { Bell, Search, UserRound } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 export default function PublicHeader() {
@@ -10,6 +10,10 @@ export default function PublicHeader() {
           <span>Norz-Agapay</span>
         </Link>
         <nav className="public-site-actions" aria-label="Main navigation">
+          <Link className="public-site-action public-site-login" to="/track-report">
+            <Search size={20} strokeWidth={2.2} aria-hidden="true" />
+            <span>Track Report</span>
+          </Link>
           <Link className="public-site-action public-site-login" to="/login">
             <UserRound size={22} strokeWidth={2.2} aria-hidden="true" />
             <span>Log in</span>

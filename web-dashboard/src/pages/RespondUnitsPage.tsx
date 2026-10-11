@@ -463,7 +463,7 @@ export default function RespondUnitsPage() {
               )}
 
               {!selectedUnit.roster_ready && (
-                <div className="ru-readiness-note"><Activity size={16} /> This unit cannot accept a dispatch until it has an active Team Leader, at least one Driver Responder, and at least one First Aider Responder.</div>
+                <div className="ru-readiness-note"><Activity size={16} /> This unit cannot be dispatched until it has an active Team Leader, at least one Driver Responder, and at least one First Aider Responder.</div>
               )}
             </>
           )}

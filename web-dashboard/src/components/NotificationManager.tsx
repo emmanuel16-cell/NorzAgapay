@@ -83,7 +83,7 @@ export default function NotificationManager() {
       const messages = {
         review: ['Report reviewed', 'A dispatcher has reviewed an incident report.'],
         assigned: ['Responder assigned', 'A responder has been assigned to an incident.'],
-        responding: ['Responder en route', `${report?.responderName || 'A responder'} from ${report?.barangayName || 'a response unit'} accepted the dispatch and is heading to the incident.`],
+        responding: ['Response underway', `${report?.responderName || 'The assigned response team'} from ${report?.barangayName || 'the response unit'} is responding to the incident.`],
         arrival: ['Responder arrived', 'A responder arrived at the incident location.'],
         resolved: ['Incident resolved', 'An incident response has been marked resolved.'],
       } as const;

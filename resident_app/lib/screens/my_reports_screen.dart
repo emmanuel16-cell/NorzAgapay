@@ -114,7 +114,10 @@ class _MyReportsScreenState extends State<MyReportsScreen> {
   List<Map<String, dynamic>> get _filteredDrafts =>
       OfflineService.getDrafts().where((draft) {
         final type = draft['type']?.toString();
-        final sendTo = draft['send_to']?.toString() ?? 'mdrrmo';
+        // New submissions from drafts always enter central MDRRMO intake.
+        // Keep previously submitted barangay reports in the report history;
+        // an unsent draft is not an existing barangay assignment.
+        const sendTo = 'mdrrmo';
         switch (_reportFilter) {
           case 'Barangay':
             return type != 'community' && sendTo == 'barangay';

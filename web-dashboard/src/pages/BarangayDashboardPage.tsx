@@ -1,0 +1,111 @@
+import { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { Activity, ArrowRight, Bell, ClipboardList, MapPin, Users, RefreshCw } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { barangayAPI, reportAPI, socket } from '../lib/api';
+
+type ReportRow = { id: string; title?: string; incident_type?: string; description?: string; response_status?: string; barangay_response_status?: string; created_at?: string };
+type AssistanceRow = { id: string; status?: string; explanation?: string; incident_title?: string; created_at?: string };
+
+function statusOf(report: ReportRow) {
+  return String(report.barangay_response_status || report.response_status || 'pending').toLowerCase();
+}
+
+export default function BarangayDashboardPage() {
+  const { user } = useAuth();
+  const [reports, setReports] = useState<ReportRow[]>([]);
+  const [requests, setRequests] = useState<AssistanceRow[]>([]);
+  const [activeMembers, setActiveMembers] = useState(0);
+  const [postsCount, setPostsCount] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const [reportResult, requestResult, teamResult, boardResult] = await Promise.all([
+        reportAPI.barangayReports(),
+        barangayAPI.assistanceRequests(),
+        barangayAPI.team(),
+        barangayAPI.barangayBroadcasts(),
+      ]);
+      setReports(Array.isArray(reportResult.data) ? reportResult.data : []);
+      setRequests(Array.isArray(requestResult.data?.requests) ? requestResult.data.requests : []);
+      const team = Array.isArray(teamResult.data) ? teamResult.data : [];
+      setActiveMembers(team.filter((member: any) => member.is_active === true).length);
+      setPostsCount(Array.isArray(boardResult.data) ? boardResult.data.length : 0);
+    } catch (loadError: any) {
+      setError(loadError?.response?.data?.error || 'Barangay overview could not be loaded.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    socket.on('barangay:report_updated', load);
+    socket.on('barangay:report_escalated', load);
+    socket.on('assistance:new_request', load);
+    socket.on('assistance:decision', load);
+    socket.on('team:member_added', load);
+    socket.on('team:member_updated', load);
+    socket.on('broadcast:new', load);
+    return () => {
+      socket.off('barangay:report_updated', load);
+      socket.off('barangay:report_escalated', load);
+      socket.off('assistance:new_request', load);
+      socket.off('assistance:decision', load);
+      socket.off('team:member_added', load);
+      socket.off('team:member_updated', load);
+      socket.off('broadcast:new', load);
+    };
+  }, [load]);
+
+  const activeReports = reports.filter((report) => !['resolved', 'closed', 'rejected'].includes(statusOf(report)));
+  const pendingRequests = requests.filter((request) => String(request.status || '').toLowerCase() === 'pending');
+  const latestReports = [...reports].sort((a, b) => Date.parse(b.created_at || '') - Date.parse(a.created_at || '')).slice(0, 5);
+
+  return (
+    <div className="barangay-console-page">
+      <header className="barangay-console-header">
+        <div>
+          <span className="workspace-eyebrow">BARANGAY COMMAND · {user?.barangay_name || 'YOUR BARANGAY'}</span>
+          <h1>Barangay overview</h1>
+          <p>Local incident activity, assistance requests, and community updates.</p>
+        </div>
+        <button className="workspace-secondary-action" type="button" onClick={() => void load()} disabled={loading}><RefreshCw size={16} className={loading ? 'workspace-spinning' : ''} /> Refresh</button>
+      </header>
+
+      {error && <div className="workspace-message workspace-message-error" role="alert">{error}<button type="button" onClick={() => void load()}>Try again</button></div>}
+      <section className="barangay-console-stat-grid" aria-label="Barangay summary">
+        <article><span>Active incident work</span><strong>{loading ? '—' : activeReports.length}</strong><Activity size={20} /></article>
+        <article><span>Pending assistance</span><strong>{loading ? '—' : pendingRequests.length}</strong><ClipboardList size={20} /></article>
+        <article><span>Active team members</span><strong>{loading ? '—' : activeMembers}</strong><Users size={20} /></article>
+        <article><span>Barangay posts</span><strong>{loading ? '—' : postsCount}</strong><Bell size={20} /></article>
+      </section>
+
+      <section className="barangay-console-shortcuts" aria-label="Barangay workspaces">
+        <Link to="/command-center"><MapPin /><span><strong>Incident command</strong><small>View the barangay-scoped incident queue and map.</small></span><ArrowRight /></Link>
+        <Link to="/barangay-assistance"><ClipboardList /><span><strong>Assistance requests</strong><small>Review requests or track the ones you submitted.</small></span><ArrowRight /></Link>
+        <Link to="/barangay-board"><Bell /><span><strong>Barangay board</strong><small>Publish local advisories and read MDRRMO alerts.</small></span><ArrowRight /></Link>
+        {user?.role === 'admin' && <Link to="/barangay-team"><Users /><span><strong>Team roster</strong><small>Manage active barangay responders and staff.</small></span><ArrowRight /></Link>}
+        {user?.role === 'admin' && <Link to="/barangay-analytics"><Activity /><span><strong>Barangay analytics</strong><small>Review local report volume and outcomes.</small></span><ArrowRight /></Link>}
+        <Link to="/barangay-settings"><MapPin /><span><strong>Account and settings</strong><small>Review access status, contact details, location, and hotlines.</small></span><ArrowRight /></Link>
+      </section>
+
+      <section className="barangay-console-panel">
+        <header><div><h2>Recent incident activity</h2><p>Reports currently visible to your barangay role.</p></div><Link to="/reports">Open incidents <ArrowRight size={15} /></Link></header>
+        {loading ? <p className="barangay-console-muted">Loading barangay activity…</p> : latestReports.length === 0 ? <p className="barangay-console-muted">No incident history is available yet.</p> : (
+          <div className="barangay-console-list">
+            {latestReports.map((report) => <article key={report.id}>
+              <span className={`barangay-console-status ${statusOf(report)}`}>{statusOf(report).replaceAll('_', ' ')}</span>
+              <div><strong>{report.incident_type?.replaceAll('_', ' ') || report.title || 'Incident report'}</strong><p>{report.description || 'No additional details.'}</p></div>
+              <time>{report.created_at ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(report.created_at)) : 'Time unavailable'}</time>
+            </article>)}
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}

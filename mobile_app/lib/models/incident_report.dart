@@ -70,6 +70,7 @@ class IncidentReport {
   final String? assignmentNotes;
   final String? responseBarangayId;
   final String? responseBarangayName;
+  final List<Map<String, dynamic>> barangayCrewMembers;
 
   IncidentReport({
     required this.id,
@@ -127,6 +128,7 @@ class IncidentReport {
     this.assignmentNotes,
     this.responseBarangayId,
     this.responseBarangayName,
+    this.barangayCrewMembers = const [],
   })  : proofUrls = proofUrls ?? (proofUrl != null ? [proofUrl] : []),
         proofTypes = proofTypes ?? [proofType],
         responderMedia = responderMedia ?? const [];
@@ -290,6 +292,10 @@ class IncidentReport {
       assignmentNotes: json['assignment_notes']?.toString(),
       responseBarangayId: json['response_barangay_id']?.toString(),
       responseBarangayName: json['response_barangay_name']?.toString(),
+      barangayCrewMembers: (json['barangay_crew_members'] as List? ?? const [])
+          .whereType<Map>()
+          .map((member) => Map<String, dynamic>.from(member))
+          .toList(),
     );
   }
 
@@ -346,6 +352,7 @@ class IncidentReport {
       'assignment_notes': assignmentNotes,
       'response_barangay_id': responseBarangayId,
       'response_barangay_name': responseBarangayName,
+      'barangay_crew_members': barangayCrewMembers,
     };
   }
 }
