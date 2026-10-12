@@ -26,12 +26,12 @@ export default function BarangayDashboardPage() {
     setError('');
     try {
       const [reportResult, requestResult, teamResult, boardResult] = await Promise.all([
-        reportAPI.barangayReports(),
+        isDispatcher ? reportAPI.barangayReports() : Promise.resolve(null),
         isDispatcher ? barangayAPI.assistanceRequests() : Promise.resolve(null),
         barangayAPI.team(),
         barangayAPI.barangayBroadcasts(),
       ]);
-      setReports(Array.isArray(reportResult.data) ? reportResult.data : []);
+      setReports(reportResult && Array.isArray(reportResult.data) ? reportResult.data : []);
       setRequests(Array.isArray(requestResult?.data?.requests) ? requestResult.data.requests : []);
       const team = Array.isArray(teamResult.data) ? teamResult.data : [];
       setActiveMembers(team.filter((member: any) => member.is_active === true).length);
@@ -80,7 +80,7 @@ export default function BarangayDashboardPage() {
 
       {error && <div className="workspace-message workspace-message-error" role="alert">{error}<button type="button" onClick={() => void load()}>Try again</button></div>}
       <section className="barangay-console-stat-grid" aria-label="Barangay summary">
-        <article><span>Active incident work</span><strong>{loading ? '—' : activeReports.length}</strong><Activity size={20} /></article>
+        {isDispatcher && <article><span>Active incident work</span><strong>{loading ? '—' : activeReports.length}</strong><Activity size={20} /></article>}
         {isDispatcher && <article><span>Pending assistance</span><strong>{loading ? '—' : pendingRequests.length}</strong><ClipboardList size={20} /></article>}
         <article><span>Active team members</span><strong>{loading ? '—' : activeMembers}</strong><Users size={20} /></article>
         <article><span>Barangay posts</span><strong>{loading ? '—' : postsCount}</strong><Bell size={20} /></article>
@@ -92,11 +92,10 @@ export default function BarangayDashboardPage() {
         <Link to="/barangay-board"><Bell /><span><strong>Barangay board</strong><small>Publish local advisories and read MDRRMO alerts.</small></span><ArrowRight /></Link>
         {user?.role === 'admin' && <Link to="/barangay-team"><Users /><span><strong>Team roster</strong><small>Manage active barangay responders and staff.</small></span><ArrowRight /></Link>}
         {user?.role === 'admin' && <Link to="/barangay-analytics"><Activity /><span><strong>Barangay analytics</strong><small>Review local report volume and outcomes.</small></span><ArrowRight /></Link>}
-        <Link to="/barangay-settings"><MapPin /><span><strong>Account and settings</strong><small>Review access status, contact details, location, and hotlines.</small></span><ArrowRight /></Link>
       </section>
 
-      <section className="barangay-console-panel">
-        <header><div><h2>Recent incident activity</h2><p>Reports currently visible to your barangay role.</p></div>{isDispatcher && <Link to="/reports">Open incidents <ArrowRight size={15} /></Link>}</header>
+      {isDispatcher && <section className="barangay-console-panel">
+        <header><div><h2>Recent incident activity</h2><p>Reports currently visible to your barangay role.</p></div><Link to="/reports">Open incidents <ArrowRight size={15} /></Link></header>
         {loading ? <p className="barangay-console-muted">Loading barangay activity…</p> : latestReports.length === 0 ? <p className="barangay-console-muted">No incident history is available yet.</p> : (
           <div className="barangay-console-list">
             {latestReports.map((report) => <article key={report.id}>
@@ -106,7 +105,7 @@ export default function BarangayDashboardPage() {
             </article>)}
           </div>
         )}
-      </section>
+      </section>}
     </div>
   );
 }

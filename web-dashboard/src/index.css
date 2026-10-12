@@ -4269,6 +4269,7 @@ tbody tr:last-child td { border-bottom: none; }
 .barangay-policy-details summary span { color: var(--text-muted); font-size: 12px; }
 .barangay-policy-details > div { padding-top: 8px; }
 .barangay-policy-details p { margin: 8px 0; color: var(--text-muted); font-size: 12px; line-height: 1.55; }
+.barangay-policy-details-open p { margin: 8px 0; color: var(--text-muted); font-size: 12px; line-height: 1.55; }
 .barangay-console-muted { margin: 5px 0; color: var(--text-muted); font-size: 13px; }
 .barangay-console-list { display: flex; flex-direction: column; }
 .barangay-console-list article { display: grid; grid-template-columns: 98px minmax(0, 1fr) auto; align-items: start; gap: 12px; padding: 13px 2px; border-top: 1px solid var(--border-color, #253d5f); }

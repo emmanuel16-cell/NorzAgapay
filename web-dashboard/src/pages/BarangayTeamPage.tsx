@@ -10,7 +10,7 @@ type Member = { id: string; full_name: string; email?: string | null; phone?: st
 type MemberForm = { full_name: string; email: string; phone: string; password: string; role: 'dispatcher' | 'responder' | 'staff' };
 const emptyForm: MemberForm = { full_name: '', email: '', phone: '', password: '', role: 'responder' };
 
-export default function BarangayTeamPage() {
+export default function BarangayTeamPage({ embedded = false }: { embedded?: boolean }) {
   const { user } = useAuth();
   const canManageTeam = user?.role === 'admin';
   const [members, setMembers] = useState<Member[]>([]);
@@ -89,13 +89,13 @@ export default function BarangayTeamPage() {
     }
   };
 
-  if (!user?.coordination_verified) return <div className="barangay-console-page"><div className="barangay-console-message"><ShieldAlert /><div><strong>Barangay access is not active</strong><p>Complete the Barangay Account Request and wait for MDRRMO activation before managing the team.</p><Link to="/barangay-settings">Open account request</Link></div></div></div>;
+  if (!user?.coordination_verified) return <div className={`barangay-console-page${embedded ? ' barangay-console-page-embedded' : ''}`}><div className="barangay-console-message"><ShieldAlert /><div><strong>Barangay access is not active</strong><p>Complete the Barangay Account Request and wait for MDRRMO activation before managing the team.</p>{!embedded && <Link to="/barangay-settings">Open account request</Link>}</div></div></div>;
 
   const activeMembers = members.filter((member) => member.is_active);
   const inactiveMembers = members.filter((member) => !member.is_active);
 
   return (
-    <div className="barangay-console-page">
+    <div className={`barangay-console-page${embedded ? ' barangay-console-page-embedded' : ''}`}>
       <header className="barangay-console-header">
         <div><span className="workspace-eyebrow">BARANGAY ADMINISTRATION · {user?.barangay_name || 'YOUR BARANGAY'}</span><h1>Barangay team</h1><p>{canManageTeam ? 'Manage accounts in this barangay roster. Response crew selection remains limited to this roster.' : 'View your barangay team roster and contact details.'}</p></div>
         <button className="workspace-secondary-action" type="button" onClick={() => void load()} disabled={loading}><RefreshCw size={16} className={loading ? 'workspace-spinning' : ''} /> Refresh</button>

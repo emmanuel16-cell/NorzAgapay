@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
 import { BadgeCheck, Download, FileCheck2, FileText, MapPin, Phone, Plus, Save, ShieldAlert, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
@@ -62,9 +61,11 @@ function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-type BarangayAdministrationPageProps = { embedded?: boolean };
+export type BarangaySettingsSection = 'all' | 'account' | 'location' | 'hotlines' | 'terms' | 'privacy';
 
-export default function BarangayAdministrationPage({ embedded = false }: BarangayAdministrationPageProps) {
+type BarangayAdministrationPageProps = { embedded?: boolean; section?: BarangaySettingsSection };
+
+export default function BarangayAdministrationPage({ embedded = false, section = 'all' }: BarangayAdministrationPageProps) {
   const { user, updateUser } = useAuth();
   const isAdmin = user?.role === 'admin';
   const canManageHotlines = user?.role === 'admin' || user?.role === 'staff';
@@ -216,14 +217,25 @@ export default function BarangayAdministrationPage({ embedded = false }: Baranga
 
   const updateHotline = (index: number, patch: Partial<HotlineEntry>) => setHotlines((entries) => entries.map((entry, entryIndex) => entryIndex === index ? { ...entry, ...patch } : entry));
 
+  const showAll = section === 'all';
+  const showAccount = showAll || section === 'account';
+  const showLocation = showAll || section === 'location';
+  const showHotlines = showAll || section === 'hotlines';
+  const policies = barangayPolicies.filter((policy) => {
+    if (showAll) return true;
+    if (section === 'terms') return policy.title === 'Terms and Conditions';
+    if (section === 'privacy') return policy.title === 'Privacy Policy';
+    return false;
+  });
+
   return (
     <div className={`barangay-console-page${embedded ? ' barangay-console-page-embedded' : ''}`}>
-      <header className="barangay-console-header"><div><span className="workspace-eyebrow">BARANGAY ADMINISTRATION · {user?.barangay_name || 'YOUR BARANGAY'}</span><h1>Barangay settings</h1><p>Manage coordination setup, official response location, and the hotline directory shared with residents.</p></div><button className="workspace-secondary-action" type="button" onClick={() => void load()} disabled={loading}><FileCheck2 size={16} /> Refresh</button></header>
+      {showAll && <header className="barangay-console-header"><div><span className="workspace-eyebrow">BARANGAY ADMINISTRATION · {user?.barangay_name || 'YOUR BARANGAY'}</span><h1>Barangay settings</h1><p>Manage coordination setup, official response location, and the hotline directory shared with residents.</p></div><button className="workspace-secondary-action" type="button" onClick={() => void load()} disabled={loading}><FileCheck2 size={16} /> Refresh</button></header>}
       {error && <div className="workspace-message workspace-message-error" role="alert">{error}<button type="button" onClick={() => void load()}>Try again</button></div>}
       {!active && isAdmin && <div className="barangay-console-message"><ShieldAlert /><div><strong>Barangay coordination access: {statusLabel}</strong><p>Operational team, location, and hotline settings become available after MDRRMO activates this barangay. You can prepare or update the account request below.</p></div></div>}
       {loading && <p className="barangay-console-muted">Loading account settings…</p>}
 
-      {isAdmin && <section className="barangay-console-panel"><header><div><h2>Barangay Account Request</h2><p>Prepare the authorization, submit the signed document, and follow MDRRMO review.</p></div><span className={`barangay-console-status ${active ? 'active' : status}`}>{active ? 'Active' : statusLabel}</span></header>
+      {showAccount && isAdmin && <section className="barangay-console-panel"><header><div><h2>Barangay Account Request</h2><p>Prepare the authorization, submit the signed document, and follow MDRRMO review.</p></div><span className={`barangay-console-status ${active ? 'active' : status}`}>{active ? 'Active' : statusLabel}</span></header>
         {verification?.reference_no && <div className="barangay-account-reference"><span>Request reference</span><strong>{verification.reference_no}</strong>{verification.submitted_at && <small>Submitted {new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(verification.submitted_at))}</small>}</div>}
         {(verification?.rejection_reason || verification?.correction_reason) && <div className="barangay-account-review-note"><strong>MDRRMO feedback</strong><p>{verification.correction_reason || verification.rejection_reason}</p></div>}
         <form className="barangay-console-form-grid" onSubmit={(event) => void saveAccount(event)}>
@@ -239,20 +251,22 @@ export default function BarangayAdministrationPage({ embedded = false }: Baranga
         {Array.isArray(verification?.verification_history) && verification!.verification_history!.length > 0 && <div className="barangay-account-history"><h3>Review history</h3>{[...verification!.verification_history!].reverse().map((item, index) => <article key={`${item.timestamp || item.action}-${index}`}><span>{String(item.action || 'Update').replaceAll('_', ' ')}</span><p>{item.note || item.actor || 'Status updated'}</p><time>{item.timestamp ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(item.timestamp)) : ''}</time></article>)}</div>}
       </section>}
 
-      {isAdmin && active && <section className="barangay-console-panel"><header><div><h2>Barangay command location</h2><p>Used as the barangay operations location in command maps.</p></div></header><form className="barangay-console-form-grid" onSubmit={(event) => void saveLocation(event)}>
+      {showLocation && isAdmin && active && <section className="barangay-console-panel"><header><div><h2>Barangay command location</h2><p>Used as the barangay operations location in command maps.</p></div></header><form className="barangay-console-form-grid" onSubmit={(event) => void saveLocation(event)}>
         <label>Latitude<input required type="number" min={-90} max={90} step="any" value={location.latitude} onChange={(event) => setLocation((value) => ({ ...value, latitude: event.target.value }))} /></label>
         <label>Longitude<input required type="number" min={-180} max={180} step="any" value={location.longitude} onChange={(event) => setLocation((value) => ({ ...value, longitude: event.target.value }))} /></label>
         <label className="barangay-console-form-wide">Address or landmark<input maxLength={240} value={location.address} onChange={(event) => setLocation((value) => ({ ...value, address: event.target.value }))} placeholder="Barangay hall or response post" /></label>
         <div className="barangay-console-form-actions"><button className="btn btn-primary" disabled={saving}><MapPin size={16} /> Save command location</button>{location.latitude && location.longitude && <a target="_blank" rel="noreferrer" href={`https://www.google.com/maps?q=${location.latitude},${location.longitude}`}>View coordinates on map</a>}</div>
       </form></section>}
 
-      {active && canViewHotlines && <section className="barangay-console-panel"><header><div><h2>Public hotline directory</h2><p>{canManageHotlines ? 'These entries are shown to residents for your barangay.' : 'Published hotline numbers for your barangay.'}</p></div>{canManageHotlines && <button className="workspace-secondary-action" type="button" onClick={() => setHotlines((entries) => [...entries, { purpose: '', numbers: [''] }])}><Plus size={16} /> Add hotline</button>}</header>
+      {showHotlines && active && canViewHotlines && <section className="barangay-console-panel"><header><div><h2>Public hotline directory</h2><p>{canManageHotlines ? 'These entries are shown to residents for your barangay.' : 'Published hotline numbers for your barangay.'}</p></div>{canManageHotlines && <button className="workspace-secondary-action" type="button" onClick={() => setHotlines((entries) => [...entries, { purpose: '', numbers: [''] }])}><Plus size={16} /> Add hotline</button>}</header>
         {canManageHotlines ? <form onSubmit={(event) => void saveHotlines(event)}><div className="barangay-hotline-list">{hotlines.map((entry, index) => <article className="barangay-hotline-row" key={index}><label>Purpose<input required value={entry.purpose} onChange={(event) => updateHotline(index, { purpose: event.target.value })} placeholder="Emergency response" /></label><label>Phone numbers<input required value={entry.numbers.join(', ')} onChange={(event) => updateHotline(index, { numbers: event.target.value.split(',').map((number) => number.trim()) })} placeholder="09XXXXXXXXX, 044..." /></label><button type="button" title="Remove hotline" aria-label="Remove hotline" onClick={() => setHotlines((entries) => entries.filter((_, entryIndex) => entryIndex !== index))}><Trash2 size={17} /></button></article>)}{hotlines.length === 0 && <p className="barangay-console-muted">No public hotline entries yet. Add one to make it available in the resident directory.</p>}</div><div className="barangay-console-form-actions"><button className="btn btn-primary" disabled={saving}><Save size={16} /> Save hotline directory</button></div></form> : hotlines.length === 0 ? <p className="barangay-console-muted">No public hotline entries have been published for this barangay.</p> : <div className="barangay-hotline-readonly-list">{hotlines.map((entry, index) => <article className="barangay-hotline-readonly-card" key={`${entry.purpose}-${index}`}><strong>{entry.purpose || 'Emergency hotline'}</strong><div>{entry.numbers.filter(Boolean).map((number) => <a key={number} href={`tel:${number}`}><Phone size={14} />{number}</a>)}</div></article>)}</div>}
       </section>}
 
-      <section className="barangay-console-panel"><header><div><h2>Terms and privacy</h2><p>Review the policies shown in the mobile app.</p></div></header>
-        {barangayPolicies.map((policy) => <details key={policy.title} className="barangay-policy-details"><summary><strong>{policy.title}</strong><span>{policy.subtitle}</span></summary><div>{policy.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}</div></details>)}
-      </section>
+      {policies.length > 0 && <section className="barangay-console-panel">{showAll ? <><header><div><h2>Terms and privacy</h2><p>Review the policies shown in the mobile app.</p></div></header>
+        {policies.map((policy) => <details key={policy.title} className="barangay-policy-details"><summary><strong>{policy.title}</strong><span>{policy.subtitle}</span></summary><div>{policy.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}</div></details>)}
+      </> : <><header><div><h2>{policies[0].title}</h2><p>{policies[0].subtitle}</p></div></header>
+        <div className="barangay-policy-details-open">{policies[0].paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}</div>
+      </>}</section>}
     </div>
   );
 }

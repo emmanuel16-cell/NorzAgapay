@@ -1,9 +1,10 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Building2, KeyRound, MailCheck, Moon, Save, Settings, Sun, UserRound, X } from 'lucide-react';
+import { FileText, KeyRound, MailCheck, MapPin, Moon, Phone, Save, ScrollText, Settings, ShieldCheck, Sun, UserRound, Users, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import PasswordInput from './PasswordInput';
-import BarangayAdministrationPage from '../pages/BarangayAdministrationPage';
+import BarangayAdministrationPage, { type BarangaySettingsSection } from '../pages/BarangayAdministrationPage';
+import BarangayTeamPage from '../pages/BarangayTeamPage';
 import { authAPI, barangayAPI } from '../lib/api';
 
 type UserSettingsModalProps = {
@@ -12,13 +13,17 @@ type UserSettingsModalProps = {
   onClose: () => void;
 };
 
+type SettingsSection = 'general' | 'management' | BarangaySettingsSection;
+
 const emptyPasswordForm = { otp: '', currentPassword: '', newPassword: '', confirmPassword: '' };
 const messageOf = (error: any, fallback: string) => error?.response?.data?.error || fallback;
 
 export default function UserSettingsModal({ theme, onThemeChange, onClose }: UserSettingsModalProps) {
   const { user, updateUser } = useAuth();
   const isBarangay = user?.account_kind === 'barangay';
-  const [activeSection, setActiveSection] = useState<'general' | 'barangay'>('general');
+  const isBarangayAdmin = isBarangay && user?.role === 'admin';
+  const canViewHotlines = isBarangay && Boolean(user?.barangay_id);
+  const [activeSection, setActiveSection] = useState<SettingsSection>('general');
   const [profile, setProfile] = useState({ full_name: user?.full_name || '', phone: user?.phone || '' });
   const [passwordOtpSent, setPasswordOtpSent] = useState(false);
   const [passwordForm, setPasswordForm] = useState(emptyPasswordForm);
@@ -117,7 +122,12 @@ export default function UserSettingsModal({ theme, onThemeChange, onClose }: Use
         <div className="user-settings-layout">
           <nav className="user-settings-nav" aria-label="Settings sections">
             <button type="button" className={activeSection === 'general' ? 'active' : ''} aria-current={activeSection === 'general' ? 'page' : undefined} onClick={() => setActiveSection('general')}><UserRound size={17} /> General</button>
-            {isBarangay && <button type="button" className={activeSection === 'barangay' ? 'active' : ''} aria-current={activeSection === 'barangay' ? 'page' : undefined} onClick={() => setActiveSection('barangay')}><Building2 size={17} /> Barangay Settings</button>}
+            {isBarangayAdmin && <button type="button" className={activeSection === 'management' ? 'active' : ''} aria-current={activeSection === 'management' ? 'page' : undefined} onClick={() => setActiveSection('management')}><Users size={17} /> Barangay Management</button>}
+            {isBarangayAdmin && <button type="button" className={activeSection === 'account' ? 'active' : ''} aria-current={activeSection === 'account' ? 'page' : undefined} onClick={() => setActiveSection('account')}><FileText size={17} /> Account Request</button>}
+            {canViewHotlines && <button type="button" className={activeSection === 'hotlines' ? 'active' : ''} aria-current={activeSection === 'hotlines' ? 'page' : undefined} onClick={() => setActiveSection('hotlines')}><Phone size={17} /> Barangay Hotline</button>}
+            {isBarangayAdmin && <button type="button" className={activeSection === 'location' ? 'active' : ''} aria-current={activeSection === 'location' ? 'page' : undefined} onClick={() => setActiveSection('location')}><MapPin size={17} /> Command Location</button>}
+            {isBarangay && <button type="button" className={activeSection === 'terms' ? 'active' : ''} aria-current={activeSection === 'terms' ? 'page' : undefined} onClick={() => setActiveSection('terms')}><ScrollText size={17} /> Terms and Conditions</button>}
+            {isBarangay && <button type="button" className={activeSection === 'privacy' ? 'active' : ''} aria-current={activeSection === 'privacy' ? 'page' : undefined} onClick={() => setActiveSection('privacy')}><ShieldCheck size={17} /> Privacy Policy</button>}
           </nav>
 
           <div className="user-settings-panel">
@@ -156,7 +166,7 @@ export default function UserSettingsModal({ theme, onThemeChange, onClose }: Use
           </section>}
 
           {!isBarangay && <p className="user-settings-managed-note">Official account details are managed by your system administrator.</p>}
-          </div> : <div className="user-settings-content user-settings-content-barangay"><BarangayAdministrationPage embedded /></div>}
+          </div> : activeSection === 'management' ? <div className="user-settings-content user-settings-content-barangay"><BarangayTeamPage embedded /></div> : <div className="user-settings-content user-settings-content-barangay"><BarangayAdministrationPage embedded section={activeSection} /></div>}
           </div>
         </div>
 
