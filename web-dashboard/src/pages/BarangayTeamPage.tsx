@@ -11,6 +11,7 @@ const emptyForm: MemberForm = { full_name: '', email: '', phone: '', password: '
 
 export default function BarangayTeamPage() {
   const { user } = useAuth();
+  const canManageTeam = user?.role === 'admin';
   const [members, setMembers] = useState<Member[]>([]);
   const [form, setForm] = useState<MemberForm>(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -95,13 +96,13 @@ export default function BarangayTeamPage() {
   return (
     <div className="barangay-console-page">
       <header className="barangay-console-header">
-        <div><span className="workspace-eyebrow">BARANGAY ADMINISTRATION · {user?.barangay_name || 'YOUR BARANGAY'}</span><h1>Barangay team</h1><p>Manage accounts in this barangay roster. Response crew selection remains limited to this roster.</p></div>
+        <div><span className="workspace-eyebrow">BARANGAY ADMINISTRATION · {user?.barangay_name || 'YOUR BARANGAY'}</span><h1>Barangay team</h1><p>{canManageTeam ? 'Manage accounts in this barangay roster. Response crew selection remains limited to this roster.' : 'View your barangay team roster and contact details.'}</p></div>
         <button className="workspace-secondary-action" type="button" onClick={() => void load()} disabled={loading}><RefreshCw size={16} className={loading ? 'workspace-spinning' : ''} /> Refresh</button>
       </header>
 
       <section className="barangay-console-stat-grid barangay-console-stat-grid-compact"><article><span>Active accounts</span><strong>{activeMembers.length}</strong><CircleUserRound size={20} /></article><article><span>Inactive accounts</span><strong>{inactiveMembers.length}</strong><UserRoundX size={20} /></article><article><span>Roster scope</span><strong>{user?.barangay_name || 'Barangay'}</strong><ShieldAlert size={20} /></article></section>
 
-      <section className="barangay-console-panel barangay-team-form-panel">
+      {canManageTeam && <section className="barangay-console-panel barangay-team-form-panel">
         <header><div><h2>{editingId ? 'Edit team account' : 'Add a team account'}</h2><p>Barangay administrators cannot be added from this form. Dispatcher accounts require an active Barangay Account Request.</p></div>{editingId && <button className="workspace-secondary-action" type="button" onClick={resetForm}><X size={15} /> Cancel edit</button>}</header>
         <form className="barangay-console-form-grid" onSubmit={(event) => void submit(event)}>
           <label>Full name<input required minLength={2} maxLength={120} value={form.full_name} onChange={(event) => setForm((value) => ({ ...value, full_name: event.target.value }))} /></label>
@@ -111,15 +112,15 @@ export default function BarangayTeamPage() {
           <label className="barangay-console-form-wide">{editingId ? 'New password (optional)' : 'Initial password'}<input required={!editingId} type="password" minLength={editingId ? undefined : 8} autoComplete="new-password" value={form.password} onChange={(event) => setForm((value) => ({ ...value, password: event.target.value }))} placeholder={editingId ? 'Leave blank to keep the current password' : 'At least 8 characters'} /></label>
           <div className="barangay-console-form-actions"><button className="btn btn-primary" type="submit" disabled={saving}>{saving ? 'Saving…' : editingId ? <><Check size={16} /> Save account</> : <><Plus size={16} /> Add account</>}</button></div>
         </form>
-      </section>
+      </section>}
 
       {error && <div className="workspace-message workspace-message-error" role="alert">{error}<button type="button" onClick={() => void load()}>Try again</button></div>}
       {loading ? <p className="barangay-console-muted">Loading the barangay roster…</p> : <>
         <section className="barangay-console-panel"><header><div><h2>Active team</h2><p>Responders and staff here can be used for barangay operations as allowed by their role.</p></div></header><div className="barangay-team-grid">
-          {activeMembers.map((member) => <article className="barangay-team-card" key={member.id}><div className="barangay-team-card-avatar">{member.full_name.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase()}</div><div className="barangay-team-card-info"><strong>{member.full_name}</strong><span className="barangay-console-status active">{member.role.replaceAll('_', ' ')}</span><small>{member.email || 'No email'}{member.phone ? ` · ${member.phone}` : ''}</small></div>{member.role !== 'admin' && <div className="barangay-team-card-actions"><button type="button" title="Edit account" aria-label={`Edit ${member.full_name}`} onClick={() => beginEdit(member)}><Edit3 size={16} /></button><button type="button" title="Deactivate account" aria-label={`Deactivate ${member.full_name}`} onClick={() => void toggleActive(member)}><UserRoundX size={16} /></button></div>}</article>)}
+          {activeMembers.map((member) => <article className="barangay-team-card" key={member.id}><div className="barangay-team-card-avatar">{member.full_name.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase()}</div><div className="barangay-team-card-info"><strong>{member.full_name}</strong><span className="barangay-console-status active">{member.role.replaceAll('_', ' ')}</span><small>{member.email || 'No email'}{member.phone ? ` · ${member.phone}` : ''}</small></div>{canManageTeam && member.role !== 'admin' && <div className="barangay-team-card-actions"><button type="button" title="Edit account" aria-label={`Edit ${member.full_name}`} onClick={() => beginEdit(member)}><Edit3 size={16} /></button><button type="button" title="Deactivate account" aria-label={`Deactivate ${member.full_name}`} onClick={() => void toggleActive(member)}><UserRoundX size={16} /></button></div>}</article>)}
           {activeMembers.length === 0 && <p className="barangay-console-muted">No active team accounts were found.</p>}
         </div></section>
-        {inactiveMembers.length > 0 && <section className="barangay-console-panel"><header><div><h2>Inactive accounts</h2><p>Historical assignments remain available. Reactivation restores sign-in access.</p></div></header><div className="barangay-team-grid">{inactiveMembers.map((member) => <article className="barangay-team-card is-inactive" key={member.id}><div className="barangay-team-card-avatar">{member.full_name.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase()}</div><div className="barangay-team-card-info"><strong>{member.full_name}</strong><span className="barangay-console-status inactive">Inactive · {member.role}</span><small>{member.email || 'No email'}</small></div><button className="workspace-secondary-action" type="button" onClick={() => void toggleActive(member)}><Check size={15} /> Reactivate</button></article>)}</div></section>}
+        {inactiveMembers.length > 0 && <section className="barangay-console-panel"><header><div><h2>{canManageTeam ? 'Inactive accounts' : 'Inactive team accounts'}</h2><p>{canManageTeam ? 'Historical assignments remain available. Reactivation restores sign-in access.' : 'These accounts are currently inactive.'}</p></div></header><div className="barangay-team-grid">{inactiveMembers.map((member) => <article className="barangay-team-card is-inactive" key={member.id}><div className="barangay-team-card-avatar">{member.full_name.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase()}</div><div className="barangay-team-card-info"><strong>{member.full_name}</strong><span className="barangay-console-status inactive">Inactive · {member.role}</span><small>{member.email || 'No email'}{member.phone ? ` · ${member.phone}` : ''}</small></div>{canManageTeam && <button className="workspace-secondary-action" type="button" onClick={() => void toggleActive(member)}><Check size={15} /> Reactivate</button>}</article>)}</div></section>}
       </>}
     </div>
   );

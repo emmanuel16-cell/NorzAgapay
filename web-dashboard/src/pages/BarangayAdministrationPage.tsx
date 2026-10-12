@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { BadgeCheck, Download, FileCheck2, FileText, MapPin, Plus, Save, ShieldAlert, Trash2 } from 'lucide-react';
+import { BadgeCheck, Download, FileCheck2, FileText, KeyRound, MailCheck, MapPin, Plus, Save, ShieldAlert, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
-import { API_BASE, barangayAPI, reportAPI, socket } from '../lib/api';
+import { API_BASE, authAPI, barangayAPI, reportAPI, socket } from '../lib/api';
 
 type HotlineEntry = { purpose: string; numbers: string[] };
 type Verification = {
@@ -18,6 +18,34 @@ type Verification = {
   correction_reason?: string | null;
   verification_history?: Array<{ action?: string; timestamp?: string; note?: string; actor?: string }>;
 };
+
+const barangayPolicies = [
+  {
+    title: 'Terms and Conditions',
+    subtitle: 'Norz-Agapay Barangay Web Dashboard',
+    paragraphs: [
+      '1. Use of the Barangay Dashboard. The dashboard is for authorized barangay personnel to view public advisories and support local emergency response. Use the account and functions assigned to your role. Do not share your credentials or attempt to access another person’s account.',
+      '2. Public Posts and Incident Reports. Use the reporting and posting tools for legitimate public safety and barangay response purposes. Provide accurate information, and only upload media that you are authorized to share. Do not post unlawful, misleading, abusive, or unrelated material.',
+      '3. Information Handling. Access personal information and incident details only as needed for your official duties. Do not copy, disclose, or use information outside the response purpose. Follow your barangay’s records-handling and security procedures.',
+      '4. Account Security. Keep your device and sign-in credentials secure. Notify your administrator if you suspect unauthorized access, loss of a device, or exposure of information.',
+      '5. Service Availability. The app depends on device, network, and municipal services. Information may be delayed or unavailable during outages. Follow official emergency procedures and contact the appropriate response office directly when urgent action is required.',
+      '6. Updates. These terms may be updated when app functions or applicable requirements change. Continued use after an update means you acknowledge the revised terms.',
+    ],
+  },
+  {
+    title: 'Privacy Policy',
+    subtitle: 'Barangay dashboard personnel data and incident information',
+    paragraphs: [
+      'This notice describes how personal information is handled when you use the Norz-Agapay Barangay Web Dashboard. Processing must follow applicable requirements, including the Philippine Data Privacy Act of 2012 (Republic Act No. 10173).',
+      '1. Information Processed. Depending on the feature used, the dashboard may process account and profile details such as your name, email address, phone number, barangay, role, and sign-in status. Incident records may include descriptions, photos or videos, location coordinates, submission details, and response updates.',
+      '2. Purposes. Information is used to authenticate authorized personnel, display public alerts and reports, coordinate incident response, and maintain the security and operation of the service.',
+      '3. Access and Sharing. Information is available to authorized personnel according to their roles. Incident information may be shared with the relevant barangay or MDRRMO responders and other authorized public safety agencies when needed for response or required by law. The dashboard does not authorize unrelated disclosure or commercial use.',
+      '4. Storage and Retention. Information is stored on municipal systems. Records should be retained and disposed of according to applicable government records and data protection requirements.',
+      '5. Security. Use role-based access and reasonable device and account security practices. No electronic service can guarantee that data transmission or storage is completely risk-free. Report suspected loss, unauthorized access, or disclosure through your barangay’s established channels.',
+      '6. Your Rights and Questions. Data subjects may exercise rights available under applicable privacy law, subject to its conditions and exceptions. For a privacy concern or request, contact the municipality or MDRRMO through its official channels, or contact the National Privacy Commission at privacy.gov.ph.',
+    ],
+  },
+];
 
 function messageOf(error: any, fallback: string) {
   return error?.response?.data?.error || fallback;
@@ -46,6 +74,8 @@ export default function BarangayAdministrationPage() {
   const [hotlines, setHotlines] = useState<HotlineEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [passwordOtpSent, setPasswordOtpSent] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({ otp: '', currentPassword: '', newPassword: '', confirmPassword: '' });
   const [error, setError] = useState('');
 
   const load = useCallback(async () => {
@@ -193,6 +223,35 @@ export default function BarangayAdministrationPage() {
     finally { setSaving(false); }
   };
 
+  const sendPasswordCode = async () => {
+    if (!user?.email) { toast.error('This account has no email address for verification.'); return; }
+    setSaving(true);
+    try {
+      const { data } = await authAPI.sendBarangayPasswordOtp(user.email);
+      setPasswordOtpSent(true);
+      toast.success(data.message || `Verification code sent to ${user.email}.`);
+    } catch (sendError: any) { toast.error(messageOf(sendError, 'Password verification code could not be sent.')); }
+    finally { setSaving(false); }
+  };
+
+  const changePassword = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (passwordForm.otp.trim().length !== 6) { toast.error('Enter the 6-digit email verification code.'); return; }
+    if (passwordForm.newPassword.length < 6) { toast.error('New password must be at least 6 characters.'); return; }
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) { toast.error('The new passwords do not match.'); return; }
+    setSaving(true);
+    try {
+      const { data } = await authAPI.changeBarangayPassword({
+        email: user?.email || '', otp: passwordForm.otp.trim(), current_password: passwordForm.currentPassword,
+        new_password: passwordForm.newPassword,
+      });
+      setPasswordForm({ otp: '', currentPassword: '', newPassword: '', confirmPassword: '' });
+      setPasswordOtpSent(false);
+      toast.success(data.message || 'Password updated successfully.');
+    } catch (passwordError: any) { toast.error(messageOf(passwordError, 'Password could not be updated.')); }
+    finally { setSaving(false); }
+  };
+
   const updateHotline = (index: number, patch: Partial<HotlineEntry>) => setHotlines((entries) => entries.map((entry, entryIndex) => entryIndex === index ? { ...entry, ...patch } : entry));
 
   return (
@@ -207,6 +266,16 @@ export default function BarangayAdministrationPage() {
         <label>Mobile number<input required type="tel" pattern="09[0-9]{9}" title="Enter 11 digits starting with 09" value={profile.phone} onChange={(event) => setProfile((value) => ({ ...value, phone: event.target.value }))} placeholder="09XXXXXXXXX" /></label>
         <div className="barangay-console-form-actions"><button className="btn btn-primary" disabled={saving}><Save size={16} /> Save profile</button></div>
       </form></section>}
+
+      <section className="barangay-console-panel"><header><div><h2>Change password</h2><p>Verify your email and current password before updating this account’s password.</p></div><KeyRound size={20} /></header>
+        {!passwordOtpSent ? <div className="barangay-console-form-actions"><span>{user?.email || 'No email address is set for this account.'}</span><button className="workspace-secondary-action" type="button" onClick={() => void sendPasswordCode()} disabled={saving || !user?.email}><MailCheck size={16} /> Send verification code</button></div> : <form className="barangay-console-form-grid" onSubmit={(event) => void changePassword(event)}>
+          <label>Email verification code<input required inputMode="numeric" pattern="[0-9]{6}" maxLength={6} value={passwordForm.otp} onChange={(event) => setPasswordForm((value) => ({ ...value, otp: event.target.value.replace(/\D/g, '').slice(0, 6) }))} /></label>
+          <label>Current password<input required type="password" autoComplete="current-password" value={passwordForm.currentPassword} onChange={(event) => setPasswordForm((value) => ({ ...value, currentPassword: event.target.value }))} /></label>
+          <label>New password<input required type="password" minLength={6} autoComplete="new-password" value={passwordForm.newPassword} onChange={(event) => setPasswordForm((value) => ({ ...value, newPassword: event.target.value }))} /></label>
+          <label>Confirm new password<input required type="password" minLength={6} autoComplete="new-password" value={passwordForm.confirmPassword} onChange={(event) => setPasswordForm((value) => ({ ...value, confirmPassword: event.target.value }))} /></label>
+          <div className="barangay-console-form-actions"><button className="btn btn-primary" disabled={saving}><KeyRound size={16} /> Update password</button><button className="workspace-secondary-action" type="button" disabled={saving} onClick={() => { setPasswordOtpSent(false); setPasswordForm({ otp: '', currentPassword: '', newPassword: '', confirmPassword: '' }); }}>Cancel</button><button className="workspace-secondary-action" type="button" disabled={saving} onClick={() => void sendPasswordCode()}>Send a new code</button></div>
+        </form>}
+      </section>
 
       {isAdmin && <section className="barangay-console-panel"><header><div><h2>Barangay Account Request</h2><p>Prepare the authorization, submit the signed document, and follow MDRRMO review.</p></div><span className={`barangay-console-status ${active ? 'active' : status}`}>{active ? 'Active' : statusLabel}</span></header>
         {verification?.reference_no && <div className="barangay-account-reference"><span>Request reference</span><strong>{verification.reference_no}</strong>{verification.submitted_at && <small>Submitted {new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(verification.submitted_at))}</small>}</div>}
@@ -234,6 +303,10 @@ export default function BarangayAdministrationPage() {
       {canManageHotlines && active && <section className="barangay-console-panel"><header><div><h2>Public hotline directory</h2><p>These entries are shown to residents for your barangay.</p></div><button className="workspace-secondary-action" type="button" onClick={() => setHotlines((entries) => [...entries, { purpose: '', numbers: [''] }])}><Plus size={16} /> Add hotline</button></header>
         <form onSubmit={(event) => void saveHotlines(event)}><div className="barangay-hotline-list">{hotlines.map((entry, index) => <article className="barangay-hotline-row" key={index}><label>Purpose<input required value={entry.purpose} onChange={(event) => updateHotline(index, { purpose: event.target.value })} placeholder="Emergency response" /></label><label>Phone numbers<input required value={entry.numbers.join(', ')} onChange={(event) => updateHotline(index, { numbers: event.target.value.split(',').map((number) => number.trim()) })} placeholder="09XXXXXXXXX, 044..." /></label><button type="button" title="Remove hotline" aria-label="Remove hotline" onClick={() => setHotlines((entries) => entries.filter((_, entryIndex) => entryIndex !== index))}><Trash2 size={17} /></button></article>)}{hotlines.length === 0 && <p className="barangay-console-muted">No public hotline entries yet. Add one to make it available in the resident directory.</p>}</div><div className="barangay-console-form-actions"><button className="btn btn-primary" disabled={saving}><Save size={16} /> Save hotline directory</button></div></form>
       </section>}
+
+      <section className="barangay-console-panel"><header><div><h2>Terms and privacy</h2><p>Review the policies shown in the mobile app.</p></div></header>
+        {barangayPolicies.map((policy) => <details key={policy.title} className="barangay-policy-details"><summary><strong>{policy.title}</strong><span>{policy.subtitle}</span></summary><div>{policy.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}</div></details>)}
+      </section>
     </div>
   );
 }

@@ -4201,6 +4201,13 @@ tbody tr:last-child td { border-bottom: none; }
 .barangay-console-panel > header h2 svg { color: #49ccdf; }
 .barangay-console-panel > header p { margin: 0; color: var(--text-muted); font-size: 12px; line-height: 1.45; }
 .barangay-console-panel > header > a { display: inline-flex; align-items: center; gap: 5px; color: #46c8df; font-size: 12px; text-decoration: none; white-space: nowrap; }
+.barangay-policy-details { padding: 13px 0; border-top: 1px solid var(--border-color, #253d5f); }
+.barangay-policy-details:first-of-type { border-top: 0; }
+.barangay-policy-details summary { display: flex; flex-direction: column; gap: 3px; color: var(--text-primary); cursor: pointer; }
+.barangay-policy-details summary strong { font-size: 14px; }
+.barangay-policy-details summary span { color: var(--text-muted); font-size: 12px; }
+.barangay-policy-details > div { padding-top: 8px; }
+.barangay-policy-details p { margin: 8px 0; color: var(--text-muted); font-size: 12px; line-height: 1.55; }
 .barangay-console-muted { margin: 5px 0; color: var(--text-muted); font-size: 13px; }
 .barangay-console-list { display: flex; flex-direction: column; }
 .barangay-console-list article { display: grid; grid-template-columns: 98px minmax(0, 1fr) auto; align-items: start; gap: 12px; padding: 13px 2px; border-top: 1px solid var(--border-color, #253d5f); }

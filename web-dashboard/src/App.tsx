@@ -99,10 +99,10 @@ function AppRoutes() {
         <Route path="reports" element={<RoleAccess roles={['dispatcher']} allowBarangayDashboard><ReportsPage /></RoleAccess>} />
         <Route path="my-reports" element={<RoleAccess roles={['resident']}><ResidentReportsPage /></RoleAccess>} />
         <Route path="my-responses" element={<RoleAccess roles={['responder']}><ResponderWorkspacePage /></RoleAccess>} />
-        <Route path="barangay-workspace" element={<RoleAccess roles={['staff']}><BarangayStaffWorkspacePage /></RoleAccess>} />
+        <Route path="barangay-workspace" element={<BarangayAccess roles={['admin', 'staff']}><BarangayStaffWorkspacePage /></BarangayAccess>} />
         <Route path="barangay-dashboard" element={<BarangayAccess roles={['admin', 'dispatcher']}><BarangayDashboardPage /></BarangayAccess>} />
         <Route path="barangay-settings" element={<BarangayAccess roles={['admin', 'dispatcher', 'responder', 'staff']} allowInactive><BarangayAdministrationPage /></BarangayAccess>} />
-        <Route path="barangay-team" element={<BarangayAccess roles={['admin']}><BarangayTeamPage /></BarangayAccess>} />
+        <Route path="barangay-team" element={<BarangayAccess roles={['admin', 'staff']}><BarangayTeamPage /></BarangayAccess>} />
         <Route path="barangay-board" element={<BarangayAccess roles={['admin', 'dispatcher', 'responder', 'staff']}><BarangayBoardPage /></BarangayAccess>} />
         <Route path="barangay-assistance" element={<BarangayAccess roles={['admin', 'dispatcher', 'responder']}><BarangayAssistancePage /></BarangayAccess>} />
         <Route path="barangay-analytics" element={<BarangayAccess roles={['admin']}><BarangayAnalyticsPage /></BarangayAccess>} />
