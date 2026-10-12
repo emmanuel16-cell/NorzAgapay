@@ -32,7 +32,7 @@ import { MunicipalityBoundaryProvider } from './context/MunicipalityBoundaryCont
 
 import './index.css';
 
-function landingPath(user: { role?: string; account_kind?: string } | null) {
+function landingPath(user: { role?: string; account_kind?: string; coordination_verified?: boolean } | null) {
   if (user?.account_kind === 'barangay') {
     if (user.role === 'responder') return '/my-responses';
     if (user.role === 'staff') return '/barangay-workspace';

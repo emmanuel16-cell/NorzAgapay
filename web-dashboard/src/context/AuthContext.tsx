@@ -16,6 +16,7 @@ interface User {
   barangay_id?: string;
   barangay_name?: string;
   coordination_verified?: boolean;
+  verification_status?: string;
 }
 
 interface AuthContextType {

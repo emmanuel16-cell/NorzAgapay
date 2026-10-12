@@ -67,7 +67,7 @@ type ReportTimelineEvent = { label: string; at: string | null; detail?: string |
 
 function reportTimeline(report: ResidentReport): ReportTimelineEvent[] {
   const events: ReportTimelineEvent[] = [
-    { label: 'Report received by MDRRMO', at: report.created_at },
+    { label: 'Report received by MDRRMO', at: report.created_at || null },
   ];
   if (report.review_outcome) {
     events.push({
