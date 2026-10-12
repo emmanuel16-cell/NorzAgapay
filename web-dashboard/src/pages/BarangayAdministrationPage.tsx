@@ -62,7 +62,9 @@ function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-export default function BarangayAdministrationPage() {
+type BarangayAdministrationPageProps = { embedded?: boolean };
+
+export default function BarangayAdministrationPage({ embedded = false }: BarangayAdministrationPageProps) {
   const { user, updateUser } = useAuth();
   const isAdmin = user?.role === 'admin';
   const canManageHotlines = user?.role === 'admin' || user?.role === 'staff';
@@ -215,7 +217,7 @@ export default function BarangayAdministrationPage() {
   const updateHotline = (index: number, patch: Partial<HotlineEntry>) => setHotlines((entries) => entries.map((entry, entryIndex) => entryIndex === index ? { ...entry, ...patch } : entry));
 
   return (
-    <div className="barangay-console-page">
+    <div className={`barangay-console-page${embedded ? ' barangay-console-page-embedded' : ''}`}>
       <header className="barangay-console-header"><div><span className="workspace-eyebrow">BARANGAY ADMINISTRATION · {user?.barangay_name || 'YOUR BARANGAY'}</span><h1>Barangay settings</h1><p>Manage coordination setup, official response location, and the hotline directory shared with residents.</p></div><button className="workspace-secondary-action" type="button" onClick={() => void load()} disabled={loading}><FileCheck2 size={16} /> Refresh</button></header>
       {error && <div className="workspace-message workspace-message-error" role="alert">{error}<button type="button" onClick={() => void load()}>Try again</button></div>}
       {!active && isAdmin && <div className="barangay-console-message"><ShieldAlert /><div><strong>Barangay coordination access: {statusLabel}</strong><p>Operational team, location, and hotline settings become available after MDRRMO activates this barangay. You can prepare or update the account request below.</p></div></div>}

@@ -1,8 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { KeyRound, MailCheck, Moon, Save, Settings, Sun, X } from 'lucide-react';
+import { Building2, KeyRound, MailCheck, Moon, Save, Settings, Sun, UserRound, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import PasswordInput from './PasswordInput';
+import BarangayAdministrationPage from '../pages/BarangayAdministrationPage';
 import { authAPI, barangayAPI } from '../lib/api';
 
 type UserSettingsModalProps = {
@@ -17,6 +18,7 @@ const messageOf = (error: any, fallback: string) => error?.response?.data?.error
 export default function UserSettingsModal({ theme, onThemeChange, onClose }: UserSettingsModalProps) {
   const { user, updateUser } = useAuth();
   const isBarangay = user?.account_kind === 'barangay';
+  const [activeSection, setActiveSection] = useState<'general' | 'barangay'>('general');
   const [profile, setProfile] = useState({ full_name: user?.full_name || '', phone: user?.phone || '' });
   const [passwordOtpSent, setPasswordOtpSent] = useState(false);
   const [passwordForm, setPasswordForm] = useState(emptyPasswordForm);
@@ -112,7 +114,14 @@ export default function UserSettingsModal({ theme, onThemeChange, onClose }: Use
           <button type="button" className="user-settings-close" onClick={onClose} aria-label="Close settings"><X size={19} /></button>
         </header>
 
-        <div className="user-settings-content">
+        <div className="user-settings-layout">
+          <nav className="user-settings-nav" aria-label="Settings sections">
+            <button type="button" className={activeSection === 'general' ? 'active' : ''} aria-current={activeSection === 'general' ? 'page' : undefined} onClick={() => setActiveSection('general')}><UserRound size={17} /> General</button>
+            {isBarangay && <button type="button" className={activeSection === 'barangay' ? 'active' : ''} aria-current={activeSection === 'barangay' ? 'page' : undefined} onClick={() => setActiveSection('barangay')}><Building2 size={17} /> Barangay Settings</button>}
+          </nav>
+
+          <div className="user-settings-panel">
+          {activeSection === 'general' ? <div className="user-settings-content">
           <section className="user-settings-section user-settings-account">
             <div className="user-settings-avatar" aria-hidden="true">{initials}</div>
             <div className="user-settings-account-copy"><strong>{user?.full_name || 'Dashboard user'}</strong><span>{user?.email || 'No email on this account'}</span><small>{user?.role === 'logistics' ? 'Staff' : user?.role?.replace(/_/g, ' ')}{user?.account_kind === 'barangay' && user.barangay_name ? ` · ${user.barangay_name}` : ''}</small></div>
@@ -147,6 +156,8 @@ export default function UserSettingsModal({ theme, onThemeChange, onClose }: Use
           </section>}
 
           {!isBarangay && <p className="user-settings-managed-note">Official account details are managed by your system administrator.</p>}
+          </div> : <div className="user-settings-content user-settings-content-barangay"><BarangayAdministrationPage embedded /></div>}
+          </div>
         </div>
 
         <footer className="user-settings-footer"><span>Changes apply to this signed-in account.</span><button type="button" className="workspace-secondary-action" onClick={onClose}>Done</button></footer>
