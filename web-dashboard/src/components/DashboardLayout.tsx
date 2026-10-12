@@ -1,6 +1,7 @@
 import { useState, useEffect, type ReactNode } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import UserSettingsModal from './UserSettingsModal';
 import {
   MapPin,
   AlertTriangle,
@@ -94,6 +95,7 @@ export default function DashboardLayout() {
     return localStorage.getItem('sidebar_collapsed') === 'true';
   });
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     return localStorage.getItem('dashboard_theme') === 'light' ? 'light' : 'dark';
   });
@@ -120,6 +122,8 @@ export default function DashboardLayout() {
   }, [theme]);
 
   const toggleTheme = () => setTheme(current => current === 'dark' ? 'light' : 'dark');
+
+  const openSettings = () => setSettingsOpen(true);
 
   const handleLogout = () => {
     logout();
@@ -202,13 +206,13 @@ export default function DashboardLayout() {
           {!isCollapsed ? (
             <>
               <div className="user-badge">
-                <div className="user-avatar">{initials}</div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div className="user-name" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {user?.full_name}
-                  </div>
-                  <div className="user-role">{user?.role === 'logistics' ? 'Staff' : user?.role?.replace(/_/g, ' ')}</div>
-                </div>
+                <button type="button" className="user-profile-trigger" onClick={openSettings} aria-haspopup="dialog" aria-label="Open account settings">
+                  <div className="user-avatar">{initials}</div>
+                  <span className="user-profile-copy">
+                    <span className="user-name">{user?.full_name}</span>
+                    <span className="user-role">{user?.role === 'logistics' ? 'Staff' : user?.role?.replace(/_/g, ' ')}</span>
+                  </span>
+                </button>
                 <button
                   className="theme-toggle-btn"
                   onClick={toggleTheme}
@@ -229,12 +233,16 @@ export default function DashboardLayout() {
             </>
           ) : (
             <div className="collapsed-footer-actions">
-              <div
-                className="user-avatar"
+              <button
+                type="button"
+                className="user-avatar collapsed-profile-trigger"
+                onClick={openSettings}
+                aria-haspopup="dialog"
+                aria-label="Open account settings"
                 title={`${user?.full_name || ''} (${user?.role === 'logistics' ? 'Staff' : user?.role?.replace(/_/g, ' ') || ''})`}
               >
                 {initials}
-              </div>
+              </button>
               <button
                 className="collapsed-theme-btn"
                 onClick={toggleTheme}
@@ -271,6 +279,7 @@ export default function DashboardLayout() {
         </div>
         <Outlet />
       </main>
+      {settingsOpen && <UserSettingsModal theme={theme} onThemeChange={setTheme} onClose={() => setSettingsOpen(false)} />}
     </div>
   );
 }

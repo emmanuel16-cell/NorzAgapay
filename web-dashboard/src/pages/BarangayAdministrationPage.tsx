@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { BadgeCheck, Download, FileCheck2, FileText, KeyRound, MailCheck, MapPin, Phone, Plus, Save, ShieldAlert, Trash2 } from 'lucide-react';
+import { BadgeCheck, Download, FileCheck2, FileText, MapPin, Phone, Plus, Save, ShieldAlert, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
-import PasswordInput from '../components/PasswordInput';
-import { API_BASE, authAPI, barangayAPI, reportAPI, socket } from '../lib/api';
+import { API_BASE, barangayAPI, reportAPI, socket } from '../lib/api';
 
 type HotlineEntry = { purpose: string; numbers: string[] };
 type Verification = {
@@ -69,15 +68,12 @@ export default function BarangayAdministrationPage() {
   const canManageHotlines = user?.role === 'admin' || user?.role === 'staff';
   const canViewHotlines = Boolean(user?.barangay_id);
   const active = Boolean(user?.coordination_verified);
-  const [profile, setProfile] = useState({ full_name: user?.full_name || '', phone: user?.phone || '' });
   const [official, setOfficial] = useState({ official_name: '', official_position: '', position_designation: user?.position_designation || '' });
   const [verification, setVerification] = useState<Verification | null>(null);
   const [location, setLocation] = useState({ latitude: '', longitude: '', address: '' });
   const [hotlines, setHotlines] = useState<HotlineEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [passwordOtpSent, setPasswordOtpSent] = useState(false);
-  const [passwordForm, setPasswordForm] = useState({ otp: '', currentPassword: '', newPassword: '', confirmPassword: '' });
   const [error, setError] = useState('');
 
   const load = useCallback(async () => {
@@ -121,13 +117,12 @@ export default function BarangayAdministrationPage() {
           numbers: Array.isArray(entry.numbers) ? entry.numbers.map(String) : [''],
         })) : []);
       }
-      setProfile({ full_name: user?.full_name || '', phone: user?.phone || '' });
     } catch (loadError: any) {
       setError(messageOf(loadError, 'Barangay account settings could not be loaded.'));
     } finally {
       setLoading(false);
     }
-  }, [active, canManageHotlines, canViewHotlines, isAdmin, updateUser, user?.barangay_id, user?.full_name, user?.phone, user?.position_designation, user?.verification_status]);
+  }, [active, canManageHotlines, canViewHotlines, isAdmin, updateUser, user?.barangay_id, user?.position_designation, user?.verification_status]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
@@ -148,16 +143,6 @@ export default function BarangayAdministrationPage() {
   const submittedDocumentUrl = verification?.document_url
     ? (/^https?:\/\//i.test(verification.document_url) ? verification.document_url : `${API_BASE.replace(/\/api\/?$/, '')}${verification.document_url}`)
     : null;
-
-  const saveProfile = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault(); setSaving(true);
-    try {
-      const { data } = await barangayAPI.updateProfile({ full_name: profile.full_name.trim(), phone: profile.phone.trim() });
-      updateUser({ full_name: data.full_name, phone: data.phone });
-      toast.success('Profile details saved.');
-    } catch (saveError: any) { toast.error(messageOf(saveError, 'Profile details could not be saved.')); }
-    finally { setSaving(false); }
-  };
 
   const saveAccount = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault(); setSaving(true);
@@ -227,59 +212,14 @@ export default function BarangayAdministrationPage() {
     finally { setSaving(false); }
   };
 
-  const sendPasswordCode = async () => {
-    if (!user?.email) { toast.error('This account has no email address for verification.'); return; }
-    setSaving(true);
-    try {
-      const { data } = await authAPI.sendBarangayPasswordOtp(user.email);
-      setPasswordOtpSent(true);
-      toast.success(data.message || `Verification code sent to ${user.email}.`);
-    } catch (sendError: any) { toast.error(messageOf(sendError, 'Password verification code could not be sent.')); }
-    finally { setSaving(false); }
-  };
-
-  const changePassword = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (passwordForm.otp.trim().length !== 6) { toast.error('Enter the 6-digit email verification code.'); return; }
-    if (passwordForm.newPassword.length < 6) { toast.error('New password must be at least 6 characters.'); return; }
-    if (passwordForm.newPassword !== passwordForm.confirmPassword) { toast.error('The new passwords do not match.'); return; }
-    setSaving(true);
-    try {
-      const { data } = await authAPI.changeBarangayPassword({
-        email: user?.email || '', otp: passwordForm.otp.trim(), current_password: passwordForm.currentPassword,
-        new_password: passwordForm.newPassword,
-      });
-      setPasswordForm({ otp: '', currentPassword: '', newPassword: '', confirmPassword: '' });
-      setPasswordOtpSent(false);
-      toast.success(data.message || 'Password updated successfully.');
-    } catch (passwordError: any) { toast.error(messageOf(passwordError, 'Password could not be updated.')); }
-    finally { setSaving(false); }
-  };
-
   const updateHotline = (index: number, patch: Partial<HotlineEntry>) => setHotlines((entries) => entries.map((entry, entryIndex) => entryIndex === index ? { ...entry, ...patch } : entry));
 
   return (
     <div className="barangay-console-page">
-      <header className="barangay-console-header"><div><span className="workspace-eyebrow">BARANGAY ADMINISTRATION · {user?.barangay_name || 'YOUR BARANGAY'}</span><h1>Account and settings</h1><p>Maintain your account details and the contact information residents use during emergencies.</p></div><button className="workspace-secondary-action" type="button" onClick={() => void load()} disabled={loading}><FileCheck2 size={16} /> Refresh</button></header>
+      <header className="barangay-console-header"><div><span className="workspace-eyebrow">BARANGAY ADMINISTRATION · {user?.barangay_name || 'YOUR BARANGAY'}</span><h1>Barangay settings</h1><p>Manage coordination setup, official response location, and the hotline directory shared with residents.</p></div><button className="workspace-secondary-action" type="button" onClick={() => void load()} disabled={loading}><FileCheck2 size={16} /> Refresh</button></header>
       {error && <div className="workspace-message workspace-message-error" role="alert">{error}<button type="button" onClick={() => void load()}>Try again</button></div>}
       {!active && isAdmin && <div className="barangay-console-message"><ShieldAlert /><div><strong>Barangay coordination access: {statusLabel}</strong><p>Operational team, location, and hotline settings become available after MDRRMO activates this barangay. You can prepare or update the account request below.</p></div></div>}
       {loading && <p className="barangay-console-muted">Loading account settings…</p>}
-
-      {(!isAdmin || active) && <section className="barangay-console-panel"><header><div><h2>My profile</h2><p>Contact details for the signed-in barangay account.</p></div></header><form className="barangay-console-form-grid" onSubmit={(event) => void saveProfile(event)}>
-        <label>Full name<input required minLength={2} maxLength={100} value={profile.full_name} onChange={(event) => setProfile((value) => ({ ...value, full_name: event.target.value }))} /></label>
-        <label>Mobile number<input required type="tel" pattern="09[0-9]{9}" title="Enter 11 digits starting with 09" value={profile.phone} onChange={(event) => setProfile((value) => ({ ...value, phone: event.target.value }))} placeholder="09XXXXXXXXX" /></label>
-        <div className="barangay-console-form-actions"><button className="btn btn-primary" disabled={saving}><Save size={16} /> Save profile</button></div>
-      </form></section>}
-
-      <section className="barangay-console-panel"><header><div><h2>Change password</h2><p>Verify your email and current password before updating this account’s password.</p></div><KeyRound size={20} /></header>
-        {!passwordOtpSent ? <div className="barangay-console-form-actions"><span>{user?.email || 'No email address is set for this account.'}</span><button className="workspace-secondary-action" type="button" onClick={() => void sendPasswordCode()} disabled={saving || !user?.email}><MailCheck size={16} /> Send verification code</button></div> : <form className="barangay-console-form-grid" onSubmit={(event) => void changePassword(event)}>
-          <label>Email verification code<input required inputMode="numeric" pattern="[0-9]{6}" maxLength={6} value={passwordForm.otp} onChange={(event) => setPasswordForm((value) => ({ ...value, otp: event.target.value.replace(/\D/g, '').slice(0, 6) }))} /></label>
-          <label>Current password<PasswordInput required autoComplete="current-password" value={passwordForm.currentPassword} onChange={(event) => setPasswordForm((value) => ({ ...value, currentPassword: event.target.value }))} /></label>
-          <label>New password<PasswordInput required minLength={6} autoComplete="new-password" value={passwordForm.newPassword} onChange={(event) => setPasswordForm((value) => ({ ...value, newPassword: event.target.value }))} /></label>
-          <label>Confirm new password<PasswordInput required minLength={6} autoComplete="new-password" value={passwordForm.confirmPassword} onChange={(event) => setPasswordForm((value) => ({ ...value, confirmPassword: event.target.value }))} /></label>
-          <div className="barangay-console-form-actions"><button className="btn btn-primary" disabled={saving}><KeyRound size={16} /> Update password</button><button className="workspace-secondary-action" type="button" disabled={saving} onClick={() => { setPasswordOtpSent(false); setPasswordForm({ otp: '', currentPassword: '', newPassword: '', confirmPassword: '' }); }}>Cancel</button><button className="workspace-secondary-action" type="button" disabled={saving} onClick={() => void sendPasswordCode()}>Send a new code</button></div>
-        </form>}
-      </section>
 
       {isAdmin && <section className="barangay-console-panel"><header><div><h2>Barangay Account Request</h2><p>Prepare the authorization, submit the signed document, and follow MDRRMO review.</p></div><span className={`barangay-console-status ${active ? 'active' : status}`}>{active ? 'Active' : statusLabel}</span></header>
         {verification?.reference_no && <div className="barangay-account-reference"><span>Request reference</span><strong>{verification.reference_no}</strong>{verification.submitted_at && <small>Submitted {new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(verification.submitted_at))}</small>}</div>}
