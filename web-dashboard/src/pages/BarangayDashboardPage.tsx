@@ -13,6 +13,7 @@ function statusOf(report: ReportRow) {
 
 export default function BarangayDashboardPage() {
   const { user } = useAuth();
+  const isDispatcher = user?.role === 'dispatcher';
   const [reports, setReports] = useState<ReportRow[]>([]);
   const [requests, setRequests] = useState<AssistanceRow[]>([]);
   const [activeMembers, setActiveMembers] = useState(0);
@@ -26,12 +27,12 @@ export default function BarangayDashboardPage() {
     try {
       const [reportResult, requestResult, teamResult, boardResult] = await Promise.all([
         reportAPI.barangayReports(),
-        barangayAPI.assistanceRequests(),
+        isDispatcher ? barangayAPI.assistanceRequests() : Promise.resolve(null),
         barangayAPI.team(),
         barangayAPI.barangayBroadcasts(),
       ]);
       setReports(Array.isArray(reportResult.data) ? reportResult.data : []);
-      setRequests(Array.isArray(requestResult.data?.requests) ? requestResult.data.requests : []);
+      setRequests(Array.isArray(requestResult?.data?.requests) ? requestResult.data.requests : []);
       const team = Array.isArray(teamResult.data) ? teamResult.data : [];
       setActiveMembers(team.filter((member: any) => member.is_active === true).length);
       setPostsCount(Array.isArray(boardResult.data) ? boardResult.data.length : 0);
@@ -40,7 +41,7 @@ export default function BarangayDashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isDispatcher]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
@@ -72,7 +73,7 @@ export default function BarangayDashboardPage() {
         <div>
           <span className="workspace-eyebrow">BARANGAY COMMAND · {user?.barangay_name || 'YOUR BARANGAY'}</span>
           <h1>Barangay overview</h1>
-          <p>Local incident activity, assistance requests, and community updates.</p>
+          <p>{isDispatcher ? 'Local incident activity, assistance requests, and community updates.' : 'Barangay team, local analytics, and community updates.'}</p>
         </div>
         <button className="workspace-secondary-action" type="button" onClick={() => void load()} disabled={loading}><RefreshCw size={16} className={loading ? 'workspace-spinning' : ''} /> Refresh</button>
       </header>
@@ -80,14 +81,14 @@ export default function BarangayDashboardPage() {
       {error && <div className="workspace-message workspace-message-error" role="alert">{error}<button type="button" onClick={() => void load()}>Try again</button></div>}
       <section className="barangay-console-stat-grid" aria-label="Barangay summary">
         <article><span>Active incident work</span><strong>{loading ? '—' : activeReports.length}</strong><Activity size={20} /></article>
-        <article><span>Pending assistance</span><strong>{loading ? '—' : pendingRequests.length}</strong><ClipboardList size={20} /></article>
+        {isDispatcher && <article><span>Pending assistance</span><strong>{loading ? '—' : pendingRequests.length}</strong><ClipboardList size={20} /></article>}
         <article><span>Active team members</span><strong>{loading ? '—' : activeMembers}</strong><Users size={20} /></article>
         <article><span>Barangay posts</span><strong>{loading ? '—' : postsCount}</strong><Bell size={20} /></article>
       </section>
 
       <section className="barangay-console-shortcuts" aria-label="Barangay workspaces">
-        <Link to="/command-center"><MapPin /><span><strong>Incident command</strong><small>View the barangay-scoped incident queue and map.</small></span><ArrowRight /></Link>
-        <Link to="/barangay-assistance"><ClipboardList /><span><strong>Assistance requests</strong><small>Review requests or track the ones you submitted.</small></span><ArrowRight /></Link>
+        {isDispatcher && <Link to="/command-center"><MapPin /><span><strong>Incident command</strong><small>View the barangay-scoped incident queue and map.</small></span><ArrowRight /></Link>}
+        {isDispatcher && <Link to="/barangay-assistance"><ClipboardList /><span><strong>Assistance requests</strong><small>Review requests or track the ones you submitted.</small></span><ArrowRight /></Link>}
         <Link to="/barangay-board"><Bell /><span><strong>Barangay board</strong><small>Publish local advisories and read MDRRMO alerts.</small></span><ArrowRight /></Link>
         {user?.role === 'admin' && <Link to="/barangay-team"><Users /><span><strong>Team roster</strong><small>Manage active barangay responders and staff.</small></span><ArrowRight /></Link>}
         {user?.role === 'admin' && <Link to="/barangay-analytics"><Activity /><span><strong>Barangay analytics</strong><small>Review local report volume and outcomes.</small></span><ArrowRight /></Link>}
@@ -95,7 +96,7 @@ export default function BarangayDashboardPage() {
       </section>
 
       <section className="barangay-console-panel">
-        <header><div><h2>Recent incident activity</h2><p>Reports currently visible to your barangay role.</p></div><Link to="/reports">Open incidents <ArrowRight size={15} /></Link></header>
+        <header><div><h2>Recent incident activity</h2><p>Reports currently visible to your barangay role.</p></div>{isDispatcher && <Link to="/reports">Open incidents <ArrowRight size={15} /></Link>}</header>
         {loading ? <p className="barangay-console-muted">Loading barangay activity…</p> : latestReports.length === 0 ? <p className="barangay-console-muted">No incident history is available yet.</p> : (
           <div className="barangay-console-list">
             {latestReports.map((report) => <article key={report.id}>

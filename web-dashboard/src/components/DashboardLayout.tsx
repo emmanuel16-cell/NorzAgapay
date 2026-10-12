@@ -65,7 +65,7 @@ function navigationForRole(role?: string, accountKind?: string, isMasterAdmin = 
   if (accountKind === 'barangay') {
     if (role === 'admin' && !coordinationVerified) return navItems.filter((item) => item.path === '/barangay-settings');
     const visiblePaths: Record<string, string[]> = {
-      admin: ['/barangay-dashboard', '/barangay-workspace', '/barangay-assistance', '/barangay-board', '/barangay-team', '/barangay-analytics', '/barangay-settings', '/locations'],
+      admin: ['/barangay-dashboard', '/barangay-workspace', '/barangay-board', '/barangay-team', '/barangay-analytics', '/barangay-settings', '/locations'],
       dispatcher: ['/barangay-dashboard', '/command-center', '/reports', '/barangay-assistance', '/barangay-board', '/barangay-team', '/barangay-settings', '/locations'],
       responder: ['/my-responses', '/barangay-assistance', '/barangay-board', '/barangay-team', '/barangay-settings'],
       staff: ['/barangay-workspace', '/barangay-team', '/barangay-board', '/barangay-settings'],

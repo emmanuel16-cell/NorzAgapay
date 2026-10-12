@@ -104,7 +104,7 @@ function AppRoutes() {
         <Route path="barangay-settings" element={<BarangayAccess roles={['admin', 'dispatcher', 'responder', 'staff']} allowInactive><BarangayAdministrationPage /></BarangayAccess>} />
         <Route path="barangay-team" element={<BarangayAccess roles={['admin', 'dispatcher', 'responder', 'staff']}><BarangayTeamPage /></BarangayAccess>} />
         <Route path="barangay-board" element={<BarangayAccess roles={['admin', 'dispatcher', 'responder', 'staff']}><BarangayBoardPage /></BarangayAccess>} />
-        <Route path="barangay-assistance" element={<BarangayAccess roles={['admin', 'dispatcher', 'responder']}><BarangayAssistancePage /></BarangayAccess>} />
+        <Route path="barangay-assistance" element={<BarangayAccess roles={['dispatcher', 'responder']}><BarangayAssistancePage /></BarangayAccess>} />
         <Route path="barangay-analytics" element={<BarangayAccess roles={['admin']}><BarangayAnalyticsPage /></BarangayAccess>} />
         <Route path="locations" element={<RoleAccess roles={['admin', 'dispatcher']} allowBarangayRoles={['admin', 'dispatcher']}><CommandLocationsPage /></RoleAccess>} />
         <Route path="requests" element={<RoleAccess roles={['dispatcher']}><ResourceRequestsPage /></RoleAccess>} />
