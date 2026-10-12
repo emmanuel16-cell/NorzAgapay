@@ -118,7 +118,7 @@ export default function LoginPage() {
       <PublicHeader />
       <main className="login-page public-login-main">
       <div className="login-card">
-        {!showSetup && (import.meta.env.DEV ? (
+        {!showSetup && (
           <button
             type="button"
             className="login-emblem-button"
@@ -130,7 +130,7 @@ export default function LoginPage() {
           >
             <img className="login-emblem" src="/NA-icon.png" alt="" />
           </button>
-        ) : <img className="login-emblem" src="/NA-icon.png" alt="Norz-Agapay emblem" />)}
+        )}
         {showSetup && <>
           <h1 className="login-title">Create Master Admin</h1>
           <p className="login-subtitle">Set up the first command center account</p>
@@ -214,12 +214,6 @@ export default function LoginPage() {
             {loading ? 'Signing in...' : 'Sign In'}
           </button>
         </form>}
-
-        {!showSetup && import.meta.env.DEV && (
-          <button type="button" className="login-setup-toggle" onClick={() => void toggleDebugAccounts()}>
-            {showDebugAccounts ? 'Close developer quick login' : 'Developer quick login'}
-          </button>
-        )}
 
         {!showSetup && loginAccountKind === 'barangay' && (
           <Link className="login-setup-toggle barangay-register-link" to="/barangay/register">Need an account? Register your barangay administrator</Link>
