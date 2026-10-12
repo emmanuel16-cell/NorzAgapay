@@ -149,6 +149,7 @@ export const barangayAPI = {
   setTeamMemberActive: (id: string, is_active: boolean) => api.patch(`/barangay/team/${id}/active`, { is_active }),
   statistics: (type?: 'community' | 'emergency') => api.get('/barangay/reports/statistics', { params: type ? { type } : undefined }),
   hotlineSettings: () => api.get('/barangay/settings/hotlines'),
+  publishedHotlines: (barangayId: string) => api.get(`/barangay/hotlines/${encodeURIComponent(barangayId)}`),
   saveHotlines: (entries: Array<{ purpose: string; numbers: string[] }>) => api.put('/barangay/hotlines', { entries }),
   createAssistanceRequest: (data: {
     incident_report_id?: string | null;

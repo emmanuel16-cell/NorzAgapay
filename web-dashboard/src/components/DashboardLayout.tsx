@@ -64,9 +64,9 @@ function navigationForRole(role?: string, accountKind?: string, isMasterAdmin = 
   if (accountKind === 'barangay') {
     if (role === 'admin' && !coordinationVerified) return navItems.filter((item) => item.path === '/barangay-settings');
     const visiblePaths: Record<string, string[]> = {
-      admin: ['/barangay-dashboard', '/command-center', '/reports', '/barangay-workspace', '/barangay-assistance', '/barangay-board', '/barangay-team', '/barangay-analytics', '/barangay-settings', '/locations'],
-      dispatcher: ['/barangay-dashboard', '/command-center', '/reports', '/barangay-assistance', '/barangay-board', '/barangay-settings', '/locations'],
-      responder: ['/my-responses', '/barangay-assistance', '/barangay-board', '/barangay-settings'],
+      admin: ['/barangay-dashboard', '/barangay-workspace', '/barangay-assistance', '/barangay-board', '/barangay-team', '/barangay-analytics', '/barangay-settings', '/locations'],
+      dispatcher: ['/barangay-dashboard', '/command-center', '/reports', '/barangay-assistance', '/barangay-board', '/barangay-team', '/barangay-settings', '/locations'],
+      responder: ['/my-responses', '/barangay-assistance', '/barangay-board', '/barangay-team', '/barangay-settings'],
       staff: ['/barangay-workspace', '/barangay-team', '/barangay-board', '/barangay-settings'],
     };
     const paths = visiblePaths[role || ''] || [];
@@ -74,7 +74,7 @@ function navigationForRole(role?: string, accountKind?: string, isMasterAdmin = 
       if (path === '/barangay-dashboard' || path === '/barangay-assistance' || path === '/barangay-board') return item.label === 'Barangay Operations';
       if (path === '/barangay-team' || path === '/barangay-analytics' || path === '/barangay-settings') return item.label === 'Barangay Administration';
       if (path === '/command-center' || path === '/reports') return item.label === 'Incident Monitoring';
-      if (path === '/barangay-workspace') return item.label === 'Incident Monitoring';
+      if (path === '/barangay-workspace' || path === '/my-responses') return item.label === 'Incident Monitoring';
       if (path === '/locations') return item.label === 'Operations';
       return false;
     }));

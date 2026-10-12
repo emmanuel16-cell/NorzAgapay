@@ -4283,6 +4283,12 @@ tbody tr:last-child td { border-bottom: none; }
 .barangay-hotline-list { display: flex; flex-direction: column; gap: 8px; }
 .barangay-hotline-row { display: grid; grid-template-columns: minmax(150px, .8fr) minmax(0, 1.3fr) 36px; align-items: end; gap: 10px; }
 .barangay-hotline-row label { display: flex; flex-direction: column; gap: 6px; color: var(--text-primary); font-size: 12px; }
+.barangay-hotline-readonly-list { display: grid; gap: 10px; }
+.barangay-hotline-readonly-card { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--border-color, #345071); border-radius: 9px; background: var(--bg-primary, #09172b); }
+.barangay-hotline-readonly-card strong { color: var(--text-primary); font-size: 13px; }
+.barangay-hotline-readonly-card > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.barangay-hotline-readonly-card a { display: inline-flex; align-items: center; gap: 6px; color: var(--accent-color, #4cc9dc); font-size: 13px; text-decoration: none; }
+.barangay-hotline-readonly-card a:hover { text-decoration: underline; }
 .barangay-post-form { display: flex; flex-direction: column; gap: 12px; }
 .barangay-console-post-form { display: flex; flex-direction: column; gap: 12px; }
 .barangay-console-post-form > label > span { color: var(--text-muted); font-weight: 400; }
