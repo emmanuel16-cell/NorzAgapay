@@ -118,7 +118,19 @@ export default function LoginPage() {
       <PublicHeader />
       <main className="login-page public-login-main">
       <div className="login-card">
-        {!showSetup && <img className="login-emblem" src="/NA-icon.png" alt="Norz-Agapay emblem" />}
+        {!showSetup && (import.meta.env.DEV ? (
+          <button
+            type="button"
+            className="login-emblem-button"
+            aria-label={showDebugAccounts ? 'Close developer quick login' : 'Open developer quick login'}
+            aria-pressed={showDebugAccounts}
+            aria-controls="developer-quick-login"
+            title="Toggle developer quick login"
+            onClick={() => void toggleDebugAccounts()}
+          >
+            <img className="login-emblem" src="/NA-icon.png" alt="" />
+          </button>
+        ) : <img className="login-emblem" src="/NA-icon.png" alt="Norz-Agapay emblem" />)}
         {showSetup && <>
           <h1 className="login-title">Create Master Admin</h1>
           <p className="login-subtitle">Set up the first command center account</p>
@@ -220,7 +232,7 @@ export default function LoginPage() {
         )}
 
         {showDebugAccounts && (
-          <div className="debug-dropdown">
+          <div className="debug-dropdown" id="developer-quick-login">
             <div className="debug-dropdown-header">
               <h3 className="debug-dropdown-title">Debug quick login</h3>
               <button

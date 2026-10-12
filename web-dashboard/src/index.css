@@ -1038,9 +1038,22 @@ tbody tr:last-child td { border-bottom: none; }
   display: block;
   width: 96px;
   height: 96px;
-  margin: 0 auto 16px;
   object-fit: contain;
 }
+
+.login-emblem-button {
+  display: block;
+  width: 96px;
+  height: 96px;
+  margin: 0 auto 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+.login-emblem-button:hover .login-emblem { transform: scale(1.04); }
+.login-emblem-button:focus-visible { outline: 3px solid #0789c8; outline-offset: 4px; }
 
 .login-card .login-title {
   color: #172033;
@@ -1118,7 +1131,8 @@ tbody tr:last-child td { border-bottom: none; }
 }
 
 @media (max-height: 680px) {
-  .login-emblem { width: 76px; height: 76px; margin-bottom: 10px; }
+  .login-emblem, .login-emblem-button { width: 76px; height: 76px; }
+  .login-emblem-button { margin-bottom: 10px; }
 }
 
 /* Floating Debug Quick Login Dropdown Popover */
