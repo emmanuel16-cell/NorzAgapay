@@ -62,13 +62,14 @@ function LoginRoute() {
   return <LoginPage />;
 }
 
-function RoleAccess({ roles, children, allowBarangayDashboard = false }: { roles: string[]; children: React.ReactNode; allowBarangayDashboard?: boolean }) {
+function RoleAccess({ roles, children, allowBarangayDashboard = false, allowBarangayRoles = [] }: { roles: string[]; children: React.ReactNode; allowBarangayDashboard?: boolean; allowBarangayRoles?: string[] }) {
   const { user, isMasterAdmin } = useAuth();
   const isBarangay = user?.account_kind === 'barangay';
   const barangayDashboardPage = allowBarangayDashboard && isBarangay && user?.coordination_verified && ['admin', 'dispatcher'].includes(user.role || '');
-  const roleAccess = roles.includes(user?.role || '');
-  const masterAdminAccess = isMasterAdmin && !roles.includes('resident') && !roles.includes('responder');
-  if (!roleAccess && !masterAdminAccess && !barangayDashboardPage) {
+  const barangayRoleAccess = isBarangay && Boolean(user?.coordination_verified) && allowBarangayRoles.includes(user?.role || '');
+  const roleAccess = !isBarangay && roles.includes(user?.role || '');
+  const masterAdminAccess = !isBarangay && isMasterAdmin && !roles.includes('resident') && !roles.includes('responder');
+  if (!roleAccess && !masterAdminAccess && !barangayDashboardPage && !barangayRoleAccess) {
     return <Navigate to={landingPath(user)} replace />;
   }
   return <>{children}</>;
@@ -98,7 +99,7 @@ function AppRoutes() {
         <Route path="earthquakes" element={<Navigate to="/command-center" replace />} />
         <Route path="reports" element={<RoleAccess roles={['dispatcher']} allowBarangayDashboard><ReportsPage /></RoleAccess>} />
         <Route path="my-reports" element={<RoleAccess roles={['resident']}><ResidentReportsPage /></RoleAccess>} />
-        <Route path="my-responses" element={<RoleAccess roles={['responder']}><ResponderWorkspacePage /></RoleAccess>} />
+        <Route path="my-responses" element={<RoleAccess roles={['responder']} allowBarangayRoles={['responder']}><ResponderWorkspacePage /></RoleAccess>} />
         <Route path="barangay-workspace" element={<BarangayAccess roles={['admin', 'staff']}><BarangayStaffWorkspacePage /></BarangayAccess>} />
         <Route path="barangay-dashboard" element={<BarangayAccess roles={['admin', 'dispatcher']}><BarangayDashboardPage /></BarangayAccess>} />
         <Route path="barangay-settings" element={<BarangayAccess roles={['admin', 'dispatcher', 'responder', 'staff']} allowInactive><BarangayAdministrationPage /></BarangayAccess>} />
