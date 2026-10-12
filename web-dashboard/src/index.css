@@ -1034,6 +1034,14 @@ tbody tr:last-child td { border-bottom: none; }
   box-shadow: 0 4px 12px rgba(15, 35, 60, 0.08);
 }
 
+.login-emblem {
+  display: block;
+  width: 96px;
+  height: 96px;
+  margin: 0 auto 16px;
+  object-fit: contain;
+}
+
 .login-card .login-title {
   color: #172033;
   font-size: 30px;
@@ -1107,6 +1115,10 @@ tbody tr:last-child td { border-bottom: none; }
     justify-content: center;
     padding: 24px;
   }
+}
+
+@media (max-height: 680px) {
+  .login-emblem { width: 76px; height: 76px; margin-bottom: 10px; }
 }
 
 /* Floating Debug Quick Login Dropdown Popover */

@@ -118,6 +118,7 @@ export default function LoginPage() {
       <PublicHeader />
       <main className="login-page public-login-main">
       <div className="login-card">
+        {!showSetup && <img className="login-emblem" src="/NA-icon.png" alt="Norz-Agapay emblem" />}
         {showSetup && <>
           <h1 className="login-title">Create Master Admin</h1>
           <p className="login-subtitle">Set up the first command center account</p>
