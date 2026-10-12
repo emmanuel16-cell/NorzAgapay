@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { userAPI } from '../lib/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
+import PasswordInput from '../components/PasswordInput';
 
 interface User {
   id: string; full_name: string; email: string; phone?: string;
@@ -168,7 +169,7 @@ export default function UsersPage() {
             </div>
             <div className="form-group">
               <label className="form-label">Temporary Password (minimum 8 characters)</label>
-              <input className="form-input" type="password" required minLength={8} value={createForm.password} onChange={event => setCreateForm({...createForm,password:event.target.value})} />
+              <PasswordInput className="form-input" required minLength={8} value={createForm.password} onChange={event => setCreateForm({...createForm,password:event.target.value})} />
             </div>
             <div className="form-group">
               <label className="form-label">Role</label>

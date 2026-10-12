@@ -4,6 +4,7 @@ import { Check, CircleUserRound, Edit3, Plus, RefreshCw, ShieldAlert, UserRoundX
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import { barangayAPI, socket } from '../lib/api';
+import PasswordInput from '../components/PasswordInput';
 
 type Member = { id: string; full_name: string; email?: string | null; phone?: string | null; role: 'admin' | 'dispatcher' | 'responder' | 'staff'; is_active: boolean; created_at?: string };
 type MemberForm = { full_name: string; email: string; phone: string; password: string; role: 'dispatcher' | 'responder' | 'staff' };
@@ -109,7 +110,7 @@ export default function BarangayTeamPage() {
           <label>Email<input required type="email" value={form.email} onChange={(event) => setForm((value) => ({ ...value, email: event.target.value }))} /></label>
           <label>Phone number<input type="tel" value={form.phone} onChange={(event) => setForm((value) => ({ ...value, phone: event.target.value }))} placeholder="09XXXXXXXXX" /></label>
           <label>Barangay role<select value={form.role} onChange={(event) => setForm((value) => ({ ...value, role: event.target.value as MemberForm['role'] }))}><option value="responder">Responder</option><option value="dispatcher">Dispatcher</option><option value="staff">Staff</option></select></label>
-          <label className="barangay-console-form-wide">{editingId ? 'New password (optional)' : 'Initial password'}<input required={!editingId} type="password" minLength={editingId ? undefined : 8} autoComplete="new-password" value={form.password} onChange={(event) => setForm((value) => ({ ...value, password: event.target.value }))} placeholder={editingId ? 'Leave blank to keep the current password' : 'At least 8 characters'} /></label>
+          <label className="barangay-console-form-wide">{editingId ? 'New password (optional)' : 'Initial password'}<PasswordInput required={!editingId} minLength={editingId ? undefined : 8} autoComplete="new-password" value={form.password} onChange={(event) => setForm((value) => ({ ...value, password: event.target.value }))} placeholder={editingId ? 'Leave blank to keep the current password' : 'At least 8 characters'} /></label>
           <div className="barangay-console-form-actions"><button className="btn btn-primary" type="submit" disabled={saving}>{saving ? 'Saving…' : editingId ? <><Check size={16} /> Save account</> : <><Plus size={16} /> Add account</>}</button></div>
         </form>
       </section>}

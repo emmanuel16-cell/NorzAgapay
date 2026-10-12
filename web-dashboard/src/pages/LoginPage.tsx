@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { authAPI, debugAPI } from '../lib/api';
 import PublicHeader from '../components/PublicHeader';
+import PasswordInput from '../components/PasswordInput';
 
 type DebugAccount = { id: string; full_name: string; email: string; role: string; audience: 'standard' | 'barangay'; barangay_name?: string };
 
@@ -117,11 +118,10 @@ export default function LoginPage() {
       <PublicHeader />
       <main className="login-page public-login-main">
       <div className="login-card">
-        <button className="login-logo" type="button" onClick={toggleDebugAccounts} title="Click logo to toggle Debug Quick Login">
-          <img src="/NA-icon.png" alt="Norz-Agapay" />
-        </button>
-        <h1 className="login-title">{showSetup ? 'Create Master Admin' : 'Norz-Agapay'}</h1>
-        <p className="login-subtitle">{showSetup ? 'Set up the first command center account' : 'Crisis Management Command Center'}</p>
+        {showSetup && <>
+          <h1 className="login-title">Create Master Admin</h1>
+          <p className="login-subtitle">Set up the first command center account</p>
+        </>}
 
         {error && (
           <div style={{
@@ -149,7 +149,7 @@ export default function LoginPage() {
             </div>
             <div className="form-group">
               <label className="form-label">Password (at least 12 characters)</label>
-              <input className="form-input" type="password" autoComplete="new-password" value={password} onChange={event => setPassword(event.target.value)} required minLength={12} />
+              <PasswordInput className="form-input" autoComplete="new-password" value={password} onChange={event => setPassword(event.target.value)} required minLength={12} />
             </div>
             <button type="submit" className="btn btn-primary btn-lg" style={{ width: '100%', marginTop: '8px' }} disabled={loading}>
               {loading ? 'Creating account…' : 'Create Master Admin'}
@@ -182,9 +182,8 @@ export default function LoginPage() {
           </div>
           <div className="form-group">
             <label className="form-label">Password</label>
-            <input
+            <PasswordInput
               id="login-password"
-              type="password"
               className="form-input"
               placeholder="••••••••"
               value={password}
@@ -202,6 +201,12 @@ export default function LoginPage() {
             {loading ? 'Signing in...' : 'Sign In'}
           </button>
         </form>}
+
+        {!showSetup && import.meta.env.DEV && (
+          <button type="button" className="login-setup-toggle" onClick={() => void toggleDebugAccounts()}>
+            {showDebugAccounts ? 'Close developer quick login' : 'Developer quick login'}
+          </button>
+        )}
 
         {!showSetup && loginAccountKind === 'barangay' && (
           <Link className="login-setup-toggle barangay-register-link" to="/barangay/register">Need an account? Register your barangay administrator</Link>
@@ -251,9 +256,6 @@ export default function LoginPage() {
 
         <p style={{ textAlign: 'center', marginTop: '20px', fontSize: '12px', color: 'var(--text-muted)' }}>
           MDRRMO and barangay teams, responders, and residents can sign in here.
-        </p>
-        <p style={{ textAlign: 'center', marginTop: '8px', fontSize: '12px' }}>
-          <Link to="/report">Submit an incident report without signing in</Link>
         </p>
       </div>
       </main>

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { BadgeCheck, Download, FileCheck2, FileText, KeyRound, MailCheck, MapPin, Plus, Save, ShieldAlert, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
+import PasswordInput from '../components/PasswordInput';
 import { API_BASE, authAPI, barangayAPI, reportAPI, socket } from '../lib/api';
 
 type HotlineEntry = { purpose: string; numbers: string[] };
@@ -270,9 +271,9 @@ export default function BarangayAdministrationPage() {
       <section className="barangay-console-panel"><header><div><h2>Change password</h2><p>Verify your email and current password before updating this account’s password.</p></div><KeyRound size={20} /></header>
         {!passwordOtpSent ? <div className="barangay-console-form-actions"><span>{user?.email || 'No email address is set for this account.'}</span><button className="workspace-secondary-action" type="button" onClick={() => void sendPasswordCode()} disabled={saving || !user?.email}><MailCheck size={16} /> Send verification code</button></div> : <form className="barangay-console-form-grid" onSubmit={(event) => void changePassword(event)}>
           <label>Email verification code<input required inputMode="numeric" pattern="[0-9]{6}" maxLength={6} value={passwordForm.otp} onChange={(event) => setPasswordForm((value) => ({ ...value, otp: event.target.value.replace(/\D/g, '').slice(0, 6) }))} /></label>
-          <label>Current password<input required type="password" autoComplete="current-password" value={passwordForm.currentPassword} onChange={(event) => setPasswordForm((value) => ({ ...value, currentPassword: event.target.value }))} /></label>
-          <label>New password<input required type="password" minLength={6} autoComplete="new-password" value={passwordForm.newPassword} onChange={(event) => setPasswordForm((value) => ({ ...value, newPassword: event.target.value }))} /></label>
-          <label>Confirm new password<input required type="password" minLength={6} autoComplete="new-password" value={passwordForm.confirmPassword} onChange={(event) => setPasswordForm((value) => ({ ...value, confirmPassword: event.target.value }))} /></label>
+          <label>Current password<PasswordInput required autoComplete="current-password" value={passwordForm.currentPassword} onChange={(event) => setPasswordForm((value) => ({ ...value, currentPassword: event.target.value }))} /></label>
+          <label>New password<PasswordInput required minLength={6} autoComplete="new-password" value={passwordForm.newPassword} onChange={(event) => setPasswordForm((value) => ({ ...value, newPassword: event.target.value }))} /></label>
+          <label>Confirm new password<PasswordInput required minLength={6} autoComplete="new-password" value={passwordForm.confirmPassword} onChange={(event) => setPasswordForm((value) => ({ ...value, confirmPassword: event.target.value }))} /></label>
           <div className="barangay-console-form-actions"><button className="btn btn-primary" disabled={saving}><KeyRound size={16} /> Update password</button><button className="workspace-secondary-action" type="button" disabled={saving} onClick={() => { setPasswordOtpSent(false); setPasswordForm({ otp: '', currentPassword: '', newPassword: '', confirmPassword: '' }); }}>Cancel</button><button className="workspace-secondary-action" type="button" disabled={saving} onClick={() => void sendPasswordCode()}>Send a new code</button></div>
         </form>}
       </section>
