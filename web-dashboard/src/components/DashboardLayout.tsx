@@ -20,7 +20,6 @@ import {
   Menu,
   X,
   Building2,
-  Settings,
   MessageSquareText,
   Handshake,
 } from 'lucide-react';
@@ -46,7 +45,6 @@ const navItems: NavItem[] = [
   { label: 'Barangay Administration', section: true },
   { path: '/barangay-team', icon: <Users size={19} strokeWidth={1.8} />, label: 'Barangay Team' },
   { path: '/barangay-analytics', icon: <BarChart3 size={19} strokeWidth={1.8} />, label: 'Barangay Analytics' },
-  { path: '/barangay-settings', icon: <Settings size={19} strokeWidth={1.8} />, label: 'Barangay Settings' },
   { path: '/locations', icon: <MapIcon size={19} strokeWidth={1.8} />, label: 'Command Locations' },
   { path: '/requests', icon: <ClipboardList size={19} strokeWidth={1.8} />, label: 'Assistance Request' },
   { label: 'Operations', section: true },
@@ -63,17 +61,17 @@ const navItems: NavItem[] = [
 function navigationForRole(role?: string, accountKind?: string, isMasterAdmin = false, coordinationVerified = false): NavItem[] {
   if (role === 'resident') return navItems.filter((item) => item.path === '/my-reports');
   if (accountKind === 'barangay') {
-    if (role === 'admin' && !coordinationVerified) return navItems.filter((item) => item.path === '/barangay-settings');
+    if (role === 'admin' && !coordinationVerified) return [];
     const visiblePaths: Record<string, string[]> = {
-      admin: ['/barangay-dashboard', '/barangay-workspace', '/barangay-board', '/barangay-team', '/barangay-analytics', '/barangay-settings', '/locations'],
-      dispatcher: ['/barangay-dashboard', '/command-center', '/reports', '/barangay-assistance', '/barangay-board', '/barangay-team', '/barangay-settings', '/locations'],
-      responder: ['/my-responses', '/barangay-assistance', '/barangay-board', '/barangay-team', '/barangay-settings'],
-      staff: ['/barangay-workspace', '/barangay-team', '/barangay-board', '/barangay-settings'],
+      admin: ['/barangay-dashboard', '/barangay-workspace', '/barangay-board', '/barangay-team', '/barangay-analytics', '/locations'],
+      dispatcher: ['/barangay-dashboard', '/command-center', '/reports', '/barangay-assistance', '/barangay-board', '/barangay-team', '/locations'],
+      responder: ['/my-responses', '/barangay-assistance', '/barangay-board', '/barangay-team'],
+      staff: ['/barangay-workspace', '/barangay-team', '/barangay-board'],
     };
     const paths = visiblePaths[role || ''] || [];
     return navItems.filter((item) => item.path ? paths.includes(item.path) : paths.some((path) => {
       if (path === '/barangay-dashboard' || path === '/barangay-assistance' || path === '/barangay-board') return item.label === 'Barangay Operations';
-      if (path === '/barangay-team' || path === '/barangay-analytics' || path === '/barangay-settings') return item.label === 'Barangay Administration';
+      if (path === '/barangay-team' || path === '/barangay-analytics') return item.label === 'Barangay Administration';
       if (path === '/command-center' || path === '/reports') return item.label === 'Incident Monitoring';
       if (path === '/barangay-workspace' || path === '/my-responses') return item.label === 'Incident Monitoring';
       if (path === '/locations') return item.label === 'Operations';
