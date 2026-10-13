@@ -34,6 +34,7 @@ export default function BarangayAssistancePage() {
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [form, setForm] = useState<RequestForm>(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
   const [decisions, setDecisions] = useState<Record<string, { decision: 'provide_barangay_assistance' | 'coordinate_mdrrmo' | 'dismissed'; notes: string }>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -66,11 +67,12 @@ export default function BarangayAssistancePage() {
     };
   }, [load]);
 
-  const reset = () => { setForm(emptyForm); setEditingId(null); };
+  const reset = () => { setForm(emptyForm); setEditingId(null); setIsRequestModalOpen(false); };
+  const startNewRequest = () => { setForm(emptyForm); setEditingId(null); setIsRequestModalOpen(true); };
   const startEdit = (request: Assistance) => {
     setEditingId(request.id);
     setForm({ incident_report_id: request.incident_report_id || '', needs_more_manpower: Boolean(request.needs_more_manpower), needs_resources: Boolean(request.needs_resources), needs_equipment: Boolean(request.needs_equipment), beyond_barangay_capability: Boolean(request.beyond_barangay_capability), explanation: request.explanation || '' });
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setIsRequestModalOpen(true);
   };
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
@@ -108,9 +110,23 @@ export default function BarangayAssistancePage() {
 
   return (
     <div className="barangay-console-page">
-      <header className="barangay-console-header"><div><span className="workspace-eyebrow">BARANGAY OPERATIONS · {user?.barangay_name || 'YOUR BARANGAY'}</span><h1>{isResponder ? 'My assistance requests' : 'Assistance requests'}</h1><p>{isResponder ? 'Request support for assigned incidents and follow each decision.' : 'Review barangay requests and coordinate local or MDRRMO support.'}</p></div><button className="workspace-secondary-action" type="button" onClick={() => void load()} disabled={loading}><RefreshCw size={16} className={loading ? 'workspace-spinning' : ''} /> Refresh</button></header>
+      <header className="barangay-console-header"><div><span className="workspace-eyebrow">BARANGAY OPERATIONS · {user?.barangay_name || 'YOUR BARANGAY'}</span><h1>{isResponder ? 'My assistance requests' : 'Assistance requests'}</h1><p>{isResponder ? 'Request support for assigned incidents and follow each decision.' : 'Review barangay requests and coordinate local or MDRRMO support.'}</p></div><div className="barangay-console-header-actions">{isResponder && <button className="workspace-primary-action" type="button" onClick={startNewRequest} aria-haspopup="dialog" aria-expanded={isRequestModalOpen}><HandHelping size={16} /> Request assistance</button>}<button className="workspace-secondary-action" type="button" onClick={() => void load()} disabled={loading}><RefreshCw size={16} className={loading ? 'workspace-spinning' : ''} /> Refresh</button></div></header>
 
-      {isResponder && <section className="barangay-console-panel"><header><div><h2>{editingId ? 'Update request' : 'Request assistance'}</h2><p>Only incidents assigned to your responder account are available to link.</p></div>{editingId && <button className="workspace-secondary-action" type="button" onClick={reset}><X size={15} /> Cancel edit</button>}</header><form className="barangay-console-form-grid" onSubmit={(event) => void submit(event)}><RequestFields form={form} setForm={setForm} incidents={incidents} /><div className="barangay-console-form-actions"><button className="btn btn-primary" disabled={saving}>{saving ? 'Submitting…' : editingId ? <><Check size={16} /> Save changes</> : <><Send size={16} /> Submit request</>}</button></div></form></section>}
+      {isResponder && isRequestModalOpen && <div className="barangay-console-modal-backdrop" role="presentation" onKeyDown={(event) => {
+        if (event.key === 'Escape') { event.stopPropagation(); if (!saving) reset(); }
+        if (event.key === 'Tab') {
+          const focusable = event.currentTarget.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])');
+          const first = focusable[0];
+          const last = focusable[focusable.length - 1];
+          if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+          else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+        }
+      }} onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) reset(); }}>
+        <section className="barangay-console-panel barangay-console-form-modal barangay-assistance-request-modal" role="dialog" aria-modal="true" aria-labelledby="barangay-assistance-request-title">
+          <header><div><h2 id="barangay-assistance-request-title">{editingId ? 'Update request' : 'Request assistance'}</h2><p>Only incidents assigned to your responder account are available to link.</p></div><button autoFocus className="workspace-secondary-action" type="button" onClick={reset} disabled={saving}><X size={15} /> Cancel</button></header>
+          <form className="barangay-console-form-grid" onSubmit={(event) => void submit(event)}><RequestFields form={form} setForm={setForm} incidents={incidents} /><div className="barangay-console-form-actions"><button className="btn btn-primary" type="submit" disabled={saving}>{saving ? 'Submitting…' : editingId ? <><Check size={16} /> Save changes</> : <><Send size={16} /> Submit request</>}</button></div></form>
+        </section>
+      </div>}
 
       {error && <div className="workspace-message workspace-message-error" role="alert">{error}<button type="button" onClick={() => void load()}>Try again</button></div>}
       <section className="barangay-console-panel"><header><div><h2><ClipboardList size={19} /> {isResponder ? 'Request history' : 'Barangay request inbox'}</h2><p>{isResponder ? 'Your requests and the coordination decision.' : 'Requests submitted by responders in your barangay.'}</p></div><span className="barangay-console-status pending">{requests.filter((request) => String(request.status || '').toLowerCase() === 'pending').length} pending</span></header>
