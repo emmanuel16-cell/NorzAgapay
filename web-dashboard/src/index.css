@@ -4336,9 +4336,41 @@ tbody tr:last-child td { border-bottom: none; }
 .barangay-account-history article { display: grid; grid-template-columns: minmax(120px, .7fr) minmax(0, 1.8fr) auto; gap: 10px; padding: 9px 0; border-top: 1px solid var(--border-color, #294466); }
 .barangay-account-history article > span { color: var(--text-primary); font-size: 12px; text-transform: capitalize; }
 .barangay-account-history article p, .barangay-account-history article time { margin: 0; color: var(--text-muted); font-size: 11px; }
-.barangay-hotline-list { display: flex; flex-direction: column; gap: 8px; }
+.barangay-hotline-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .barangay-hotline-row { display: grid; grid-template-columns: minmax(150px, .8fr) minmax(0, 1.3fr) 36px; align-items: end; gap: 10px; }
 .barangay-hotline-row label { display: flex; flex-direction: column; gap: 6px; color: var(--text-primary); font-size: 12px; }
+.barangay-hotline-card { display: flex; min-width: 0; flex-direction: column; overflow: hidden; border: 1px solid var(--border-color, #294466); border-radius: 11px; background: var(--bg-primary, #09172b); }
+.barangay-hotline-card.is-editing { border-color: rgba(56, 189, 248, .55); box-shadow: 0 0 0 1px rgba(56, 189, 248, .12); }
+.barangay-hotline-card-heading { display: flex; align-items: center; gap: 11px; padding: 14px; border-bottom: 1px solid var(--border-color, #294466); background: var(--bg-secondary, #0e203d); }
+.barangay-hotline-card-icon { display: grid; width: 38px; height: 38px; flex: 0 0 auto; place-items: center; border: 1px solid rgba(56, 189, 248, .2); border-radius: 10px; color: #52cce0; background: rgba(14, 116, 144, .16); }
+.barangay-hotline-card-heading > div { min-width: 0; }
+.barangay-hotline-card-heading small { color: var(--text-muted); font-size: 9px; font-weight: 750; letter-spacing: .09em; }
+.barangay-hotline-card-heading h3 { margin: 2px 0 0; overflow-wrap: anywhere; color: var(--text-primary); font-size: 14px; }
+.barangay-hotline-card-phones { display: grid; gap: 9px; padding: 14px; }
+.barangay-hotline-card-phones > span { color: var(--text-muted); font-size: 11px; font-weight: 650; }
+.barangay-hotline-card-phones > div { display: flex; flex-wrap: wrap; gap: 7px; }
+.barangay-hotline-card-phones a { display: inline-flex; min-width: 0; align-items: center; gap: 6px; padding: 7px 9px; border: 1px solid var(--border-color, #345071); border-radius: 8px; color: var(--text-primary); background: var(--bg-secondary, #0e203d); font-size: 12px; text-decoration: none; overflow-wrap: anywhere; }
+.barangay-hotline-card-phones a svg { flex: 0 0 auto; color: #52cce0; }
+.barangay-hotline-card-phones a:hover { border-color: #52cce0; }
+.barangay-hotline-card-phones p { margin: 0; color: var(--text-muted); font-size: 12px; }
+.barangay-hotline-editor { display: grid; gap: 10px; padding: 14px; }
+.barangay-hotline-purpose { display: flex; flex-direction: column; gap: 6px; color: var(--text-primary); font-size: 12px; font-weight: 650; }
+.barangay-hotline-purpose input, .barangay-hotline-phone-row > input[type='tel'] { width: 100%; min-width: 0; min-height: 39px; padding: 8px 10px; border: 1px solid var(--border-color, #345071); border-radius: 8px; color: var(--text-primary); background: var(--bg-secondary, #0e203d); font: inherit; font-size: 12px; outline: none; }
+.barangay-hotline-purpose input:focus, .barangay-hotline-phone-row > input[type='tel']:focus { border-color: #30bed6; box-shadow: 0 0 0 2px rgba(48, 190, 214, .12); }
+.barangay-hotline-editor-label { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 10px; }
+.barangay-hotline-editor-label strong { color: var(--text-primary); font-size: 12px; }
+.barangay-hotline-editor-label span { color: var(--text-muted); font-size: 10px; }
+.barangay-hotline-phone-row { display: grid; grid-template-columns: 20px minmax(0, 1fr) 34px; align-items: center; gap: 7px; }
+.barangay-hotline-phone-row > input[type='checkbox'] { width: 16px; height: 16px; justify-self: center; accent-color: #12a9c2; cursor: pointer; }
+.barangay-hotline-phone-row > button { display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid var(--border-color, #345071); border-radius: 8px; color: var(--text-muted); background: transparent; cursor: pointer; }
+.barangay-hotline-phone-row > button:hover { border-color: #f87171; color: #fca5a5; }
+.barangay-hotline-editor-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.barangay-hotline-editor-actions button, .barangay-hotline-card-actions button { display: inline-flex; min-height: 34px; align-items: center; justify-content: center; gap: 6px; padding: 6px 9px; border: 1px solid var(--border-color, #345071); border-radius: 8px; color: var(--text-primary); background: var(--bg-secondary, #0e203d); font: inherit; font-size: 11px; font-weight: 650; cursor: pointer; }
+.barangay-hotline-editor-actions button:hover, .barangay-hotline-card-actions button:hover { border-color: #52cce0; }
+.barangay-hotline-editor-actions .barangay-hotline-add-phone { color: #67d7e5; }
+.barangay-hotline-editor-actions .barangay-hotline-remove-selected, .barangay-hotline-card-actions button.danger { color: #fca5a5; }
+.barangay-hotline-editor-actions .barangay-hotline-remove-selected:hover, .barangay-hotline-card-actions button.danger:hover { border-color: #f87171; }
+.barangay-hotline-card-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: auto; padding: 11px 14px; border-top: 1px solid var(--border-color, #294466); }
 .barangay-hotline-readonly-list { display: grid; gap: 10px; }
 .barangay-hotline-readonly-card { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--border-color, #345071); border-radius: 9px; background: var(--bg-primary, #09172b); }
 .barangay-hotline-readonly-card strong { color: var(--text-primary); font-size: 13px; }
@@ -4446,7 +4478,7 @@ tbody tr:last-child td { border-bottom: none; }
   .barangay-console-header-actions { align-self: flex-start; justify-content: flex-start; }
   .barangay-console-modal-backdrop { padding: 10px; }
   .barangay-console-form-modal { max-height: 94vh; padding: 15px 13px; }
-  .barangay-console-shortcuts, .barangay-post-grid, .barangay-analytics-grid, .barangay-team-grid { grid-template-columns: 1fr; }
+  .barangay-console-shortcuts, .barangay-post-grid, .barangay-hotline-list, .barangay-analytics-grid, .barangay-team-grid { grid-template-columns: 1fr; }
   .barangay-console-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
   .barangay-console-stat-grid article { min-height: 88px; padding: 13px; }
   .barangay-console-stat-grid article > strong { font-size: 23px; }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
-import { BadgeCheck, Download, FileCheck2, FileText, MapPin, Phone, Plus, Save, ShieldAlert, Trash2 } from 'lucide-react';
+import { BadgeCheck, Check, Download, Edit3, FileCheck2, FileText, MapPin, Phone, Plus, Save, ShieldAlert, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import { API_BASE, barangayAPI, reportAPI, socket } from '../lib/api';
@@ -75,6 +75,8 @@ export default function BarangayAdministrationPage({ embedded = false, section =
   const [verification, setVerification] = useState<Verification | null>(null);
   const [location, setLocation] = useState({ latitude: '', longitude: '', address: '' });
   const [hotlines, setHotlines] = useState<HotlineEntry[]>([]);
+  const [editingHotlineIndex, setEditingHotlineIndex] = useState<number | null>(null);
+  const [selectedHotlinePhones, setSelectedHotlinePhones] = useState<Record<number, number[]>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -210,12 +212,51 @@ export default function BarangayAdministrationPage({ embedded = false, section =
     if (cleanEntries.some((entry) => !entry.purpose || entry.numbers.length === 0)) {
       toast.error('Each hotline needs a purpose and at least one phone number.'); setSaving(false); return;
     }
-    try { const { data } = await barangayAPI.saveHotlines(cleanEntries); setHotlines(data.entries || []); toast.success('Barangay hotline directory saved.'); }
+    try { const { data } = await barangayAPI.saveHotlines(cleanEntries); setHotlines(data.entries || []); setEditingHotlineIndex(null); setSelectedHotlinePhones({}); toast.success('Barangay hotline directory saved.'); }
     catch (saveError: any) { toast.error(messageOf(saveError, 'Barangay hotlines could not be saved.')); }
     finally { setSaving(false); }
   };
 
   const updateHotline = (index: number, patch: Partial<HotlineEntry>) => setHotlines((entries) => entries.map((entry, entryIndex) => entryIndex === index ? { ...entry, ...patch } : entry));
+  const addHotline = () => {
+    const nextIndex = hotlines.length;
+    setHotlines((entries) => [...entries, { purpose: '', numbers: [''] }]);
+    setEditingHotlineIndex(nextIndex);
+  };
+  const removeHotline = (index: number) => {
+    setHotlines((entries) => entries.filter((_, entryIndex) => entryIndex !== index));
+    setEditingHotlineIndex((current) => current === index ? null : current !== null && current > index ? current - 1 : current);
+    setSelectedHotlinePhones((selected) => {
+      const next: Record<number, number[]> = {};
+      Object.entries(selected).forEach(([entryIndex, numbers]) => {
+        const parsedIndex = Number(entryIndex);
+        if (parsedIndex < index) next[parsedIndex] = numbers;
+        if (parsedIndex > index) next[parsedIndex - 1] = numbers;
+      });
+      return next;
+    });
+  };
+  const updateHotlinePhone = (index: number, phoneIndex: number, value: string) => setHotlines((entries) => entries.map((entry, entryIndex) => entryIndex === index
+    ? { ...entry, numbers: entry.numbers.map((number, currentPhoneIndex) => currentPhoneIndex === phoneIndex ? value : number) }
+    : entry));
+  const removeHotlinePhone = (index: number, phoneIndex: number) => {
+    setHotlines((entries) => entries.map((entry, entryIndex) => entryIndex === index
+      ? { ...entry, numbers: entry.numbers.filter((_, currentPhoneIndex) => currentPhoneIndex !== phoneIndex) }
+      : entry));
+    setSelectedHotlinePhones((selected) => ({ ...selected, [index]: [] }));
+  };
+  const toggleHotlinePhoneSelection = (index: number, phoneIndex: number) => setSelectedHotlinePhones((selected) => {
+    const current = selected[index] || [];
+    return { ...selected, [index]: current.includes(phoneIndex) ? current.filter((item) => item !== phoneIndex) : [...current, phoneIndex] };
+  });
+  const removeSelectedHotlinePhones = (index: number) => {
+    const selected = selectedHotlinePhones[index] || [];
+    if (!selected.length) return;
+    setHotlines((entries) => entries.map((entry, entryIndex) => entryIndex === index
+      ? { ...entry, numbers: entry.numbers.filter((_, phoneIndex) => !selected.includes(phoneIndex)) }
+      : entry));
+    setSelectedHotlinePhones((current) => ({ ...current, [index]: [] }));
+  };
 
   const showAll = section === 'all';
   const showAccount = showAll || section === 'account';
@@ -258,8 +299,28 @@ export default function BarangayAdministrationPage({ embedded = false, section =
         <div className="barangay-console-form-actions"><button className="btn btn-primary" disabled={saving}><MapPin size={16} /> Save command location</button>{location.latitude && location.longitude && <a target="_blank" rel="noreferrer" href={`https://www.google.com/maps?q=${location.latitude},${location.longitude}`}>View coordinates on map</a>}</div>
       </form></section>}
 
-      {showHotlines && active && canViewHotlines && <section className="barangay-console-panel"><header><div><h2>Public hotline directory</h2><p>{canManageHotlines ? 'These entries are shown to residents for your barangay.' : 'Published hotline numbers for your barangay.'}</p></div>{canManageHotlines && <button className="workspace-secondary-action" type="button" onClick={() => setHotlines((entries) => [...entries, { purpose: '', numbers: [''] }])}><Plus size={16} /> Add hotline</button>}</header>
-        {canManageHotlines ? <form onSubmit={(event) => void saveHotlines(event)}><div className="barangay-hotline-list">{hotlines.map((entry, index) => <article className="barangay-hotline-row" key={index}><label>Purpose<input required value={entry.purpose} onChange={(event) => updateHotline(index, { purpose: event.target.value })} placeholder="Emergency response" /></label><label>Phone numbers<input required value={entry.numbers.join(', ')} onChange={(event) => updateHotline(index, { numbers: event.target.value.split(',').map((number) => number.trim()) })} placeholder="09XXXXXXXXX, 044..." /></label><button type="button" title="Remove hotline" aria-label="Remove hotline" onClick={() => setHotlines((entries) => entries.filter((_, entryIndex) => entryIndex !== index))}><Trash2 size={17} /></button></article>)}{hotlines.length === 0 && <p className="barangay-console-muted">No public hotline entries yet. Add one to make it available in the resident directory.</p>}</div><div className="barangay-console-form-actions"><button className="btn btn-primary" disabled={saving}><Save size={16} /> Save hotline directory</button></div></form> : hotlines.length === 0 ? <p className="barangay-console-muted">No public hotline entries have been published for this barangay.</p> : <div className="barangay-hotline-readonly-list">{hotlines.map((entry, index) => <article className="barangay-hotline-readonly-card" key={`${entry.purpose}-${index}`}><strong>{entry.purpose || 'Emergency hotline'}</strong><div>{entry.numbers.filter(Boolean).map((number) => <a key={number} href={`tel:${number}`}><Phone size={14} />{number}</a>)}</div></article>)}</div>}
+      {showHotlines && active && canViewHotlines && <section className="barangay-console-panel"><header><div><h2>Public hotline directory</h2><p>{canManageHotlines ? 'These entries are shown to residents for your barangay.' : 'Published hotline numbers for your barangay.'}</p></div>{canManageHotlines && <button className="workspace-secondary-action" type="button" onClick={addHotline}><Plus size={16} /> Add hotline</button>}</header>
+        {canManageHotlines ? <form onSubmit={(event) => void saveHotlines(event)}>
+          {hotlines.length === 0 ? <p className="barangay-console-muted">No public hotline entries yet. Add one to make it available in the resident directory.</p> : <div className="barangay-hotline-list">{hotlines.map((entry, index) => {
+            const isEditing = editingHotlineIndex === index;
+            const selectedPhones = selectedHotlinePhones[index] || [];
+            return <article className={`barangay-hotline-card${isEditing ? ' is-editing' : ''}`} key={`hotline-${index}`}>
+              <div className="barangay-hotline-card-heading"><span className="barangay-hotline-card-icon"><Phone size={18} /></span><div><small>PUBLIC HOTLINE</small><h3>{entry.purpose || 'New hotline'}</h3></div></div>
+              {isEditing ? <div className="barangay-hotline-editor">
+                <label className="barangay-hotline-purpose">Purpose<input required maxLength={100} value={entry.purpose} onChange={(event) => updateHotline(index, { purpose: event.target.value })} placeholder="Emergency response" /></label>
+                <div className="barangay-hotline-editor-label"><strong>Phone numbers</strong><span>Select numbers to remove several at once.</span></div>
+                {entry.numbers.map((number, phoneIndex) => <div className="barangay-hotline-phone-row" key={phoneIndex}>
+                  <input type="checkbox" checked={selectedPhones.includes(phoneIndex)} onChange={() => toggleHotlinePhoneSelection(index, phoneIndex)} aria-label={`Select phone number ${phoneIndex + 1} for removal`} />
+                  <input type="tel" value={number} onChange={(event) => updateHotlinePhone(index, phoneIndex, event.target.value)} placeholder="09XXXXXXXXX" aria-label={`Phone number ${phoneIndex + 1}`} />
+                  <button type="button" title="Remove phone number" aria-label={`Remove phone number ${phoneIndex + 1}`} onClick={() => removeHotlinePhone(index, phoneIndex)}><Trash2 size={16} /></button>
+                </div>)}
+                <div className="barangay-hotline-editor-actions"><button type="button" className="barangay-hotline-add-phone" onClick={() => updateHotline(index, { numbers: [...entry.numbers, ''] })}><Plus size={15} /> Add phone</button>{selectedPhones.length > 0 && <button type="button" className="barangay-hotline-remove-selected" onClick={() => removeSelectedHotlinePhones(index)}><Trash2 size={15} /> Remove selected ({selectedPhones.length})</button>}</div>
+              </div> : <div className="barangay-hotline-card-phones"><span>Phone numbers</span>{entry.numbers.filter(Boolean).length > 0 ? <div>{entry.numbers.filter(Boolean).map((number, phoneIndex) => <a href={`tel:${number}`} key={`${number}-${phoneIndex}`}><Phone size={14} />{number}</a>)}</div> : <p>No phone numbers added.</p>}</div>}
+              {canManageHotlines && <footer className="barangay-hotline-card-actions"><button type="button" onClick={() => { setEditingHotlineIndex(isEditing ? null : index); setSelectedHotlinePhones((selected) => ({ ...selected, [index]: [] })); }}>{isEditing ? <><Check size={15} /> Done</> : <><Edit3 size={15} /> Edit</>}</button><button type="button" className="danger" onClick={() => removeHotline(index)}><Trash2 size={15} /> Remove hotline</button></footer>}
+            </article>;
+          })}</div>}
+          <div className="barangay-console-form-actions"><button className="btn btn-primary" disabled={saving || hotlines.length === 0}><Save size={16} /> {saving ? 'Saving…' : 'Save hotline directory'}</button></div>
+        </form> : hotlines.length === 0 ? <p className="barangay-console-muted">No public hotline entries have been published for this barangay.</p> : <div className="barangay-hotline-list">{hotlines.map((entry, index) => <article className="barangay-hotline-card" key={`${entry.purpose}-${index}`}><div className="barangay-hotline-card-heading"><span className="barangay-hotline-card-icon"><Phone size={18} /></span><div><small>PUBLIC HOTLINE</small><h3>{entry.purpose || 'Emergency hotline'}</h3></div></div><div className="barangay-hotline-card-phones"><span>Phone numbers</span><div>{entry.numbers.filter(Boolean).map((number, phoneIndex) => <a key={`${number}-${phoneIndex}`} href={`tel:${number}`}><Phone size={14} />{number}</a>)}</div></div></article>)}</div>}
       </section>}
 
       {policies.length > 0 && <section className="barangay-console-panel">{showAll ? <><header><div><h2>Terms and privacy</h2><p>Review the policies shown in the mobile app.</p></div></header>
