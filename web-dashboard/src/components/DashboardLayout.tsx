@@ -86,6 +86,20 @@ function navigationForRole(role?: string, accountKind?: string, isMasterAdmin = 
         })),
       ];
     }
+    if (role === 'dispatcher') {
+      const item = (path: string) => navItems.find((navItem) => navItem.path === path)!;
+      return [
+        { label: 'Incident Monitoring', section: true },
+        item('/command-center'),
+        item('/reports'),
+        item('/barangay-assistance'),
+        { label: 'Barangay Operations', section: true },
+        item('/barangay-dashboard'),
+        item('/barangay-board'),
+        { label: 'Barangay Administration', section: true },
+        item('/barangay-team'),
+      ];
+    }
     const visibleItems = navItems.filter((item) => item.path ? paths.includes(item.path) : paths.some((path) => {
       if (path === '/barangay-dashboard' || path === '/barangay-assistance' || path === '/barangay-board') return item.label === 'Barangay Operations';
       if (path === '/barangay-team' || path === '/barangay-analytics') return item.label === 'Barangay Administration';

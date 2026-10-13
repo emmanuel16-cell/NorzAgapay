@@ -172,9 +172,9 @@ export default function BarangayDashboardPage() {
       {error && <div className="workspace-message workspace-message-error" role="alert">{error}<button type="button" onClick={() => void load()}>Try again</button></div>}
       <section className="barangay-console-stat-grid" aria-label="Barangay summary">
         {canViewIncidents && <Link to={isDispatcher ? '/reports' : '/barangay-workspace'} aria-label="Open barangay incidents"><span>Active incidents</span><strong>{loading ? '—' : activeReports.length}</strong><AlertTriangle size={20} /></Link>}
-        {user?.role === 'admin' && <article><span>Resolved incidents</span><strong>{loading ? '—' : resolvedReports.length}</strong><CheckCircle2 size={20} /></article>}
         {isDispatcher && <article><span>Pending assistance</span><strong>{loading ? '—' : pendingRequests.length}</strong><ClipboardList size={20} /></article>}
-        <article><span>Active team members</span><strong>{loading ? '—' : activeMembers}</strong><Users size={20} /></article>
+        {(user?.role === 'admin' || isDispatcher) && <article><span>Resolved incidents</span><strong>{loading ? '—' : resolvedReports.length}</strong><CheckCircle2 size={20} /></article>}
+        {user?.role === 'admin' && <article><span>Active team members</span><strong>{loading ? '—' : activeMembers}</strong><Users size={20} /></article>}
         <article><span>Barangay posts</span><strong>{loading ? '—' : postsCount}</strong><Bell size={20} /></article>
       </section>
 
