@@ -4267,6 +4267,8 @@ tbody tr:last-child td { border-bottom: none; }
 .barangay-console-panel > header h2 svg { color: #49ccdf; }
 .barangay-console-panel > header p { margin: 0; color: var(--text-muted); font-size: 12px; line-height: 1.45; }
 .barangay-console-panel > header > a { display: inline-flex; align-items: center; gap: 5px; color: #46c8df; font-size: 12px; text-decoration: none; white-space: nowrap; }
+.barangay-board-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; gap: 12px; }
+.barangay-board-columns .barangay-post-grid { grid-template-columns: 1fr; }
 .barangay-policy-details { padding: 13px 0; border-top: 1px solid var(--border-color, #253d5f); }
 .barangay-policy-details:first-of-type { border-top: 0; }
 .barangay-policy-details summary { display: flex; flex-direction: column; gap: 3px; color: var(--text-primary); cursor: pointer; }
@@ -4434,6 +4436,7 @@ tbody tr:last-child td { border-bottom: none; }
 @media (max-width: 920px) {
   .barangay-console-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .barangay-console-stat-grid-compact { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .barangay-board-columns { grid-template-columns: 1fr; }
   .barangay-assistance-review { grid-template-columns: 1fr 1fr; }
   .barangay-assistance-review > button { grid-column: 1 / -1; justify-self: start; }
 }
