@@ -16,6 +16,7 @@ import AlertBroadcastsPage from './pages/AlertBroadcastsPage';
 import OfficersPage from './pages/OfficersPage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import ReportsPage from './pages/ReportsPage';
+import BarangayResponderIncidentsPage from './pages/BarangayResponderIncidentsPage';
 import ResidentReportsPage from './pages/ResidentReportsPage';
 import ResponderWorkspacePage from './pages/ResponderWorkspacePage';
 import BarangayStaffWorkspacePage from './pages/BarangayStaffWorkspacePage';
@@ -83,6 +84,12 @@ function BarangayAccess({ roles, children, allowInactive = false }: { roles: str
   return <>{children}</>;
 }
 
+function IncidentReportsRoute() {
+  const { user } = useAuth();
+  if (user?.account_kind === 'barangay' && user.role === 'responder') return <BarangayResponderIncidentsPage />;
+  return <ReportsPage />;
+}
+
 function AppRoutes() {
   return (
     <Routes>
@@ -96,7 +103,7 @@ function AppRoutes() {
         <Route path="weather-monitoring" element={<Navigate to="/command-center" replace />} />
         <Route path="advisories" element={<Navigate to="/command-center" replace />} />
         <Route path="earthquakes" element={<Navigate to="/command-center" replace />} />
-        <Route path="reports" element={<RoleAccess roles={['dispatcher']} allowBarangayRoles={['dispatcher']}><ReportsPage /></RoleAccess>} />
+        <Route path="reports" element={<RoleAccess roles={['dispatcher']} allowBarangayRoles={['dispatcher', 'responder']}><IncidentReportsRoute /></RoleAccess>} />
         <Route path="my-reports" element={<RoleAccess roles={['resident']}><ResidentReportsPage /></RoleAccess>} />
         <Route path="my-responses" element={<RoleAccess roles={['responder']} allowBarangayRoles={['responder']}><ResponderWorkspacePage /></RoleAccess>} />
         <Route path="barangay-workspace" element={<BarangayAccess roles={['admin', 'staff']}><BarangayStaffWorkspacePage /></BarangayAccess>} />
