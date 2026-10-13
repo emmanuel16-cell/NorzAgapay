@@ -4247,10 +4247,12 @@ tbody tr:last-child td { border-bottom: none; }
 .barangay-console-header p { margin: 0; color: var(--text-muted); font-size: 14px; }
 .barangay-console-header .workspace-eyebrow { color: #45d1e6; }
 .barangay-console-stat-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-.barangay-console-stat-grid article { position: relative; display: flex; min-height: 100px; flex-direction: column; justify-content: center; gap: 8px; overflow: hidden; padding: 16px 18px; border: 1px solid var(--border-color, #294466); border-radius: 13px; background: var(--bg-secondary, #0e203d); }
-.barangay-console-stat-grid article > span { color: var(--text-muted); font-size: 12px; }
-.barangay-console-stat-grid article > strong { color: var(--text-primary); font-size: 27px; line-height: 1; }
-.barangay-console-stat-grid article > svg { position: absolute; top: 18px; right: 17px; color: #58cde0; }
+.barangay-console-stat-grid article, .barangay-console-stat-grid > a { position: relative; display: flex; min-height: 100px; flex-direction: column; justify-content: center; gap: 8px; overflow: hidden; padding: 16px 18px; border: 1px solid var(--border-color, #294466); border-radius: 13px; background: var(--bg-secondary, #0e203d); }
+.barangay-console-stat-grid > a { color: inherit; text-decoration: none; transition: border-color .15s ease, transform .15s ease; }
+.barangay-console-stat-grid > a:hover { transform: translateY(-1px); border-color: #36bfd6; }
+.barangay-console-stat-grid article > span, .barangay-console-stat-grid > a > span { color: var(--text-muted); font-size: 12px; }
+.barangay-console-stat-grid article > strong, .barangay-console-stat-grid > a > strong { color: var(--text-primary); font-size: 27px; line-height: 1; }
+.barangay-console-stat-grid article > svg, .barangay-console-stat-grid > a > svg { position: absolute; top: 18px; right: 17px; color: #58cde0; }
 .barangay-console-stat-grid-compact { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .barangay-console-shortcuts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .barangay-console-shortcuts > a { display: grid; grid-template-columns: 25px minmax(0, 1fr) 18px; align-items: center; gap: 13px; min-height: 78px; padding: 14px 16px; border: 1px solid var(--border-color, #294466); border-radius: 12px; color: var(--text-primary); background: var(--bg-secondary, #0e203d); text-decoration: none; transition: border-color .15s ease, transform .15s ease; }
@@ -4470,6 +4472,7 @@ tbody tr:last-child td { border-bottom: none; }
 .barangay-analytics-report-list article time { color: var(--text-muted); font-size: 10px; white-space: nowrap; }
 :root[data-theme='light'] .barangay-console-panel,
 :root[data-theme='light'] .barangay-console-stat-grid article,
+:root[data-theme='light'] .barangay-console-stat-grid > a,
 :root[data-theme='light'] .barangay-console-shortcuts > a { border-color: #cfdae9; background: #fff; }
 :root[data-theme='light'] .barangay-team-card,
 :root[data-theme='light'] .barangay-post-card,

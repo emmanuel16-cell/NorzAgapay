@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Activity, ArrowRight, Bell, ClipboardList, MapPin, Users, RefreshCw } from 'lucide-react';
+import { Activity, AlertTriangle, ArrowRight, Bell, ClipboardList, MapPin, Users, RefreshCw } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { barangayAPI, reportAPI, socket } from '../lib/api';
 
@@ -14,6 +14,7 @@ function statusOf(report: ReportRow) {
 export default function BarangayDashboardPage() {
   const { user } = useAuth();
   const isDispatcher = user?.role === 'dispatcher';
+  const canViewIncidents = user?.role === 'admin' || isDispatcher;
   const [reports, setReports] = useState<ReportRow[]>([]);
   const [requests, setRequests] = useState<AssistanceRow[]>([]);
   const [activeMembers, setActiveMembers] = useState(0);
@@ -26,7 +27,7 @@ export default function BarangayDashboardPage() {
     setError('');
     try {
       const [reportResult, requestResult, teamResult, boardResult] = await Promise.all([
-        isDispatcher ? reportAPI.barangayReports() : Promise.resolve(null),
+        canViewIncidents ? reportAPI.barangayReports() : Promise.resolve(null),
         isDispatcher ? barangayAPI.assistanceRequests() : Promise.resolve(null),
         barangayAPI.team(),
         barangayAPI.barangayBroadcasts(),
@@ -41,7 +42,7 @@ export default function BarangayDashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [isDispatcher]);
+  }, [canViewIncidents, isDispatcher]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
@@ -63,7 +64,7 @@ export default function BarangayDashboardPage() {
     };
   }, [load]);
 
-  const activeReports = reports.filter((report) => !['resolved', 'closed', 'rejected'].includes(statusOf(report)));
+  const activeReports = reports.filter((report) => !['resolved', 'closed', 'rejected', 'dismissed', 'cancelled'].includes(statusOf(report)));
   const pendingRequests = requests.filter((request) => String(request.status || '').toLowerCase() === 'pending');
   const latestReports = [...reports].sort((a, b) => Date.parse(b.created_at || '') - Date.parse(a.created_at || '')).slice(0, 5);
 
@@ -80,7 +81,7 @@ export default function BarangayDashboardPage() {
 
       {error && <div className="workspace-message workspace-message-error" role="alert">{error}<button type="button" onClick={() => void load()}>Try again</button></div>}
       <section className="barangay-console-stat-grid" aria-label="Barangay summary">
-        {isDispatcher && <article><span>Active incident work</span><strong>{loading ? '—' : activeReports.length}</strong><Activity size={20} /></article>}
+        {canViewIncidents && <Link to={isDispatcher ? '/reports' : '/barangay-workspace'} aria-label="Open barangay incidents"><span>Active incidents</span><strong>{loading ? '—' : activeReports.length}</strong><AlertTriangle size={20} /></Link>}
         {isDispatcher && <article><span>Pending assistance</span><strong>{loading ? '—' : pendingRequests.length}</strong><ClipboardList size={20} /></article>}
         <article><span>Active team members</span><strong>{loading ? '—' : activeMembers}</strong><Users size={20} /></article>
         <article><span>Barangay posts</span><strong>{loading ? '—' : postsCount}</strong><Bell size={20} /></article>
