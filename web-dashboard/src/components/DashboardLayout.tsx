@@ -34,9 +34,9 @@ interface NavItem {
 const navItems: NavItem[] = [
   { label: 'Incident Monitoring', section: true },
   { path: '/command-center', icon: <MapPin size={19} strokeWidth={1.8} />, label: 'Command Center' },
-  { path: '/reports', icon: <AlertTriangle size={19} strokeWidth={1.8} />, label: 'Incidents' },
   { path: '/my-reports', icon: <FileText size={19} strokeWidth={1.8} />, label: 'My Reports' },
   { path: '/my-responses', icon: <ClipboardList size={19} strokeWidth={1.8} />, label: 'My Responses' },
+  { path: '/reports', icon: <AlertTriangle size={19} strokeWidth={1.8} />, label: 'Incidents' },
   { path: '/barangay-workspace', icon: <FileText size={19} strokeWidth={1.8} />, label: 'Resolved Reports' },
   { label: 'Barangay Operations', section: true },
   { path: '/barangay-dashboard', icon: <Building2 size={19} strokeWidth={1.8} />, label: 'Barangay Overview' },
