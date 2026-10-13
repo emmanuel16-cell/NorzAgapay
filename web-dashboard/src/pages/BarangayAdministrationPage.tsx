@@ -1,10 +1,36 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
-import { BadgeCheck, Check, Download, Edit3, FileCheck2, FileText, MapPin, Phone, Plus, Save, ShieldAlert, Trash2 } from 'lucide-react';
+import { BadgeCheck, Check, Download, Edit3, FileCheck2, FileText, LocateFixed, MapPin, Phone, Plus, Save, ShieldAlert, Trash2 } from 'lucide-react';
+import { MapContainer, Marker, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
+import L from 'leaflet';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import { API_BASE, barangayAPI, reportAPI, socket } from '../lib/api';
+import { CARTO_ATTRIBUTION, CARTO_DARK_MAP_URL } from '../lib/mapConfig';
 
 type HotlineEntry = { purpose: string; numbers: string[] };
+type CoordinatePoint = [number, number];
+
+const barangayLocationMarker = L.divIcon({
+  className: 'barangay-location-marker',
+  html: '<span></span>',
+  iconSize: [34, 42],
+  iconAnchor: [17, 39],
+});
+
+function BarangayLocationMapPicker({ onPick }: { onPick: (point: CoordinatePoint) => void }) {
+  useMapEvents({ click: ({ latlng }) => onPick([latlng.lat, latlng.lng]) });
+  return null;
+}
+
+function BarangayLocationMapFocus({ point }: { point: CoordinatePoint }) {
+  const map = useMap();
+  useEffect(() => {
+    map.invalidateSize();
+    map.setView(point, Math.max(map.getZoom(), 15), { animate: true });
+  }, [map, point[0], point[1]]);
+  return null;
+}
+
 type Verification = {
   status?: string;
   reference_no?: string;
@@ -80,6 +106,37 @@ export default function BarangayAdministrationPage({ embedded = false, section =
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const mapPoint = useMemo<CoordinatePoint>(() => {
+    const latitude = Number(location.latitude);
+    const longitude = Number(location.longitude);
+    return location.latitude.trim() && location.longitude.trim() && Number.isFinite(latitude) && Number.isFinite(longitude) && latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180
+      ? [latitude, longitude]
+      : [14.9133, 121.0436];
+  }, [location.latitude, location.longitude]);
+  const hasValidLocationCoordinates = Boolean(location.latitude.trim() && location.longitude.trim()
+    && Number.isFinite(Number(location.latitude)) && Number.isFinite(Number(location.longitude))
+    && Number(location.latitude) >= -90 && Number(location.latitude) <= 90
+    && Number(location.longitude) >= -180 && Number(location.longitude) <= 180);
+
+  const updateLocationCoordinates = (point: CoordinatePoint) => setLocation((value) => ({
+    ...value,
+    latitude: point[0].toFixed(6),
+    longitude: point[1].toFixed(6),
+  }));
+
+  const useCurrentLocation = () => {
+    if (!navigator.geolocation) { toast.error('This browser does not support location.'); return; }
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => updateLocationCoordinates([coords.latitude, coords.longitude]),
+      () => toast.error('Could not read your current location. Check browser permission.'),
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
+    );
+  };
+
+  const handleLocationMarkerDragEnd = (event: L.LeafletEvent) => {
+    const point = (event.target as L.Marker).getLatLng();
+    updateLocationCoordinates([point.lat, point.lng]);
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -196,7 +253,7 @@ export default function BarangayAdministrationPage({ embedded = false, section =
     event.preventDefault(); setSaving(true);
     try {
       const latitude = Number(location.latitude); const longitude = Number(location.longitude);
-      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) { toast.error('Enter valid latitude and longitude values.'); return; }
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) { toast.error('Enter valid latitude and longitude values.'); return; }
       await reportAPI.saveBarangayLocation({ latitude, longitude, address: location.address.trim() || null });
       toast.success('Barangay command location saved.');
     } catch (saveError: any) { toast.error(messageOf(saveError, 'Barangay location could not be saved.')); }
@@ -292,12 +349,26 @@ export default function BarangayAdministrationPage({ embedded = false, section =
         {Array.isArray(verification?.verification_history) && verification!.verification_history!.length > 0 && <div className="barangay-account-history"><h3>Review history</h3>{[...verification!.verification_history!].reverse().map((item, index) => <article key={`${item.timestamp || item.action}-${index}`}><span>{String(item.action || 'Update').replaceAll('_', ' ')}</span><p>{item.note || item.actor || 'Status updated'}</p><time>{item.timestamp ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(item.timestamp)) : ''}</time></article>)}</div>}
       </section>}
 
-      {showLocation && isAdmin && active && <section className="barangay-console-panel"><header><div><h2>Barangay command location</h2><p>Used as the barangay operations location in command maps.</p></div></header><form className="barangay-console-form-grid" onSubmit={(event) => void saveLocation(event)}>
-        <label>Latitude<input required type="number" min={-90} max={90} step="any" value={location.latitude} onChange={(event) => setLocation((value) => ({ ...value, latitude: event.target.value }))} /></label>
-        <label>Longitude<input required type="number" min={-180} max={180} step="any" value={location.longitude} onChange={(event) => setLocation((value) => ({ ...value, longitude: event.target.value }))} /></label>
-        <label className="barangay-console-form-wide">Address or landmark<input maxLength={240} value={location.address} onChange={(event) => setLocation((value) => ({ ...value, address: event.target.value }))} placeholder="Barangay hall or response post" /></label>
-        <div className="barangay-console-form-actions"><button className="btn btn-primary" disabled={saving}><MapPin size={16} /> Save command location</button>{location.latitude && location.longitude && <a target="_blank" rel="noreferrer" href={`https://www.google.com/maps?q=${location.latitude},${location.longitude}`}>View coordinates on map</a>}</div>
-      </form></section>}
+      {showLocation && isAdmin && active && <section className="barangay-console-panel barangay-location-panel"><div className="barangay-location-layout">
+        <div className="barangay-location-info"><header><div><h2>Barangay command location</h2><p>Used as the barangay operations location in command maps.</p></div></header>
+          <form className="barangay-console-form-grid barangay-location-fields" onSubmit={(event) => void saveLocation(event)}>
+            <label>Latitude<input required type="number" min={-90} max={90} step="any" value={location.latitude} onChange={(event) => setLocation((value) => ({ ...value, latitude: event.target.value }))} /></label>
+            <label>Longitude<input required type="number" min={-180} max={180} step="any" value={location.longitude} onChange={(event) => setLocation((value) => ({ ...value, longitude: event.target.value }))} /></label>
+            <label className="barangay-console-form-wide">Address or landmark<input maxLength={240} value={location.address} onChange={(event) => setLocation((value) => ({ ...value, address: event.target.value }))} placeholder="Barangay hall or response post" /></label>
+            <div className="barangay-console-form-actions"><button className="btn btn-primary" disabled={saving}><MapPin size={16} /> {saving ? 'Saving…' : 'Save command location'}</button>{location.latitude && location.longitude && <a target="_blank" rel="noreferrer" href={`https://www.google.com/maps?q=${location.latitude},${location.longitude}`}>View coordinates on map</a>}</div>
+          </form>
+        </div>
+        <section className="barangay-location-map" aria-label="Barangay command location map">
+          <MapContainer center={mapPoint} zoom={15} scrollWheelZoom zoomControl className="barangay-location-map-canvas">
+            <TileLayer url={CARTO_DARK_MAP_URL} attribution={CARTO_ATTRIBUTION} />
+            <BarangayLocationMapFocus point={mapPoint} />
+            <BarangayLocationMapPicker onPick={updateLocationCoordinates} />
+            {hasValidLocationCoordinates && <Marker position={mapPoint} icon={barangayLocationMarker} draggable eventHandlers={{ dragend: handleLocationMarkerDragEnd }}><Popup>{location.address || 'Barangay command location'}</Popup></Marker>}
+          </MapContainer>
+          <button className="barangay-location-map-current" type="button" onClick={useCurrentLocation} title="Use current location" aria-label="Use current location"><LocateFixed size={17} /></button>
+          <div className="barangay-location-map-hint"><MapPin size={14} /> Click the map or drag the pin to set coordinates</div>
+        </section>
+      </div></section>}
 
       {showHotlines && active && canViewHotlines && <section className="barangay-console-panel"><header><div><h2>Public hotline directory</h2><p>{canManageHotlines ? 'These entries are shown to residents for your barangay.' : 'Published hotline numbers for your barangay.'}</p></div>{canManageHotlines && <button className="workspace-secondary-action" type="button" onClick={addHotline}><Plus size={16} /> Add hotline</button>}</header>
         {canManageHotlines ? <form onSubmit={(event) => void saveHotlines(event)}>

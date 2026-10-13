@@ -4267,6 +4267,25 @@ tbody tr:last-child td { border-bottom: none; }
 .barangay-console-panel > header h2 svg { color: #49ccdf; }
 .barangay-console-panel > header p { margin: 0; color: var(--text-muted); font-size: 12px; line-height: 1.45; }
 .barangay-console-panel > header > a { display: inline-flex; align-items: center; gap: 5px; color: #46c8df; font-size: 12px; text-decoration: none; white-space: nowrap; }
+.barangay-location-panel { padding: 14px; }
+.barangay-location-layout { display: grid; grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr); align-items: stretch; gap: 14px; }
+.barangay-location-info { display: flex; min-width: 0; flex-direction: column; gap: 13px; padding: 4px; }
+.barangay-location-info > header h2 { margin: 0 0 5px; color: var(--text-primary); font-size: 17px; }
+.barangay-location-info > header p { margin: 0; color: var(--text-muted); font-size: 12px; line-height: 1.45; }
+.barangay-location-fields { align-content: start; }
+.barangay-location-fields > label { display: flex; min-width: 0; flex-direction: column; gap: 6px; color: var(--text-primary); font-size: 12px; font-weight: 650; }
+.barangay-location-fields > label input { width: 100%; min-height: 40px; padding: 9px 11px; border: 1px solid var(--border-color, #345071); border-radius: 8px; color: var(--text-primary); background: var(--bg-primary, #09172b); font: inherit; font-weight: 400; outline: none; }
+.barangay-location-fields > label input:focus { border-color: #30bed6; box-shadow: 0 0 0 2px rgba(48, 190, 214, .12); }
+.barangay-location-map { position: relative; min-width: 0; min-height: 390px; overflow: hidden; border: 1px solid var(--border-color, #294466); border-radius: 11px; background: var(--bg-primary, #09172b); isolation: isolate; }
+.barangay-location-map-canvas { position: absolute !important; inset: 0; z-index: 1; width: 100%; height: 100%; background: var(--bg-primary, #09172b); }
+.barangay-location-map .leaflet-top.leaflet-left { top: auto; bottom: 22px; }
+.barangay-location-map-current { position: absolute; z-index: 500; top: 12px; right: 12px; display: grid; width: 37px; height: 37px; place-items: center; border: 1px solid var(--border-color, #345071); border-radius: 9px; color: var(--text-primary); background: var(--bg-secondary, #0e203d); box-shadow: 0 3px 12px #0005; cursor: pointer; }
+.barangay-location-map-current:hover { border-color: #52cce0; color: #67d7e5; }
+.barangay-location-map-hint { position: absolute; z-index: 400; top: 12px; left: 58px; display: inline-flex; max-width: calc(100% - 116px); align-items: center; gap: 6px; padding: 8px 10px; border: 1px solid var(--border-color, #345071); border-radius: 8px; color: var(--text-primary); background: color-mix(in srgb, var(--bg-secondary, #0e203d) 92%, transparent); box-shadow: 0 3px 12px #0004; font-size: 10px; font-weight: 650; pointer-events: none; }
+.barangay-location-map-hint svg { flex: 0 0 auto; color: #52cce0; }
+.barangay-location-marker { border: 0; background: transparent; }
+.barangay-location-marker > span { position: absolute; top: 3px; left: 5px; width: 24px; height: 24px; transform: rotate(-45deg); border: 3px solid #e7fbff; border-radius: 50% 50% 50% 0; background: #0799b7; box-shadow: 0 3px 12px #0008; }
+.barangay-location-marker > span::after { position: absolute; top: 5px; left: 5px; width: 8px; height: 8px; border-radius: 50%; background: #e7fbff; content: ''; }
 .barangay-board-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; gap: 12px; }
 .barangay-board-columns .barangay-post-grid { grid-template-columns: 1fr; }
 .barangay-policy-details { padding: 13px 0; border-top: 1px solid var(--border-color, #253d5f); }
@@ -4464,10 +4483,13 @@ tbody tr:last-child td { border-bottom: none; }
 :root[data-theme='light'] .barangay-assistance-review textarea,
 :root[data-theme='light'] .barangay-hotline-row input,
 :root[data-theme='light'] .barangay-analytics-controls select { border-color: #c5d2e4; color: #1c2c46; background: #fff; }
+:root[data-theme='light'] .barangay-location-fields > label input { border-color: #c5d2e4; color: #1c2c46; background: #fff; }
 
 @media (max-width: 920px) {
   .barangay-console-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .barangay-console-stat-grid-compact { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .barangay-location-layout { grid-template-columns: 1fr; }
+  .barangay-location-map { min-height: 44vh; }
   .barangay-board-columns { grid-template-columns: 1fr; }
   .barangay-assistance-review { grid-template-columns: 1fr 1fr; }
   .barangay-assistance-review > button { grid-column: 1 / -1; justify-self: start; }
@@ -4486,6 +4508,8 @@ tbody tr:last-child td { border-bottom: none; }
   .barangay-console-stat-grid-compact article:last-child { grid-column: 1 / -1; }
   .barangay-console-panel { padding: 14px 12px; }
   .barangay-console-panel > header { align-items: flex-start; }
+  .barangay-location-info { padding: 0; }
+  .barangay-location-map { min-height: 40vh; }
   .barangay-console-form-grid { grid-template-columns: 1fr; }
   .barangay-console-form-wide { grid-column: auto; }
   .barangay-console-list article { grid-template-columns: 1fr auto; gap: 7px 10px; }
