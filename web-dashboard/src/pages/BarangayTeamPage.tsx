@@ -44,7 +44,15 @@ export default function BarangayTeamPage({ embedded = false }: { embedded?: bool
     };
   }, [load]);
 
-  const resetForm = () => { setForm(emptyForm); setEditingId(null); setIsFormOpen(false); };
+  const resetForm = useCallback(() => { setForm(emptyForm); setEditingId(null); setIsFormOpen(false); }, []);
+  useEffect(() => {
+    if (!isFormOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isFormOpen]);
   const beginEdit = (member: Member) => {
     setEditingId(member.id);
     setForm({ full_name: member.full_name || '', email: member.email || '', phone: member.phone || '', password: '', role: member.role === 'admin' ? 'staff' : member.role });
@@ -101,15 +109,25 @@ export default function BarangayTeamPage({ embedded = false }: { embedded?: bool
       <header className="barangay-console-header">
         <div><span className="workspace-eyebrow">BARANGAY ADMINISTRATION · {user?.barangay_name || 'YOUR BARANGAY'}</span><h1>Barangay team</h1><p>{canManageTeam ? 'Manage accounts in this barangay roster. Response crew selection remains limited to this roster.' : 'View your barangay team roster and contact details.'}</p></div>
         <div className="barangay-console-header-actions">
-          {canManageTeam && !isFormOpen && <button className="workspace-primary-action" type="button" onClick={() => { setForm(emptyForm); setIsFormOpen(true); }} aria-controls="barangay-team-account-form" aria-expanded={isFormOpen}><Plus size={16} /> Add Barangay Account</button>}
+          {canManageTeam && !isFormOpen && <button className="workspace-primary-action" type="button" onClick={() => { setForm(emptyForm); setEditingId(null); setIsFormOpen(true); }} aria-haspopup="dialog" aria-expanded={isFormOpen}><Plus size={16} /> Add Barangay Account</button>}
           <button className="workspace-secondary-action" type="button" onClick={() => void load()} disabled={loading}><RefreshCw size={16} className={loading ? 'workspace-spinning' : ''} /> Refresh</button>
         </div>
       </header>
 
       <section className="barangay-console-stat-grid barangay-console-stat-grid-compact"><article><span>Active accounts</span><strong>{activeMembers.length}</strong><CircleUserRound size={20} /></article><article><span>Inactive accounts</span><strong>{inactiveMembers.length}</strong><UserRoundX size={20} /></article><article><span>Roster scope</span><strong>{user?.barangay_name || 'Barangay'}</strong><ShieldAlert size={20} /></article></section>
 
-      {canManageTeam && <section id="barangay-team-account-form" hidden={!isFormOpen} className="barangay-console-panel barangay-team-form-panel">
-        <header><div><h2>{editingId ? 'Edit team account' : 'Add Barangay Account'}</h2><p>Barangay administrators cannot be added from this form. Dispatcher accounts require an active Barangay Account Request.</p></div><button className="workspace-secondary-action" type="button" onClick={resetForm}><X size={15} /> Cancel</button></header>
+      {canManageTeam && isFormOpen && <div className="barangay-team-modal-backdrop" role="presentation" onKeyDown={(event) => {
+        if (event.key === 'Escape') { event.stopPropagation(); if (!saving) resetForm(); }
+        if (event.key === 'Tab') {
+          const focusable = event.currentTarget.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])');
+          const first = focusable[0];
+          const last = focusable[focusable.length - 1];
+          if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+          else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+        }
+      }} onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) resetForm(); }}>
+        <section id="barangay-team-account-form" className="barangay-console-panel barangay-team-form-panel barangay-team-account-modal" role="dialog" aria-modal="true" aria-labelledby="barangay-team-account-title">
+        <header><div><h2 id="barangay-team-account-title">{editingId ? 'Edit team account' : 'Add Barangay Account'}</h2><p>Barangay administrators cannot be added from this form. Dispatcher accounts require an active Barangay Account Request.</p></div><button autoFocus className="workspace-secondary-action" type="button" onClick={resetForm} disabled={saving}><X size={15} /> Cancel</button></header>
         <form className="barangay-console-form-grid" onSubmit={(event) => void submit(event)}>
           <label>Full name<input required minLength={2} maxLength={120} value={form.full_name} onChange={(event) => setForm((value) => ({ ...value, full_name: event.target.value }))} /></label>
           <label>Email<input required type="email" value={form.email} onChange={(event) => setForm((value) => ({ ...value, email: event.target.value }))} /></label>
@@ -118,7 +136,8 @@ export default function BarangayTeamPage({ embedded = false }: { embedded?: bool
           <label className="barangay-console-form-wide">{editingId ? 'New password (optional)' : 'Initial password'}<PasswordInput required={!editingId} minLength={editingId ? undefined : 8} autoComplete="new-password" value={form.password} onChange={(event) => setForm((value) => ({ ...value, password: event.target.value }))} placeholder={editingId ? 'Leave blank to keep the current password' : 'At least 8 characters'} /></label>
           <div className="barangay-console-form-actions"><button className="btn btn-primary" type="submit" disabled={saving}>{saving ? 'Saving…' : editingId ? <><Check size={16} /> Save account</> : <><Plus size={16} /> Add account</>}</button></div>
         </form>
-      </section>}
+        </section>
+      </div>}
 
       {error && <div className="workspace-message workspace-message-error" role="alert">{error}<button type="button" onClick={() => void load()}>Try again</button></div>}
       {loading ? <p className="barangay-console-muted">Loading the barangay roster…</p> : <>
