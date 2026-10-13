@@ -15,6 +15,7 @@ export default function BarangayTeamPage({ embedded = false }: { embedded?: bool
   const canManageTeam = user?.role === 'admin';
   const [members, setMembers] = useState<Member[]>([]);
   const [form, setForm] = useState<MemberForm>(emptyForm);
+  const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -43,10 +44,11 @@ export default function BarangayTeamPage({ embedded = false }: { embedded?: bool
     };
   }, [load]);
 
-  const resetForm = () => { setForm(emptyForm); setEditingId(null); };
+  const resetForm = () => { setForm(emptyForm); setEditingId(null); setIsFormOpen(false); };
   const beginEdit = (member: Member) => {
     setEditingId(member.id);
     setForm({ full_name: member.full_name || '', email: member.email || '', phone: member.phone || '', password: '', role: member.role === 'admin' ? 'staff' : member.role });
+    setIsFormOpen(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -98,13 +100,16 @@ export default function BarangayTeamPage({ embedded = false }: { embedded?: bool
     <div className={`barangay-console-page${embedded ? ' barangay-console-page-embedded' : ''}`}>
       <header className="barangay-console-header">
         <div><span className="workspace-eyebrow">BARANGAY ADMINISTRATION · {user?.barangay_name || 'YOUR BARANGAY'}</span><h1>Barangay team</h1><p>{canManageTeam ? 'Manage accounts in this barangay roster. Response crew selection remains limited to this roster.' : 'View your barangay team roster and contact details.'}</p></div>
-        <button className="workspace-secondary-action" type="button" onClick={() => void load()} disabled={loading}><RefreshCw size={16} className={loading ? 'workspace-spinning' : ''} /> Refresh</button>
+        <div className="barangay-console-header-actions">
+          {canManageTeam && !isFormOpen && <button className="workspace-primary-action" type="button" onClick={() => { setForm(emptyForm); setIsFormOpen(true); }} aria-controls="barangay-team-account-form" aria-expanded={isFormOpen}><Plus size={16} /> Add Barangay Account</button>}
+          <button className="workspace-secondary-action" type="button" onClick={() => void load()} disabled={loading}><RefreshCw size={16} className={loading ? 'workspace-spinning' : ''} /> Refresh</button>
+        </div>
       </header>
 
       <section className="barangay-console-stat-grid barangay-console-stat-grid-compact"><article><span>Active accounts</span><strong>{activeMembers.length}</strong><CircleUserRound size={20} /></article><article><span>Inactive accounts</span><strong>{inactiveMembers.length}</strong><UserRoundX size={20} /></article><article><span>Roster scope</span><strong>{user?.barangay_name || 'Barangay'}</strong><ShieldAlert size={20} /></article></section>
 
-      {canManageTeam && <section className="barangay-console-panel barangay-team-form-panel">
-        <header><div><h2>{editingId ? 'Edit team account' : 'Add a team account'}</h2><p>Barangay administrators cannot be added from this form. Dispatcher accounts require an active Barangay Account Request.</p></div>{editingId && <button className="workspace-secondary-action" type="button" onClick={resetForm}><X size={15} /> Cancel edit</button>}</header>
+      {canManageTeam && <section id="barangay-team-account-form" hidden={!isFormOpen} className="barangay-console-panel barangay-team-form-panel">
+        <header><div><h2>{editingId ? 'Edit team account' : 'Add Barangay Account'}</h2><p>Barangay administrators cannot be added from this form. Dispatcher accounts require an active Barangay Account Request.</p></div><button className="workspace-secondary-action" type="button" onClick={resetForm}><X size={15} /> Cancel</button></header>
         <form className="barangay-console-form-grid" onSubmit={(event) => void submit(event)}>
           <label>Full name<input required minLength={2} maxLength={120} value={form.full_name} onChange={(event) => setForm((value) => ({ ...value, full_name: event.target.value }))} /></label>
           <label>Email<input required type="email" value={form.email} onChange={(event) => setForm((value) => ({ ...value, email: event.target.value }))} /></label>

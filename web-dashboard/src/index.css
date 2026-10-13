@@ -4238,6 +4238,7 @@ tbody tr:last-child td { border-bottom: none; }
 /* Barangay administration workspaces */
 .barangay-console-page { display: flex; min-height: 100%; flex-direction: column; gap: 18px; padding: 24px clamp(16px, 2.6vw, 34px) 38px; color: var(--text-primary); }
 .barangay-console-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.barangay-console-header-actions { display: flex; flex: 0 0 auto; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
 .barangay-console-header h1 { margin: 5px 0 5px; color: var(--text-primary); font-size: clamp(24px, 3vw, 32px); line-height: 1.2; }
 .barangay-console-header p { margin: 0; color: var(--text-muted); font-size: 14px; }
 .barangay-console-header .workspace-eyebrow { color: #45d1e6; }
@@ -4435,7 +4436,7 @@ tbody tr:last-child td { border-bottom: none; }
 @media (max-width: 680px) {
   .barangay-console-page { gap: 13px; padding: 17px 13px 28px; }
   .barangay-console-header { align-items: flex-start; flex-direction: column; }
-  .barangay-console-header > button { align-self: flex-start; }
+  .barangay-console-header-actions { align-self: flex-start; justify-content: flex-start; }
   .barangay-console-shortcuts, .barangay-post-grid, .barangay-analytics-grid, .barangay-team-grid { grid-template-columns: 1fr; }
   .barangay-console-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
   .barangay-console-stat-grid article { min-height: 88px; padding: 13px; }
