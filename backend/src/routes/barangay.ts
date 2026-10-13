@@ -3152,31 +3152,48 @@ router.post('/reports/:id/close', authenticateBarangay, requireRole(['dispatcher
 
 router.get('/reports/:id/resolution-pdf', authenticateBarangay, requireRole(['admin', 'staff', 'dispatcher', 'responder']), async (req: any, res: Response) => {
   try {
+    const isResponder = req.barangayUser.role === 'responder';
+    const responderId = req.barangayUser.userId;
     const { data: report, error } = await supabaseAdmin
       .from('barangay_reports')
-      .select('id, barangay_id, response_status, status')
+      .select('id, barangay_id, response_status, status, responded_by, barangay_responded_by, response_notes, barangay_response_notes')
       .eq('id', req.params.id)
       .eq('barangay_id', req.barangayUser.barangayId)
       .maybeSingle();
     if (error) throw error;
     let barangayAssignmentId: string | undefined;
     if (report) {
+      if (isResponder) {
+        const assignedIds = new Set<string>();
+        if (typeof report.responded_by === 'string') assignedIds.add(report.responded_by);
+        if (typeof report.barangay_responded_by === 'string') assignedIds.add(report.barangay_responded_by);
+        const notes = String(report.barangay_response_notes || report.response_notes || '');
+        const assignedMatch = notes.match(/\[ASSIGNED:([^\]]+)\]/);
+        if (assignedMatch?.[1]) assignedMatch[1].split(',').map((id: string) => id.trim()).filter(Boolean).forEach((id: string) => assignedIds.add(id));
+        if (!assignedIds.has(responderId)) {
+          res.status(404).json({ error: 'Resolved incident report not found for this responder.' }); return;
+        }
+      }
       if (report.response_status !== 'resolved' && !['resolved', 'closed'].includes(String(report.status).toLowerCase())) {
         res.status(409).json({ error: 'This report has not been resolved yet.' }); return;
       }
     } else {
-      const { data: assignment, error: assignmentError } = await supabaseAdmin
+      const { data: assignments, error: assignmentError } = await supabaseAdmin
         .from('mdrrmo_report_barangay_assignments')
-        .select('id')
+        .select('id, responder_ids')
         .eq('report_id', req.params.id)
         .eq('barangay_id', req.barangayUser.barangayId)
         .eq('assignment_status', 'completed')
         .eq('response_status', 'resolved')
-        .order('resolved_at', { ascending: false, nullsFirst: false })
-        .limit(1)
-        .maybeSingle();
+        .order('resolved_at', { ascending: false, nullsFirst: false });
       if (assignmentError) throw assignmentError;
-      if (!assignment) { res.status(404).json({ error: 'Resolved incident report not found for this barangay.' }); return; }
+      const assignment = isResponder
+        ? (assignments || []).find((row: any) => (row.responder_ids || []).includes(responderId))
+        : assignments?.[0];
+      if (!assignment) {
+        res.status(404).json({ error: isResponder ? 'Resolved incident report not found for this responder.' : 'Resolved incident report not found for this barangay.' });
+        return;
+      }
       barangayAssignmentId = assignment.id;
     }
     const pdf = await IncidentResolutionPdfService.generateAndStore(req.params.id, barangayAssignmentId);

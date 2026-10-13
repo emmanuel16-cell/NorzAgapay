@@ -16,7 +16,6 @@ import AlertBroadcastsPage from './pages/AlertBroadcastsPage';
 import OfficersPage from './pages/OfficersPage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import ReportsPage from './pages/ReportsPage';
-import BarangayResponderIncidentsPage from './pages/BarangayResponderIncidentsPage';
 import ResidentReportsPage from './pages/ResidentReportsPage';
 import ResponderWorkspacePage from './pages/ResponderWorkspacePage';
 import BarangayStaffWorkspacePage from './pages/BarangayStaffWorkspacePage';
@@ -86,8 +85,7 @@ function BarangayAccess({ roles, children, allowInactive = false }: { roles: str
 
 function IncidentReportsRoute() {
   const { user } = useAuth();
-  if (user?.account_kind === 'barangay' && user.role === 'responder') return <BarangayResponderIncidentsPage />;
-  return <ReportsPage />;
+  return <ReportsPage readOnlyResponder={user?.account_kind === 'barangay' && user.role === 'responder'} />;
 }
 
 function AppRoutes() {

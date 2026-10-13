@@ -7,6 +7,7 @@ import { reportAPI, socket } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { INCIDENT_SEVERITY_OPTIONS, INCIDENT_TYPE_OPTIONS } from '../lib/incidentClassification';
 import { getMdrrmoReportGroup, isVisibleToMdrrmo } from '../lib/mdrrmoReportVisibility';
+import { createDemoResponderReport } from '../demoResponderReport';
 
 type ReportGroup = 'resident' | 'escalated';
 type ReportStage = 'pending' | 'responding' | 'resolved';
@@ -47,6 +48,7 @@ interface IncidentReport {
   is_central_assignment?: boolean; assignment_id?: string; assignment_status?: string; assignment_notes?: string;
   assigned_team_leader_ids?: string[]; active_barangay_assignment?: BarangayAssignment | null; barangay_assignments?: BarangayAssignment[];
   barangay_responded_at?: string | null; barangay_resolved_notes?: string | null;
+  is_demo?: boolean;
 }
 type ResponderOption = { id: string; full_name: string; phone?: string | null; unit_type?: string | null; unit_id: string; unit_name: string };
 
@@ -107,16 +109,25 @@ const parseAssessment = (notes?: string | null): FieldAssessment => {
   };
 };
 
-export default function ReportsPage({ readOnlyBarangay = false }: { readOnlyBarangay?: boolean } = {}) {
+export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponder = false }: { readOnlyBarangay?: boolean; readOnlyResponder?: boolean } = {}) {
   const { user } = useAuth();
   const isBarangay = user?.account_kind === 'barangay';
   const isReadOnlyBarangay = readOnlyBarangay && isBarangay && user?.role === 'admin';
+  const isReadOnlyResponder = readOnlyResponder && isBarangay && user?.role === 'responder';
+  const isReadOnlyWorkspace = isReadOnlyBarangay || isReadOnlyResponder;
   const [searchParams, setSearchParams] = useSearchParams();
   const [currentTime, setCurrentTime] = useState(() => new Date().toLocaleTimeString());
   const [reports, setReports] = useState<IncidentReport[]>([]);
+  const [demoReport] = useState<IncidentReport>(() => {
+    const sample = createDemoResponderReport();
+    return { ...sample, type: sample.incident_type || 'incident', status: sample.response_status || 'responding', barangay_name: user?.barangay_name || null };
+  });
+  const [demoDismissed, setDemoDismissed] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [group, setGroup] = useState<ReportGroup>('resident');
-  const [stage, setStage] = useState<ReportStage>('pending');
+  const [stage, setStage] = useState<ReportStage>(() => isReadOnlyResponder &&
+    localStorage.getItem('norzagapay_debug_session') === 'true' &&
+    localStorage.getItem('norzagapay_responder_demo_hidden') !== 'true' ? 'responding' : 'pending');
   const [loading, setLoading] = useState(true);
   const [dispatchReport, setDispatchReport] = useState<IncidentReport | null>(null);
   const [incidentType, setIncidentType] = useState('');
@@ -133,6 +144,11 @@ export default function ReportsPage({ readOnlyBarangay = false }: { readOnlyBara
   const [destinations, setDestinations] = useState<BarangayDestination[]>([]);
   const [destinationId, setDestinationId] = useState('');
   const [assignmentNotes, setAssignmentNotes] = useState('');
+
+  const showDemoPreview = isReadOnlyResponder &&
+    localStorage.getItem('norzagapay_debug_session') === 'true' &&
+    localStorage.getItem('norzagapay_responder_demo_hidden') !== 'true' && !demoDismissed;
+  const displayedReports = useMemo(() => showDemoPreview ? [...reports, demoReport] : reports, [demoReport, reports, showDemoPreview]);
 
   const fetchReports = async () => {
     try {
@@ -153,6 +169,9 @@ export default function ReportsPage({ readOnlyBarangay = false }: { readOnlyBara
     const handleUpdate = (updated: IncidentReport) => {
       if (!updated?.id) return;
       void fetchReports();
+      // Responder sockets are barangay-wide; refetch the responder-scoped list instead of
+      // merging a possibly unrelated report event into the signed-in responder's queue.
+      if (isReadOnlyResponder) return;
       setReports((current) => {
         if (!isBarangay && !isVisibleToMdrrmo(updated)) return current.filter((item) => item.id !== updated.id);
         return current.some((item) => item.id === updated.id)
@@ -179,7 +198,7 @@ export default function ReportsPage({ readOnlyBarangay = false }: { readOnlyBara
       socket.off('incident_report:new', handleLifecycle);
       socket.off('barangay:escalated', handleLifecycle);
     };
-  }, [isBarangay]);
+  }, [isBarangay, isReadOnlyResponder]);
   useEffect(() => {
     const id = searchParams.get('id');
     if (!id || !reports.length) return;
@@ -187,7 +206,7 @@ export default function ReportsPage({ readOnlyBarangay = false }: { readOnlyBara
     if (target) { setSelectedId(target.id); setGroup(getGroup(target)); setStage(getStage(target)); }
   }, [searchParams, reports]);
 
-  const inGroup = useMemo(() => isBarangay ? reports : reports.filter((item) => getGroup(item) === group), [reports, group, isBarangay]);
+  const inGroup = useMemo(() => isBarangay ? displayedReports : displayedReports.filter((item) => getGroup(item) === group), [displayedReports, group, isBarangay]);
   const counts = useMemo(() => ({
     pending: inGroup.filter((item) => getStage(item) === 'pending').length,
     responding: inGroup.filter((item) => getStage(item) === 'responding').length,
@@ -360,7 +379,7 @@ export default function ReportsPage({ readOnlyBarangay = false }: { readOnlyBara
   return (
     <main className="reports-workspace-v2">
       <header className="reports-page-header-v2">
-        <div><h1>{isReadOnlyBarangay ? 'Incidents' : 'Incidents Reports'}</h1><span>{isReadOnlyBarangay ? `Read-only incident workspace · ${user?.barangay_name || 'Your barangay'}` : isBarangay ? `Barangay response workspace · ${user?.barangay_name || 'Your barangay'}` : 'Dispatcher workspace'}</span></div>
+        <div><h1>Incidents Reports</h1><span>{isReadOnlyResponder ? `Responder workspace · ${user?.barangay_name || 'Your barangay'} · assigned to you` : isReadOnlyBarangay ? `Read-only incident workspace · ${user?.barangay_name || 'Your barangay'}` : isBarangay ? `Barangay response workspace · ${user?.barangay_name || 'Your barangay'}` : 'Dispatcher workspace'}</span></div>
         <div className="reports-live-indicator"><i /> Live <span>·</span> {currentTime}</div>
       </header>
       {!isBarangay && <nav className="reports-group-tabs-v2" aria-label="Report type">
@@ -372,6 +391,7 @@ export default function ReportsPage({ readOnlyBarangay = false }: { readOnlyBara
           <button key={value} type="button" className={'stage-' + value + (stage === value ? ' active' : '')} onClick={() => selectStage(value)}>{label} <span>{counts[value]}</span></button>
         ))}
       </nav>
+      {showDemoPreview && <div className="responder-demo-notice reports-demo-notice" role="note"><div><strong>Debug demo preview</strong><span>This sample is not a real incident and is not saved. It appears here only to preview the dispatcher-style report layout.</span></div><button type="button" onClick={() => { localStorage.setItem('norzagapay_responder_demo_hidden', 'true'); setDemoDismissed(true); }}><X size={15} /> Hide preview</button></div>}
 
       <section className="reports-split-view-v2">
         <aside className="reports-queue-v2">
@@ -382,10 +402,10 @@ export default function ReportsPage({ readOnlyBarangay = false }: { readOnlyBara
                 const reportProofs = getProofs(report);
                 const active = selected?.id === report.id;
                 return <button key={report.id} type="button" className={'reports-queue-item-v2 ' + stage + (active ? ' selected' : '')} onClick={() => selectReport(report)}>
-                  <span className="reports-queue-item-top"><strong>{report.description?.trim() || 'No report details provided.'}</strong><span className={'report-status-chip-v2 ' + stage}>{stage === 'responding' ? 'Responding' : stage === 'resolved' ? 'Resolved' : 'Pending'}</span></span>
+                  <span className="reports-queue-item-top"><strong>{report.is_demo ? 'Demo: ' : ''}{report.description?.trim() || 'No report details provided.'}</strong><span className={'report-status-chip-v2 ' + stage}>{report.is_demo ? 'Demo preview' : stage === 'responding' ? 'Responding' : stage === 'resolved' ? 'Resolved' : 'Pending'}</span></span>
                   <span className="reports-queue-time">Report received {timeAgo(report.created_at)}</span>
                   <span className="reports-queue-time">{incidentTimeLabel(report)}</span>
-                  <span className="reports-queue-meta"><span><MapPin size={14} /> {report.barangay_name || 'Location not provided'}</span><span><Paperclip size={13} /> {reportProofs.length} attachment{reportProofs.length === 1 ? '' : 's'}</span></span>
+                  <span className="reports-queue-meta"><span><MapPin size={14} /> {report.is_demo ? 'Demo location' : report.barangay_name || 'Location not provided'}</span><span><Paperclip size={13} /> {reportProofs.length} attachment{reportProofs.length === 1 ? '' : 's'}</span></span>
                   {stage !== 'pending' && (report.incident_type || report.severity) && <span className="reports-classification-tags">
                     {report.incident_type && <small>{INCIDENT_TYPE_OPTIONS.find((item) => item.value === report.incident_type)?.label || report.incident_type.replaceAll('_', ' ')}</small>}
                     {report.severity && <small className="priority">{INCIDENT_SEVERITY_OPTIONS.find((item) => item.value === report.severity)?.label || report.severity} priority</small>}
@@ -482,7 +502,7 @@ export default function ReportsPage({ readOnlyBarangay = false }: { readOnlyBara
                 {stage === 'resolved' && <section className="reports-resolve-notes-v2"><strong>Resolve notes</strong><p>{selected.resolved_notes?.trim() || selected.barangay_assignments?.[0]?.resolved_notes?.trim() || 'No resolve notes provided.'}</p></section>}
               </>}
             </div>
-            {!isReadOnlyBarangay && stage === 'pending' && <footer className="reports-detail-actions-v2">
+            {!isReadOnlyWorkspace && stage === 'pending' && <footer className="reports-detail-actions-v2">
                 {!isBarangay && getGroup(selected) === 'resident' && !selected.mdrrmo_dispatched_at && <button type="button" className="reports-invalid-button-v2" onClick={() => void markInvalid(selected)}>Mark invalid</button>}
                 {isBarangay && selected.is_central_assignment ? <>
                   <button type="button" className="reports-invalid-button-v2" onClick={() => void escalateBarangayAssignment(selected)} disabled={saving}>Return to MDRRMO</button>
