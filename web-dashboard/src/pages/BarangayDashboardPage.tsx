@@ -180,6 +180,7 @@ export default function BarangayDashboardPage() {
 
       <section className="barangay-console-shortcuts" aria-label="Barangay workspaces">
         {isDispatcher && <Link to="/command-center"><MapPin /><span><strong>Incident command</strong><small>View the barangay-scoped incident queue and map.</small></span><ArrowRight /></Link>}
+        {isDispatcher && <Link to="/reports"><AlertTriangle /><span><strong>Incidents</strong><small>Review incident reports assigned to your barangay.</small></span><ArrowRight /></Link>}
         {isDispatcher && <Link to="/barangay-assistance"><ClipboardList /><span><strong>Assistance requests</strong><small>Review requests or track the ones you submitted.</small></span><ArrowRight /></Link>}
         {user?.role === 'admin' && <Link to="/barangay-workspace"><AlertTriangle /><span><strong>Incidents</strong><small>Review incidents and download resolution documents.</small></span><ArrowRight /></Link>}
         <Link to="/barangay-board"><Bell /><span><strong>Barangay board</strong><small>Publish local advisories and read MDRRMO alerts.</small></span><ArrowRight /></Link>
