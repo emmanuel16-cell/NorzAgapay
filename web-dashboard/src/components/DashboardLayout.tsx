@@ -96,7 +96,6 @@ function navigationForRole(role?: string, accountKind?: string, isMasterAdmin = 
         { label: 'Barangay Operations', section: true },
         item('/barangay-dashboard'),
         item('/barangay-board'),
-        { label: 'Barangay Administration', section: true },
         item('/barangay-team'),
       ];
     }
