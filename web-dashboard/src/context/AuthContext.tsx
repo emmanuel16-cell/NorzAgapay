@@ -115,6 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!response || !nextKind) throw firstUnauthorized || new Error('Login failed.');
     const { token: savedToken, user: loggedInUser } = response.data;
     loggedInUser.account_kind = nextKind;
+    localStorage.removeItem('norzagapay_debug_session');
     localStorage.setItem('norzagapay_account_kind', nextKind);
     localStorage.setItem('norzagapay_token', savedToken);
     localStorage.setItem('norzagapay_user', JSON.stringify(loggedInUser));
@@ -125,6 +126,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const setSession = (savedToken: string, sessionUser: User, nextKind: 'mdrrmo' | 'barangay' | 'resident') => {
     const nextUser = { ...sessionUser, account_kind: nextKind };
+    localStorage.removeItem('norzagapay_debug_session');
     localStorage.setItem('norzagapay_account_kind', nextKind);
     localStorage.setItem('norzagapay_token', savedToken);
     localStorage.setItem('norzagapay_user', JSON.stringify(nextUser));
@@ -138,6 +140,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { token: savedToken, user: loggedInUser } = response.data;
     const nextKind = audience === 'barangay' ? 'barangay' : 'mdrrmo';
     loggedInUser.account_kind = nextKind;
+    localStorage.setItem('norzagapay_debug_session', 'true');
+    localStorage.removeItem('norzagapay_responder_demo_hidden');
     localStorage.setItem('norzagapay_account_kind', nextKind);
     localStorage.setItem('norzagapay_token', savedToken);
     localStorage.setItem('norzagapay_user', JSON.stringify(loggedInUser));
@@ -156,6 +160,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = () => {
+    localStorage.removeItem('norzagapay_debug_session');
     localStorage.removeItem('norzagapay_token');
     localStorage.removeItem('norzagapay_user');
     localStorage.removeItem('norzagapay_account_kind');

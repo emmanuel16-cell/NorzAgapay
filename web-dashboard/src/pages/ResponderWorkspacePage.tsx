@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Activity, AlertCircle, CheckCircle2, ClipboardList, MapPin, RefreshCw, ShieldAlert, Upload } from 'lucide-react';
+import { Activity, AlertCircle, CheckCircle2, ClipboardList, MapPin, RefreshCw, ShieldAlert, Upload, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { reportAPI, respondUnitAPI } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
+import { createDemoResponderReport } from '../demoResponderReport';
 
 type CrewMember = { id?: string; unit_member_id?: string; name?: string; full_name?: string; member_role: string; is_active?: boolean };
 type BarangayCrewMember = { id: string; full_name: string; account_role: 'responder' | 'staff' };
@@ -28,6 +29,7 @@ type AssignedReport = {
   mdrrmo_arrived_at?: string | null;
   mdrrmo_assignments?: ResponseAssignment[];
   assigned_responder_ids?: string[];
+  is_demo?: boolean;
 };
 
 const emptyAssessment = { situation: '', affected_people: '', actions_taken: '', risks_resources: '' };
@@ -35,6 +37,8 @@ const emptyAssessment = { situation: '', affected_people: '', actions_taken: '',
 export default function ResponderWorkspacePage() {
   const { user } = useAuth();
   const isBarangay = user?.account_kind === 'barangay';
+  const [demoReport] = useState<AssignedReport>(() => createDemoResponderReport());
+  const [demoDismissed, setDemoDismissed] = useState(false);
   const [reports, setReports] = useState<AssignedReport[]>([]);
   const [crew, setCrew] = useState<CrewMember[]>([]);
   const [barangayRoster, setBarangayRoster] = useState<BarangayCrewMember[]>([]);
@@ -85,6 +89,10 @@ export default function ResponderWorkspacePage() {
   const responseStatusFor = (report: AssignedReport) => String((isBarangay ? report.barangay_response_status : report.response_status) || report.response_status || 'pending').toLowerCase();
   const activeReports = reports.filter((report) => responseStatusFor(report) !== 'resolved');
   const resolvedCount = reports.length - activeReports.length;
+  const showDemoPreview = isBarangay && user?.role === 'responder' &&
+    localStorage.getItem('norzagapay_debug_session') === 'true' &&
+    localStorage.getItem('norzagapay_responder_demo_hidden') !== 'true' && !demoDismissed;
+  const visibleActiveReports = showDemoPreview ? [...activeReports, demoReport] : activeReports;
 
   const perform = async (action: () => Promise<unknown>, successMessage: string) => {
     setSaving(true);
@@ -160,19 +168,20 @@ export default function ResponderWorkspacePage() {
         <article><span>{isBarangay ? 'Scoped reports' : 'Unit crew'}</span><strong>{isBarangay ? reports.length : crew.length}</strong></article>
       </section>
       {error && <div className="workspace-message workspace-message-error" role="alert"><AlertCircle size={17} />{error}<button type="button" onClick={() => void loadWorkspace()}>Try again</button></div>}
+      {showDemoPreview && <div className="responder-demo-notice" role="note"><div><strong>Debug demo preview</strong><span>This sample is not a real incident, is not saved, and is excluded from the counts above.</span></div><button type="button" onClick={() => { localStorage.setItem('norzagapay_responder_demo_hidden', 'true'); setDemoDismissed(true); }}><X size={15} /> Hide preview</button></div>}
       {!loading && !isBarangay && crew.length === 0 && <div className="workspace-message"><ShieldAlert size={17} />Your unit roster is not available yet. Ask logistics staff to assign your team and crew.</div>}
-      {loading ? <p className="resident-reports-state">Loading assigned responses…</p> : activeReports.length === 0 ? (
+      {loading ? <p className="resident-reports-state">Loading assigned responses…</p> : visibleActiveReports.length === 0 ? (
         <div className="resident-reports-empty"><CheckCircle2 size={23} /><strong>No active assignments</strong><span>New dispatches assigned to your responder account will appear here.</span></div>
       ) : <div className="responder-report-list">
-        {activeReports.map((report) => {
+        {visibleActiveReports.map((report) => {
           const assignment = assignmentFor(report);
           const assignmentStatus = String(isBarangay ? report.assignment_status || '' : assignment?.status || assignment?.assignment_status || '').toLowerCase();
           const responseStatus = responseStatusFor(report);
           const arrived = isBarangay
             ? Boolean(report.barangay_arrived_at)
             : Boolean(assignment ? assignment.arrived_at : report.mdrrmo_arrived_at);
-          const canUpdateField = isBarangay ? responseStatus === 'responding' : assignmentStatus === 'responding';
-          const canManageCrew = !arrived && (isBarangay
+          const canUpdateField = !report.is_demo && (isBarangay ? responseStatus === 'responding' : assignmentStatus === 'responding');
+          const canManageCrew = !report.is_demo && !arrived && (isBarangay
             ? Boolean(report.is_central_assignment && report.barangay_dispatched_at && responseStatus === 'responding')
             : assignmentStatus === 'responding');
           const selectedCrewIds = crewSelections[report.id] || [];
@@ -181,7 +190,7 @@ export default function ResponderWorkspacePage() {
           const savedBarangayCrew = report.barangay_crew_members || [];
           const displayStatus = responseStatus === 'responding' ? 'Responding' : assignmentStatus === 'active' ? 'Assigned' : assignmentStatus || 'Assigned';
           return <article className="responder-report-card" key={report.id}>
-            <header><div><span className="workspace-eyebrow">{report.incident_type?.replaceAll('_', ' ') || 'Incident'}{report.severity ? ` · ${report.severity}` : ''}</span><h2>{report.title || 'Incident response'}</h2></div><span className={`resident-status ${responseStatus === 'responding' ? 'responding' : ''}`}>{displayStatus}</span></header>
+            <header><div><span className="workspace-eyebrow">{report.is_demo ? 'DEMO ASSIGNMENT · ' : ''}{report.incident_type?.replaceAll('_', ' ') || 'Incident'}{report.severity ? ` · ${report.severity}` : ''}</span><h2>{report.title || 'Incident response'}</h2></div><span className={`resident-status ${responseStatus === 'responding' ? 'responding' : ''} ${report.is_demo ? 'demo' : ''}`}>{report.is_demo ? 'Demo preview' : displayStatus}</span></header>
             <p className="responder-report-description">{report.description || 'No incident details were provided.'}</p>
             <div className="resident-report-meta"><span><Activity size={14} /> {report.created_at ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(report.created_at)) : 'Time unavailable'}</span><span><MapPin size={14} /> {report.latitude != null && report.longitude != null ? `${Number(report.latitude).toFixed(5)}, ${Number(report.longitude).toFixed(5)}` : 'Location unavailable'}</span></div>
 
