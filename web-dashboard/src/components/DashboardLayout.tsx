@@ -69,7 +69,7 @@ function navigationForRole(role?: string, accountKind?: string, isMasterAdmin = 
       staff: ['/barangay-workspace', '/barangay-team', '/barangay-board'],
     };
     const paths = visiblePaths[role || ''] || [];
-    return navItems.filter((item) => item.path ? paths.includes(item.path) : paths.some((path) => {
+    const visibleItems = navItems.filter((item) => item.path ? paths.includes(item.path) : paths.some((path) => {
       if (path === '/barangay-dashboard' || path === '/barangay-assistance' || path === '/barangay-board') return item.label === 'Barangay Operations';
       if (path === '/barangay-team' || path === '/barangay-analytics') return item.label === 'Barangay Administration';
       if (path === '/command-center' || path === '/reports') return item.label === 'Incident Monitoring';
@@ -77,6 +77,9 @@ function navigationForRole(role?: string, accountKind?: string, isMasterAdmin = 
       if (path === '/locations') return item.label === 'Operations';
       return false;
     }));
+    return role === 'admin' ? visibleItems.map((item) => item.path === '/barangay-workspace'
+      ? { ...item, icon: <AlertTriangle size={19} strokeWidth={1.8} />, label: 'Incidents' }
+      : item) : visibleItems;
   }
   if (role === 'responder') return navItems.filter((item) => item.path === '/my-responses');
   if (isMasterAdmin) return navItems.filter((item) => !['/my-reports', '/my-responses', '/barangay-workspace'].includes(item.path || ''));

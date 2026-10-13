@@ -3159,11 +3159,27 @@ router.get('/reports/:id/resolution-pdf', authenticateBarangay, requireRole(['ad
       .eq('barangay_id', req.barangayUser.barangayId)
       .maybeSingle();
     if (error) throw error;
-    if (!report) { res.status(404).json({ error: 'Incident report not found.' }); return; }
-    if (report.response_status !== 'resolved' && !['resolved', 'closed'].includes(String(report.status).toLowerCase())) {
-      res.status(409).json({ error: 'This report has not been resolved yet.' }); return;
+    let barangayAssignmentId: string | undefined;
+    if (report) {
+      if (report.response_status !== 'resolved' && !['resolved', 'closed'].includes(String(report.status).toLowerCase())) {
+        res.status(409).json({ error: 'This report has not been resolved yet.' }); return;
+      }
+    } else {
+      const { data: assignment, error: assignmentError } = await supabaseAdmin
+        .from('mdrrmo_report_barangay_assignments')
+        .select('id')
+        .eq('report_id', req.params.id)
+        .eq('barangay_id', req.barangayUser.barangayId)
+        .eq('assignment_status', 'completed')
+        .eq('response_status', 'resolved')
+        .order('resolved_at', { ascending: false, nullsFirst: false })
+        .limit(1)
+        .maybeSingle();
+      if (assignmentError) throw assignmentError;
+      if (!assignment) { res.status(404).json({ error: 'Resolved incident report not found for this barangay.' }); return; }
+      barangayAssignmentId = assignment.id;
     }
-    const pdf = await IncidentResolutionPdfService.generateAndStore(req.params.id);
+    const pdf = await IncidentResolutionPdfService.generateAndStore(req.params.id, barangayAssignmentId);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="Norz-Agapay_Incident_${req.params.id.slice(0, 8)}.pdf"`);
     res.setHeader('Content-Length', pdf.buffer.length);

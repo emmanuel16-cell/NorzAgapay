@@ -107,9 +107,10 @@ const parseAssessment = (notes?: string | null): FieldAssessment => {
   };
 };
 
-export default function ReportsPage() {
+export default function ReportsPage({ readOnlyBarangay = false }: { readOnlyBarangay?: boolean } = {}) {
   const { user } = useAuth();
   const isBarangay = user?.account_kind === 'barangay';
+  const isReadOnlyBarangay = readOnlyBarangay && isBarangay && user?.role === 'admin';
   const [searchParams, setSearchParams] = useSearchParams();
   const [currentTime, setCurrentTime] = useState(() => new Date().toLocaleTimeString());
   const [reports, setReports] = useState<IncidentReport[]>([]);
@@ -322,7 +323,7 @@ export default function ReportsPage() {
   const downloadResolutionPdf = async (report: IncidentReport) => {
     try {
       setDownloadingPdf(true);
-      const response = await reportAPI.downloadMdrrmoResolutionPdf(report.id);
+      const response = await (isBarangay ? reportAPI.barangayResolutionPdf(report.id) : reportAPI.downloadMdrrmoResolutionPdf(report.id));
       const blob = new Blob([response.data], { type: 'application/pdf' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -359,7 +360,7 @@ export default function ReportsPage() {
   return (
     <main className="reports-workspace-v2">
       <header className="reports-page-header-v2">
-        <div><h1>Incidents Reports</h1><span>{isBarangay ? `Barangay response workspace · ${user?.barangay_name || 'Your barangay'}` : 'Dispatcher workspace'}</span></div>
+        <div><h1>{isReadOnlyBarangay ? 'Incidents' : 'Incidents Reports'}</h1><span>{isReadOnlyBarangay ? `Read-only incident workspace · ${user?.barangay_name || 'Your barangay'}` : isBarangay ? `Barangay response workspace · ${user?.barangay_name || 'Your barangay'}` : 'Dispatcher workspace'}</span></div>
         <div className="reports-live-indicator"><i /> Live <span>·</span> {currentTime}</div>
       </header>
       {!isBarangay && <nav className="reports-group-tabs-v2" aria-label="Report type">
@@ -481,7 +482,7 @@ export default function ReportsPage() {
                 {stage === 'resolved' && <section className="reports-resolve-notes-v2"><strong>Resolve notes</strong><p>{selected.resolved_notes?.trim() || selected.barangay_assignments?.[0]?.resolved_notes?.trim() || 'No resolve notes provided.'}</p></section>}
               </>}
             </div>
-            {stage === 'pending' && <footer className="reports-detail-actions-v2">
+            {!isReadOnlyBarangay && stage === 'pending' && <footer className="reports-detail-actions-v2">
                 {!isBarangay && getGroup(selected) === 'resident' && !selected.mdrrmo_dispatched_at && <button type="button" className="reports-invalid-button-v2" onClick={() => void markInvalid(selected)}>Mark invalid</button>}
                 {isBarangay && selected.is_central_assignment ? <>
                   <button type="button" className="reports-invalid-button-v2" onClick={() => void escalateBarangayAssignment(selected)} disabled={saving}>Return to MDRRMO</button>
@@ -507,7 +508,7 @@ export default function ReportsPage() {
               }} disabled={saving}>Resolve incident</button>
             </footer>}
             {stage === 'resolved' && <footer className="reports-detail-actions-v2">
-              {selected.resolved_at && <button type="button" className="reports-dispatch-button-v2" onClick={() => void downloadResolutionPdf(selected)} disabled={downloadingPdf}>
+              {(isReadOnlyBarangay || selected.resolved_at || selected.barangay_resolved_at || selected.mdrrmo_resolved_at) && <button type="button" className="reports-dispatch-button-v2" onClick={() => void downloadResolutionPdf(selected)} disabled={downloadingPdf}>
                 <Download size={17} /> {downloadingPdf ? 'Preparing document…' : 'Download resolution document'}
               </button>}
             </footer>}

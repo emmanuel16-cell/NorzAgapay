@@ -196,6 +196,11 @@ function completedCycles(report: any): ResolutionCycle[] {
 }
 
 function responseCycles(report: any): ResolutionCycle[] {
+  if (report.completed_barangay_assignment) {
+    const cycles: ResolutionCycle[] = ['barangay'];
+    if (report.mdrrmo_response_status === 'resolved' || report.mdrrmo_resolved_at) cycles.push('mdrrmo');
+    return cycles;
+  }
   const sourceType = String(report.source_type || '').toLowerCase();
   const escalated = sourceType ? sourceType === 'escalated' : isEscalatedForMdrrmo(report);
   if (escalated) return ['barangay', 'mdrrmo'];
@@ -467,7 +472,7 @@ export class IncidentResolutionPdfService {
     return [...new Set(missing)];
   }
 
-  static async generateAndStore(reportId: string): Promise<{ buffer: Buffer; path: string; generatedAt: string }> {
+  static async generateAndStore(reportId: string, barangayAssignmentId?: string): Promise<{ buffer: Buffer; path: string; generatedAt: string }> {
     let report: any = null;
 
     // Try mdrrmo_reports first
@@ -497,6 +502,18 @@ export class IncidentResolutionPdfService {
         barangays: mReport.barangay_name ? { name: mReport.barangay_name } : null,
       };
 
+      let barangayAssignment: any = null;
+      if (barangayAssignmentId) {
+        const { data: assignment, error: assignmentError } = await supabaseAdmin
+          .from('mdrrmo_report_barangay_assignments')
+          .select('response_status, response_notes, responder_name, dispatched_at, accepted_at, arrived_at, resolved_at, resolved_notes')
+          .eq('id', barangayAssignmentId)
+          .eq('report_id', reportId)
+          .maybeSingle();
+        if (assignmentError) throw assignmentError;
+        barangayAssignment = assignment;
+      }
+
       const sourceBarangayReportId = mReport.source_barangay_report_id ||
         (mReport.source_type === 'escalated' ? reportId : null);
       if (mReport.source_type === 'escalated' && sourceBarangayReportId) {
@@ -521,6 +538,21 @@ export class IncidentResolutionPdfService {
             barangay_resolved_notes: barangayReport.resolved_notes,
           };
         }
+      }
+      if (barangayAssignment) {
+        report = {
+          ...report,
+          completed_barangay_assignment: true,
+          status: barangayAssignment.response_status,
+          barangay_response_status: barangayAssignment.response_status,
+          barangay_response_notes: barangayAssignment.response_notes,
+          barangay_responder_name: barangayAssignment.responder_name,
+          barangay_dispatched_at: barangayAssignment.dispatched_at,
+          barangay_accepted_at: barangayAssignment.accepted_at,
+          barangay_arrived_at: barangayAssignment.arrived_at,
+          barangay_resolved_at: barangayAssignment.resolved_at,
+          barangay_resolved_notes: barangayAssignment.resolved_notes,
+        };
       }
     }
 

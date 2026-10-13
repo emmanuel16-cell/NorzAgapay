@@ -3,6 +3,7 @@ import { AlertCircle, Archive, Download, MapPin, RefreshCw } from 'lucide-react'
 import toast from 'react-hot-toast';
 import { reportAPI } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
+import ReportsPage from './ReportsPage';
 
 type ResolvedReport = {
   id: string;
@@ -28,6 +29,12 @@ function formatDate(value?: string | null) {
 }
 
 export default function BarangayStaffWorkspacePage() {
+  const { user } = useAuth();
+  if (user?.role === 'admin') return <ReportsPage readOnlyBarangay />;
+  return <ResolvedReportHistoryPage />;
+}
+
+function ResolvedReportHistoryPage() {
   const { user } = useAuth();
   const [reports, setReports] = useState<ResolvedReport[]>([]);
   const [loading, setLoading] = useState(true);
