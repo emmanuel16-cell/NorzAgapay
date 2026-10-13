@@ -1,14 +1,35 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Activity, AlertTriangle, ArrowRight, Bell, ClipboardList, MapPin, Users, RefreshCw } from 'lucide-react';
+import { Activity, AlertTriangle, ArrowRight, Bell, CheckCircle2, ClipboardList, MapPin, Users, RefreshCw } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { barangayAPI, reportAPI, socket } from '../lib/api';
 
-type ReportRow = { id: string; title?: string; incident_type?: string; description?: string; response_status?: string; barangay_response_status?: string; created_at?: string };
+type ReportRow = {
+  id: string;
+  title?: string;
+  incident_type?: string;
+  description?: string;
+  status?: string;
+  response_status?: string;
+  barangay_response_status?: string;
+  mdrrmo_response_status?: string;
+  resolved_at?: string | null;
+  barangay_resolved_at?: string | null;
+  mdrrmo_resolved_at?: string | null;
+  barangay_assignments?: Array<{ assignment_status?: string; response_status?: string }>;
+  created_at?: string;
+};
 type AssistanceRow = { id: string; status?: string; explanation?: string; incident_title?: string; created_at?: string };
 
 function statusOf(report: ReportRow) {
-  return String(report.barangay_response_status || report.response_status || 'pending').toLowerCase();
+  const assignment = report.barangay_assignments?.[0];
+  if (assignment?.assignment_status === 'completed' || assignment?.response_status === 'resolved') return 'resolved';
+  return String(report.barangay_response_status || report.mdrrmo_response_status || report.response_status || report.status || 'pending').toLowerCase();
+}
+
+function isResolved(report: ReportRow) {
+  return Boolean(report.resolved_at || report.barangay_resolved_at || report.mdrrmo_resolved_at)
+    || ['resolved', 'closed'].includes(statusOf(report));
 }
 
 export default function BarangayDashboardPage() {
@@ -64,7 +85,8 @@ export default function BarangayDashboardPage() {
     };
   }, [load]);
 
-  const activeReports = reports.filter((report) => !['resolved', 'closed', 'rejected', 'dismissed', 'cancelled'].includes(statusOf(report)));
+  const activeReports = reports.filter((report) => !isResolved(report) && !['rejected', 'dismissed', 'cancelled'].includes(statusOf(report)));
+  const resolvedReports = reports.filter(isResolved);
   const pendingRequests = requests.filter((request) => String(request.status || '').toLowerCase() === 'pending');
   const latestReports = [...reports].sort((a, b) => Date.parse(b.created_at || '') - Date.parse(a.created_at || '')).slice(0, 5);
 
@@ -82,6 +104,7 @@ export default function BarangayDashboardPage() {
       {error && <div className="workspace-message workspace-message-error" role="alert">{error}<button type="button" onClick={() => void load()}>Try again</button></div>}
       <section className="barangay-console-stat-grid" aria-label="Barangay summary">
         {canViewIncidents && <Link to={isDispatcher ? '/reports' : '/barangay-workspace'} aria-label="Open barangay incidents"><span>Active incidents</span><strong>{loading ? '—' : activeReports.length}</strong><AlertTriangle size={20} /></Link>}
+        {user?.role === 'admin' && <article><span>Resolved incidents</span><strong>{loading ? '—' : resolvedReports.length}</strong><CheckCircle2 size={20} /></article>}
         {isDispatcher && <article><span>Pending assistance</span><strong>{loading ? '—' : pendingRequests.length}</strong><ClipboardList size={20} /></article>}
         <article><span>Active team members</span><strong>{loading ? '—' : activeMembers}</strong><Users size={20} /></article>
         <article><span>Barangay posts</span><strong>{loading ? '—' : postsCount}</strong><Bell size={20} /></article>
@@ -90,6 +113,7 @@ export default function BarangayDashboardPage() {
       <section className="barangay-console-shortcuts" aria-label="Barangay workspaces">
         {isDispatcher && <Link to="/command-center"><MapPin /><span><strong>Incident command</strong><small>View the barangay-scoped incident queue and map.</small></span><ArrowRight /></Link>}
         {isDispatcher && <Link to="/barangay-assistance"><ClipboardList /><span><strong>Assistance requests</strong><small>Review requests or track the ones you submitted.</small></span><ArrowRight /></Link>}
+        {user?.role === 'admin' && <Link to="/barangay-workspace"><AlertTriangle /><span><strong>Incidents</strong><small>Review incidents and download resolution documents.</small></span><ArrowRight /></Link>}
         <Link to="/barangay-board"><Bell /><span><strong>Barangay board</strong><small>Publish local advisories and read MDRRMO alerts.</small></span><ArrowRight /></Link>
         {user?.role === 'admin' && <Link to="/barangay-team"><Users /><span><strong>Team roster</strong><small>Manage active barangay responders and staff.</small></span><ArrowRight /></Link>}
         {user?.role === 'admin' && <Link to="/barangay-analytics"><Activity /><span><strong>Barangay analytics</strong><small>Review local report volume and outcomes.</small></span><ArrowRight /></Link>}
