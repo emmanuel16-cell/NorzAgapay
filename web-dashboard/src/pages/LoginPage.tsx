@@ -5,7 +5,24 @@ import { authAPI, debugAPI } from '../lib/api';
 import PublicHeader from '../components/PublicHeader';
 import PasswordInput from '../components/PasswordInput';
 
-type DebugAccount = { id: string; full_name: string; email: string; role: string; audience: 'standard' | 'barangay'; barangay_name?: string };
+type DebugAccount = { id: string; full_name: string; email: string; role: string; audience: 'standard' | 'barangay'; barangay_id?: string; barangay_name?: string };
+
+function groupDebugAccounts(accounts: DebugAccount[]) {
+  const mdrrmo = accounts.filter((account) => account.audience === 'standard');
+  const barangayGroups = new Map<string, { id: string; name: string; accounts: DebugAccount[] }>();
+  accounts.filter((account) => account.audience === 'barangay').forEach((account) => {
+    const name = account.barangay_name?.trim() || 'Unassigned Barangay';
+    const key = account.barangay_id || name.toLowerCase();
+    const group = barangayGroups.get(key) || { id: key, name, accounts: [] };
+    group.accounts.push(account);
+    barangayGroups.set(key, group);
+  });
+
+  return {
+    mdrrmo,
+    barangays: [...barangayGroups.values()].sort((first, second) => first.name.localeCompare(second.name)),
+  };
+}
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -89,6 +106,20 @@ export default function LoginPage() {
       setDebugLoading(false);
     }
   };
+
+  const debugGroups = groupDebugAccounts(debugAccounts);
+  const renderDebugAccount = (account: DebugAccount) => (
+    <button
+      type="button"
+      key={`${account.audience}-${account.id}`}
+      className="debug-account-card"
+      onClick={() => selectDebugAccount(account.id, account.audience)}
+      disabled={debugLoading}
+    >
+      <div className="debug-account-name">{account.full_name}</div>
+      <div className="debug-account-meta">{account.email} · {account.role.replaceAll('_', ' ')}</div>
+    </button>
+  );
 
   // Separate effect to handle redirection after login state is updated
   useEffect(() => {
@@ -244,18 +275,8 @@ export default function LoginPage() {
           <p style={{ fontSize: '13px', color: '#94a3b8', margin: '8px 0' }}>No active accounts found.</p>
             ) : (
               <div className="debug-dropdown-list">
-                {debugAccounts.map((account) => (
-                  <button
-                    type="button"
-                    key={account.id}
-                    className="debug-account-card"
-                    onClick={() => selectDebugAccount(account.id, account.audience)}
-                    disabled={debugLoading}
-                  >
-                    <div className="debug-account-name">{account.full_name}</div>
-                    <div className="debug-account-meta">{account.email} · {account.role}{account.audience === 'barangay' ? ` · Brgy. ${account.barangay_name || 'Barangay account'}` : ' · MDRRMO'}</div>
-                  </button>
-                ))}
+                {debugGroups.mdrrmo.length > 0 && <section className="debug-account-group"><h4>MDRRMO</h4>{debugGroups.mdrrmo.map(renderDebugAccount)}</section>}
+                {debugGroups.barangays.map((group) => <section className="debug-account-group" key={group.id}><h4>Barangay · {group.name}</h4>{group.accounts.map(renderDebugAccount)}</section>)}
               </div>
             )}
           </div>
