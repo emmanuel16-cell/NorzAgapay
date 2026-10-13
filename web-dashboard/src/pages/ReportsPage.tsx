@@ -1,13 +1,14 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { format, formatDistanceToNowStrict } from 'date-fns';
-import { AlertTriangle, CheckCircle2, Download, Image as ImageIcon, MapPin, Paperclip, Phone, Send, UserRound, X } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, CheckCircle2, Download, Image as ImageIcon, MapPin, Paperclip, Phone, Send, UserRound, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { reportAPI, socket } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { INCIDENT_SEVERITY_OPTIONS, INCIDENT_TYPE_OPTIONS } from '../lib/incidentClassification';
 import { getMdrrmoReportGroup, isVisibleToMdrrmo } from '../lib/mdrrmoReportVisibility';
 import { createDemoResponderReport } from '../demoResponderReport';
+import ResponderLocationMapModal from '../components/ResponderLocationMapModal';
 
 type ReportGroup = 'resident' | 'escalated';
 type ReportStage = 'pending' | 'responding' | 'resolved';
@@ -97,7 +98,7 @@ const formatDistance = (distance?: number | null) => distance == null || !Number
   : distance < 1000 ? `${Math.round(distance)} m away` : `${(distance / 1000).toFixed(1)} km away`;
 const parseAssessment = (notes?: string | null): FieldAssessment => {
   const text = String(notes || '').replace(/\[RESPONDER_MEDIA:[\s\S]*?\]/gi, '').trim();
-  const marker = text.match(/\[(?:MDRRMO )?FIELD ASSESSMENT\]/i);
+  const marker = text.match(/\[(?:(?:MDRRMO|BARANGAY) )?FIELD (?:ASSESSMENT|NOTES)\]/i);
   const body = marker?.index !== undefined ? text.slice(marker.index + marker[0].length) : text;
   const fields: Record<string, string> = {};
   body.split(/\r?\n/).forEach((line) => { const i = line.indexOf(':'); if (i >= 0) fields[line.slice(0, i).trim().toLowerCase()] = line.slice(i + 1).trim(); });
@@ -140,6 +141,8 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
   const [saving, setSaving] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [preview, setPreview] = useState<{ url: string; video: boolean } | null>(null);
+  const [showLocationMap, setShowLocationMap] = useState(false);
+  const closeLocationMap = useCallback(() => setShowLocationMap(false), []);
   const [assignmentReport, setAssignmentReport] = useState<IncidentReport | null>(null);
   const [destinations, setDestinations] = useState<BarangayDestination[]>([]);
   const [destinationId, setDestinationId] = useState('');
@@ -365,7 +368,9 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
 
   const residentCount = reports.filter((item) => getGroup(item) === 'resident').length;
   const escalatedCount = reports.filter((item) => getGroup(item) === 'escalated').length;
-  const assessment = parseAssessment(selected?.mdrrmo_response_notes || selected?.response_notes || selected?.barangay_response_notes);
+  const assessment = parseAssessment(isBarangay
+    ? selected?.barangay_response_notes || selected?.response_notes || selected?.mdrrmo_response_notes
+    : selected?.mdrrmo_response_notes || selected?.response_notes || selected?.barangay_response_notes);
   const assignment = selected?.mdrrmo_assignments?.find((item) => item.status !== 'removed');
   const activeAssignments = selected?.mdrrmo_assignments?.filter((item) => item.status !== 'removed') || [];
   const reporterName = selected?.reporter_name || selected?.reporter?.full_name || 'Resident';
@@ -377,7 +382,7 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
   const priority = INCIDENT_SEVERITY_OPTIONS.find((item) => item.value === selected?.severity)?.label || selected?.severity;
 
   return (
-    <main className="reports-workspace-v2">
+    <main className={`reports-workspace-v2 ${isReadOnlyResponder ? 'responder-mobile-workspace-v2' : ''}`}>
       <header className="reports-page-header-v2">
         <div><h1>Incidents Reports</h1><span>{isReadOnlyResponder ? `Responder workspace · ${user?.barangay_name || 'Your barangay'} · assigned to you` : isReadOnlyBarangay ? `Read-only incident workspace · ${user?.barangay_name || 'Your barangay'}` : isBarangay ? `Barangay response workspace · ${user?.barangay_name || 'Your barangay'}` : 'Dispatcher workspace'}</span></div>
         <div className="reports-live-indicator"><i /> Live <span>·</span> {currentTime}</div>
@@ -393,7 +398,7 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
       </nav>
       {showDemoPreview && <div className="responder-demo-notice reports-demo-notice" role="note"><div><strong>Debug demo preview</strong><span>This sample is not a real incident and is not saved. It appears here only to preview the dispatcher-style report layout.</span></div><button type="button" onClick={() => { localStorage.setItem('norzagapay_responder_demo_hidden', 'true'); setDemoDismissed(true); }}><X size={15} /> Hide preview</button></div>}
 
-      <section className="reports-split-view-v2">
+      <section className={`reports-split-view-v2 ${isReadOnlyResponder ? selectedId ? 'responder-mobile-detail-v2' : 'responder-mobile-list-v2' : ''}`}>
         <aside className="reports-queue-v2">
           <div className="reports-queue-heading"><h2>{stage === 'pending' ? 'Pending queue' : stage === 'responding' ? 'Responding reports' : 'Resolved reports'}</h2><span>{visible.length}</span></div>
           {loading ? <div className="reports-empty-v2"><span className="spinner" /><p>Loading reports…</p></div>
@@ -417,9 +422,10 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
         <section className="reports-detail-v2">
           {!selected ? <div className="reports-detail-empty-v2"><div><ImageIcon size={28} /></div><strong>Select a report</strong><p>Choose an item from the {stage} queue to see its details.</p></div> : <>
             <div className="reports-detail-scroll-v2">
-              <header className="reports-detail-heading-v2">
+              <header className={`reports-detail-heading-v2 ${isReadOnlyResponder ? 'reports-detail-heading-responder-v2' : ''}`}>
+                {isReadOnlyResponder && <button type="button" className="reports-mobile-back-v2" onClick={() => { setSelectedId(null); clearLink(); }}><ArrowLeft size={17} /> Reports</button>}
                 <div><span className="reports-eyebrow-v2">Selected report</span><h2>Report details</h2><p>{stage === 'pending' ? 'Report received ' : stage === 'responding' ? 'Accepted ' : 'Resolved '}{timeAgo(stage === 'resolved' ? selected.resolved_at : stage === 'responding' ? selected.accepted_at || selected.dispatched_at : selected.created_at)} · {selected.barangay_name || 'Norzagaray'}</p></div>
-                <span className={'report-status-chip-v2 detail ' + stage}>{stage === 'responding' ? 'Responding' : stage === 'resolved' ? 'Resolved' : 'Pending'}</span>
+                <div className="reports-detail-heading-actions-v2"><span className={'report-status-chip-v2 detail ' + stage}>{stage === 'responding' ? 'Responding' : stage === 'resolved' ? 'Resolved' : 'Pending'}</span>{isReadOnlyResponder && hasPin(selected) && <button type="button" className="reports-view-location-v2" onClick={() => setShowLocationMap(true)}><MapPin size={15} /> View location</button>}</div>
               </header>
 
               <section className="reports-detail-section-v2"><h3>Reporter details</h3><div className="reports-info-grid-v2">
@@ -535,6 +541,13 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
           </>}
         </section>
       </section>
+
+      {showLocationMap && selected && hasPin(selected) && <ResponderLocationMapModal
+        latitude={Number(selected.latitude)}
+        longitude={Number(selected.longitude)}
+        locationName={locationName}
+        onClose={closeLocationMap}
+      />}
 
       {dispatchReport && <div className="reports-modal-backdrop-v2" onClick={() => setDispatchReport(null)}>
         <section className="reports-dispatch-modal-v2" role="dialog" aria-modal="true" aria-labelledby="dispatch-title-v2" onClick={(event) => event.stopPropagation()}>

@@ -258,11 +258,17 @@ export const reportAPI = {
   saveBarangayResponseCrew: (id: string, members: Array<{ member_id: string; crew_role: string }>) => api.patch(`/barangay/assigned-reports/${id}/crew`, { members }),
   dispatchToBarangay: (id: string, data: { team_leader_ids: string[]; incident_type: string; severity: string; notes?: string }) => api.patch(`/barangay/assigned-reports/${id}/dispatch`, data),
   arriveBarangayAssignment: (id: string, data: { method: 'gps' | 'manual'; latitude?: number; longitude?: number; accuracy_m?: number; fix_at?: string }) => api.patch(`/barangay/assigned-reports/${id}/arrive`, data),
+  saveBarangayAssignmentFieldNotes: (id: string, data: { situation: string; affected_people: string; actions_taken: string; risks_resources: string }) => api.patch(`/barangay/assigned-reports/${id}/field-notes`, data),
   closeBarangayAssignment: (id: string, resolved_notes: string) => api.post(`/barangay/assigned-reports/${id}/close`, { resolved_notes }),
   uploadBarangayAssignmentMedia: (id: string, file: File) => {
     const body = new FormData();
     body.append('media', file);
     return api.post(`/barangay/assigned-reports/${id}/field-media`, body, { headers: { 'Content-Type': 'multipart/form-data' } });
+  },
+  uploadBarangayFieldMedia: (id: string, file: File) => {
+    const body = new FormData();
+    body.append('media', file);
+    return api.post(`/barangay/reports/${id}/field-media`, body, { headers: { 'Content-Type': 'multipart/form-data' } });
   },
   escalateBarangayAssignment: (id: string, notes: string) => api.patch(`/barangay/assigned-reports/${id}/escalate`, { notes }),
   assignBarangay: (id: string, data: { barangay_id: string; notes: string }) => api.post(`/mdrrmo/reports/${id}/assign-barangay`, data),

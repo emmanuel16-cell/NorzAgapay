@@ -2243,11 +2243,22 @@ router.patch('/assigned-reports/:id/crew', authenticateBarangay, requireRole(['r
 });
 
 router.patch('/assigned-reports/:id/field-notes', authenticateBarangay, requireRole(['responder']), async (req: any, res: Response): Promise<void> => {
-  const parsed = z.object({ notes: z.string().trim().min(1).max(5000) }).strict().safeParse(req.body);
+  const parsed = z.object({
+    situation: z.string().trim().min(1).max(1250),
+    affected_people: z.string().trim().min(1).max(1250),
+    actions_taken: z.string().trim().min(1).max(1250),
+    risks_resources: z.string().trim().min(1).max(1250),
+  }).strict().safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: 'Enter the field assessment before saving it.', details: parsed.error.flatten() });
+    res.status(400).json({ error: 'Complete all four field assessment sections before saving. Enter “Not applicable” when a section does not apply.', details: parsed.error.flatten() });
     return;
   }
+  const assessmentNotes = [
+    `Situation: ${parsed.data.situation}`,
+    `People affected / urgency: ${parsed.data.affected_people}`,
+    `Actions taken: ${parsed.data.actions_taken}`,
+    `Risks / resources: ${parsed.data.risks_resources}`,
+  ].join('\n');
   try {
     const { data: assignment, error: assignmentError } = await supabaseAdmin
       .from('mdrrmo_report_barangay_assignments')
@@ -2257,7 +2268,42 @@ router.patch('/assigned-reports/:id/field-notes', authenticateBarangay, requireR
       .eq('assignment_status', 'active')
       .maybeSingle();
     if (assignmentError) throw assignmentError;
-    if (!assignment || assignment.response_status !== 'responding') {
+    if (!assignment) {
+      const { data: legacy, error: legacyError } = await supabaseAdmin.from('barangay_reports')
+        .select('*').eq('id', req.params.id).eq('barangay_id', req.barangayUser.barangayId).maybeSingle();
+      if (legacyError) throw legacyError;
+      if (!legacy) { res.status(404).json({ error: 'Active incident assignment not found.' }); return; }
+      const legacyNotes = String(legacy.response_notes || legacy.barangay_response_notes || '');
+      const assignedIds = legacyNotes.match(/^\[ASSIGNED:([^\]]+)\]/)?.[1].split(',').map((id: string) => id.trim()) || [];
+      const legacyStatus = String(legacy.response_status || legacy.barangay_response_status || '').toLowerCase();
+      if (legacyStatus !== 'responding') {
+        res.status(409).json({ error: 'Field notes are available only during an active response.' });
+        return;
+      }
+      if (legacy.responded_by !== req.barangayUser.userId && legacy.barangay_responded_by !== req.barangayUser.userId && !assignedIds.includes(req.barangayUser.userId)) {
+        res.status(403).json({ error: 'This report is not assigned to your responder account.' });
+        return;
+      }
+      const preservedNotes = legacyNotes.replace(/\n?\[BARANGAY FIELD (?:NOTES|ASSESSMENT)\][\s\S]*$/i, '').trim();
+      const responseNotes = [preservedNotes, `[BARANGAY FIELD ASSESSMENT]\n${assessmentNotes}`].filter(Boolean).join('\n');
+      const { data: updated, error: updateError } = await supabaseAdmin.from('barangay_reports')
+        .update({ response_notes: responseNotes, lifecycle_actor_id: req.barangayUser.userId, lifecycle_actor_role: 'barangay_responder' })
+        .eq('id', req.params.id).eq('barangay_id', req.barangayUser.barangayId).select('*').maybeSingle();
+      if (updateError) throw updateError;
+      if (!updated) { res.status(409).json({ error: 'The response changed. Refresh the report before saving your assessment.' }); return; }
+      const payload = formatIncidentReport({
+        ...updated,
+        barangay_response_status: updated.response_status,
+        barangay_response_notes: updated.response_notes,
+        barangay_responded_by: updated.responded_by,
+        barangay_responded_at: updated.responded_at,
+      });
+      io.to('dashboard_staff').emit('incident_report:updated', payload);
+      io.to(`barangay:${req.barangayUser.barangayId}`).emit('barangay:report_updated', payload);
+      res.json(payload);
+      return;
+    }
+    if (assignment.response_status !== 'responding') {
       res.status(409).json({ error: 'Field notes are available only for an active dispatched response.' });
       return;
     }
@@ -2266,8 +2312,8 @@ router.patch('/assigned-reports/:id/field-notes', authenticateBarangay, requireR
       return;
     }
     const previous = String(assignment.response_notes || '');
-    const dispatcherNotes = previous.replace(/\n?\[BARANGAY FIELD NOTES\][\s\S]*$/i, '').trim();
-    const responseNotes = [dispatcherNotes, `[BARANGAY FIELD NOTES]\n${parsed.data.notes}`].filter(Boolean).join('\n');
+    const dispatcherNotes = previous.replace(/\n?\[BARANGAY FIELD (?:NOTES|ASSESSMENT)\][\s\S]*$/i, '').trim();
+    const responseNotes = [dispatcherNotes, `[BARANGAY FIELD ASSESSMENT]\n${assessmentNotes}`].filter(Boolean).join('\n');
     const now = new Date().toISOString();
     const { error: updateError } = await supabaseAdmin.from('mdrrmo_report_barangay_assignments')
       .update({ response_notes: responseNotes, responded_by: req.barangayUser.userId, responded_at: now, updated_at: now })

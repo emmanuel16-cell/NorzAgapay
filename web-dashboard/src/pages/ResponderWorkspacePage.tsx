@@ -25,6 +25,7 @@ type AssignedReport = {
   barangay_arrived_at?: string | null;
   barangay_dispatched_at?: string | null;
   response_notes?: string | null;
+  barangay_response_notes?: string | null;
   barangay_crew_members?: Array<{ member_id: string; member_name: string; crew_role: string }>;
   mdrrmo_arrived_at?: string | null;
   mdrrmo_assignments?: ResponseAssignment[];
@@ -33,6 +34,25 @@ type AssignedReport = {
 };
 
 const emptyAssessment = { situation: '', affected_people: '', actions_taken: '', risks_resources: '' };
+type AssessmentField = keyof typeof emptyAssessment;
+
+const parseFieldAssessment = (notes: string | null | undefined, isBarangay: boolean) => {
+  const marker = String(notes || '').match(isBarangay
+    ? /\[BARANGAY FIELD (?:NOTES|ASSESSMENT)\]([\s\S]*)$/i
+    : /\[(?:MDRRMO )?FIELD ASSESSMENT\]([\s\S]*)$/i);
+  if (!marker) return { ...emptyAssessment };
+  const values: Record<string, string> = {};
+  marker[1].split(/\r?\n/).forEach((line) => {
+    const separator = line.indexOf(':');
+    if (separator > 0) values[line.slice(0, separator).trim().toLowerCase()] = line.slice(separator + 1).trim();
+  });
+  return {
+    situation: values.situation || '',
+    affected_people: values['people affected / urgency'] || values['people affected'] || '',
+    actions_taken: values['actions taken'] || values['action taken'] || '',
+    risks_resources: values['risks / resources'] || values['risk / resource'] || '',
+  };
+};
 
 export default function ResponderWorkspacePage() {
   const { user } = useAuth();
@@ -44,7 +64,7 @@ export default function ResponderWorkspacePage() {
   const [barangayRoster, setBarangayRoster] = useState<BarangayCrewMember[]>([]);
   const [crewSelections, setCrewSelections] = useState<Record<string, string[]>>({});
   const [barangayCrewSelections, setBarangayCrewSelections] = useState<Record<string, BarangayCrewSelection[]>>({});
-  const [assessment, setAssessment] = useState(emptyAssessment);
+  const [assessments, setAssessments] = useState<Record<string, typeof emptyAssessment>>({});
   const [resolutionNotes, setResolutionNotes] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -64,6 +84,12 @@ export default function ResponderWorkspacePage() {
       const members: CrewMember[] = isBarangay ? [] : Array.isArray(rosterResponse?.data?.members) ? rosterResponse.data.members : [];
       const barangayMembers: BarangayCrewMember[] = isBarangay && Array.isArray(rosterResponse?.data?.members) ? rosterResponse.data.members : [];
       setReports(items);
+      setAssessments(Object.fromEntries(items.map((report: AssignedReport) => [
+        report.id,
+        parseFieldAssessment(isBarangay
+          ? report.barangay_response_notes || report.response_notes
+          : report.response_notes || report.barangay_response_notes, isBarangay),
+      ])));
       setCrew(members);
       setBarangayRoster(barangayMembers);
       setCrewSelections(Object.fromEntries(items.map((report: AssignedReport) => {
@@ -99,7 +125,6 @@ export default function ResponderWorkspacePage() {
     try {
       await action();
       toast.success(successMessage);
-      setAssessment(emptyAssessment);
       setResolutionNotes('');
       await loadWorkspace(true);
     } catch (actionError: any) {
@@ -149,11 +174,33 @@ export default function ResponderWorkspacePage() {
     }));
   };
 
-  const uploadMedia = (reportId: string, file?: File) => {
-    if (!file) return;
-    void perform(() => isBarangay
-      ? reportAPI.uploadBarangayAssignmentMedia(reportId, file)
-      : reportAPI.uploadMdrrmoFieldMedia(reportId, file), 'Field evidence added.');
+  const uploadMedia = (report: AssignedReport, files?: FileList | null) => {
+    const selectedFiles = files ? Array.from(files) : [];
+    if (!selectedFiles.length) return;
+    void perform(async () => {
+      for (const file of selectedFiles) {
+        if (isBarangay) {
+          if (report.is_central_assignment) await reportAPI.uploadBarangayAssignmentMedia(report.id, file);
+          else await reportAPI.uploadBarangayFieldMedia(report.id, file);
+        } else {
+          await reportAPI.uploadMdrrmoFieldMedia(report.id, file);
+        }
+      }
+    }, `${selectedFiles.length} field attachment${selectedFiles.length === 1 ? '' : 's'} added.`);
+  };
+
+  const updateAssessment = (reportId: string, field: AssessmentField, value: string) => {
+    setAssessments((current) => ({
+      ...current,
+      [reportId]: { ...(current[reportId] || emptyAssessment), [field]: value },
+    }));
+  };
+
+  const saveAssessment = (reportId: string) => {
+    const values = assessments[reportId] || emptyAssessment;
+    return isBarangay
+      ? reportAPI.saveBarangayAssignmentFieldNotes(reportId, values)
+      : reportAPI.saveMdrrmoFieldAssessment(reportId, values);
   };
 
   return (
@@ -177,6 +224,8 @@ export default function ResponderWorkspacePage() {
           const assignment = assignmentFor(report);
           const assignmentStatus = String(isBarangay ? report.assignment_status || '' : assignment?.status || assignment?.assignment_status || '').toLowerCase();
           const responseStatus = responseStatusFor(report);
+          const savedAssessmentNotes = String(isBarangay ? report.barangay_response_notes || report.response_notes || '' : report.response_notes || '');
+          const assessmentSaved = savedAssessmentNotes.includes(isBarangay ? '[BARANGAY FIELD ASSESSMENT]' : '[MDRRMO FIELD ASSESSMENT]');
           const arrived = isBarangay
             ? Boolean(report.barangay_arrived_at)
             : Boolean(assignment ? assignment.arrived_at : report.mdrrmo_arrived_at);
@@ -185,6 +234,7 @@ export default function ResponderWorkspacePage() {
             ? Boolean(report.is_central_assignment && report.barangay_dispatched_at && responseStatus === 'responding')
             : assignmentStatus === 'responding');
           const selectedCrewIds = crewSelections[report.id] || [];
+          const currentAssessment = assessments[report.id] || emptyAssessment;
           const selectedBarangayCrew = barangayCrewSelections[report.id] || [];
           const savedMdrrmoCrew = (assignment?.crew || []).filter((member) => member.member_role !== 'team_leader');
           const savedBarangayCrew = report.barangay_crew_members || [];
@@ -229,17 +279,17 @@ export default function ResponderWorkspacePage() {
             {canUpdateField && <section className="responder-action-panel">
               <h3><Activity size={16} /> Field response</h3>
               {!arrived && <button className="workspace-secondary-action" type="button" disabled={saving} onClick={() => void perform(() => isBarangay ? reportAPI.arriveBarangayAssignment(report.id, { method: 'manual' }) : reportAPI.arriveAtMdrrmoIncident(report.id), 'Arrival recorded.')}>Record arrival</button>}
-              {!isBarangay && <div className="responder-assessment-grid">
-                <label>Situation<textarea value={assessment.situation} onChange={(event) => setAssessment((current) => ({ ...current, situation: event.target.value }))} placeholder="Describe what you found, or enter Not applicable." /></label>
-                <label>People affected / urgency<textarea value={assessment.affected_people} onChange={(event) => setAssessment((current) => ({ ...current, affected_people: event.target.value }))} placeholder="Enter the impact, or Not applicable." /></label>
-                <label>Actions taken<textarea value={assessment.actions_taken} onChange={(event) => setAssessment((current) => ({ ...current, actions_taken: event.target.value }))} placeholder="Describe response actions, or Not applicable." /></label>
-                <label>Risks / resources<textarea value={assessment.risks_resources} onChange={(event) => setAssessment((current) => ({ ...current, risks_resources: event.target.value }))} placeholder="Note remaining risks or resources, or Not applicable." /></label>
-              </div>}
-              <div className="responder-action-row">
-                {!isBarangay && <button className="workspace-secondary-action" type="button" disabled={saving || Object.values(assessment).some((value) => !value.trim())} onClick={() => void perform(() => reportAPI.saveMdrrmoFieldAssessment(report.id, assessment), 'Field assessment saved.')}><CheckCircle2 size={16} /> Save assessment</button>}
-                <label className="workspace-secondary-action upload-action"><Upload size={16} /> Add field media<input type="file" accept="image/*,video/*" onChange={(event) => { uploadMedia(report.id, event.target.files?.[0]); event.target.value = ''; }} /></label>
+              <div className="responder-assessment-grid">
+                <label>Situation<textarea value={currentAssessment.situation} onChange={(event) => updateAssessment(report.id, 'situation', event.target.value)} placeholder="Describe what you found, or enter Not applicable." /></label>
+                <label>People affected / urgency<textarea value={currentAssessment.affected_people} onChange={(event) => updateAssessment(report.id, 'affected_people', event.target.value)} placeholder="Enter the impact, or Not applicable." /></label>
+                <label>Actions taken<textarea value={currentAssessment.actions_taken} onChange={(event) => updateAssessment(report.id, 'actions_taken', event.target.value)} placeholder="Describe response actions, or enter Not applicable." /></label>
+                <label>Risks / resources<textarea value={currentAssessment.risks_resources} onChange={(event) => updateAssessment(report.id, 'risks_resources', event.target.value)} placeholder="Note remaining risks or resources, or Not applicable." /></label>
               </div>
-              {arrived && <div className="responder-resolution-form"><label>Resolution summary<textarea value={resolutionNotes} onChange={(event) => setResolutionNotes(event.target.value)} placeholder="Summarize the outcome and enter Not applicable where needed." /></label><button className="workspace-primary-action" type="button" disabled={saving || !resolutionNotes.trim() || (!isBarangay && !report.response_notes?.includes('[MDRRMO FIELD ASSESSMENT]'))} onClick={() => void perform(() => isBarangay ? reportAPI.closeBarangayAssignment(report.id, resolutionNotes) : reportAPI.closeMdrrmoReport(report.id, resolutionNotes), 'Incident response resolved.')}>Resolve incident</button>{!isBarangay && !report.response_notes?.includes('[MDRRMO FIELD ASSESSMENT]') && <small>Save the field assessment before resolving.</small>}</div>}
+              <div className="responder-action-row">
+                <button className="workspace-secondary-action" type="button" disabled={saving || Object.values(currentAssessment).some((value) => !value.trim())} onClick={() => void perform(() => saveAssessment(report.id), 'Field assessment saved.')}><CheckCircle2 size={16} /> Save assessment</button>
+                <label className="workspace-secondary-action upload-action"><Upload size={16} /> Add field media<input type="file" accept="image/*,video/*" multiple onChange={(event) => { uploadMedia(report, event.currentTarget.files); event.currentTarget.value = ''; }} /></label>
+              </div>
+              {arrived && <div className="responder-resolution-form"><label>Resolution summary<textarea value={resolutionNotes} onChange={(event) => setResolutionNotes(event.target.value)} placeholder="Summarize the outcome and enter Not applicable where needed." /></label><button className="workspace-primary-action" type="button" disabled={saving || !resolutionNotes.trim() || !assessmentSaved} onClick={() => void perform(() => isBarangay ? reportAPI.closeBarangayAssignment(report.id, resolutionNotes) : reportAPI.closeMdrrmoReport(report.id, resolutionNotes), 'Incident response resolved.')}>Resolve incident</button>{!assessmentSaved && <small>Save the field assessment before resolving.</small>}</div>}
             </section>}
             {isBarangay && !report.is_central_assignment && <div className="workspace-message">This historical barangay-originated case remains available here for reference.</div>}
           </article>;
