@@ -116,7 +116,7 @@ export default function BarangayTeamPage({ embedded = false }: { embedded?: bool
 
       <section className="barangay-console-stat-grid barangay-console-stat-grid-compact"><article><span>Active accounts</span><strong>{activeMembers.length}</strong><CircleUserRound size={20} /></article><article><span>Inactive accounts</span><strong>{inactiveMembers.length}</strong><UserRoundX size={20} /></article><article><span>Roster scope</span><strong>{user?.barangay_name || 'Barangay'}</strong><ShieldAlert size={20} /></article></section>
 
-      {canManageTeam && isFormOpen && <div className="barangay-team-modal-backdrop" role="presentation" onKeyDown={(event) => {
+      {canManageTeam && isFormOpen && <div className="barangay-console-modal-backdrop" role="presentation" onKeyDown={(event) => {
         if (event.key === 'Escape') { event.stopPropagation(); if (!saving) resetForm(); }
         if (event.key === 'Tab') {
           const focusable = event.currentTarget.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])');
@@ -126,7 +126,7 @@ export default function BarangayTeamPage({ embedded = false }: { embedded?: bool
           else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
         }
       }} onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) resetForm(); }}>
-        <section id="barangay-team-account-form" className="barangay-console-panel barangay-team-form-panel barangay-team-account-modal" role="dialog" aria-modal="true" aria-labelledby="barangay-team-account-title">
+        <section id="barangay-team-account-form" className="barangay-console-panel barangay-team-form-panel barangay-console-form-modal" role="dialog" aria-modal="true" aria-labelledby="barangay-team-account-title">
         <header><div><h2 id="barangay-team-account-title">{editingId ? 'Edit team account' : 'Add Barangay Account'}</h2><p>Barangay administrators cannot be added from this form. Dispatcher accounts require an active Barangay Account Request.</p></div><button autoFocus className="workspace-secondary-action" type="button" onClick={resetForm} disabled={saving}><X size={15} /> Cancel</button></header>
         <form className="barangay-console-form-grid" onSubmit={(event) => void submit(event)}>
           <label>Full name<input required minLength={2} maxLength={120} value={form.full_name} onChange={(event) => setForm((value) => ({ ...value, full_name: event.target.value }))} /></label>

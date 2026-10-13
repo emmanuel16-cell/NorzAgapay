@@ -42,6 +42,7 @@ export default function BarangayBoardPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [isFormOpen, setIsFormOpen] = useState(false);
   const [form, setForm] = useState<PostForm>(initialForm);
 
   const load = useCallback(async () => {
@@ -66,11 +67,17 @@ export default function BarangayBoardPage() {
     };
   }, [load]);
 
-  const resetForm = () => { setEditingId(null); setForm(initialForm); };
+  const resetForm = useCallback(() => { setEditingId(null); setForm(initialForm); setIsFormOpen(false); }, []);
+  useEffect(() => {
+    if (!isFormOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = previousOverflow; };
+  }, [isFormOpen]);
   const editPost = (post: Post) => {
     setEditingId(post.id);
     setForm({ category: (categories.some((item) => item.value === post.category) ? post.category : 'safety_advisory') as Category, content: post.content || '', links: (post.links || []).join('\n'), media: post.media || [], files: [] });
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setIsFormOpen(true);
   };
 
   const submitPost = async (event: FormEvent<HTMLFormElement>) => {
@@ -105,9 +112,20 @@ export default function BarangayBoardPage() {
 
   return (
     <div className="barangay-console-page">
-      <header className="barangay-console-header"><div><span className="workspace-eyebrow">COMMUNITY INFORMATION · {user?.barangay_name || 'YOUR BARANGAY'}</span><h1>Barangay board</h1><p>Publish local advisories and share official MDRRMO alerts with your community.</p></div><button className="workspace-secondary-action" type="button" onClick={() => void load()} disabled={loading}><RefreshCw size={16} className={loading ? 'workspace-spinning' : ''} /> Refresh</button></header>
+      <header className="barangay-console-header"><div><span className="workspace-eyebrow">COMMUNITY INFORMATION · {user?.barangay_name || 'YOUR BARANGAY'}</span><h1>Barangay board</h1><p>Publish local advisories and share official MDRRMO alerts with your community.</p></div><div className="barangay-console-header-actions">{canManage && !isFormOpen && <button className="workspace-primary-action" type="button" onClick={() => { setEditingId(null); setForm(initialForm); setIsFormOpen(true); }} aria-haspopup="dialog"><Plus size={16} /> Create Post</button>}<button className="workspace-secondary-action" type="button" onClick={() => void load()} disabled={loading}><RefreshCw size={16} className={loading ? 'workspace-spinning' : ''} /> Refresh</button></div></header>
 
-      {canManage && <section className="barangay-console-panel"><header><div><h2>{editingId ? 'Edit barangay post' : 'Publish a barangay post'}</h2><p>Posts on this board are published to the barangay community feed.</p></div>{editingId && <button className="workspace-secondary-action" type="button" onClick={resetForm}><X size={15} /> Cancel</button>}</header>
+      {canManage && isFormOpen && <div className="barangay-console-modal-backdrop" role="presentation" onKeyDown={(event) => {
+        if (event.key === 'Escape') { event.stopPropagation(); if (!saving) resetForm(); }
+        if (event.key === 'Tab') {
+          const focusable = event.currentTarget.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])');
+          const first = focusable[0];
+          const last = focusable[focusable.length - 1];
+          if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+          else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+        }
+      }} onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) resetForm(); }}>
+        <section className="barangay-console-panel barangay-console-form-modal" role="dialog" aria-modal="true" aria-labelledby="barangay-post-form-title">
+        <header><div><h2 id="barangay-post-form-title">{editingId ? 'Edit barangay post' : 'Publish a barangay post'}</h2><p>Posts on this board are published to the barangay community feed.</p></div><button autoFocus className="workspace-secondary-action" type="button" onClick={resetForm} disabled={saving}><X size={15} /> Cancel</button></header>
         <form className="barangay-console-post-form" onSubmit={(event) => void submitPost(event)}>
           <label>Post category<select value={form.category} onChange={(event) => setForm((value) => ({ ...value, category: event.target.value as Category }))}>{categories.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}</select></label>
           <label>Announcement<textarea required minLength={10} rows={4} value={form.content} onChange={(event) => setForm((value) => ({ ...value, content: event.target.value }))} placeholder="Share an official safety advisory or community update…" /></label>
@@ -117,7 +135,8 @@ export default function BarangayBoardPage() {
           {form.files.length > 0 && <div className="barangay-post-file-list">{form.files.map((file, index) => <span key={`${file.name}-${index}`}>{file.name}<button type="button" aria-label={`Remove ${file.name}`} onClick={() => setForm((value) => ({ ...value, files: value.files.filter((_, fileIndex) => fileIndex !== index) }))}><X size={13} /></button></span>)}</div>}
           <div className="barangay-console-form-actions"><button className="btn btn-primary" disabled={saving}>{saving ? 'Publishing…' : editingId ? <><Check size={16} /> Save post</> : <><Plus size={16} /> Publish post</>}</button></div>
         </form>
-      </section>}
+        </section>
+      </div>}
 
       {error && <div className="workspace-message workspace-message-error" role="alert">{error}<button type="button" onClick={() => void load()}>Try again</button></div>}
       <section className="barangay-console-panel"><header><div><h2><Megaphone size={19} /> MDRRMO alerts</h2><p>Municipal alerts available for barangay reposting.</p></div></header>
