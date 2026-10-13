@@ -4457,6 +4457,13 @@ tbody tr:last-child td { border-bottom: none; }
 .barangay-analytics-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .barangay-analytics-controls select { min-height: 39px; padding: 8px 10px; border: 1px solid var(--border-color, #345071); border-radius: 8px; color: var(--text-primary); background: var(--bg-secondary, #0e203d); }
 .barangay-analytics-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.barangay-overview-charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.barangay-overview-chart-card { min-width: 0; padding: 14px 16px; }
+.barangay-overview-chart-card > header { margin-bottom: 5px; }
+.barangay-overview-chart-card > header h2 { font-size: 15px; }
+.barangay-overview-chart-card > header p { font-size: 11px; }
+.barangay-overview-chart { width: 100%; height: 190px; }
+.barangay-overview-chart-empty { display: grid; min-height: 190px; place-items: center; color: var(--text-muted); font-size: 12px; text-align: center; }
 .barangay-chart-card { min-width: 0; }
 .barangay-chart { width: 100%; height: 265px; }
 .barangay-heatmap { display: flex; flex-direction: column; gap: 5px; overflow-x: auto; padding: 3px 0 4px; }
@@ -4503,7 +4510,7 @@ tbody tr:last-child td { border-bottom: none; }
   .barangay-console-header-actions { align-self: flex-start; justify-content: flex-start; }
   .barangay-console-modal-backdrop { padding: 10px; }
   .barangay-console-form-modal { max-height: 94vh; padding: 15px 13px; }
-  .barangay-console-shortcuts, .barangay-post-grid, .barangay-hotline-list, .barangay-analytics-grid, .barangay-team-grid { grid-template-columns: 1fr; }
+  .barangay-console-shortcuts, .barangay-post-grid, .barangay-hotline-list, .barangay-analytics-grid, .barangay-overview-charts, .barangay-team-grid { grid-template-columns: 1fr; }
   .barangay-console-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
   .barangay-console-stat-grid article { min-height: 88px; padding: 13px; }
   .barangay-console-stat-grid article > strong { font-size: 23px; }

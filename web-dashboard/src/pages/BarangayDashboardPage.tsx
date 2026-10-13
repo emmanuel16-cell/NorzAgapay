@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Activity, AlertTriangle, ArrowRight, Bell, CheckCircle2, ClipboardList, MapPin, Users, RefreshCw } from 'lucide-react';
+import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { useAuth } from '../context/AuthContext';
 import { barangayAPI, reportAPI, socket } from '../lib/api';
 
@@ -8,6 +9,7 @@ type ReportRow = {
   id: string;
   title?: string;
   incident_type?: string;
+  category?: string;
   description?: string;
   status?: string;
   response_status?: string;
@@ -31,6 +33,70 @@ function isResolved(report: ReportRow) {
   return Boolean(report.resolved_at || report.barangay_resolved_at || report.mdrrmo_resolved_at)
     || ['resolved', 'closed'].includes(statusOf(report));
 }
+
+const BARANGAY_TIME_ZONE = 'Asia/Manila';
+const reportDayFormatter = new Intl.DateTimeFormat('en-CA', {
+  timeZone: BARANGAY_TIME_ZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+const reportDayLabelFormatter = new Intl.DateTimeFormat(undefined, {
+  timeZone: BARANGAY_TIME_ZONE,
+  weekday: 'short',
+  day: 'numeric',
+});
+
+function reportDayKey(date: Date) {
+  const parts = reportDayFormatter.formatToParts(date);
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value || '';
+  return `${part('year')}-${part('month')}-${part('day')}`;
+}
+
+function buildWeeklyIncidentActivity(reports: ReportRow[]) {
+  const days = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(Date.now() - (6 - index) * 24 * 60 * 60 * 1000);
+    return { key: reportDayKey(date), day: reportDayLabelFormatter.format(date), active: 0, resolved: 0 };
+  });
+  const byDay = new Map(days.map((day) => [day.key, day]));
+
+  reports.forEach((report) => {
+    if (!report.created_at) return;
+    const createdAt = new Date(report.created_at);
+    if (Number.isNaN(createdAt.getTime())) return;
+    const day = byDay.get(reportDayKey(createdAt));
+    if (!day || ['rejected', 'dismissed', 'cancelled'].includes(statusOf(report))) return;
+    day[isResolved(report) ? 'resolved' : 'active'] += 1;
+  });
+
+  return days;
+}
+
+function buildIncidentTypeCounts(reports: ReportRow[]) {
+  const counts = new Map<string, number>();
+  reports.forEach((report) => {
+    const rawType = report.incident_type || report.category || report.title || 'Uncategorized';
+    const label = rawType.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+    counts.set(label, (counts.get(label) || 0) + 1);
+  });
+  const sorted = [...counts.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
+  if (sorted.length <= 5) return sorted;
+  return [...sorted.slice(0, 5), { name: 'Other', count: sorted.slice(5).reduce((total, item) => total + item.count, 0) }];
+}
+
+const overviewChartAxis = { fill: 'var(--text-muted)', fontSize: 10 };
+const overviewChartGrid = 'var(--border-color, #294466)';
+const overviewChartTooltip = {
+  contentStyle: {
+    background: 'var(--bg-secondary, #0e203d)',
+    border: '1px solid var(--border-color, #294466)',
+    borderRadius: 9,
+    color: 'var(--text-primary)',
+    fontSize: 12,
+  },
+  itemStyle: { color: 'var(--text-primary)' },
+  labelStyle: { color: 'var(--text-muted)' },
+};
 
 export default function BarangayDashboardPage() {
   const { user } = useAuth();
@@ -89,6 +155,8 @@ export default function BarangayDashboardPage() {
   const resolvedReports = reports.filter(isResolved);
   const pendingRequests = requests.filter((request) => String(request.status || '').toLowerCase() === 'pending');
   const latestReports = [...reports].sort((a, b) => Date.parse(b.created_at || '') - Date.parse(a.created_at || '')).slice(0, 5);
+  const weeklyIncidentActivity = buildWeeklyIncidentActivity(reports);
+  const incidentTypeCounts = buildIncidentTypeCounts(reports);
 
   return (
     <div className="barangay-console-page">
@@ -118,6 +186,44 @@ export default function BarangayDashboardPage() {
         {user?.role === 'admin' && <Link to="/barangay-team"><Users /><span><strong>Team roster</strong><small>Manage active barangay responders and staff.</small></span><ArrowRight /></Link>}
         {user?.role === 'admin' && <Link to="/barangay-analytics"><Activity /><span><strong>Barangay analytics</strong><small>Review local report volume and outcomes.</small></span><ArrowRight /></Link>}
       </section>
+
+      {user?.role === 'admin' && <section className="barangay-overview-charts" aria-label="Incident charts">
+        <article className="barangay-console-panel barangay-overview-chart-card">
+          <header><div><h2>Incident activity · 7 days</h2><p>Reports created each day, grouped by current status.</p></div></header>
+          {loading ? <div className="barangay-overview-chart-empty">Loading incident activity…</div> : reports.length === 0 ? <div className="barangay-overview-chart-empty">Incident activity will appear when reports are available.</div> : (
+            <div className="barangay-overview-chart">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={weeklyIncidentActivity} margin={{ top: 4, right: 8, left: -22, bottom: 0 }}>
+                  <CartesianGrid stroke={overviewChartGrid} strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="day" tick={overviewChartAxis} tickLine={false} axisLine={false} />
+                  <YAxis allowDecimals={false} tick={overviewChartAxis} tickLine={false} axisLine={false} />
+                  <Tooltip {...overviewChartTooltip} />
+                  <Legend wrapperStyle={{ fontSize: 10, paddingTop: 2 }} />
+                  <Bar dataKey="active" name="Active" stackId="reports" fill="#38bdf8" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="resolved" name="Resolved" stackId="reports" fill="#34d399" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </article>
+
+        <article className="barangay-console-panel barangay-overview-chart-card">
+          <header><div><h2>Incidents by type</h2><p>Most common categories across available barangay reports.</p></div></header>
+          {loading ? <div className="barangay-overview-chart-empty">Loading incident categories…</div> : incidentTypeCounts.length === 0 ? <div className="barangay-overview-chart-empty">Incident categories will appear when reports are available.</div> : (
+            <div className="barangay-overview-chart">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={incidentTypeCounts} layout="vertical" margin={{ top: 2, right: 10, left: 0, bottom: 0 }}>
+                  <CartesianGrid stroke={overviewChartGrid} strokeDasharray="3 3" horizontal={false} />
+                  <XAxis type="number" allowDecimals={false} tick={overviewChartAxis} tickLine={false} axisLine={false} />
+                  <YAxis type="category" dataKey="name" width={92} tick={overviewChartAxis} tickLine={false} axisLine={false} />
+                  <Tooltip {...overviewChartTooltip} />
+                  <Bar dataKey="count" name="Reports" fill="#22bfd3" radius={[0, 5, 5, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </article>
+      </section>}
 
       {isDispatcher && <section className="barangay-console-panel">
         <header><div><h2>Recent incident activity</h2><p>Reports currently visible to your barangay role.</p></div><Link to="/reports">Open incidents <ArrowRight size={15} /></Link></header>
