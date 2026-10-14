@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import PasswordInput from './PasswordInput';
 import BarangayAdministrationPage, { type BarangaySettingsSection } from '../pages/BarangayAdministrationPage';
 import BarangayTeamPage from '../pages/BarangayTeamPage';
-import { authAPI, barangayAPI } from '../lib/api';
+import { authAPI, barangayAPI, reportAPI } from '../lib/api';
 
 type UserSettingsModalProps = {
   theme: 'dark' | 'light';
@@ -26,10 +26,34 @@ export default function UserSettingsModal({ theme, onThemeChange, onClose }: Use
   const canViewHotlines = isBarangay && Boolean(user?.barangay_id);
   const [activeSection, setActiveSection] = useState<SettingsSection>('general');
   const [profile, setProfile] = useState({ full_name: user?.full_name || '', phone: user?.phone || '' });
+  const [residentBarangays, setResidentBarangays] = useState<Array<{ id: string; name: string }>>([]);
+  const [residentBarangay, setResidentBarangay] = useState(user?.barangay_name || '');
+  const [loadingBarangays, setLoadingBarangays] = useState(false);
+  const [savingBarangay, setSavingBarangay] = useState(false);
+  const [barangayLoadError, setBarangayLoadError] = useState('');
   const [passwordOtpSent, setPasswordOtpSent] = useState(false);
   const [passwordForm, setPasswordForm] = useState(emptyPasswordForm);
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
+
+  useEffect(() => {
+    if (!isResident) return;
+    let active = true;
+    setLoadingBarangays(true);
+    setBarangayLoadError('');
+    reportAPI.verifiedBarangays()
+      .then(({ data }) => {
+        if (!active) return;
+        const choices = Array.isArray(data)
+          ? data.map((item: any) => ({ id: String(item.id), name: String(item.name || '') })).filter((item) => item.id && item.name)
+          : [];
+        setResidentBarangays(choices);
+        setResidentBarangay((current) => current || user?.barangay_name || '');
+      })
+      .catch((error: any) => { if (active) setBarangayLoadError(messageOf(error, 'Verified barangays could not be loaded.')); })
+      .finally(() => { if (active) setLoadingBarangays(false); });
+    return () => { active = false; };
+  }, [isResident, user?.barangay_name]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -58,6 +82,27 @@ export default function UserSettingsModal({ theme, onThemeChange, onClose }: Use
       toast.error(messageOf(error, 'Profile details could not be saved.'));
     } finally {
       setSavingProfile(false);
+    }
+  };
+
+  const saveResidentBarangay = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const selected = residentBarangays.find((barangay) => barangay.name === residentBarangay);
+    if (!selected) {
+      toast.error('Choose one of the verified barangays in the list.');
+      return;
+    }
+    setSavingBarangay(true);
+    try {
+      const { data } = await authAPI.updateResidentProfile({ barangay_name: selected.name });
+      const savedName = data.barangay_name || selected.name;
+      updateUser({ barangay_name: savedName });
+      setResidentBarangay(savedName);
+      toast.success('Barangay preference saved.');
+    } catch (error: any) {
+      toast.error(messageOf(error, 'Barangay preference could not be saved.'));
+    } finally {
+      setSavingBarangay(false);
     }
   };
 
@@ -173,6 +218,20 @@ export default function UserSettingsModal({ theme, onThemeChange, onClose }: Use
               <button type="button" aria-pressed={theme === 'light'} className={theme === 'light' ? 'selected' : ''} onClick={() => onThemeChange('light')}><Sun size={16} /> Light</button>
             </div>
           </section>
+
+          {isResident && <section className="user-settings-section">
+            <div className="user-settings-section-heading"><div><h3>Barangay</h3><p>Choose your barangay to personalize local updates and services.</p></div><MapPin size={18} /></div>
+            <form className="user-settings-form" onSubmit={(event) => void saveResidentBarangay(event)}>
+              <label>Your barangay<select required value={residentBarangay} onChange={(event) => setResidentBarangay(event.target.value)} disabled={loadingBarangays || residentBarangays.length === 0}>
+                <option value="">{loadingBarangays ? 'Loading verified barangays…' : 'Select your barangay'}</option>
+                {user?.barangay_name && !residentBarangays.some((barangay) => barangay.name === user.barangay_name) && <option value={user.barangay_name}>{user.barangay_name} · current</option>}
+                {residentBarangays.map((barangay) => <option key={barangay.id} value={barangay.name}>{barangay.name}</option>)}
+              </select></label>
+              {barangayLoadError && <p className="user-settings-managed-note" role="alert">{barangayLoadError}</p>}
+              {!loadingBarangays && !barangayLoadError && residentBarangays.length === 0 && <p className="user-settings-managed-note">No verified barangays are currently available.</p>}
+              <div className="user-settings-form-actions"><button className="btn btn-primary" disabled={savingBarangay || loadingBarangays || residentBarangays.length === 0}><MapPin size={15} /> {savingBarangay ? 'Saving…' : 'Save barangay'}</button></div>
+            </form>
+          </section>}
 
           {isBarangay && <section className="user-settings-section">
             <div className="user-settings-section-heading"><div><h3>Profile</h3><p>Update the name and mobile number on your barangay account.</p></div></div>
