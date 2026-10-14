@@ -244,7 +244,6 @@ export function ResidentHotlinesPage() {
     || barangayGroups.find((group) => group.barangay_name === user?.barangay_name)
     || barangayGroups[0];
   const groups = [
-    { id: 'national', title: 'National emergency', subtitle: 'For immediate emergency response', icon: <Siren size={18}/>, entries: data.national || [] },
     { id: 'mdrrmo', title: 'MDRRMO', subtitle: 'Municipal disaster risk reduction and management', icon: <ShieldCheck size={18}/>, entries: data.mdrrmo || [] },
     { id: 'pnp', title: 'Philippine National Police (PNP)', subtitle: 'Norzagaray Municipal Police Station', icon: <ShieldCheck size={18}/>, entries: [{ label: 'Norzagaray Municipal Police Station', phone: '0998-598-5389' }] },
     { id: 'bfp', title: 'Bureau of Fire Protection (BFP)', subtitle: 'Norzagaray Fire Station', icon: <Flame size={18}/>, entries: [{ label: 'Norzagaray Fire Station', phone: '0943-348-1854' }] },
