@@ -26,7 +26,7 @@ interface AuthContextType {
   loading: boolean;
   login: (identifier: string, password: string, accountKind?: 'auto' | 'mdrrmo' | 'barangay' | 'resident') => Promise<void>;
   setSession: (token: string, user: User, accountKind: 'mdrrmo' | 'barangay' | 'resident') => void;
-  debugLogin: (accountId: string, audience?: 'standard' | 'barangay') => Promise<void>;
+  debugLogin: (accountId: string, audience?: 'standard' | 'barangay' | 'resident') => Promise<void>;
   updateUser: (patch: Partial<User>) => void;
   logout: () => void;
   isAdmin: boolean;
@@ -139,10 +139,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(nextUser);
   };
 
-  const debugLogin = async (accountId: string, audience: 'standard' | 'barangay' = 'standard') => {
+  const debugLogin = async (accountId: string, audience: 'standard' | 'barangay' | 'resident' = 'standard') => {
     const response = await debugAPI.quickLogin(accountId, audience);
     const { token: savedToken, user: loggedInUser } = response.data;
-    const nextKind = audience === 'barangay' ? 'barangay' : 'mdrrmo';
+    const nextKind = audience === 'barangay' ? 'barangay' : audience === 'resident' ? 'resident' : 'mdrrmo';
     loggedInUser.account_kind = nextKind;
     localStorage.setItem('norzagapay_debug_session', 'true');
     localStorage.removeItem('norzagapay_responder_demo_hidden');

@@ -5,7 +5,7 @@ import { authAPI, debugAPI } from '../lib/api';
 import PublicHeader from '../components/PublicHeader';
 import PasswordInput from '../components/PasswordInput';
 
-type DebugAccount = { id: string; full_name: string; username?: string | null; email?: string | null; phone?: string | null; role: string; audience: 'standard' | 'barangay'; barangay_id?: string; barangay_name?: string };
+type DebugAccount = { id: string; full_name: string; username?: string | null; email?: string | null; phone?: string | null; role: string; audience: 'standard' | 'barangay' | 'resident'; barangay_id?: string; barangay_name?: string };
 
 function groupDebugAccounts(accounts: DebugAccount[]) {
   const mdrrmo = accounts.filter((account) => account.audience === 'standard');
@@ -21,6 +21,7 @@ function groupDebugAccounts(accounts: DebugAccount[]) {
   return {
     mdrrmo,
     barangays: [...barangayGroups.values()].sort((first, second) => first.name.localeCompare(second.name)),
+    residents: accounts.filter((account) => account.audience === 'resident'),
   };
 }
 
@@ -82,10 +83,15 @@ export default function LoginPage() {
     setDebugLoading(true);
     setError('');
     try {
-      const [standard, barangay] = await Promise.all([debugAPI.accounts('standard'), debugAPI.accounts('barangay')]);
+      const [standard, barangay, residents] = await Promise.all([
+        debugAPI.accounts('standard'),
+        debugAPI.accounts('barangay'),
+        debugAPI.accounts('resident'),
+      ]);
       setDebugAccounts([
         ...(standard.data.accounts || []).map((account: DebugAccount) => ({ ...account, audience: 'standard' as const })),
         ...(barangay.data.accounts || []).map((account: DebugAccount) => ({ ...account, audience: 'barangay' as const })),
+        ...(residents.data.accounts || []).map((account: DebugAccount) => ({ ...account, audience: 'resident' as const })),
       ]);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Debug quick login is unavailable.');
@@ -95,7 +101,7 @@ export default function LoginPage() {
     }
   };
 
-  const selectDebugAccount = async (accountId: string, accountAudience: 'standard' | 'barangay') => {
+  const selectDebugAccount = async (accountId: string, accountAudience: 'standard' | 'barangay' | 'resident') => {
     setDebugLoading(true);
     try {
       await debugLogin(accountId, accountAudience);
@@ -280,6 +286,7 @@ export default function LoginPage() {
               <div className="debug-dropdown-list">
                 {debugGroups.mdrrmo.length > 0 && <section className="debug-account-group"><h4>MDRRMO</h4>{debugGroups.mdrrmo.map(renderDebugAccount)}</section>}
                 {debugGroups.barangays.map((group) => <section className="debug-account-group" key={group.id}><h4>Barangay · {group.name}</h4>{group.accounts.map(renderDebugAccount)}</section>)}
+                {debugGroups.residents.length > 0 && <section className="debug-account-group"><h4>Resident</h4>{debugGroups.residents.map(renderDebugAccount)}</section>}
               </div>
             )}
           </div>

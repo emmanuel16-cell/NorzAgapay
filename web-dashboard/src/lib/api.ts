@@ -67,8 +67,8 @@ export const authAPI = {
 };
 
 export const debugAPI = {
-  accounts: (audience: 'standard' | 'barangay' = 'standard') => api.get('/debug/accounts', { params: { audience } }),
-  quickLogin: (accountId: string, audience: 'standard' | 'barangay' = 'standard') => api.post('/debug/quick-login', { accountId, audience }),
+  accounts: (audience: 'standard' | 'barangay' | 'resident' = 'standard') => api.get('/debug/accounts', { params: { audience } }),
+  quickLogin: (accountId: string, audience: 'standard' | 'barangay' | 'resident' = 'standard') => api.post('/debug/quick-login', { accountId, audience }),
 };
 
 // Public broadcast feed and the persisted MDRRMO post manager.

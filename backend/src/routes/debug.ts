@@ -26,7 +26,7 @@ router.get('/accounts', debugOnly, async (req: Request, res: Response) => {
     if (audience === 'resident') {
       const { data, error } = await supabaseAdmin
         .from('resident_user')
-        .select('id, full_name, email, phone, barangay_name, role, status, verified')
+        .select('id, full_name, username, email, phone, barangay_name, role, status, verified')
         .eq('status', 'active')
         .order('full_name');
       if (error) throw error;
@@ -107,7 +107,7 @@ router.post('/quick-login', debugOnly, async (req: Request, res: Response) => {
     if (audience === 'resident') {
       const { data: user, error } = await supabaseAdmin
         .from('resident_user')
-        .select('id, full_name, email, phone, barangay_name, role, status, verified')
+        .select('id, full_name, username, email, phone, barangay_name, role, status, verified')
         .eq('id', accountId)
         .eq('status', 'active')
         .single();
@@ -117,7 +117,7 @@ router.post('/quick-login', debugOnly, async (req: Request, res: Response) => {
       }
 
       const token = jwt.sign(
-        { userId: user.id, email: user.email, role: 'resident', debug: true },
+        { userId: user.id, email: user.email || '', role: 'resident', debug: true },
         config.jwtSecret,
         { expiresIn: '1h' },
       );
