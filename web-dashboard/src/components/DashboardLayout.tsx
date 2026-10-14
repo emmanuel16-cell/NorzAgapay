@@ -353,8 +353,10 @@ export default function DashboardLayout() {
           }}
         >
           <section className="logout-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="logout-confirm-title">
-            <div className="logout-confirm-icon"><LogOut size={21} /></div>
-            <h2 id="logout-confirm-title">Sign out?</h2>
+            <div className="logout-confirm-heading">
+              <div className="logout-confirm-icon"><LogOut size={21} /></div>
+              <h2 id="logout-confirm-title">Sign out?</h2>
+            </div>
             <p>Are you sure you want to sign out of your account?</p>
             <div className="logout-confirm-actions">
               <button type="button" className="btn btn-outline" onClick={() => setLogoutConfirmationOpen(false)}>Cancel</button>
