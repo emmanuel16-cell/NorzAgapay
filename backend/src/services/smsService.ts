@@ -26,7 +26,7 @@ export const smsService = {
     );
   },
 
-  async sendPasswordChangeOtp(phoneNumber: string, otp: string, audience: 'resident'): Promise<boolean> {
+  async sendPasswordChangeOtp(phoneNumber: string, otp: string, audience: 'resident' | 'barangay' | 'MDRRMO'): Promise<boolean> {
     return sendSms(
       phoneNumber,
       `Your Norz-Agapay ${audience} password change code is ${otp}. It expires in 10 minutes. Do not share this code.`,

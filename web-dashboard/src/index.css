@@ -590,6 +590,8 @@ a:hover { color: var(--info); }
 .user-settings-form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .user-settings-form > label { display: flex; min-width: 0; flex-direction: column; gap: 6px; color: var(--text-secondary); font-size: 12px; font-weight: 600; }
 .user-settings-form input { width: 100%; min-height: 40px; padding: 9px 11px; border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-primary); background: var(--bg-primary); font: inherit; font-weight: 400; outline: none; }
+.user-settings-form input[readonly] { color: var(--text-muted); cursor: not-allowed; }
+.user-settings-form > .user-settings-managed-note { grid-column: 1 / -1; }
 .user-settings-form input:focus { border-color: #30bed6; box-shadow: 0 0 0 2px rgba(48, 190, 214, .12); }
 .user-settings-form .password-input-control { width: 100%; }
 .user-settings-form-actions { display: flex; grid-column: 1 / -1; flex-wrap: wrap; gap: 8px; }
@@ -597,6 +599,7 @@ a:hover { color: var(--info); }
 .user-settings-security-start { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; color: var(--text-muted); font-size: 12px; }
 .user-settings-resident-security-start { display: grid; max-width: 480px; gap: 13px; }
 .user-settings-resident-security-start > label { display: flex; flex-direction: column; gap: 6px; color: var(--text-secondary); font-size: 12px; font-weight: 600; }
+.user-settings-resident-security-start select { width: 100%; min-height: 40px; padding: 9px 11px; border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-primary); background: var(--bg-primary); font: inherit; font-weight: 400; outline: none; }
 .user-settings-resident-security-start .password-input-control { width: 100%; }
 .user-settings-resident-security-start .btn { display: inline-flex; min-height: 40px; width: fit-content; align-items: center; gap: 8px; }
 .user-settings-sms-note { grid-column: 1 / -1; margin: 0; padding: 10px 12px; border: 1px solid rgba(15, 159, 120, .25); border-radius: 8px; color: #57cfa6; background: rgba(15, 159, 120, .08); font-size: 12px; line-height: 1.45; }

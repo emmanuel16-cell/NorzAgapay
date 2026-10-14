@@ -122,6 +122,7 @@ export interface ResidentOtpRecord {
     | 'resident_password_reset'
     | 'resident_web_registration'
     | 'resident_web_password_change'
+    | 'web_profile_password_change'
     | 'barangay_password_reset'
     | 'responder_password_reset';
 }

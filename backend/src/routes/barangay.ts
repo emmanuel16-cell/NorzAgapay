@@ -13,6 +13,7 @@ import { authenticate, AuthRequest } from '../middleware/auth';
 import { io } from '../server';
 import { DispatcherVerificationService, normalizePositionDesignation } from '../services/dispatcherVerificationService';
 import { emailService } from '../services/emailService';
+import { smsService } from '../services/smsService';
 import {
   ARRIVAL_RADIUS_METERS,
   distanceMeters,
@@ -157,6 +158,9 @@ const authenticateBarangay = async (req: AuthRequest, res: Response, next: any) 
       'POST /account-request/certificate',
       'POST /account-request/resubmit',
       'GET /account-request/status',
+      'PATCH /profile',
+      'POST /profile/password-otp',
+      'POST /profile/change-password',
       // Keep the old URLs working for already-installed app builds.
       'GET /dispatcher/coordination-request',
       'PUT /dispatcher/coordination-request',
@@ -904,38 +908,166 @@ router.patch('/profile', authenticateBarangay, async (req: any, res: Response) =
   try {
     const schema = z.object({
       full_name: z.string().trim().min(2).max(100),
-      phone: z.string().trim().min(1).max(11),
+      username: z.string().trim().toLowerCase().min(3).max(32).regex(/^[a-z0-9._-]+$/),
+      email: z.string().trim().toLowerCase().email().max(254).nullable(),
+      phone: z.string().trim().max(11).nullable(),
     }).strict();
     const parsed = schema.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: 'Provide a valid name and phone number.' });
+      res.status(400).json({ error: 'Provide a valid name, username, email, and mobile number.' });
       return;
     }
 
-    const phone = parsed.data.phone;
+    const phone = parsed.data.phone?.replace(/\D/g, '') || null;
     if (phone && !/^09\d{9}$/.test(phone)) {
       res.status(400).json({ error: 'Enter an 11-digit mobile number starting with 09.' });
       return;
     }
 
+    const [{ data: usernameOwner, error: usernameError }, { data: emailOwner, error: emailError }] = await Promise.all([
+      supabaseAdmin.from('barangay_users').select('id').eq('username', parsed.data.username).neq('id', req.barangayUser.userId).limit(1).maybeSingle(),
+      parsed.data.email
+        ? supabaseAdmin.from('barangay_users').select('id').eq('email', parsed.data.email).neq('id', req.barangayUser.userId).limit(1).maybeSingle()
+        : Promise.resolve({ data: null, error: null } as any),
+    ]);
+    if (usernameError) throw usernameError;
+    if (emailError) throw emailError;
+    if (usernameOwner) { res.status(409).json({ error: 'That username is already in use.' }); return; }
+    if (emailOwner) { res.status(409).json({ error: 'That email address is already linked to another barangay account.' }); return; }
+
     const { data, error } = await supabaseAdmin
       .from('barangay_users')
-      .update({ full_name: parsed.data.full_name, phone })
+      .update({ full_name: parsed.data.full_name, username: parsed.data.username, email: parsed.data.email, phone })
       .eq('id', req.barangayUser.userId)
       .eq('barangay_id', req.barangayUser.barangayId)
-      .select('full_name, phone')
+      .select('id, full_name, username, email, phone, role')
       .maybeSingle();
 
+    if (error?.code === '23505') { res.status(409).json({ error: 'That username or email is already in use.' }); return; }
     if (error) throw error;
     if (!data) {
       res.status(404).json({ error: 'Barangay account not found.' });
       return;
     }
 
-    res.json({ success: true, full_name: data.full_name, phone: data.phone });
+    const token = jwt.sign(
+      { userId: data.id, barangayId: req.barangayUser.barangayId, role: data.role, email: data.email || '' },
+      config.jwtSecret,
+      { expiresIn: '30d' },
+    );
+    res.json({ success: true, ...data, token });
   } catch (err) {
     console.error('Update barangay profile error:', err);
     res.status(500).json({ error: 'Failed to update your information.' });
+  }
+});
+
+router.post('/profile/password-otp', authenticateBarangay, async (req: any, res: Response) => {
+  try {
+    const deliveryMethod = req.body?.delivery_method === 'sms' ? 'sms' : req.body?.delivery_method === 'email' ? 'email' : null;
+    const currentPassword = typeof req.body?.current_password === 'string' ? req.body.current_password : '';
+    if (!deliveryMethod || !currentPassword) {
+      res.status(400).json({ error: 'Choose email or mobile and enter your current password.' });
+      return;
+    }
+    const { data: account, error } = await supabaseAdmin.from('barangay_users')
+      .select('id, full_name, email, phone, password_hash')
+      .eq('id', req.barangayUser.userId)
+      .eq('barangay_id', req.barangayUser.barangayId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!account) { res.status(404).json({ error: 'Barangay account not found.' }); return; }
+    if (!(await bcrypt.compare(currentPassword, account.password_hash))) {
+      res.status(400).json({ error: 'The current password is incorrect.' });
+      return;
+    }
+
+    const destination = deliveryMethod === 'email' ? String(account.email || '').trim().toLowerCase() : String(account.phone || '').replace(/\D/g, '');
+    if (deliveryMethod === 'email' && !z.string().email().safeParse(destination).success) {
+      res.status(400).json({ error: 'Add a valid email address to your profile before choosing email verification.' });
+      return;
+    }
+    if (deliveryMethod === 'sms' && !/^09\d{9}$/.test(destination)) {
+      res.status(400).json({ error: 'Add a valid mobile number to your profile before choosing SMS verification.' });
+      return;
+    }
+    if (deliveryMethod === 'sms' && !config.textBeeApiKey) {
+      res.status(503).json({ error: 'SMS verification is not configured. Choose email or contact the administrator.' });
+      return;
+    }
+
+    const otp = randomInt(100000, 1000000).toString();
+    const otpKey = `web-profile-password-change:barangay_users:${account.id}`;
+    await setOtp(otpKey, { otp, fullName: account.full_name, contactNumber: destination, deliveryMethod, purpose: 'web_profile_password_change' });
+    const sent = deliveryMethod === 'email'
+      ? await emailService.sendOtpEmail(destination, otp, 'web_profile_password_change')
+      : await smsService.sendPasswordChangeOtp(destination, otp, 'barangay');
+    if (!sent) {
+      await deleteOtp(otpKey);
+      res.status(503).json({ error: `We could not send the verification ${deliveryMethod === 'email' ? 'email' : 'SMS'}. Check the saved contact and try again.` });
+      return;
+    }
+    const masked = deliveryMethod === 'email'
+      ? `${destination.slice(0, 1)}***@${destination.split('@')[1]}`
+      : `****${destination.slice(-4)}`;
+    res.json({ success: true, message: `Verification code sent to ${masked}.`, expiresInMinutes: 10 });
+  } catch (err) {
+    console.error('Barangay profile password OTP error:', err);
+    res.status(500).json({ error: 'Could not send the password verification code.' });
+  }
+});
+
+router.post('/profile/change-password', authenticateBarangay, async (req: any, res: Response) => {
+  try {
+    const currentPassword = typeof req.body?.current_password === 'string' ? req.body.current_password : '';
+    const otp = typeof req.body?.otp === 'string' || typeof req.body?.otp === 'number' ? String(req.body.otp).trim() : '';
+    const newPassword = typeof req.body?.new_password === 'string' ? req.body.new_password : '';
+    const deliveryMethod = req.body?.delivery_method === 'sms' ? 'sms' : req.body?.delivery_method === 'email' ? 'email' : null;
+    if (!currentPassword || !/^\d{6}$/.test(otp) || !deliveryMethod || newPassword.length < 8 || newPassword.length > 128) {
+      res.status(400).json({ error: 'Enter your current password, the 6-digit code, and a new password with at least 8 characters.' });
+      return;
+    }
+    const { data: account, error } = await supabaseAdmin.from('barangay_users')
+      .select('id, password_hash')
+      .eq('id', req.barangayUser.userId)
+      .eq('barangay_id', req.barangayUser.barangayId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!account) { res.status(404).json({ error: 'Barangay account not found.' }); return; }
+    if (!(await bcrypt.compare(currentPassword, account.password_hash))) {
+      res.status(400).json({ error: 'The current password is incorrect.' });
+      return;
+    }
+    if (await bcrypt.compare(newPassword, account.password_hash)) {
+      res.status(400).json({ error: 'Choose a new password that differs from your current password.' });
+      return;
+    }
+
+    const otpKey = `web-profile-password-change:barangay_users:${account.id}`;
+    const record = await getOtp(otpKey);
+    if (!record || record.purpose !== 'web_profile_password_change' || record.deliveryMethod !== deliveryMethod) {
+      res.status(400).json({ error: 'No matching password-change request was found or the code expired. Request a new code.' });
+      return;
+    }
+    if (record.otp !== otp) {
+      const failedAttempts = (record.failedAttempts || 0) + 1;
+      if (failedAttempts >= 5) await deleteOtp(otpKey);
+      else await setOtp(otpKey, { ...record, failedAttempts });
+      res.status(400).json({ error: failedAttempts >= 5 ? 'Too many incorrect codes. Request a new verification code.' : 'That verification code is incorrect.' });
+      return;
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    const { error: updateError } = await supabaseAdmin.from('barangay_users')
+      .update({ password_hash: passwordHash })
+      .eq('id', account.id)
+      .eq('barangay_id', req.barangayUser.barangayId);
+    if (updateError) throw updateError;
+    await deleteOtp(otpKey);
+    res.json({ success: true, message: 'Password changed successfully.' });
+  } catch (err) {
+    console.error('Barangay profile password change error:', err);
+    res.status(500).json({ error: 'Could not update the password.' });
   }
 });
 

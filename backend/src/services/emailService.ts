@@ -49,6 +49,7 @@ export const emailService = {
     purpose:
       | 'registration'
       | 'password_change'
+      | 'web_profile_password_change'
       | 'barangay_password_change'
       | 'barangay_registration'
       | 'resident_password_reset'
@@ -69,6 +70,7 @@ export const emailService = {
       registration: 'complete your Norz-Agapay citizen registration',
       barangay_registration: 'complete your Norz-Agapay Barangay Administrator registration',
       password_change: 'update your resident account password',
+      web_profile_password_change: 'change the password for your Norz-Agapay account',
       barangay_password_change: 'update your Norz-Agapay barangay account password',
       resident_password_reset: 'reset your resident account password',
       barangay_password_reset: 'reset your Norz-Agapay barangay account password',

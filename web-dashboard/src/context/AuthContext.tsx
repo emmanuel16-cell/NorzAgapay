@@ -26,6 +26,7 @@ interface AuthContextType {
   loading: boolean;
   login: (identifier: string, password: string, accountKind?: 'auto' | 'mdrrmo' | 'barangay' | 'resident') => Promise<void>;
   setSession: (token: string, user: User, accountKind: 'mdrrmo' | 'barangay' | 'resident') => void;
+  updateToken: (token: string) => void;
   debugLogin: (accountId: string, audience?: 'standard' | 'barangay' | 'resident') => Promise<void>;
   updateUser: (patch: Partial<User>) => void;
   logout: () => void;
@@ -163,6 +164,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const updateToken = useCallback((nextToken: string) => {
+    localStorage.setItem('norzagapay_token', nextToken);
+    setToken(nextToken);
+  }, []);
+
   const logout = () => {
     localStorage.removeItem('norzagapay_debug_session');
     localStorage.removeItem('norzagapay_token');
@@ -179,7 +185,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     : user?.role === 'resident' || isMasterAdmin || ['admin', 'logistics', 'dispatcher', 'responder'].includes(user?.role || '');
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, setSession, debugLogin, updateUser, logout, isAdmin, isMasterAdmin, canAccessDashboard }}>
+    <AuthContext.Provider value={{ user, token, loading, login, setSession, debugLogin, updateUser, updateToken, logout, isAdmin, isMasterAdmin, canAccessDashboard }}>
       {children}
     </AuthContext.Provider>
   );

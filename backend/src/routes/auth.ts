@@ -480,6 +480,71 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response): Promise
   }
 });
 
+// PATCH /api/auth/profile — update the signed-in MDRRMO account's own contact profile.
+// Account roles remain administrator-managed and are intentionally not accepted here.
+router.patch('/profile', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (req.user?.role === 'resident') {
+      res.status(403).json({ error: 'Use the resident profile endpoint for this account.' });
+      return;
+    }
+    const fullName = typeof req.body?.full_name === 'string' ? req.body.full_name.trim() : '';
+    const username = typeof req.body?.username === 'string' ? req.body.username.trim().toLowerCase() : '';
+    const emailInput = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+    const phone = typeof req.body?.phone === 'string' ? req.body.phone.replace(/\D/g, '') : '';
+    if (fullName.length < 2 || fullName.length > 100) {
+      res.status(400).json({ error: 'Enter a name between 2 and 100 characters.' });
+      return;
+    }
+    if (!/^[a-z0-9._-]{3,32}$/.test(username)) {
+      res.status(400).json({ error: 'Username must be 3–32 characters and use letters, numbers, dots, underscores, or hyphens.' });
+      return;
+    }
+    const parsedEmail = emailInput ? z.string().email().max(254).safeParse(emailInput) : null;
+    if (emailInput && !parsedEmail?.success) {
+      res.status(400).json({ error: 'Enter a valid email address.' });
+      return;
+    }
+    if (phone && !/^09\d{9}$/.test(phone)) {
+      res.status(400).json({ error: 'Enter an 11-digit mobile number starting with 09, or leave it blank.' });
+      return;
+    }
+
+    const userId = req.user!.userId;
+    const [{ data: existingUsername, error: usernameError }, { data: existingEmail, error: emailError }] = await Promise.all([
+      supabaseAdmin.from('users').select('id').eq('username', username).neq('id', userId).limit(1).maybeSingle(),
+      emailInput
+        ? supabaseAdmin.from('users').select('id').eq('email', emailInput).neq('id', userId).limit(1).maybeSingle()
+        : Promise.resolve({ data: null, error: null } as any),
+    ]);
+    if (usernameError) throw usernameError;
+    if (emailError) throw emailError;
+    if (existingUsername) { res.status(409).json({ error: 'That username is already in use.' }); return; }
+    if (existingEmail) { res.status(409).json({ error: 'That email address is already linked to another account.' }); return; }
+
+    const { data, error } = await supabaseAdmin
+      .from('users')
+      .update({ full_name: fullName, username, email: emailInput || null, phone: phone || null, updated_at: new Date().toISOString() })
+      .eq('id', userId)
+      .select('id, full_name, username, email, phone, role')
+      .maybeSingle();
+    if (error) {
+      if (error.code === '23505') { res.status(409).json({ error: 'That username or email is already in use.' }); return; }
+      throw error;
+    }
+    if (!data) { res.status(404).json({ error: 'Account not found.' }); return; }
+    const token = jwt.sign(
+      { userId: data.id, email: data.email || '', role: data.role, unitType: req.user?.unitType || null },
+      config.jwtSecret,
+      { expiresIn: config.jwtExpiresIn as any },
+    );
+    res.json({ success: true, ...data, token });
+  } catch (err) {
+    console.error('Update MDRRMO profile error:', err);
+    res.status(500).json({ error: 'Failed to update your profile.' });
+  }
+});
+
 // PATCH /api/auth/resident/profile — update the signed-in resident's profile
 router.patch('/resident/profile', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -497,20 +562,48 @@ router.patch('/resident/profile', authenticate, async (req: AuthRequest, res: Re
       }
       updates.full_name = fullName;
     }
+    if (req.body?.username !== undefined) {
+      const username = typeof req.body.username === 'string' ? req.body.username.trim().toLowerCase() : '';
+      if (!/^[a-z0-9._-]{3,32}$/.test(username)) {
+        res.status(400).json({ error: 'Username must be 3–32 characters and use letters, numbers, dots, underscores, or hyphens.' });
+        return;
+      }
+      const { data: existingUsername, error: usernameError } = await supabaseAdmin
+        .from('resident_user').select('id').eq('username', username).neq('id', req.user.userId).limit(1).maybeSingle();
+      if (usernameError) throw usernameError;
+      if (existingUsername) { res.status(409).json({ error: 'That username is already in use.' }); return; }
+      updates.username = username;
+    }
+    if (req.body?.email !== undefined) {
+      const email = typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+      if (email && !z.string().email().max(254).safeParse(email).success) {
+        res.status(400).json({ error: 'Enter a valid email address or leave it blank.' });
+        return;
+      }
+      if (email) {
+        const { data: existingEmail, error: emailError } = await supabaseAdmin
+          .from('resident_user').select('id').eq('email', email).neq('id', req.user.userId).limit(1).maybeSingle();
+        if (emailError) throw emailError;
+        if (existingEmail) { res.status(409).json({ error: 'That email address is already linked to another resident account.' }); return; }
+      }
+      updates.email = email || null;
+    }
     if (req.body?.phone !== undefined) {
       const phone = typeof req.body.phone === 'string' ? req.body.phone.replace(/\D/g, '') : '';
-      if (!/^09\d{9}$/.test(phone)) {
-        res.status(400).json({ error: 'Enter a valid 11-digit Philippine mobile number starting with 09.' });
+      if (phone && !/^09\d{9}$/.test(phone)) {
+        res.status(400).json({ error: 'Enter a valid 11-digit Philippine mobile number starting with 09, or leave it blank.' });
         return;
       }
-      const { data: existingPhone, error: phoneLookupError } = await supabaseAdmin
-        .from('resident_user').select('id').eq('phone', phone).neq('id', req.user.userId).limit(1).maybeSingle();
-      if (phoneLookupError) throw phoneLookupError;
-      if (existingPhone) {
-        res.status(409).json({ error: 'That mobile number is already linked to another resident account.' });
-        return;
+      if (phone) {
+        const { data: existingPhone, error: phoneLookupError } = await supabaseAdmin
+          .from('resident_user').select('id').eq('phone', phone).neq('id', req.user.userId).limit(1).maybeSingle();
+        if (phoneLookupError) throw phoneLookupError;
+        if (existingPhone) {
+          res.status(409).json({ error: 'That mobile number is already linked to another resident account.' });
+          return;
+        }
       }
-      updates.phone = phone;
+      updates.phone = phone || null;
     }
     if (req.body?.barangay_name !== undefined) {
       const barangayName = typeof req.body.barangay_name === 'string' ? req.body.barangay_name.trim() : '';
@@ -521,7 +614,7 @@ router.patch('/resident/profile', authenticate, async (req: AuthRequest, res: Re
       updates.barangay_name = barangayName;
     }
     if (Object.keys(updates).length === 1) {
-      res.status(400).json({ error: 'Provide a name, mobile number, or barangay to update.' });
+      res.status(400).json({ error: 'Provide at least one profile field or barangay to update.' });
       return;
     }
 
@@ -529,7 +622,7 @@ router.patch('/resident/profile', authenticate, async (req: AuthRequest, res: Re
       .from('resident_user')
       .update(updates)
       .eq('id', req.user.userId)
-      .select('id, full_name, username, email, phone, barangay_name')
+      .select('id, full_name, username, email, phone, barangay_name, role')
       .single();
 
     if (error || !data) {
@@ -538,10 +631,119 @@ router.patch('/resident/profile', authenticate, async (req: AuthRequest, res: Re
       return;
     }
 
-    res.json({ success: true, ...data });
+    const token = jwt.sign(
+      { userId: data.id, email: data.email || '', role: 'resident', unitType: req.user?.unitType || null },
+      config.jwtSecret,
+      { expiresIn: config.jwtExpiresIn as any },
+    );
+    res.json({ success: true, ...data, token });
   } catch (err) {
     console.error('Resident profile update error:', err);
     res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+router.post('/profile/password-otp', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const deliveryMethod = req.body?.delivery_method === 'sms' ? 'sms' : req.body?.delivery_method === 'email' ? 'email' : null;
+    const currentPassword = typeof req.body?.current_password === 'string' ? req.body.current_password : '';
+    if (!deliveryMethod || !currentPassword) {
+      res.status(400).json({ error: 'Choose email or mobile and enter your current password.' });
+      return;
+    }
+    const accountTable = req.user?.role === 'resident' ? 'resident_user' : 'users';
+    const { data: account, error } = await supabaseAdmin
+      .from(accountTable)
+      .select('id, full_name, email, phone, password_hash')
+      .eq('id', req.user!.userId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!account) { res.status(404).json({ error: 'Account not found.' }); return; }
+    if (!(await bcrypt.compare(currentPassword, account.password_hash))) {
+      res.status(400).json({ error: 'The current password is incorrect.' });
+      return;
+    }
+
+    const destination = deliveryMethod === 'email' ? String(account.email || '').trim().toLowerCase() : String(account.phone || '').replace(/\D/g, '');
+    if (deliveryMethod === 'email' && !z.string().email().safeParse(destination).success) {
+      res.status(400).json({ error: 'Add a valid email address to your profile before choosing email verification.' });
+      return;
+    }
+    if (deliveryMethod === 'sms' && !/^09\d{9}$/.test(destination)) {
+      res.status(400).json({ error: 'Add a valid mobile number to your profile before choosing SMS verification.' });
+      return;
+    }
+    if (deliveryMethod === 'sms' && !config.textBeeApiKey) {
+      res.status(503).json({ error: 'SMS verification is not configured. Choose email or contact the administrator.' });
+      return;
+    }
+
+    const otp = randomInt(100000, 1000000).toString();
+    const otpKey = `web-profile-password-change:${accountTable}:${account.id}`;
+    await setOtp(otpKey, { otp, fullName: account.full_name, contactNumber: destination, deliveryMethod, purpose: 'web_profile_password_change' });
+    const sent = deliveryMethod === 'email'
+      ? await emailService.sendOtpEmail(destination, otp, 'web_profile_password_change')
+      : await smsService.sendPasswordChangeOtp(destination, otp, req.user?.role === 'resident' ? 'resident' : 'MDRRMO');
+    if (!sent) {
+      await deleteOtp(otpKey);
+      res.status(503).json({ error: `We could not send the verification ${deliveryMethod === 'email' ? 'email' : 'SMS'}. Check the saved contact and try again.` });
+      return;
+    }
+    res.json({ success: true, message: `Verification code sent to ${deliveryMethod === 'email' ? maskEmailAddress(destination) : maskMobileNumber(destination)}.`, expiresInMinutes: 10 });
+  } catch (err) {
+    console.error('Web profile password OTP error:', err);
+    res.status(500).json({ error: 'Could not send the password verification code.' });
+  }
+});
+
+router.post('/profile/change-password', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const currentPassword = typeof req.body?.current_password === 'string' ? req.body.current_password : '';
+    const otp = typeof req.body?.otp === 'string' || typeof req.body?.otp === 'number' ? String(req.body.otp).trim() : '';
+    const newPassword = typeof req.body?.new_password === 'string' ? req.body.new_password : '';
+    const deliveryMethod = req.body?.delivery_method === 'sms' ? 'sms' : req.body?.delivery_method === 'email' ? 'email' : null;
+    if (!currentPassword || !/^\d{6}$/.test(otp) || !deliveryMethod || newPassword.length < 8 || newPassword.length > 128) {
+      res.status(400).json({ error: 'Enter your current password, the 6-digit code, and a new password with at least 8 characters.' });
+      return;
+    }
+    const accountTable = req.user?.role === 'resident' ? 'resident_user' : 'users';
+    const { data: account, error } = await supabaseAdmin
+      .from(accountTable).select('id, password_hash').eq('id', req.user!.userId).maybeSingle();
+    if (error) throw error;
+    if (!account) { res.status(404).json({ error: 'Account not found.' }); return; }
+    if (!(await bcrypt.compare(currentPassword, account.password_hash))) {
+      res.status(400).json({ error: 'The current password is incorrect.' });
+      return;
+    }
+    if (await bcrypt.compare(newPassword, account.password_hash)) {
+      res.status(400).json({ error: 'Choose a new password that differs from your current password.' });
+      return;
+    }
+
+    const otpKey = `web-profile-password-change:${accountTable}:${account.id}`;
+    const record = await getOtp(otpKey);
+    if (!record || record.purpose !== 'web_profile_password_change' || record.deliveryMethod !== deliveryMethod) {
+      res.status(400).json({ error: 'No matching password-change request was found or the code expired. Request a new code.' });
+      return;
+    }
+    if (record.otp !== otp) {
+      const failedAttempts = (record.failedAttempts || 0) + 1;
+      if (failedAttempts >= 5) await deleteOtp(otpKey);
+      else await setOtp(otpKey, { ...record, failedAttempts });
+      res.status(400).json({ error: failedAttempts >= 5 ? 'Too many incorrect codes. Request a new verification code.' : 'That verification code is incorrect.' });
+      return;
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    const { error: updateError } = await supabaseAdmin.from(accountTable)
+      .update({ password_hash: passwordHash, updated_at: new Date().toISOString() })
+      .eq('id', account.id);
+    if (updateError) throw updateError;
+    await deleteOtp(otpKey);
+    res.json({ success: true, message: 'Password changed successfully.' });
+  } catch (err) {
+    console.error('Web profile password change error:', err);
+    res.status(500).json({ error: 'Could not update the password.' });
   }
 });
 
