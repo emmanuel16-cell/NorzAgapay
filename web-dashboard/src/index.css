@@ -342,23 +342,6 @@ a:hover { color: var(--info); }
   gap: 0;
 }
 
-.sidebar-signout {
-  width: 100%;
-  flex: 0 0 auto;
-  margin-top: auto;
-  color: #ffb6b1;
-  background: transparent;
-  font: inherit;
-  text-align: left;
-}
-
-.sidebar-signout:hover {
-  color: #fff;
-  background: rgba(231, 76, 60, 0.15);
-}
-
-.sidebar-signout .nav-icon { color: #ff8f86; }
-
 .nav-item:hover {
   background: rgba(75, 143, 230, 0.12);
   color: var(--text-primary);
@@ -586,6 +569,8 @@ a:hover { color: var(--info); }
 .user-settings-nav button { display: flex; min-height: 44px; align-items: center; gap: 10px; padding: 0 12px; border: 1px solid transparent; border-radius: 9px; color: var(--text-secondary); background: transparent; text-align: left; cursor: pointer; }
 .user-settings-nav button:hover { color: var(--text-primary); background: color-mix(in srgb, var(--bg-primary) 55%, transparent); }
 .user-settings-nav button.active { border-color: color-mix(in srgb, #2ebed8 45%, transparent); color: var(--text-primary); background: rgba(39, 200, 232, .12); }
+.user-settings-nav button.user-settings-signout { min-height: 44px; margin-top: auto; border-top: 1px solid var(--border-color); border-radius: 0; color: #c83d38; }
+.user-settings-nav button.user-settings-signout:hover { color: #ad302c; background: rgba(231, 76, 60, .09); }
 .user-settings-panel { min-width: 0; flex: 1; overflow: hidden; }
 .user-settings-content { display: flex; height: 100%; min-width: 0; flex-direction: column; gap: 14px; overflow: auto; padding: 18px 22px; }
 .user-settings-content-barangay { padding: 18px 22px 22px; }

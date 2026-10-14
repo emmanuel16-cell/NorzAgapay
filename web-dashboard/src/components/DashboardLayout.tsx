@@ -282,15 +282,6 @@ export default function DashboardLayout() {
               </NavLink>
             )
           )}
-          <button
-            type="button"
-            className={`nav-item sidebar-signout ${isCollapsed ? 'collapsed' : ''}`}
-            onClick={requestLogout}
-            title={isCollapsed ? 'Sign Out' : undefined}
-          >
-            <span className="nav-icon"><LogOut size={19} strokeWidth={1.8} /></span>
-            {!isCollapsed && <span className="nav-text">Sign Out</span>}
-          </button>
         </nav>
 
         <div className={`sidebar-footer ${isCollapsed ? 'collapsed' : ''}`}>
@@ -353,7 +344,7 @@ export default function DashboardLayout() {
         </div>
         <Outlet />
       </main>
-      {settingsOpen && <UserSettingsModal theme={theme} onThemeChange={setTheme} onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && <UserSettingsModal theme={theme} onThemeChange={setTheme} onClose={() => setSettingsOpen(false)} onSignOut={requestLogout} />}
       {logoutConfirmationOpen && (
         <div
           className="logout-confirm-backdrop"

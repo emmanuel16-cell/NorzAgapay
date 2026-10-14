@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { FileText, KeyRound, MailCheck, MapPin, Moon, Phone, Save, ScrollText, Settings, ShieldCheck, Sun, UserRound, Users, X } from 'lucide-react';
+import { FileText, KeyRound, LogOut, MailCheck, MapPin, Moon, Phone, Save, ScrollText, Settings, ShieldCheck, Sun, UserRound, Users, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import PasswordInput from './PasswordInput';
@@ -11,6 +11,7 @@ type UserSettingsModalProps = {
   theme: 'dark' | 'light';
   onThemeChange: (theme: 'dark' | 'light') => void;
   onClose: () => void;
+  onSignOut: () => void;
 };
 
 type SettingsSection = 'general' | 'profile' | 'security' | 'management' | BarangaySettingsSection;
@@ -18,7 +19,7 @@ type SettingsSection = 'general' | 'profile' | 'security' | 'management' | Baran
 const emptyPasswordForm = { otp: '', currentPassword: '', newPassword: '', confirmPassword: '' };
 const messageOf = (error: any, fallback: string) => error?.response?.data?.error || fallback;
 
-export default function UserSettingsModal({ theme, onThemeChange, onClose }: UserSettingsModalProps) {
+export default function UserSettingsModal({ theme, onThemeChange, onClose, onSignOut }: UserSettingsModalProps) {
   const { user, updateUser } = useAuth();
   const isBarangay = user?.account_kind === 'barangay';
   const isBarangayAdmin = isBarangay && user?.role === 'admin';
@@ -202,6 +203,7 @@ export default function UserSettingsModal({ theme, onThemeChange, onClose }: Use
             {isBarangayAdmin && <button type="button" className={activeSection === 'location' ? 'active' : ''} aria-current={activeSection === 'location' ? 'page' : undefined} onClick={() => setActiveSection('location')}><MapPin size={17} /> Command Location</button>}
             {isBarangay && <button type="button" className={activeSection === 'terms' ? 'active' : ''} aria-current={activeSection === 'terms' ? 'page' : undefined} onClick={() => setActiveSection('terms')}><ScrollText size={17} /> Terms and Conditions</button>}
             {isBarangay && <button type="button" className={activeSection === 'privacy' ? 'active' : ''} aria-current={activeSection === 'privacy' ? 'page' : undefined} onClick={() => setActiveSection('privacy')}><ShieldCheck size={17} /> Privacy Policy</button>}
+            <button type="button" className="user-settings-signout" onClick={onSignOut}><LogOut size={17} /> Sign Out</button>
           </nav>
 
           <div className="user-settings-panel">
