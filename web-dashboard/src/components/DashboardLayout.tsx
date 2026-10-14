@@ -147,13 +147,24 @@ export default function DashboardLayout() {
   const { user, logout, isMasterAdmin } = useAuth();
   const navigate = useNavigate();
   const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
-    return localStorage.getItem('sidebar_collapsed') === 'true';
+    const isPhoneLayout = window.matchMedia('(max-width: 768px)').matches;
+    return !isPhoneLayout && localStorage.getItem('sidebar_collapsed') === 'true';
   });
   const [mobileOpen, setMobileOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     return localStorage.getItem('dashboard_theme') === 'light' ? 'light' : 'dark';
   });
+
+  useEffect(() => {
+    const phoneLayout = window.matchMedia('(max-width: 768px)');
+    const syncSidebarForScreenSize = (event: MediaQueryListEvent) => {
+      if (event.matches) setIsCollapsed(false);
+      else setMobileOpen(false);
+    };
+    phoneLayout.addEventListener('change', syncSidebarForScreenSize);
+    return () => phoneLayout.removeEventListener('change', syncSidebarForScreenSize);
+  }, []);
 
   const handleToggle = () => {
     setIsCollapsed(prev => {

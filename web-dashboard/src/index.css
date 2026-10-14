@@ -3698,7 +3698,8 @@ tbody tr:last-child td { border-bottom: none; }
   .mobile-sidebar-backdrop { position: fixed; z-index: 119; inset: 0; display: block; border: 0; background: #02081799; }
   .sidebar { top: 0; z-index: 130; width: min(300px, 86vw); padding-bottom: env(safe-area-inset-bottom); }
   .sidebar.collapsed { width: min(300px, 86vw); }
-  .sidebar.open { box-shadow: 14px 0 38px #0008; }
+  .sidebar.open { top: 52px; height: calc(100dvh - 52px); bottom: 0; box-shadow: 14px 0 38px #0008; }
+  .sidebar-toggle-btn { display: none; }
   .sidebar.open .sidebar-nav { width: auto; align-items: stretch; }
   .sidebar.open .nav-text { display: inline; }
   .main-content, .app-layout.sidebar-collapsed .main-content { width: 100%; min-width: 0; margin-left: 0; }
