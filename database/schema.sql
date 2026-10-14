@@ -54,7 +54,8 @@ END $$;
 CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   full_name TEXT NOT NULL,
-  email TEXT UNIQUE NOT NULL,
+  username TEXT,
+  email TEXT UNIQUE,
   phone VARCHAR(15),
   password_hash TEXT NOT NULL,
   role user_role NOT NULL DEFAULT 'responder',
@@ -66,6 +67,10 @@ CREATE TABLE IF NOT EXISTS users (
   last_seen TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS users_username_lower_unique_idx
+  ON users (lower(username))
+  WHERE username IS NOT NULL;
 
 -- Certifications table
 CREATE TABLE IF NOT EXISTS certifications (

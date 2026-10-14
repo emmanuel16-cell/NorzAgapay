@@ -61,7 +61,7 @@ router.get('/accounts', debugOnly, async (req: Request, res: Response) => {
     }
     const { data, error } = await supabaseAdmin
       .from('users')
-      .select('id, full_name, email, phone, role, unit_type, status, verified')
+      .select('id, full_name, username, email, phone, role, unit_type, status, verified')
       .eq('status', 'active')
       .order('full_name');
     if (error) throw error;
@@ -77,7 +77,7 @@ router.get('/accounts', debugOnly, async (req: Request, res: Response) => {
           .eq('cert_number', 'SPECIALIZATION');
         if (specCerts && specCerts.length > 0) {
           u.unit_type = specCerts.map((c: any) => c.cert_type).join(', ');
-        } else {
+        } else if (u.email) {
           const { data: off } = await supabaseAdmin
             .from('officers')
             .select('specialization')
@@ -153,7 +153,7 @@ router.post('/quick-login', debugOnly, async (req: Request, res: Response) => {
     }
     const { data: user, error } = await supabaseAdmin
       .from('users')
-      .select('id, full_name, email, phone, role, unit_type, status, verified')
+      .select('id, full_name, username, email, phone, role, unit_type, status, verified')
       .eq('id', accountId).eq('status', 'active').single();
     if (error || !user) {
       res.status(404).json({ error: 'Active account not found' });
@@ -168,7 +168,7 @@ router.post('/quick-login', debugOnly, async (req: Request, res: Response) => {
         .eq('cert_number', 'SPECIALIZATION');
       if (specCerts && specCerts.length > 0) {
         user.unit_type = specCerts.map((c: any) => c.cert_type).join(', ');
-      } else {
+      } else if (user.email) {
         const { data: off } = await supabaseAdmin
           .from('officers')
           .select('specialization')
@@ -181,7 +181,7 @@ router.post('/quick-login', debugOnly, async (req: Request, res: Response) => {
     }
 
     const token = jwt.sign(
-      { userId: user.id, email: user.email, role: user.role, unitType: user.unit_type, debug: true },
+      { userId: user.id, email: user.email || '', role: user.role, unitType: user.unit_type, debug: true },
       config.jwtSecret, { expiresIn: '1h' },
     );
     res.json({ token, user });

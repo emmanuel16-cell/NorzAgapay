@@ -138,12 +138,14 @@ async function getUnitDetails(unitIds?: string[]) {
 }
 
 async function ensureOfficerForResponder(user: any, specialization: string) {
-  const { data: existing, error: lookupError } = await supabaseAdmin
-    .from('officers')
-    .select('id')
-    .ilike('email', user.email.trim())
-    .limit(1)
-    .maybeSingle();
+  const { data: existing, error: lookupError } = user.email
+    ? await supabaseAdmin
+      .from('officers')
+      .select('id')
+      .ilike('email', user.email.trim())
+      .limit(1)
+      .maybeSingle()
+    : { data: null, error: null };
   if (lookupError) throw lookupError;
   if (existing) return { id: existing.id, created: false };
 
@@ -152,7 +154,7 @@ async function ensureOfficerForResponder(user: any, specialization: string) {
     .insert({
       name: user.full_name,
       phone: user.phone || null,
-      email: user.email,
+      email: user.email || null,
       specialization: specialization || 'mixed',
       rank: memberRoleLabels.team_leader,
       status: 'active',

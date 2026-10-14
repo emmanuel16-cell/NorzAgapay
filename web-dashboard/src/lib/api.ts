@@ -46,7 +46,7 @@ export default api;
 
 // Auth
 export const authAPI = {
-  login: (email: string, password: string) => api.post('/auth/login', { email, password }),
+  login: (identifier: string, password: string) => api.post('/auth/login', { identifier, password }),
   residentLogin: (identifier: string, password: string) => api.post('/auth/resident/login', { identifier, password }),
   requestResidentWebRegistrationOtp: (data: { username: string; phone: string }) => api.post('/auth/resident/web-register-otp', data),
   verifyResidentWebRegistrationOtp: (data: { phone: string; otp: string }) => api.post('/auth/resident/web-verify-register-otp', data),
@@ -99,7 +99,7 @@ export const userAPI = {
   list: (params?: any) => api.get('/users', { params }),
   create: (data: {
     full_name: string;
-    email: string;
+    username: string;
     password: string;
     role: string;
     phone?: string | null;

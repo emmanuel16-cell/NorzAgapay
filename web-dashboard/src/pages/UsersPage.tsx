@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import PasswordInput from '../components/PasswordInput';
 
 interface User {
-  id: string; full_name: string; email: string; phone?: string;
+  id: string; full_name: string; username?: string | null; email: string | null; phone?: string;
   role: string; status: string;
   last_seen?: string; created_at: string;
 }
@@ -25,7 +25,7 @@ export default function UsersPage() {
   const [editUser, setEditUser] = useState<User|null>(null);
   const [editForm, setEditForm] = useState({ status:'', role:'' });
   const [showCreate, setShowCreate] = useState(false);
-  const [createForm, setCreateForm] = useState({ full_name:'', email:'', password:'', phone:'', unit_type:'', role:'logistics' });
+  const [createForm, setCreateForm] = useState({ full_name:'', username:'', password:'', phone:'', unit_type:'', role:'logistics' });
   const [creating, setCreating] = useState(false);
 
   const fetchUsers = () => {
@@ -67,7 +67,7 @@ export default function UsersPage() {
       });
       toast.success(`${roleLabel(createForm.role)} account created`);
       setShowCreate(false);
-      setCreateForm({ full_name:'', email:'', password:'', phone:'', unit_type:'', role:'logistics' });
+      setCreateForm({ full_name:'', username:'', password:'', phone:'', unit_type:'', role:'logistics' });
       fetchUsers();
     } catch (error: any) {
       toast.error(error.response?.data?.error || 'Account creation failed');
@@ -105,7 +105,10 @@ export default function UsersPage() {
               <tbody>
                 {users.map(u => (
                   <tr key={u.id}>
-                    <td style={{fontWeight:600,color:'var(--text-primary)'}}>{u.full_name}</td>
+                    <td style={{color:'var(--text-primary)'}}>
+                      <div style={{fontWeight:600}}>{u.full_name}</div>
+                      {u.username && <div style={{fontSize:12,color:'var(--text-muted)'}}>@{u.username}</div>}
+                    </td>
                     <td><span className={`badge ${roleColors[u.role]||'badge-low'}`}>{roleLabel(u.role)}</span></td>
                     <td><span className={`badge ${u.status==='active'?'badge-low':'badge-pending'}`}>{u.status}</span></td>
                     <td style={{fontSize:'12px'}}>{u.last_seen ? new Date(u.last_seen).toLocaleString() : '—'}</td>
@@ -164,12 +167,12 @@ export default function UsersPage() {
               <input className="form-input" required minLength={2} value={createForm.full_name} onChange={event => setCreateForm({...createForm,full_name:event.target.value})} />
             </div>
             <div className="form-group">
-              <label className="form-label">Email</label>
-              <input className="form-input" type="email" required value={createForm.email} onChange={event => setCreateForm({...createForm,email:event.target.value})} />
+              <label className="form-label">Username</label>
+              <input className="form-input" autoComplete="username" required minLength={3} maxLength={32} pattern="[A-Za-z0-9_.-]+" title="Use 3–32 letters, numbers, dots, underscores, or hyphens." value={createForm.username} onChange={event => setCreateForm({...createForm,username:event.target.value})} />
             </div>
             <div className="form-group">
-              <label className="form-label">Temporary Password (minimum 8 characters)</label>
-              <PasswordInput className="form-input" required minLength={8} value={createForm.password} onChange={event => setCreateForm({...createForm,password:event.target.value})} />
+              <label className="form-label">Contact Number (optional)</label>
+              <input className="form-input" type="tel" maxLength={30} value={createForm.phone} onChange={event => setCreateForm({...createForm,phone:event.target.value})} />
             </div>
             <div className="form-group">
               <label className="form-label">Role</label>
@@ -181,8 +184,8 @@ export default function UsersPage() {
               </select>
             </div>
             <div className="form-group">
-              <label className="form-label">Contact Number (optional)</label>
-              <input className="form-input" type="tel" maxLength={30} value={createForm.phone} onChange={event => setCreateForm({...createForm,phone:event.target.value})} />
+              <label className="form-label">Temporary Password (minimum 8 characters)</label>
+              <PasswordInput className="form-input" autoComplete="new-password" required minLength={8} value={createForm.password} onChange={event => setCreateForm({...createForm,password:event.target.value})} />
             </div>
             {createForm.role === 'responder' && (
               <div className="form-group">

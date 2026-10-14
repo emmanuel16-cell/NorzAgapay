@@ -26,9 +26,14 @@ const registerSchema = z.object({
 });
 
 const loginSchema = z.object({
-  email: z.string().trim().email('A valid email address is required').transform((value) => value.toLowerCase()),
+  identifier: z.string().trim().min(1).max(254).optional(),
+  // Keep accepting older clients that still submit the email property.
+  email: z.string().trim().email('A valid email address is required').transform((value) => value.toLowerCase()).optional(),
   password: z.string().min(1, 'Password is required'),
-});
+}).refine((value) => Boolean(value.identifier || value.email), {
+  message: 'Enter your username or email address.',
+  path: ['identifier'],
+}).transform((value) => ({ identifier: (value.identifier || value.email || '').trim().toLowerCase(), password: value.password }));
 
 const masterAdminSetupSchema = z.object({
   full_name: z.string().trim().min(2).max(120),
@@ -215,14 +220,14 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const { email, password } = parsed.data;
+    const { identifier, password } = parsed.data;
 
-    // Dashboard / MDRRMO accounts authenticate only against the dashboard users table.
-    const { data: user, error } = await supabaseAdmin
-      .from('users')
-      .select('*')
-      .eq('email', email)
-      .maybeSingle();
+    // Dashboard / MDRRMO accounts authenticate by email (legacy accounts) or username.
+    let userLookup = supabaseAdmin.from('users').select('*');
+    userLookup = identifier.includes('@')
+      ? userLookup.eq('email', identifier)
+      : userLookup.eq('username', identifier);
+    const { data: user, error } = await userLookup.maybeSingle();
     if (error) {
       console.error('Login lookup error:', error);
       res.status(500).json({ error: 'Unable to look up account.' });
@@ -230,14 +235,14 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
     }
 
     if (!user) {
-      res.status(401).json({ error: 'Invalid email or password.' });
+      res.status(401).json({ error: 'Invalid username, email, or password.' });
       return;
     }
 
     // Verify password
     const passwordMatch = await bcrypt.compare(password, user.password_hash);
     if (!passwordMatch) {
-      res.status(401).json({ error: 'Invalid email or password.' });
+      res.status(401).json({ error: 'Invalid username, email, or password.' });
       return;
     }
 
@@ -268,7 +273,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
 
       if (specCerts && specCerts.length > 0) {
         unitType = specCerts.map((c: any) => c.cert_type).join(', ');
-      } else {
+      } else if (user.email) {
         const { data: off } = await supabaseAdmin
           .from('officers')
           .select('specialization')
@@ -285,7 +290,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
     const token = jwt.sign(
       {
         userId: user.id,
-        email: user.email,
+        email: user.email || '',
         role: user.role,
         unitType,
       },
@@ -304,6 +309,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       user: {
         id: user.id,
         full_name: user.full_name,
+        username: user.username || null,
         email: user.email,
         phone: user.phone || null,
         role: user.role,
@@ -436,7 +442,7 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response): Promise
 
     const { data: user, error } = await supabaseAdmin
       .from('users')
-      .select('id, full_name, email, phone, role, unit_type, status, verified, latitude, longitude, last_seen, created_at')
+      .select('id, full_name, username, email, phone, role, unit_type, status, verified, latitude, longitude, last_seen, created_at')
       .eq('id', req.user!.userId)
       .single();
 
@@ -454,7 +460,7 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response): Promise
 
       if (specCerts && specCerts.length > 0) {
         user.unit_type = specCerts.map((c: any) => c.cert_type).join(', ');
-      } else {
+      } else if (user.email) {
         const { data: off } = await supabaseAdmin
           .from('officers')
           .select('specialization')

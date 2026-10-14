@@ -40,7 +40,7 @@ router.get(
 
       let query = supabaseAdmin
         .from('users')
-        .select('id, full_name, email, phone, role, unit_type, status, verified, latitude, longitude, last_seen, created_at')
+        .select('id, full_name, username, email, phone, role, unit_type, status, verified, latitude, longitude, last_seen, created_at')
         .order('created_at', { ascending: false });
 
       if (user.role === 'admin') query = query.in('role', ['logistics', 'dispatcher', 'responder']);
@@ -105,7 +105,8 @@ router.get(
 router.post('/', authenticate, authorize('admin', 'master_admin'), async (req: AuthRequest, res: Response): Promise<void> => {
   const schema = z.object({
     full_name: z.string().trim().min(2).max(120),
-    email: z.string().trim().email().transform((value) => value.toLowerCase()),
+    username: z.string().trim().min(3).max(32).regex(/^[a-zA-Z0-9_.-]+$/, 'Use only letters, numbers, dots, underscores, or hyphens.').transform((value) => value.toLowerCase()).optional(),
+    email: z.string().trim().email().transform((value) => value.toLowerCase()).optional(),
     password: z.string().min(8).max(128),
     phone: z.string().trim().max(30).nullable().optional(),
     unit_type: z.union([
@@ -113,13 +114,16 @@ router.post('/', authenticate, authorize('admin', 'master_admin'), async (req: A
       z.array(z.enum(responderSpecializations)).max(responderSpecializations.length),
     ]).nullable().optional(),
     role: z.enum(['admin', 'logistics', 'dispatcher', 'responder']),
+  }).refine((value) => Boolean(value.username || value.email), {
+    message: 'A username is required.',
+    path: ['username'],
   });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: 'Validation failed', details: parsed.error.flatten() });
     return;
   }
-  const { role, full_name, email, password, phone } = parsed.data;
+  const { role, full_name, username, email, password, phone } = parsed.data;
   if (req.user!.role !== 'master_admin' && role === 'admin') {
     res.status(403).json({ error: 'Only a master admin can create admin accounts.' });
     return;
@@ -139,7 +143,8 @@ router.post('/', authenticate, authorize('admin', 'master_admin'), async (req: A
       .from('users')
       .insert({
         full_name,
-        email,
+        username: username || null,
+        email: email || null,
         phone: phone?.trim() || null,
         password_hash,
         role,
@@ -147,10 +152,10 @@ router.post('/', authenticate, authorize('admin', 'master_admin'), async (req: A
         status: 'active',
         verified: true,
       })
-      .select('id, full_name, email, role, phone, unit_type, status, verified, created_at')
+      .select('id, full_name, username, email, role, phone, unit_type, status, verified, created_at')
       .single();
     if (error?.code === '23505') {
-      res.status(409).json({ error: 'An account with this email already exists.' });
+      res.status(409).json({ error: username ? 'That username is already in use.' : 'An account with this email already exists.' });
       return;
     }
     if (error || !data) {
@@ -159,16 +164,18 @@ router.post('/', authenticate, authorize('admin', 'master_admin'), async (req: A
       return;
     }
     if (role === 'responder') {
-      const { data: existingOfficer, error: officerLookupError } = await supabaseAdmin
-        .from('officers')
-        .select('id')
-        .ilike('email', email)
-        .limit(1)
-        .maybeSingle();
+      const { data: existingOfficer, error: officerLookupError } = email
+        ? await supabaseAdmin
+          .from('officers')
+          .select('id')
+          .ilike('email', email)
+          .limit(1)
+          .maybeSingle()
+        : { data: null, error: null };
       if (officerLookupError) throw officerLookupError;
       const officerValues = {
         name: full_name,
-        email,
+        email: email || null,
         phone: phone?.trim() || null,
         specialization: unitType || '',
         status: 'active',
@@ -257,22 +264,26 @@ router.patch('/me/profile', authenticate, async (req: AuthRequest, res: Response
         );
         if (insertError) throw insertError;
       }
-      await supabaseAdmin
-        .from('officers')
-        .update({
-          ...(parsed.data.full_name !== undefined ? { name: user.full_name } : {}),
-          ...(parsed.data.phone !== undefined ? { phone: user.phone } : {}),
-          specialization: user.unit_type || '',
-        })
-        .ilike('email', user.email);
+      if (user.email) {
+        await supabaseAdmin
+          .from('officers')
+          .update({
+            ...(parsed.data.full_name !== undefined ? { name: user.full_name } : {}),
+            ...(parsed.data.phone !== undefined ? { phone: user.phone } : {}),
+            specialization: user.unit_type || '',
+          })
+          .ilike('email', user.email);
+      }
     } else if (parsed.data.full_name !== undefined || parsed.data.phone !== undefined) {
-      await supabaseAdmin
-        .from('officers')
-        .update({
-          ...(parsed.data.full_name !== undefined ? { name: user.full_name } : {}),
-          ...(parsed.data.phone !== undefined ? { phone: user.phone } : {}),
-        })
-        .ilike('email', user.email);
+      if (user.email) {
+        await supabaseAdmin
+          .from('officers')
+          .update({
+            ...(parsed.data.full_name !== undefined ? { name: user.full_name } : {}),
+            ...(parsed.data.phone !== undefined ? { phone: user.phone } : {}),
+          })
+          .ilike('email', user.email);
+      }
     }
 
     res.json({ user });
@@ -362,7 +373,7 @@ router.get('/:id', authenticate, async (req: AuthRequest, res: Response): Promis
     if (data.role === 'responder') {
       if (specCerts.length > 0) {
         data.unit_type = specCerts.map((c: any) => c.cert_type).join(', ');
-      } else {
+      } else if (data.email) {
         const { data: off } = await supabaseAdmin
           .from('officers')
           .select('specialization')

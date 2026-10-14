@@ -5,7 +5,7 @@ import { authAPI, debugAPI } from '../lib/api';
 import PublicHeader from '../components/PublicHeader';
 import PasswordInput from '../components/PasswordInput';
 
-type DebugAccount = { id: string; full_name: string; email: string; role: string; audience: 'standard' | 'barangay'; barangay_id?: string; barangay_name?: string };
+type DebugAccount = { id: string; full_name: string; username?: string | null; email?: string | null; phone?: string | null; role: string; audience: 'standard' | 'barangay'; barangay_id?: string; barangay_name?: string };
 
 function groupDebugAccounts(accounts: DebugAccount[]) {
   const mdrrmo = accounts.filter((account) => account.audience === 'standard');
@@ -50,8 +50,7 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      const resolvedKind = loginAccountKind === 'auto' && !email.includes('@') ? 'resident' : loginAccountKind;
-      await login(email, password, resolvedKind);
+      await login(email, password, loginAccountKind);
       // The login call in AuthContext updates state, we check it here
     } catch (err: any) {
       setError(err.response?.data?.error || 'Login failed. Please try again.');
@@ -118,7 +117,7 @@ export default function LoginPage() {
       disabled={debugLoading}
     >
       <div className="debug-account-name">{account.full_name}</div>
-      <div className="debug-account-meta">{account.email} · {account.role.replaceAll('_', ' ')}</div>
+      <div className="debug-account-meta">{account.username || account.email || account.phone || 'No username'} · {account.role.replaceAll('_', ' ')}</div>
     </button>
   );
 
@@ -214,13 +213,13 @@ export default function LoginPage() {
             </select>
           </div>
           <div className="form-group">
-            <label className="form-label" htmlFor="login-email">{loginAccountKind === 'resident' ? 'Username or mobile number' : loginAccountKind === 'auto' ? 'Email or resident username/mobile number' : 'Email Address'}</label>
+            <label className="form-label" htmlFor="login-email">{loginAccountKind === 'resident' ? 'Username or mobile number' : loginAccountKind === 'mdrrmo' ? 'Username or email' : loginAccountKind === 'auto' ? 'Email, username, or mobile number' : 'Email Address'}</label>
             <input
               id="login-email"
-              type={loginAccountKind === 'mdrrmo' || loginAccountKind === 'barangay' ? 'email' : 'text'}
-              autoComplete={loginAccountKind === 'resident' ? 'username' : 'email'}
+              type={loginAccountKind === 'barangay' ? 'email' : 'text'}
+              autoComplete={loginAccountKind === 'barangay' ? 'email' : 'username'}
               className="form-input"
-              placeholder={loginAccountKind === 'resident' ? 'username or 09XXXXXXXXX' : loginAccountKind === 'auto' ? 'email, username, or 09XXXXXXXXX' : 'admin@mdrrmo.gov.ph'}
+              placeholder={loginAccountKind === 'resident' ? 'username or 09XXXXXXXXX' : loginAccountKind === 'auto' ? 'email, username, or 09XXXXXXXXX' : loginAccountKind === 'mdrrmo' ? 'username or admin@mdrrmo.gov.ph' : 'admin@barangay.gov.ph'}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required

@@ -93,7 +93,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = async (identifier: string, password: string, requestedKind: 'auto' | 'mdrrmo' | 'barangay' | 'resident' = 'auto') => {
     const loginKinds: Array<'mdrrmo' | 'barangay' | 'resident'> = requestedKind === 'auto'
-      ? ['mdrrmo', 'barangay', 'resident']
+      ? identifier.includes('@') ? ['mdrrmo', 'barangay', 'resident'] : ['mdrrmo', 'resident']
       : [requestedKind];
     let response: Awaited<ReturnType<typeof authAPI.login>>
       | Awaited<ReturnType<typeof authAPI.residentLogin>>
