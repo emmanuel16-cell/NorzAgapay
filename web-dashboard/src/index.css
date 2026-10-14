@@ -4459,6 +4459,8 @@ body.responder-map-open { overflow: hidden; }
 .barangay-team-card-actions button, .barangay-hotline-row > button { display: grid; width: 33px; height: 33px; flex: 0 0 auto; place-items: center; border: 1px solid var(--border-color, #345071); border-radius: 8px; color: var(--text-muted); background: transparent; cursor: pointer; }
 .barangay-team-card-actions button:hover, .barangay-hotline-row > button:hover { border-color: #56c7d9; color: #62d8e7; }
 .barangay-team-card > .workspace-secondary-action { display: inline-flex; align-items: center; gap: 6px; padding: 7px 9px; }
+.user-management-header-actions { align-items: center; }
+.user-management-role-filter { width: auto; min-width: 145px; }
 .barangay-account-reference { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 13px; margin: 0 0 15px; padding: 11px 13px; border: 1px solid rgba(56, 189, 248, .2); border-radius: 9px; background: rgba(14, 116, 144, .1); }
 .barangay-account-reference span, .barangay-account-reference small { color: var(--text-muted); font-size: 11px; }
 .barangay-account-reference strong { color: #77dced; font-size: 13px; }
@@ -4633,6 +4635,7 @@ body.responder-map-open { overflow: hidden; }
   .barangay-console-page { gap: 13px; padding: 17px 13px 28px; }
   .barangay-console-header { align-items: flex-start; flex-direction: column; }
   .barangay-console-header-actions { align-self: flex-start; justify-content: flex-start; }
+  .user-management-header-actions { width: 100%; }
   .barangay-console-modal-backdrop { padding: 10px; }
   .barangay-console-form-modal { max-height: 94vh; padding: 15px 13px; }
   .barangay-console-shortcuts, .barangay-post-grid, .barangay-hotline-list, .barangay-analytics-grid, .barangay-overview-charts, .barangay-team-grid { grid-template-columns: 1fr; }

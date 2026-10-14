@@ -3,16 +3,13 @@ import { userAPI } from '../lib/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import PasswordInput from '../components/PasswordInput';
+import { CircleUserRound, Edit3, Plus, RefreshCw, UserRoundX, UsersRound } from 'lucide-react';
 
 interface User {
-  id: string; full_name: string; username?: string | null; email: string | null; phone?: string;
+  id: string; full_name: string; username?: string | null; email: string | null; phone?: string | null;
   role: string; status: string;
   last_seen?: string; created_at: string;
 }
-
-const roleColors: Record<string,string> = {
-  master_admin:'badge-high', admin:'badge-critical', responder:'badge-open',
-};
 
 const roleLabel = (role: string) => role === 'logistics' ? 'Staff' : role.replace(/_/g, ' ');
 
@@ -76,49 +73,62 @@ export default function UsersPage() {
     }
   };
 
+  const activeUsers = users.filter((entry) => entry.status === 'active');
+  const otherUsers = users.filter((entry) => entry.status !== 'active');
+  const initials = (name: string) => name.split(/\s+/).filter(Boolean).map((part) => part[0]).join('').slice(0, 2).toUpperCase();
+  const renderAccount = (entry: User, inactive = false) => (
+    <article className={`barangay-team-card${inactive ? ' is-inactive' : ''}`} key={entry.id}>
+      <div className="barangay-team-card-avatar">{initials(entry.full_name)}</div>
+      <div className="barangay-team-card-info">
+        <strong>{entry.full_name}</strong>
+        <span className="barangay-console-status">{roleLabel(entry.role)}</span>
+        <span className={`barangay-console-status ${entry.status === 'active' ? 'active' : entry.status === 'inactive' ? 'inactive' : 'pending'}`}>{entry.status.replaceAll('_', ' ')}</span>
+        <small>{entry.username ? `@${entry.username}` : 'Username not set'}{entry.phone ? ` · ${entry.phone}` : ''}</small>
+      </div>
+      <div className="barangay-team-card-actions">
+        <button type="button" title="Edit account" aria-label={`Edit ${entry.full_name}`} onClick={() => openEdit(entry)}><Edit3 size={16} /></button>
+      </div>
+    </article>
+  );
+
   return (
     <>
-      <div className="page-header">
-        <h1 className="page-title">User Management</h1>
-        <div style={{display:'flex',alignItems:'center',gap:12}}>
-        <select className="form-select" style={{width:'auto'}} value={roleFilter} onChange={e=>setRoleFilter(e.target.value)}>
-          <option value="">All Roles</option>
-          {isMasterAdmin && <option value="master_admin">Master Admin</option>}
-          {isMasterAdmin && <option value="admin">Admin</option>}
-          <option value="logistics">Staff</option>
-          <option value="dispatcher">Dispatcher</option>
-          <option value="responder">Responder</option>
-        </select>
-        <button className="btn btn-primary" onClick={() => setShowCreate(true)}>Create Account</button>
-        </div>
-      </div>
-
-      <div className="page-content">
-        {loading ? (
-          <div className="loading-overlay"><div className="spinner"/></div>
-        ) : (
-          <div className="table-container">
-            <table>
-              <thead><tr>
-                <th>Name</th><th>Role</th><th>Status</th><th>Last Seen</th><th>Actions</th>
-              </tr></thead>
-              <tbody>
-                {users.map(u => (
-                  <tr key={u.id}>
-                    <td style={{color:'var(--text-primary)'}}>
-                      <div style={{fontWeight:600}}>{u.full_name}</div>
-                      {u.username && <div style={{fontSize:12,color:'var(--text-muted)'}}>@{u.username}</div>}
-                    </td>
-                    <td><span className={`badge ${roleColors[u.role]||'badge-low'}`}>{roleLabel(u.role)}</span></td>
-                    <td><span className={`badge ${u.status==='active'?'badge-low':'badge-pending'}`}>{u.status}</span></td>
-                    <td style={{fontSize:'12px'}}>{u.last_seen ? new Date(u.last_seen).toLocaleString() : '—'}</td>
-                    <td><button className="btn btn-outline btn-sm" onClick={()=>openEdit(u)}>Edit</button></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      <div className="barangay-console-page user-management-page">
+        <header className="barangay-console-header">
+          <div><span className="workspace-eyebrow">MDRRMO ADMINISTRATION</span><h1>User management</h1><p>Manage command-center accounts, roles, and access status.</p></div>
+          <div className="barangay-console-header-actions user-management-header-actions">
+            <select aria-label="Filter accounts by role" className="form-select user-management-role-filter" value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)}>
+              <option value="">All roles</option>
+              {isMasterAdmin && <option value="master_admin">Master admin</option>}
+              {isMasterAdmin && <option value="admin">Admin</option>}
+              <option value="logistics">Staff</option>
+              <option value="dispatcher">Dispatcher</option>
+              <option value="responder">Responder</option>
+            </select>
+            <button className="workspace-primary-action" type="button" onClick={() => setShowCreate(true)}><Plus size={16} /> Create account</button>
+            <button className="workspace-secondary-action" type="button" onClick={fetchUsers} disabled={loading}><RefreshCw size={16} className={loading ? 'workspace-spinning' : ''} /> Refresh</button>
           </div>
-        )}
+        </header>
+
+        <section className="barangay-console-stat-grid barangay-console-stat-grid-compact" aria-label="User account summary">
+          <article><span>Active accounts</span><strong>{activeUsers.length}</strong><CircleUserRound size={20} /></article>
+          <article><span>Other accounts</span><strong>{otherUsers.length}</strong><UserRoundX size={20} /></article>
+          <article><span>Accounts shown</span><strong>{users.length}</strong><UsersRound size={20} /></article>
+        </section>
+
+        {loading ? <p className="barangay-console-muted">Loading dashboard accounts…</p> : <>
+          <section className="barangay-console-panel">
+            <header><div><h2>Active team</h2><p>Accounts currently able to sign in to the MDRRMO dashboard.</p></div></header>
+            <div className="barangay-team-grid">
+              {activeUsers.map((entry) => renderAccount(entry))}
+              {activeUsers.length === 0 && <p className="barangay-console-muted">No active accounts match this filter.</p>}
+            </div>
+          </section>
+          {otherUsers.length > 0 && <section className="barangay-console-panel">
+            <header><div><h2>Inactive and pending accounts</h2><p>Accounts that cannot currently sign in or still need verification.</p></div></header>
+            <div className="barangay-team-grid">{otherUsers.map((entry) => renderAccount(entry, true))}</div>
+          </section>}
+        </>}
       </div>
 
       {editUser && (
