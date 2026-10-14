@@ -152,6 +152,7 @@ export default function DashboardLayout() {
   });
   const [mobileOpen, setMobileOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [logoutConfirmationOpen, setLogoutConfirmationOpen] = useState(false);
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     return localStorage.getItem('dashboard_theme') === 'light' ? 'light' : 'dark';
   });
@@ -191,10 +192,25 @@ export default function DashboardLayout() {
 
   const openSettings = () => setSettingsOpen(true);
 
+  const requestLogout = () => {
+    setMobileOpen(false);
+    setLogoutConfirmationOpen(true);
+  };
+
   const handleLogout = () => {
+    setLogoutConfirmationOpen(false);
     logout();
     navigate('/login');
   };
+
+  useEffect(() => {
+    if (!logoutConfirmationOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setLogoutConfirmationOpen(false);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [logoutConfirmationOpen]);
 
   const initials = user?.full_name
     ?.split(' ')
@@ -266,6 +282,15 @@ export default function DashboardLayout() {
               </NavLink>
             )
           )}
+          <button
+            type="button"
+            className={`nav-item sidebar-signout ${isCollapsed ? 'collapsed' : ''}`}
+            onClick={requestLogout}
+            title={isCollapsed ? 'Sign Out' : undefined}
+          >
+            <span className="nav-icon"><LogOut size={19} strokeWidth={1.8} /></span>
+            {!isCollapsed && <span className="nav-text">Sign Out</span>}
+          </button>
         </nav>
 
         <div className={`sidebar-footer ${isCollapsed ? 'collapsed' : ''}`}>
@@ -288,14 +313,6 @@ export default function DashboardLayout() {
                   {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
                 </button>
               </div>
-              <button
-                onClick={handleLogout}
-                className="btn btn-outline btn-sm"
-                style={{ width: '100%', marginTop: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-              >
-                <LogOut size={15} strokeWidth={1.8} />
-                <span>Sign Out</span>
-              </button>
             </>
           ) : (
             <div className="collapsed-footer-actions">
@@ -317,15 +334,6 @@ export default function DashboardLayout() {
               >
                 {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
               </button>
-              <button
-                onClick={handleLogout}
-                className="collapsed-logout-btn"
-                title="Sign Out"
-                aria-label="Sign Out"
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-              >
-                <LogOut size={16} strokeWidth={1.8} />
-              </button>
             </div>
           )}
         </div>
@@ -341,11 +349,29 @@ export default function DashboardLayout() {
               : user?.role === 'responder'
                 ? 'Field Response'
                 : 'Norz-Agapay Command'}</strong>
-          <button type="button" aria-label="Sign out" onClick={handleLogout}><LogOut size={18} /></button>
+          <span className="mobile-dashboard-header-spacer" aria-hidden="true" />
         </div>
         <Outlet />
       </main>
       {settingsOpen && <UserSettingsModal theme={theme} onThemeChange={setTheme} onClose={() => setSettingsOpen(false)} />}
+      {logoutConfirmationOpen && (
+        <div
+          className="logout-confirm-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setLogoutConfirmationOpen(false);
+          }}
+        >
+          <section className="logout-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="logout-confirm-title">
+            <div className="logout-confirm-icon"><LogOut size={21} /></div>
+            <h2 id="logout-confirm-title">Sign out?</h2>
+            <p>Are you sure you want to sign out of your account?</p>
+            <div className="logout-confirm-actions">
+              <button type="button" className="btn btn-outline" onClick={() => setLogoutConfirmationOpen(false)}>Cancel</button>
+              <button type="button" className="btn btn-primary" onClick={handleLogout}>Sign Out</button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
