@@ -1534,7 +1534,8 @@ ALTER TABLE public.users
 CREATE TABLE IF NOT EXISTS public.resident_user (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   full_name TEXT NOT NULL,
-  email TEXT NOT NULL UNIQUE,
+  username TEXT,
+  email TEXT UNIQUE,
   phone VARCHAR(15),
   password_hash TEXT NOT NULL,
   barangay_name TEXT NOT NULL DEFAULT 'Poblacion',
@@ -1545,6 +1546,10 @@ CREATE TABLE IF NOT EXISTS public.resident_user (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS resident_user_username_lower_unique_idx
+  ON public.resident_user (lower(username))
+  WHERE username IS NOT NULL;
 
 ALTER TABLE public.resident_user ENABLE ROW LEVEL SECURITY;
 

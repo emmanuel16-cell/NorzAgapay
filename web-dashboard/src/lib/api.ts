@@ -47,7 +47,12 @@ export default api;
 // Auth
 export const authAPI = {
   login: (email: string, password: string) => api.post('/auth/login', { email, password }),
-  residentLogin: (email: string, password: string) => api.post('/auth/resident/login', { email, password }),
+  residentLogin: (identifier: string, password: string) => api.post('/auth/resident/login', { identifier, password }),
+  requestResidentWebRegistrationOtp: (data: { username: string; phone: string }) => api.post('/auth/resident/web-register-otp', data),
+  verifyResidentWebRegistrationOtp: (data: { phone: string; otp: string }) => api.post('/auth/resident/web-verify-register-otp', data),
+  updateResidentProfile: (data: { full_name: string; phone: string }) => api.patch('/auth/resident/profile', data),
+  sendResidentWebPasswordOtp: (current_password: string) => api.post('/auth/resident/web-password-change-otp', { current_password }),
+  changeResidentWebPassword: (data: { current_password: string; otp: string; new_password: string }) => api.post('/auth/resident/web-change-password', data),
   barangayLogin: (email: string, password: string) => api.post('/barangay/login', { email, password }),
   sendBarangayPasswordOtp: (email: string) => api.post('/auth/barangay/password-otp', { email }),
   changeBarangayPassword: (data: { email: string; otp: string; current_password: string; new_password: string }) => api.post('/auth/barangay/change-password', data),

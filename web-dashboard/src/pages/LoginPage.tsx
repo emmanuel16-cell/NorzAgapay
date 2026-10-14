@@ -50,7 +50,8 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      await login(email, password, loginAccountKind);
+      const resolvedKind = loginAccountKind === 'auto' && !email.includes('@') ? 'resident' : loginAccountKind;
+      await login(email, password, resolvedKind);
       // The login call in AuthContext updates state, we check it here
     } catch (err: any) {
       setError(err.response?.data?.error || 'Login failed. Please try again.');
@@ -213,12 +214,13 @@ export default function LoginPage() {
             </select>
           </div>
           <div className="form-group">
-            <label className="form-label">Email Address</label>
+            <label className="form-label" htmlFor="login-email">{loginAccountKind === 'resident' ? 'Username or mobile number' : loginAccountKind === 'auto' ? 'Email or resident username/mobile number' : 'Email Address'}</label>
             <input
               id="login-email"
-              type="email"
+              type={loginAccountKind === 'mdrrmo' || loginAccountKind === 'barangay' ? 'email' : 'text'}
+              autoComplete={loginAccountKind === 'resident' ? 'username' : 'email'}
               className="form-input"
-              placeholder="admin@mdrrmo.gov.ph"
+              placeholder={loginAccountKind === 'resident' ? 'username or 09XXXXXXXXX' : loginAccountKind === 'auto' ? 'email, username, or 09XXXXXXXXX' : 'admin@mdrrmo.gov.ph'}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -249,6 +251,8 @@ export default function LoginPage() {
         {!showSetup && loginAccountKind === 'barangay' && (
           <Link className="login-setup-toggle barangay-register-link" to="/barangay/register">Need an account? Register your barangay administrator</Link>
         )}
+
+        {!showSetup && <Link className="login-setup-toggle resident-register-link" to="/resident/register">Create a resident account</Link>}
 
         {!showSetup && setupRequired && (
           <button type="button" className="login-setup-toggle" onClick={() => { setShowSetup(true); setError(''); }}>

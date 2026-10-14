@@ -132,6 +132,16 @@ const loginLimiter = rateLimit({
 });
 
 app.use('/api/auth/login', loginLimiter);
+app.use('/api/auth/resident/login', loginLimiter);
+
+const residentRegistrationLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: { error: 'Too many resident verification codes requested. Please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api/auth/resident/web-register-otp', residentRegistrationLimiter);
 
 const passwordResetLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -143,6 +153,8 @@ const passwordResetLimiter = rateLimit({
 
 app.use('/api/auth/resident/forgot-password-otp', passwordResetLimiter);
 app.use('/api/auth/resident/forgot-password', passwordResetLimiter);
+app.use('/api/auth/resident/web-password-change-otp', passwordResetLimiter);
+app.use('/api/auth/resident/web-change-password', passwordResetLimiter);
 app.use('/api/auth/barangay/forgot-password-otp', passwordResetLimiter);
 app.use('/api/auth/barangay/forgot-password', passwordResetLimiter);
 app.use('/api/auth/responder/forgot-password-otp', passwordResetLimiter);

@@ -28,6 +28,7 @@ import BarangayBoardPage from './pages/BarangayBoardPage';
 import BarangayAssistancePage from './pages/BarangayAssistancePage';
 import BarangayAnalyticsPage from './pages/BarangayAnalyticsPage';
 import BarangayRegistrationPage from './pages/BarangayRegistrationPage';
+import ResidentRegistrationPage from './pages/ResidentRegistrationPage';
 import { MunicipalityBoundaryProvider } from './context/MunicipalityBoundaryContext';
 
 import './index.css';
@@ -95,6 +96,7 @@ function AppRoutes() {
       <Route path="/report" element={<PublicReportPage />} />
       <Route path="/track-report" element={<TrackReportPage />} />
       <Route path="/barangay/register" element={<BarangayRegistrationPage />} />
+      <Route path="/resident/register" element={<ResidentRegistrationPage />} />
       <Route path="/login" element={<LoginRoute />} />
       <Route element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
         <Route path="command-center" element={<RoleAccess roles={['dispatcher']} allowBarangayRoles={['dispatcher']}><CommandCenter /></RoleAccess>} />

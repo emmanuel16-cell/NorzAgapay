@@ -4,7 +4,8 @@ import { authAPI, socket, debugAPI } from '../lib/api';
 interface User {
   id: string;
   full_name: string;
-  email: string;
+  username?: string | null;
+  email: string | null;
   phone?: string | null;
   role: string;
   unit_type?: string;
@@ -23,7 +24,7 @@ interface AuthContextType {
   user: User | null;
   token: string | null;
   loading: boolean;
-  login: (email: string, password: string, accountKind?: 'auto' | 'mdrrmo' | 'barangay' | 'resident') => Promise<void>;
+  login: (identifier: string, password: string, accountKind?: 'auto' | 'mdrrmo' | 'barangay' | 'resident') => Promise<void>;
   setSession: (token: string, user: User, accountKind: 'mdrrmo' | 'barangay' | 'resident') => void;
   debugLogin: (accountId: string, audience?: 'standard' | 'barangay') => Promise<void>;
   updateUser: (patch: Partial<User>) => void;
@@ -90,20 +91,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .finally(() => setLoading(false));
   }, [token, accountKind]);
 
-  const login = async (email: string, password: string, requestedKind: 'auto' | 'mdrrmo' | 'barangay' | 'resident' = 'auto') => {
+  const login = async (identifier: string, password: string, requestedKind: 'auto' | 'mdrrmo' | 'barangay' | 'resident' = 'auto') => {
     const loginKinds: Array<'mdrrmo' | 'barangay' | 'resident'> = requestedKind === 'auto'
       ? ['mdrrmo', 'barangay', 'resident']
       : [requestedKind];
-    let response: Awaited<ReturnType<typeof authAPI.login>> | null = null;
+    let response: Awaited<ReturnType<typeof authAPI.login>>
+      | Awaited<ReturnType<typeof authAPI.residentLogin>>
+      | Awaited<ReturnType<typeof authAPI.barangayLogin>>
+      | null = null;
     let nextKind: 'mdrrmo' | 'barangay' | 'resident' | null = null;
     let firstUnauthorized: unknown;
     for (const kind of loginKinds) {
       try {
         response = kind === 'mdrrmo'
-          ? await authAPI.login(email, password)
+          ? await authAPI.login(identifier, password)
           : kind === 'barangay'
-            ? await authAPI.barangayLogin(email, password)
-            : await authAPI.residentLogin(email, password);
+            ? await authAPI.barangayLogin(identifier, password)
+            : await authAPI.residentLogin(identifier, password);
         nextKind = kind;
         break;
       } catch (loginError) {

@@ -107,7 +107,9 @@ export const deleteBarangayResponderGpsLocation = (userId: string) =>
 export interface ResidentOtpRecord {
   otp: string;
   fullName?: string;
+  username?: string;
   contactNumber?: string;
+  failedAttempts?: number;
   barangayName?: string;
   barangayId?: string;
   deliveryMethod?: 'email' | 'sms';
@@ -118,6 +120,8 @@ export interface ResidentOtpRecord {
     | 'barangay_password_change'
     | 'barangay_registration'
     | 'resident_password_reset'
+    | 'resident_web_registration'
+    | 'resident_web_password_change'
     | 'barangay_password_reset'
     | 'responder_password_reset';
 }

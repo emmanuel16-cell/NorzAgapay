@@ -13,7 +13,7 @@ type UserSettingsModalProps = {
   onClose: () => void;
 };
 
-type SettingsSection = 'general' | 'management' | BarangaySettingsSection;
+type SettingsSection = 'general' | 'profile' | 'security' | 'management' | BarangaySettingsSection;
 
 const emptyPasswordForm = { otp: '', currentPassword: '', newPassword: '', confirmPassword: '' };
 const messageOf = (error: any, fallback: string) => error?.response?.data?.error || fallback;
@@ -22,6 +22,7 @@ export default function UserSettingsModal({ theme, onThemeChange, onClose }: Use
   const { user, updateUser } = useAuth();
   const isBarangay = user?.account_kind === 'barangay';
   const isBarangayAdmin = isBarangay && user?.role === 'admin';
+  const isResident = user?.account_kind === 'resident' && user.role === 'resident';
   const canViewHotlines = isBarangay && Boolean(user?.barangay_id);
   const [activeSection, setActiveSection] = useState<SettingsSection>('general');
   const [profile, setProfile] = useState({ full_name: user?.full_name || '', phone: user?.phone || '' });
@@ -45,10 +46,12 @@ export default function UserSettingsModal({ theme, onThemeChange, onClose }: Use
 
   const saveProfile = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!isBarangay) return;
+    if (!isBarangay && !isResident) return;
     setSavingProfile(true);
     try {
-      const { data } = await barangayAPI.updateProfile({ full_name: profile.full_name.trim(), phone: profile.phone.trim() });
+      const { data } = isResident
+        ? await authAPI.updateResidentProfile({ full_name: profile.full_name.trim(), phone: profile.phone.trim() })
+        : await barangayAPI.updateProfile({ full_name: profile.full_name.trim(), phone: profile.phone.trim() });
       updateUser({ full_name: data.full_name, phone: data.phone });
       toast.success('Profile details saved.');
     } catch (error: any) {
@@ -59,6 +62,23 @@ export default function UserSettingsModal({ theme, onThemeChange, onClose }: Use
   };
 
   const sendPasswordCode = async () => {
+    if (isResident) {
+      if (!passwordForm.currentPassword) {
+        toast.error('Enter your current password before requesting a verification code.');
+        return;
+      }
+      setSavingPassword(true);
+      try {
+        const { data } = await authAPI.sendResidentWebPasswordOtp(passwordForm.currentPassword);
+        setPasswordOtpSent(true);
+        toast.success(data.message || 'Verification code sent to your mobile number.');
+      } catch (error: any) {
+        toast.error(messageOf(error, 'Password verification code could not be sent.'));
+      } finally {
+        setSavingPassword(false);
+      }
+      return;
+    }
     if (!user?.email) {
       toast.error('This account has no email address for verification.');
       return;
@@ -77,13 +97,14 @@ export default function UserSettingsModal({ theme, onThemeChange, onClose }: Use
 
   const changePassword = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!isBarangay) return;
+    if (!isBarangay && !isResident) return;
     if (passwordForm.otp.trim().length !== 6) {
-      toast.error('Enter the 6-digit email verification code.');
+      toast.error(`Enter the 6-digit ${isResident ? 'SMS' : 'email'} verification code.`);
       return;
     }
-    if (passwordForm.newPassword.length < 6) {
-      toast.error('New password must be at least 6 characters.');
+    const minimumPasswordLength = isResident ? 8 : 6;
+    if (passwordForm.newPassword.length < minimumPasswordLength) {
+      toast.error(`New password must be at least ${minimumPasswordLength} characters.`);
       return;
     }
     if (passwordForm.newPassword !== passwordForm.confirmPassword) {
@@ -92,12 +113,18 @@ export default function UserSettingsModal({ theme, onThemeChange, onClose }: Use
     }
     setSavingPassword(true);
     try {
-      const { data } = await authAPI.changeBarangayPassword({
-        email: user?.email || '',
-        otp: passwordForm.otp.trim(),
-        current_password: passwordForm.currentPassword,
-        new_password: passwordForm.newPassword,
-      });
+      const { data } = isResident
+        ? await authAPI.changeResidentWebPassword({
+          otp: passwordForm.otp.trim(),
+          current_password: passwordForm.currentPassword,
+          new_password: passwordForm.newPassword,
+        })
+        : await authAPI.changeBarangayPassword({
+          email: user?.email || '',
+          otp: passwordForm.otp.trim(),
+          current_password: passwordForm.currentPassword,
+          new_password: passwordForm.newPassword,
+        });
       setPasswordForm(emptyPasswordForm);
       setPasswordOtpSent(false);
       toast.success(data.message || 'Password updated successfully.');
@@ -122,6 +149,8 @@ export default function UserSettingsModal({ theme, onThemeChange, onClose }: Use
         <div className="user-settings-layout">
           <nav className="user-settings-nav" aria-label="Settings sections">
             <button type="button" className={activeSection === 'general' ? 'active' : ''} aria-current={activeSection === 'general' ? 'page' : undefined} onClick={() => setActiveSection('general')}><UserRound size={17} /> General</button>
+            {isResident && <button type="button" className={activeSection === 'profile' ? 'active' : ''} aria-current={activeSection === 'profile' ? 'page' : undefined} onClick={() => setActiveSection('profile')}><UserRound size={17} /> Profile</button>}
+            {isResident && <button type="button" className={activeSection === 'security' ? 'active' : ''} aria-current={activeSection === 'security' ? 'page' : undefined} onClick={() => setActiveSection('security')}><KeyRound size={17} /> Change password</button>}
             {isBarangayAdmin && <button type="button" className={activeSection === 'management' ? 'active' : ''} aria-current={activeSection === 'management' ? 'page' : undefined} onClick={() => setActiveSection('management')}><Users size={17} /> Barangay Management</button>}
             {isBarangayAdmin && <button type="button" className={activeSection === 'account' ? 'active' : ''} aria-current={activeSection === 'account' ? 'page' : undefined} onClick={() => setActiveSection('account')}><FileText size={17} /> Account Request</button>}
             {canViewHotlines && <button type="button" className={activeSection === 'hotlines' ? 'active' : ''} aria-current={activeSection === 'hotlines' ? 'page' : undefined} onClick={() => setActiveSection('hotlines')}><Phone size={17} /> Barangay Hotline</button>}
@@ -134,7 +163,7 @@ export default function UserSettingsModal({ theme, onThemeChange, onClose }: Use
           {activeSection === 'general' ? <div className="user-settings-content">
           <section className="user-settings-section user-settings-account">
             <div className="user-settings-avatar" aria-hidden="true">{initials}</div>
-            <div className="user-settings-account-copy"><strong>{user?.full_name || 'Dashboard user'}</strong><span>{user?.email || 'No email on this account'}</span><small>{user?.role === 'logistics' ? 'Staff' : user?.role?.replace(/_/g, ' ')}{user?.account_kind === 'barangay' && user.barangay_name ? ` · ${user.barangay_name}` : ''}</small></div>
+            <div className="user-settings-account-copy"><strong>{user?.full_name || 'Dashboard user'}</strong><span>{isResident ? user?.username ? `@${user.username}` : user?.phone || 'Resident account' : user?.email || 'No email on this account'}</span><small>{user?.role === 'logistics' ? 'Staff' : user?.role?.replace(/_/g, ' ')}{user?.account_kind === 'barangay' && user.barangay_name ? ` · ${user.barangay_name}` : ''}</small></div>
           </section>
 
           <section className="user-settings-section">
@@ -165,8 +194,32 @@ export default function UserSettingsModal({ theme, onThemeChange, onClose }: Use
             </form>}
           </section>}
 
-          {!isBarangay && <p className="user-settings-managed-note">Official account details are managed by your system administrator.</p>}
-          </div> : activeSection === 'management' ? <div className="user-settings-content user-settings-content-barangay"><BarangayTeamPage embedded /></div> : <div className="user-settings-content user-settings-content-barangay"><BarangayAdministrationPage embedded section={activeSection} /></div>}
+          {!isBarangay && !isResident && <p className="user-settings-managed-note">Official account details are managed by your system administrator.</p>}
+          </div> : activeSection === 'profile' && isResident ? <div className="user-settings-content">
+            <section className="user-settings-section">
+              <div className="user-settings-section-heading"><div><h3>Resident profile</h3><p>Update the name and mobile number linked to your account.</p></div><UserRound size={18} /></div>
+              <form className="user-settings-form" onSubmit={(event) => void saveProfile(event)}>
+                <label>Full name<input required minLength={2} maxLength={100} autoComplete="name" value={profile.full_name} onChange={(event) => setProfile((value) => ({ ...value, full_name: event.target.value }))} /></label>
+                <label>Mobile number<input required type="tel" inputMode="numeric" autoComplete="tel" pattern="09[0-9]{9}" title="Enter 11 digits starting with 09" maxLength={11} value={profile.phone} onChange={(event) => setProfile((value) => ({ ...value, phone: event.target.value.replace(/\D/g, '').slice(0, 11) }))} placeholder="09XXXXXXXXX" /></label>
+                <div className="user-settings-form-actions"><button className="btn btn-primary" disabled={savingProfile}><Save size={15} /> Save profile</button></div>
+              </form>
+            </section>
+          </div> : activeSection === 'security' && isResident ? <div className="user-settings-content">
+            <section className="user-settings-section">
+              <div className="user-settings-section-heading"><div><h3>Change password</h3><p>Confirm your current password, then verify a code sent to {user?.phone ? `•••• ${user.phone.slice(-4)}` : 'your mobile number'}.</p></div><KeyRound size={18} /></div>
+              {!passwordOtpSent ? <div className="user-settings-resident-security-start">
+                <label>Current password<PasswordInput required autoComplete="current-password" value={passwordForm.currentPassword} onChange={(event) => setPasswordForm((value) => ({ ...value, currentPassword: event.target.value }))} /></label>
+                <button type="button" className="btn btn-primary" onClick={() => void sendPasswordCode()} disabled={savingPassword || !passwordForm.currentPassword}><Phone size={15} /> {savingPassword ? 'Sending code…' : 'Verify and send code'}</button>
+              </div> : <form className="user-settings-form" onSubmit={(event) => void changePassword(event)}>
+                <p className="user-settings-sms-note" role="status">A 6-digit verification code was sent to the mobile number on this account.</p>
+                <label>Current password<PasswordInput required autoComplete="current-password" value={passwordForm.currentPassword} onChange={(event) => setPasswordForm((value) => ({ ...value, currentPassword: event.target.value }))} /></label>
+                <label>SMS verification code<input required inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={passwordForm.otp} onChange={(event) => setPasswordForm((value) => ({ ...value, otp: event.target.value.replace(/\D/g, '').slice(0, 6) }))} /></label>
+                <label>New password<PasswordInput required minLength={8} autoComplete="new-password" value={passwordForm.newPassword} onChange={(event) => setPasswordForm((value) => ({ ...value, newPassword: event.target.value }))} /></label>
+                <label>Confirm new password<PasswordInput required minLength={8} autoComplete="new-password" value={passwordForm.confirmPassword} onChange={(event) => setPasswordForm((value) => ({ ...value, confirmPassword: event.target.value }))} /></label>
+                <div className="user-settings-form-actions"><button className="btn btn-primary" disabled={savingPassword}><KeyRound size={15} /> Update password</button><button type="button" className="workspace-secondary-action" disabled={savingPassword} onClick={() => { setPasswordOtpSent(false); setPasswordForm(emptyPasswordForm); }}>Cancel</button><button type="button" className="workspace-secondary-action" disabled={savingPassword} onClick={() => void sendPasswordCode()}>Send a new code</button></div>
+              </form>}
+            </section>
+          </div> : activeSection === 'management' ? <div className="user-settings-content user-settings-content-barangay"><BarangayTeamPage embedded /></div> : <div className="user-settings-content user-settings-content-barangay"><BarangayAdministrationPage embedded section={activeSection as BarangaySettingsSection} /></div>}
           </div>
         </div>
 

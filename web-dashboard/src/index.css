@@ -629,6 +629,11 @@ a:hover { color: var(--info); }
 .user-settings-form-actions { display: flex; grid-column: 1 / -1; flex-wrap: wrap; gap: 8px; }
 .user-settings-form-actions .btn, .user-settings-form-actions .workspace-secondary-action { min-height: 38px; }
 .user-settings-security-start { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; color: var(--text-muted); font-size: 12px; }
+.user-settings-resident-security-start { display: grid; max-width: 480px; gap: 13px; }
+.user-settings-resident-security-start > label { display: flex; flex-direction: column; gap: 6px; color: var(--text-secondary); font-size: 12px; font-weight: 600; }
+.user-settings-resident-security-start .password-input-control { width: 100%; }
+.user-settings-resident-security-start .btn { display: inline-flex; min-height: 40px; width: fit-content; align-items: center; gap: 8px; }
+.user-settings-sms-note { grid-column: 1 / -1; margin: 0; padding: 10px 12px; border: 1px solid rgba(15, 159, 120, .25); border-radius: 8px; color: #57cfa6; background: rgba(15, 159, 120, .08); font-size: 12px; line-height: 1.45; }
 .user-settings-managed-note { margin: 0; padding: 12px 14px; border: 1px solid var(--border-color); border-radius: 10px; color: var(--text-muted); font-size: 12px; }
 .user-settings-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 22px; border-top: 1px solid var(--border-color); color: var(--text-muted); font-size: 11px; }
 @media (max-width: 700px) { .user-settings-backdrop { padding: 10px; } .user-settings-modal { max-height: 94vh; } .user-settings-layout { flex-direction: column; } .user-settings-nav { width: auto; flex: 0 0 auto; flex-direction: row; overflow-x: auto; padding: 10px 12px; border-right: 0; border-bottom: 1px solid var(--border-color); } .user-settings-nav button { flex: 0 0 auto; } .user-settings-panel { min-height: 0; } .user-settings-header, .user-settings-content, .user-settings-content-barangay, .user-settings-footer { padding-left: 14px; padding-right: 14px; } .user-settings-form { grid-template-columns: 1fr; } .user-settings-form-actions { grid-column: 1; } }
@@ -1170,6 +1175,40 @@ tbody tr:last-child td { border-bottom: none; }
 .login-card > p:last-child {
   color: #64748b !important;
 }
+
+.resident-registration-page { height: auto; min-height: 100vh; min-height: 100svh; overflow-y: auto; }
+.resident-register-main { min-height: 0; align-items: center; justify-content: center; overflow-y: auto; padding: 26px 16px; }
+.resident-register-main::before { display: none; }
+.resident-register-card { width: min(100%, 520px); margin: 20px auto; padding: 30px clamp(20px, 5vw, 38px); }
+.resident-register-card > .login-emblem { margin: 0 auto 14px; }
+.resident-register-card .login-title { margin: 0; text-align: center; font-size: clamp(24px, 4vw, 29px); }
+.resident-register-card .login-subtitle { margin: 8px 0 0; text-align: center; line-height: 1.5; }
+.resident-register-card .login-subtitle strong { color: #172033; white-space: nowrap; }
+.resident-register-steps { display: flex; width: min(100%, 230px); align-items: center; gap: 8px; margin: 20px auto 22px; }
+.resident-register-steps > span { display: grid; width: 27px; height: 27px; flex: 0 0 27px; place-items: center; border: 1px solid #cbd7e5; border-radius: 50%; color: #7b8ba2; background: #f7f9fc; font-size: 11px; font-weight: 750; }
+.resident-register-steps > span.current { border-color: #0789c8; color: #fff; background: #0789c8; box-shadow: 0 0 0 4px rgba(7, 137, 200, .12); }
+.resident-register-steps > span.complete { border-color: #0f9f78; color: #fff; background: #0f9f78; }
+.resident-register-steps > i { height: 2px; flex: 1; background: #dce5ef; }
+.resident-register-steps > i.complete { background: #0f9f78; }
+.resident-register-input-wrap { position: relative; }
+.resident-register-input-wrap > svg { position: absolute; z-index: 1; top: 50%; left: 14px; color: #718096; transform: translateY(-50%); pointer-events: none; }
+.resident-register-input-wrap .form-input { padding-left: 42px; }
+.resident-register-card .form-group > small { display: block; margin-top: 5px; color: #718096; font-size: 11px; line-height: 1.45; }
+.resident-register-card .resident-register-submit { display: flex; width: 100%; min-height: 48px; align-items: center; justify-content: center; gap: 9px; margin-top: 16px; }
+.resident-register-otp { text-align: center; font-size: 22px !important; font-weight: 750 !important; letter-spacing: .28em; }
+.resident-register-error, .resident-register-notice { margin: 0 0 14px; padding: 10px 12px; border: 1px solid rgba(220, 38, 38, .2); border-radius: 9px; color: #b42318; background: #fff1f0; font-size: 12px; line-height: 1.45; }
+.resident-register-notice { border-color: rgba(15, 159, 120, .22); color: #087451; background: #ecfdf5; }
+.resident-register-back { margin-top: 9px; }
+.resident-register-success-icon { display: grid; width: 58px; height: 58px; place-items: center; margin: 0 auto 15px; border-radius: 50%; color: #087451; background: #e8fbf3; }
+.resident-register-credential { display: grid; gap: 12px; margin: 23px 0 18px; padding: 15px; border: 1px solid #dce5ef; border-radius: 13px; background: #f7f9fc; }
+.resident-register-credential > div, .resident-register-password-row > div { display: flex; min-width: 0; flex-direction: column; gap: 5px; }
+.resident-register-credential span { color: #64748b; font-size: 11px; font-weight: 650; }
+.resident-register-credential strong { overflow-wrap: anywhere; color: #172033; font-size: 15px; }
+.resident-register-password-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 12px; border-top: 1px solid #dce5ef; }
+.resident-register-password-row code { overflow-wrap: anywhere; color: #172033; font-size: 15px; font-weight: 800; letter-spacing: .04em; }
+.resident-register-password-row .workspace-secondary-action { display: inline-flex; min-height: 38px; flex: 0 0 auto; align-items: center; gap: 7px; }
+.resident-register-signin { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 20px; color: #52647c; font-size: 13px; text-decoration: none; }
+.resident-register-signin:hover { color: #0789c8; }
 
 @media (max-width: 600px) {
   .login-page {
