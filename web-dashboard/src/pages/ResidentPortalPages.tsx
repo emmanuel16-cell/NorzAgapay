@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import {
-  AlertTriangle, ArrowRight, Bell, CheckCircle2, ChevronDown, CircleHelp,
+  AlertTriangle, ArrowRight, Bell, Check, CheckCircle2, ChevronDown, CircleHelp, Copy,
   Clock3, ExternalLink, FileText, Flame, LocateFixed, MapPin, Megaphone,
   Navigation, Phone, RefreshCw, ShieldCheck, Siren, TentTree, Users,
 } from 'lucide-react';
@@ -51,6 +51,10 @@ function formatDate(value?: string | null) {
   if (!value) return 'Date unavailable';
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? 'Date unavailable' : new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+}
+function formatHotlineNumber(value: string) {
+  const digits = value.replace(/\D/g, '');
+  return /^09\d{9}$/.test(digits) ? `${digits.slice(0, 4)}-${digits.slice(4, 7)}-${digits.slice(7)}` : value;
 }
 function reportState(report: ResidentReport) {
   const status = String(report.mdrrmo_response_status || report.barangay_response_status || report.response_status || report.status || '').toLowerCase();
@@ -237,6 +241,7 @@ export function ResidentHotlinesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedBarangay, setSelectedBarangay] = useState('');
+  const [copiedHotlineId, setCopiedHotlineId] = useState('');
   const load = useCallback(async () => { setLoading(true); setError(''); try { const response = await reportAPI.publicHotlines(); setData(response.data || { national: [], mdrrmo: [], barangays: [] }); } catch (loadError: any) { setError(loadError?.response?.data?.error || 'Hotline information could not be loaded.'); } finally { setLoading(false); } }, []);
   useEffect(() => { void load(); }, [load]);
   const barangayGroups = (data.barangays || []).filter((group) => (group.entries || []).some((line) => [line.phone, line.number, ...(line.numbers || [])].some((number) => Boolean(number))));
@@ -252,12 +257,25 @@ export function ResidentHotlinesPage() {
     const numbers = [line.phone, line.number, ...(line.numbers || [])].filter((value): value is string => Boolean(value));
     return numbers.map((number, numberIndex) => ({ id: `${title}-${index}-${numberIndex}`, label: line.label || line.name || line.purpose || title, number }));
   });
+  const copyHotline = async (id: string, number: string) => {
+    try {
+      await navigator.clipboard.writeText(number.replace(/\D/g, ''));
+      setCopiedHotlineId(id);
+      window.setTimeout(() => setCopiedHotlineId((current) => current === id ? '' : current), 1800);
+    } catch {
+      setCopiedHotlineId('');
+    }
+  };
+  const renderHotlineList = (lines: HotlineLine[], title: string) => <div className="resident-hotline-list">{hotlineRows(lines, title).map((entry) => {
+    const copied = copiedHotlineId === entry.id;
+    return <article key={entry.id}><div><strong>{entry.label}</strong><span>{formatHotlineNumber(entry.number)}</span></div><div className="resident-hotline-actions"><button type="button" className="resident-hotline-copy" onClick={() => void copyHotline(entry.id, entry.number)} aria-label={copied ? 'Phone number copied' : `Copy ${entry.label} phone number`} title={copied ? 'Copied' : 'Copy phone number'}>{copied ? <Check size={15}/> : <Copy size={15}/>}<span>{copied ? 'Copied' : 'Copy'}</span></button><a href={`tel:${entry.number.replace(/[^+\d]/g, '')}`} aria-label={`Call ${entry.label} at ${entry.number}`}><Phone size={16}/> Call</a></div></article>;
+  })}</div>;
   return <main className="resident-portal-page"><header className="resident-page-heading"><div><span className="resident-kicker"><Phone size={15}/> DIRECT CONTACT</span><h1>Emergency hotlines</h1><p>Call directly if you need immediate assistance or cannot submit an online report.</p></div><button className="resident-icon-button" type="button" onClick={() => void load()} aria-label="Refresh hotline list"><RefreshCw size={16}/></button></header>
     <div className="resident-hotline-notice"><span><Phone size={19}/></span><div><strong>In immediate danger?</strong><p>Call the emergency hotline directly. Online reports may take time to reach responders.</p></div><a href="tel:911">Call 911</a></div>
     {error && <div className="resident-feedback error" role="alert">{error}<button type="button" onClick={() => void load()}>Try again</button></div>}
-    {loading ? <div className="resident-feed-empty"><RefreshCw className="workspace-spinning" size={22}/><strong>Loading hotlines</strong></div> : <div className="resident-hotline-grid">{groups.map((group) => { const entries = hotlineRows(group.entries, group.title); return <section className="resident-hotline-group" key={group.id}><header><span>{group.icon}</span><div><h2>{group.title}</h2><p>{group.subtitle}</p></div></header>{entries.length ? <div className="resident-hotline-list">{entries.map((entry) => <article key={entry.id}><div><strong>{entry.label}</strong><span>{entry.number}</span></div><a href={`tel:${entry.number.replace(/[^+\d]/g, '')}`} aria-label={`Call ${entry.label} at ${entry.number}`}><Phone size={16}/> Call</a></article>)}</div> : <p className="resident-hotline-empty">No published numbers for this group.</p>}</section>; })}
+    {loading ? <div className="resident-feed-empty"><RefreshCw className="workspace-spinning" size={22}/><strong>Loading hotlines</strong></div> : <div className="resident-hotline-grid">{groups.map((group) => { const entries = hotlineRows(group.entries, group.title); return <section className="resident-hotline-group" key={group.id}><header><span>{group.icon}</span><div><h2>{group.title}</h2><p>{group.subtitle}</p></div></header>{entries.length ? renderHotlineList(group.entries, group.title) : <p className="resident-hotline-empty">No published numbers for this group.</p>}</section>; })}
       <section className="resident-hotline-group resident-hotline-barangay-group"><header><span><Users size={18}/></span><div><h2>{activeBarangay ? `Barangay ${activeBarangay.barangay_name}` : 'Barangay emergency hotline'}</h2><p>Local response contacts</p></div><label className="resident-hotline-barangay-select"><select aria-label="Choose a barangay with published hotlines" value={activeBarangay?.barangay_name || ''} onChange={(event) => setSelectedBarangay(event.target.value)} disabled={!barangayGroups.length}><option value="" disabled>Select barangay</option>{barangayGroups.map((group) => <option key={group.barangay_name} value={group.barangay_name}>{group.barangay_name}</option>)}</select><ChevronDown size={15}/></label></header>
-        {activeBarangay ? (() => { const entries = hotlineRows(activeBarangay.entries || [], activeBarangay.barangay_name); return entries.length ? <div className="resident-hotline-list">{entries.map((entry) => <article key={entry.id}><div><strong>{entry.label}</strong><span>{entry.number}</span></div><a href={`tel:${entry.number.replace(/[^+\d]/g, '')}`} aria-label={`Call ${entry.label} at ${entry.number}`}><Phone size={16}/> Call</a></article>)}</div> : <p className="resident-hotline-empty">No published numbers for this barangay.</p>; })() : <p className="resident-hotline-empty">No barangays have published hotline numbers yet.</p>}
+        {activeBarangay ? renderHotlineList(activeBarangay.entries || [], activeBarangay.barangay_name) : <p className="resident-hotline-empty">No barangays have published hotline numbers yet.</p>}
       </section>
     </div>}
     <div className="resident-hotline-footer"><span>Contact numbers are managed by MDRRMO and verified barangay teams.</span><Link to="/resident-report">Submit an incident report <ArrowRight size={14}/></Link></div>
