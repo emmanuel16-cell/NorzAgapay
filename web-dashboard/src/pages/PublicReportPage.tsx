@@ -2,11 +2,12 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { LocateFixed, MapPin, Phone, Siren, Upload, X } from 'lucide-react';
 import { MapContainer, Marker, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import PublicHeader from '../components/PublicHeader';
 import { reportAPI } from '../lib/api';
 import { INCIDENT_TYPE_OPTIONS } from '../lib/incidentClassification';
 import { CARTO_ATTRIBUTION, CARTO_DARK_MAP_URL } from '../lib/mapConfig';
+import { useAuth } from '../context/AuthContext';
 
 function createGuestRequestId() {
   const bytes = new Uint8Array(16);
@@ -27,6 +28,19 @@ type PublicHotlines = {
 const emptyHotlines: PublicHotlines = { national: [], mdrrmo: [], barangays: [] };
 const incidentPinIcon = L.divIcon({ className: 'public-incident-pin', html: '<span></span>', iconSize: [24, 24], iconAnchor: [12, 12] });
 const defaultMapCenter: [number, number] = [14.9133, 121.0436];
+const communityCategories = [
+  'Minor Flooding', 'Drainage Blockage', 'Small Fire Incident', 'Fallen Tree Report', 'Road Damage Report',
+  'Damaged House Report', 'Cracked Road Report', 'Unsafe Electrical Wiring', 'River Water Level Report',
+  'Illegal Dumping', 'River Pollution Report', 'Smoke Pollution', 'Animal Carcass Disposal', 'Flood-Prone Area Report',
+  'Heavy Rain Monitoring', 'Strong Wind Monitoring', 'Rising Water Level Monitoring', 'Landslide-Prone Area Report',
+  'Earthquake Damage Observation',
+];
+function normalizePhilippineMobile(value?: string | null) {
+  let digits = String(value || '').replace(/\D/g, '');
+  if (digits.startsWith('63')) digits = `0${digits.slice(2)}`;
+  else if (digits.startsWith('9')) digits = `0${digits}`;
+  return digits.slice(0, 11);
+}
 
 function IncidentMapClickPicker({ onPick }: { onPick: (point: { latitude: number; longitude: number }) => void }) {
   useMapEvents({ click: ({ latlng }) => onPick({ latitude: latlng.lat, longitude: latlng.lng }) });
@@ -42,9 +56,13 @@ function IncidentMapRecenter({ point }: { point: [number, number] }) {
 }
 
 export default function PublicReportPage() {
+  const { user } = useAuth();
+  const [searchParams] = useSearchParams();
+  const reportType = searchParams.get('type') === 'community' ? 'community' : 'emergency';
   const [hotlines, setHotlines] = useState<PublicHotlines>(emptyHotlines);
   const [guestPhone, setGuestPhone] = useState('');
   const [incidentCategory, setIncidentCategory] = useState('not_sure');
+  const [communityCategory, setCommunityCategory] = useState(communityCategories[0]);
   const [description, setDescription] = useState('');
   const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [locationSource, setLocationSource] = useState<'current' | 'map' | null>(null);
@@ -62,6 +80,10 @@ export default function PublicReportPage() {
   const [submissionRequestId, setSubmissionRequestId] = useState(createGuestRequestId);
   const [submissionFingerprint, setSubmissionFingerprint] = useState('');
   const [submissionStartedAt, setSubmissionStartedAt] = useState('');
+
+  useEffect(() => {
+    if (user?.phone) setGuestPhone((current) => current || normalizePhilippineMobile(user.phone));
+  }, [user?.phone]);
 
   useEffect(() => {
     reportAPI.publicHotlines()
@@ -141,6 +163,8 @@ export default function PublicReportPage() {
     try {
       const fingerprint = JSON.stringify([
         phone,
+        reportType,
+        communityCategory,
         incidentCategory,
         description.trim(),
         location.latitude,
@@ -153,9 +177,11 @@ export default function PublicReportPage() {
       setSubmissionFingerprint(fingerprint);
       setSubmissionStartedAt(submittedAt);
       const response = await reportAPI.guestReport({
-        type: 'emergency', title: 'Resident Incident Report', description: description.trim(),
+        type: reportType, title: reportType === 'community' ? communityCategory : 'Resident Incident Report',
+        specifics: reportType === 'community' ? communityCategory : '', description: description.trim(),
         latitude: location.latitude, longitude: location.longitude, contact_number: phone, send_to: 'mdrrmo',
-        incident_type: incidentCategory, client_request_id: requestId, client_submitted_at: submittedAt,
+        incident_type: reportType === 'community' ? communityCategory.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') : incidentCategory,
+        client_request_id: requestId, client_submitted_at: submittedAt,
       }, evidence);
       const reportId = response.data?.report?.id;
       if (typeof reportId === 'string') setTrackingReference(reportId);
@@ -171,7 +197,7 @@ export default function PublicReportPage() {
       const input = document.getElementById('public-report-evidence') as HTMLInputElement | null;
       if (input) input.value = '';
       setSubmitted(true);
-      setMessage('Report sent to MDRRMO for review. A dispatcher can assign it to a nearby active barangay.');
+      setMessage(reportType === 'community' ? 'Community concern sent to MDRRMO for review and local coordination.' : 'Report sent to MDRRMO for review. A dispatcher can assign it to a nearby active barangay.');
     } catch (error: any) {
       setMessage(error?.response?.data?.error || 'The report could not be submitted. Please try again.');
     } finally {
@@ -184,21 +210,18 @@ export default function PublicReportPage() {
       <PublicHeader />
       <main className="public-report-layout">
         <div className="public-report-intro">
-          <span className="public-home-eyebrow">PUBLIC INCIDENT REPORTING</span>
-          <h1>Tell us what is happening.</h1>
-          <p>Share a mobile number, incident category, location, and clear details. Reports are sent to MDRRMO for review.</p>
-          <p className="public-report-login-note">Already have an account? <Link to="/login">Sign in to follow your reports or open the command center</Link>.</p>
+          <span className="public-home-eyebrow">{reportType === 'community' ? 'COMMUNITY INCIDENT REPORTING' : 'EMERGENCY INCIDENT REPORTING'}</span>
+          <h1>{reportType === 'community' ? 'Share a local concern.' : 'Tell us what is happening.'}</h1>
+          <p>{reportType === 'community' ? 'Report a community hazard so MDRRMO can review it and coordinate a local response.' : 'Share a mobile number, incident category, location, and clear details. Reports are sent to MDRRMO for review.'}</p>
+          {user ? <p className="public-report-login-note">Reporting as <strong>{user.full_name}</strong>. <Link to="/resident-home">Back to resident portal</Link>.</p> : <p className="public-report-login-note">Already have an account? <Link to="/login">Sign in to follow your reports or open the command center</Link>.</p>}
         </div>
         <div className="public-report-content-grid">
           <section className="public-intake-panel" aria-labelledby="public-report-title">
-            <div className="public-intake-heading"><span><Siren size={19} /></span><div><h2 id="public-report-title">Report an incident</h2><p>No account is needed to submit a report.</p></div></div>
+            <div className="public-intake-heading"><span><Siren size={19} /></span><div><h2 id="public-report-title">{reportType === 'community' ? 'Community incident' : 'Emergency incident'}</h2><p>{user ? 'Your report will be linked to your resident account.' : 'No account is needed to submit a report.'}</p></div></div>
             <form className="public-report-form" onSubmit={(event) => void submitReport(event)}>
+              {reportType === 'community' ? <><label htmlFor="public-report-community-category">Concern category</label><select id="public-report-community-category" value={communityCategory} onChange={(event) => setCommunityCategory(event.target.value)}>{communityCategories.map((item) => <option key={item} value={item}>{item}</option>)}</select></> : <><label htmlFor="public-report-category">Incident category</label><select id="public-report-category" value={incidentCategory} onChange={(event) => setIncidentCategory(event.target.value)}>{INCIDENT_TYPE_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></>}
               <label htmlFor="public-report-phone">Mobile number <b>Required</b></label>
               <input id="public-report-phone" type="tel" inputMode="numeric" autoComplete="tel" pattern="09[0-9]{9}" title="Enter an 11-digit mobile number starting with 09." maxLength={11} placeholder="09XXXXXXXXX" value={guestPhone} onChange={(event) => setGuestPhone(event.target.value.replace(/\D/g, '').slice(0, 11))} required />
-              <label htmlFor="public-report-category">Incident category</label>
-              <select id="public-report-category" value={incidentCategory} onChange={(event) => setIncidentCategory(event.target.value)}>
-                {INCIDENT_TYPE_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-              </select>
               <label htmlFor="public-report-description">Incident details <b>Required</b></label>
               <textarea id="public-report-description" rows={5} minLength={8} maxLength={2000} placeholder="Describe what happened and who needs help…" value={description} onChange={(event) => setDescription(event.target.value)} required />
               <span className="public-report-field-label">Incident location <b>Required</b></span>

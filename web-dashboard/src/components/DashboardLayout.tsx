@@ -22,6 +22,11 @@ import {
   Building2,
   MessageSquareText,
   Handshake,
+  Home,
+  Bell,
+  TentTree,
+  PhoneCall,
+  Siren,
 } from 'lucide-react';
 
 interface NavItem {
@@ -59,7 +64,15 @@ const navItems: NavItem[] = [
 ];
 
 function navigationForRole(role?: string, accountKind?: string, isMasterAdmin = false, coordinationVerified = false): NavItem[] {
-  if (role === 'resident') return navItems.filter((item) => item.path === '/my-reports');
+  if (role === 'resident') return [
+    { label: 'Resident services', section: true },
+    { path: '/resident-home', icon: <Home size={19} strokeWidth={1.8} />, label: 'Home' },
+    { path: '/resident-alerts', icon: <Bell size={19} strokeWidth={1.8} />, label: 'Community Alerts' },
+    { path: '/resident-report', icon: <Siren size={19} strokeWidth={1.8} />, label: 'Report an Incident' },
+    { path: '/my-reports', icon: <FileText size={19} strokeWidth={1.8} />, label: 'My Reports' },
+    { path: '/resident-evacuation', icon: <TentTree size={19} strokeWidth={1.8} />, label: 'Evacuation Centers' },
+    { path: '/resident-hotlines', icon: <PhoneCall size={19} strokeWidth={1.8} />, label: 'Emergency Hotlines' },
+  ];
   if (accountKind === 'barangay') {
     if (role === 'admin' && !coordinationVerified) return [];
     const visiblePaths: Record<string, string[]> = {
@@ -198,7 +211,7 @@ export default function DashboardLayout() {
             {!isCollapsed && (
               <div className="sidebar-brand-text">
                 <div className="sidebar-title">Norz-Agapay</div>
-                <div className="sidebar-subtitle">MDRRMO Command</div>
+                <div className="sidebar-subtitle">{user?.role === 'resident' ? 'Resident Portal' : 'MDRRMO Command'}</div>
               </div>
             )}
           </div>

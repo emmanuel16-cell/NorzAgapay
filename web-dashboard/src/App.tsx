@@ -17,6 +17,7 @@ import OfficersPage from './pages/OfficersPage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import ReportsPage from './pages/ReportsPage';
 import ResidentReportsPage from './pages/ResidentReportsPage';
+import { ResidentAlertsPage, ResidentEvacuationPage, ResidentHomePage, ResidentHotlinesPage, ResidentReportHubPage } from './pages/ResidentPortalPages';
 import ResponderWorkspacePage from './pages/ResponderWorkspacePage';
 import BarangayStaffWorkspacePage from './pages/BarangayStaffWorkspacePage';
 import MunicipalityBoundaryPage from './pages/MunicipalityBoundaryPage';
@@ -42,7 +43,7 @@ function landingPath(user: { role?: string; account_kind?: string; coordination_
     if (user.role === 'dispatcher') return '/barangay-dashboard';
     return '/command-center';
   }
-  if (user?.role === 'resident') return '/my-reports';
+  if (user?.role === 'resident') return '/resident-home';
   if (user?.role === 'responder') return '/my-responses';
   if (user?.role === 'admin') return '/users';
   if (user?.role === 'logistics') return '/respond-units';
@@ -105,6 +106,11 @@ function AppRoutes() {
         <Route path="earthquakes" element={<Navigate to="/command-center" replace />} />
         <Route path="reports" element={<RoleAccess roles={['dispatcher']} allowBarangayRoles={['dispatcher', 'responder']}><IncidentReportsRoute /></RoleAccess>} />
         <Route path="my-reports" element={<RoleAccess roles={['resident']}><ResidentReportsPage /></RoleAccess>} />
+        <Route path="resident-home" element={<RoleAccess roles={['resident']}><ResidentHomePage /></RoleAccess>} />
+        <Route path="resident-alerts" element={<RoleAccess roles={['resident']}><ResidentAlertsPage /></RoleAccess>} />
+        <Route path="resident-report" element={<RoleAccess roles={['resident']}><ResidentReportHubPage /></RoleAccess>} />
+        <Route path="resident-evacuation" element={<RoleAccess roles={['resident']}><ResidentEvacuationPage /></RoleAccess>} />
+        <Route path="resident-hotlines" element={<RoleAccess roles={['resident']}><ResidentHotlinesPage /></RoleAccess>} />
         <Route path="my-responses" element={<RoleAccess roles={['responder']} allowBarangayRoles={['responder']}><ResponderWorkspacePage /></RoleAccess>} />
         <Route path="barangay-workspace" element={<BarangayAccess roles={['admin', 'staff']}><BarangayStaffWorkspacePage /></BarangayAccess>} />
         <Route path="barangay-dashboard" element={<BarangayAccess roles={['admin', 'dispatcher']}><BarangayDashboardPage /></BarangayAccess>} />
