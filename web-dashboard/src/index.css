@@ -589,17 +589,20 @@ a:hover { color: var(--info); }
 .user-settings-theme-options button.selected { border-color: #2ebed8; color: var(--text-primary); background: rgba(39, 200, 232, .12); }
 .user-settings-form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .user-settings-form > label { display: flex; min-width: 0; flex-direction: column; gap: 6px; color: var(--text-secondary); font-size: 12px; font-weight: 600; }
-.user-settings-form input { width: 100%; min-height: 40px; padding: 9px 11px; border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-primary); background: var(--bg-primary); font: inherit; font-weight: 400; outline: none; }
+.user-settings-form > .user-settings-barangay-select { grid-column: 1 / -1; }
+.user-settings-form input { width: 100%; min-height: 42px; box-sizing: border-box; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 9px; color: var(--text-primary); background: var(--bg-primary); font: inherit; font-size: 14px; font-weight: 400; outline: none; transition: border-color .16s ease, box-shadow .16s ease, background-color .16s ease; }
+.user-settings-form select, .user-settings-resident-security-start select { width: 100%; min-height: 42px; box-sizing: border-box; appearance: none; padding: 10px 38px 10px 12px; border: 1px solid var(--border-color); border-radius: 9px; color: var(--text-primary); background-color: var(--bg-primary); background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23879bb8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; font: inherit; font-size: 14px; font-weight: 400; outline: none; cursor: pointer; transition: border-color .16s ease, box-shadow .16s ease, background-color .16s ease; }
+.user-settings-form .password-input-control > .password-input, .user-settings-resident-security-start .password-input-control > .password-input { width: 100%; min-height: 42px; box-sizing: border-box; padding: 10px 46px 10px 12px; border: 1px solid var(--border-color); border-radius: 9px; color: var(--text-primary); background: var(--bg-primary); font: inherit; font-size: 14px; font-weight: 400; outline: none; transition: border-color .16s ease, box-shadow .16s ease, background-color .16s ease; }
 .user-settings-form input[readonly] { color: var(--text-muted); cursor: not-allowed; }
 .user-settings-form > .user-settings-managed-note { grid-column: 1 / -1; }
-.user-settings-form input:focus { border-color: #30bed6; box-shadow: 0 0 0 2px rgba(48, 190, 214, .12); }
+.user-settings-form input:focus, .user-settings-form select:focus, .user-settings-resident-security-start input:focus, .user-settings-resident-security-start select:focus { border-color: #30bed6; box-shadow: 0 0 0 3px rgba(48, 190, 214, .14); }
+.user-settings-form input::placeholder, .user-settings-resident-security-start input::placeholder { color: var(--text-muted); opacity: 1; }
 .user-settings-form .password-input-control { width: 100%; }
 .user-settings-form-actions { display: flex; grid-column: 1 / -1; flex-wrap: wrap; gap: 8px; }
 .user-settings-form-actions .btn, .user-settings-form-actions .workspace-secondary-action { min-height: 38px; }
 .user-settings-security-start { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; color: var(--text-muted); font-size: 12px; }
 .user-settings-resident-security-start { display: grid; max-width: 480px; gap: 13px; }
 .user-settings-resident-security-start > label { display: flex; flex-direction: column; gap: 6px; color: var(--text-secondary); font-size: 12px; font-weight: 600; }
-.user-settings-resident-security-start select { width: 100%; min-height: 40px; padding: 9px 11px; border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-primary); background: var(--bg-primary); font: inherit; font-weight: 400; outline: none; }
 .user-settings-resident-security-start .password-input-control { width: 100%; }
 .user-settings-resident-security-start .btn { display: inline-flex; min-height: 40px; width: fit-content; align-items: center; gap: 8px; }
 .user-settings-sms-note { grid-column: 1 / -1; margin: 0; padding: 10px 12px; border: 1px solid rgba(15, 159, 120, .25); border-radius: 8px; color: #57cfa6; background: rgba(15, 159, 120, .08); font-size: 12px; line-height: 1.45; }
@@ -4855,6 +4858,11 @@ body.responder-map-open { overflow: hidden; }
 .resident-hotline-group > header > span { display: grid; width: 34px; height: 34px; flex: 0 0 auto; place-items: center; border-radius: 10px; color: var(--primary-light); background: rgba(55, 189, 216, .11); }
 .resident-hotline-group > header h2 { margin: 0; color: var(--text-primary); font-size: 13px; }
 .resident-hotline-group > header p { margin: 4px 0 0; color: var(--text-muted); font-size: 9px; }
+.resident-hotline-barangay-select { position: relative; width: min(190px, 38%); flex: 0 1 190px; margin-left: auto; }
+.resident-hotline-barangay-select select { width: 100%; min-height: 36px; appearance: none; padding: 8px 32px 8px 10px; border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-primary); background: var(--bg-primary); font: inherit; font-size: 11px; cursor: pointer; }
+.resident-hotline-barangay-select select:focus { border-color: var(--primary-light); outline: none; box-shadow: 0 0 0 3px var(--primary-50); }
+.resident-hotline-barangay-select select:disabled { cursor: not-allowed; opacity: .65; }
+.resident-hotline-barangay-select > svg { position: absolute; top: 50%; right: 10px; color: var(--text-muted); transform: translateY(-50%); pointer-events: none; }
 .resident-hotline-list { display: grid; padding: 4px 12px; }
 .resident-hotline-list article { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 1px; border-bottom: 1px solid var(--border-color); }
 .resident-hotline-list article:last-child { border-bottom: 0; }
@@ -4912,6 +4920,8 @@ body.responder-map-open { overflow: hidden; }
   .resident-reporting-hero-icon { width: 46px; height: 46px; }
   .resident-hotline-notice { grid-template-columns: 34px minmax(0, 1fr); }
   .resident-hotline-notice > a { grid-column: 2; justify-self: start; }
+  .resident-hotline-barangay-group > header { flex-wrap: wrap; }
+  .resident-hotline-barangay-select { width: calc(100% - 44px); flex: 0 0 calc(100% - 44px); margin-left: 44px; }
 }
 @media (max-width: 400px) {
   .resident-stat-grid article { padding-left: 10px; }

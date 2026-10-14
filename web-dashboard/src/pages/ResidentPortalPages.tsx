@@ -232,15 +232,22 @@ export function ResidentEvacuationPage() {
 }
 
 export function ResidentHotlinesPage() {
+  const { user } = useAuth();
   const [data, setData] = useState<HotlinesResponse>({ national: [], mdrrmo: [], barangays: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [selectedBarangay, setSelectedBarangay] = useState('');
   const load = useCallback(async () => { setLoading(true); setError(''); try { const response = await reportAPI.publicHotlines(); setData(response.data || { national: [], mdrrmo: [], barangays: [] }); } catch (loadError: any) { setError(loadError?.response?.data?.error || 'Hotline information could not be loaded.'); } finally { setLoading(false); } }, []);
   useEffect(() => { void load(); }, [load]);
+  const barangayGroups = (data.barangays || []).filter((group) => (group.entries || []).some((line) => [line.phone, line.number, ...(line.numbers || [])].some((number) => Boolean(number))));
+  const activeBarangay = barangayGroups.find((group) => group.barangay_name === selectedBarangay)
+    || barangayGroups.find((group) => group.barangay_name === user?.barangay_name)
+    || barangayGroups[0];
   const groups = [
     { id: 'national', title: 'National emergency', subtitle: 'For immediate emergency response', icon: <Siren size={18}/>, entries: data.national || [] },
     { id: 'mdrrmo', title: 'MDRRMO', subtitle: 'Municipal disaster risk reduction and management', icon: <ShieldCheck size={18}/>, entries: data.mdrrmo || [] },
-    ...(data.barangays || []).map((group) => ({ id: `barangay-${group.barangay_name}`, title: `Barangay ${group.barangay_name}`, subtitle: 'Local response contacts', icon: <Users size={18}/>, entries: group.entries || [] })),
+    { id: 'pnp', title: 'Philippine National Police (PNP)', subtitle: 'Norzagaray Municipal Police Station', icon: <ShieldCheck size={18}/>, entries: [{ label: 'Norzagaray Municipal Police Station', phone: '0998-598-5389' }] },
+    { id: 'bfp', title: 'Bureau of Fire Protection (BFP)', subtitle: 'Norzagaray Fire Station', icon: <Flame size={18}/>, entries: [{ label: 'Norzagaray Fire Station', phone: '0943-348-1854' }] },
   ];
   const hotlineRows = (lines: HotlineLine[], title: string) => lines.flatMap((line, index) => {
     const numbers = [line.phone, line.number, ...(line.numbers || [])].filter((value): value is string => Boolean(value));
@@ -249,7 +256,11 @@ export function ResidentHotlinesPage() {
   return <main className="resident-portal-page"><header className="resident-page-heading"><div><span className="resident-kicker"><Phone size={15}/> DIRECT CONTACT</span><h1>Emergency hotlines</h1><p>Call directly if you need immediate assistance or cannot submit an online report.</p></div><button className="resident-icon-button" type="button" onClick={() => void load()} aria-label="Refresh hotline list"><RefreshCw size={16}/></button></header>
     <div className="resident-hotline-notice"><span><Phone size={19}/></span><div><strong>In immediate danger?</strong><p>Call the emergency hotline directly. Online reports may take time to reach responders.</p></div><a href="tel:911">Call 911</a></div>
     {error && <div className="resident-feedback error" role="alert">{error}<button type="button" onClick={() => void load()}>Try again</button></div>}
-    {loading ? <div className="resident-feed-empty"><RefreshCw className="workspace-spinning" size={22}/><strong>Loading hotlines</strong></div> : <div className="resident-hotline-grid">{groups.map((group) => { const entries = hotlineRows(group.entries, group.title); return <section className="resident-hotline-group" key={group.id}><header><span>{group.icon}</span><div><h2>{group.title}</h2><p>{group.subtitle}</p></div></header>{entries.length ? <div className="resident-hotline-list">{entries.map((entry) => <article key={entry.id}><div><strong>{entry.label}</strong><span>{entry.number}</span></div><a href={`tel:${entry.number.replace(/[^+\d]/g, '')}`} aria-label={`Call ${entry.label} at ${entry.number}`}><Phone size={16}/> Call</a></article>)}</div> : <p className="resident-hotline-empty">No published numbers for this group.</p>}</section>; })}</div>}
+    {loading ? <div className="resident-feed-empty"><RefreshCw className="workspace-spinning" size={22}/><strong>Loading hotlines</strong></div> : <div className="resident-hotline-grid">{groups.map((group) => { const entries = hotlineRows(group.entries, group.title); return <section className="resident-hotline-group" key={group.id}><header><span>{group.icon}</span><div><h2>{group.title}</h2><p>{group.subtitle}</p></div></header>{entries.length ? <div className="resident-hotline-list">{entries.map((entry) => <article key={entry.id}><div><strong>{entry.label}</strong><span>{entry.number}</span></div><a href={`tel:${entry.number.replace(/[^+\d]/g, '')}`} aria-label={`Call ${entry.label} at ${entry.number}`}><Phone size={16}/> Call</a></article>)}</div> : <p className="resident-hotline-empty">No published numbers for this group.</p>}</section>; })}
+      <section className="resident-hotline-group resident-hotline-barangay-group"><header><span><Users size={18}/></span><div><h2>{activeBarangay ? `Barangay ${activeBarangay.barangay_name}` : 'Barangay emergency hotline'}</h2><p>Local response contacts</p></div><label className="resident-hotline-barangay-select"><select aria-label="Choose a barangay with published hotlines" value={activeBarangay?.barangay_name || ''} onChange={(event) => setSelectedBarangay(event.target.value)} disabled={!barangayGroups.length}><option value="" disabled>Select barangay</option>{barangayGroups.map((group) => <option key={group.barangay_name} value={group.barangay_name}>{group.barangay_name}</option>)}</select><ChevronDown size={15}/></label></header>
+        {activeBarangay ? (() => { const entries = hotlineRows(activeBarangay.entries || [], activeBarangay.barangay_name); return entries.length ? <div className="resident-hotline-list">{entries.map((entry) => <article key={entry.id}><div><strong>{entry.label}</strong><span>{entry.number}</span></div><a href={`tel:${entry.number.replace(/[^+\d]/g, '')}`} aria-label={`Call ${entry.label} at ${entry.number}`}><Phone size={16}/> Call</a></article>)}</div> : <p className="resident-hotline-empty">No published numbers for this barangay.</p>; })() : <p className="resident-hotline-empty">No barangays have published hotline numbers yet.</p>}
+      </section>
+    </div>}
     <div className="resident-hotline-footer"><span>Contact numbers are managed by MDRRMO and verified barangay teams.</span><Link to="/resident-report">Submit an incident report <ArrowRight size={14}/></Link></div>
   </main>;
 }

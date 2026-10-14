@@ -222,7 +222,7 @@ export default function UserSettingsModal({ theme, onThemeChange, onClose, onSig
           {isResident && <section className="user-settings-section">
             <div className="user-settings-section-heading"><div><h3>Barangay</h3><p>Choose your barangay to personalize local updates and services.</p></div><MapPin size={18} /></div>
             <form className="user-settings-form" onSubmit={(event) => void saveResidentBarangay(event)}>
-              <label>Your barangay<select required value={residentBarangay} onChange={(event) => setResidentBarangay(event.target.value)} disabled={loadingBarangays || residentBarangays.length === 0}>
+              <label className="user-settings-barangay-select">Your barangay<select required value={residentBarangay} onChange={(event) => setResidentBarangay(event.target.value)} disabled={loadingBarangays || residentBarangays.length === 0}>
                 <option value="">{loadingBarangays ? 'Loading verified barangays…' : 'Select your barangay'}</option>
                 {user?.barangay_name && !residentBarangays.some((barangay) => barangay.name === user.barangay_name) && <option value={user.barangay_name}>{user.barangay_name} · current</option>}
                 {residentBarangays.map((barangay) => <option key={barangay.id} value={barangay.name}>{barangay.name}</option>)}
