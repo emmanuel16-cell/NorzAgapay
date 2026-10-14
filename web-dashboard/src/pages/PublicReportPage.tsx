@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { LocateFixed, MapPin, Phone, Siren, Upload, X } from 'lucide-react';
 import { MapContainer, Marker, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import PublicHeader from '../components/PublicHeader';
 import { reportAPI } from '../lib/api';
 import { INCIDENT_TYPE_OPTIONS } from '../lib/incidentClassification';
@@ -204,6 +204,8 @@ export default function PublicReportPage() {
       setBusy(false);
     }
   };
+
+  if (user?.role === 'resident') return <Navigate to={`/resident-new-report?type=${reportType}`} replace />;
 
   return (
     <div className="public-report-page">

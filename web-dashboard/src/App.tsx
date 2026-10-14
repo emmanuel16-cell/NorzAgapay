@@ -18,6 +18,7 @@ import AnalyticsPage from './pages/AnalyticsPage';
 import ReportsPage from './pages/ReportsPage';
 import ResidentReportsPage from './pages/ResidentReportsPage';
 import { ResidentAlertsPage, ResidentEvacuationPage, ResidentHomePage, ResidentHotlinesPage, ResidentReportHubPage } from './pages/ResidentPortalPages';
+import ResidentIncidentReportPage from './pages/ResidentIncidentReportPage';
 import ResponderWorkspacePage from './pages/ResponderWorkspacePage';
 import BarangayStaffWorkspacePage from './pages/BarangayStaffWorkspacePage';
 import MunicipalityBoundaryPage from './pages/MunicipalityBoundaryPage';
@@ -109,6 +110,7 @@ function AppRoutes() {
         <Route path="resident-home" element={<RoleAccess roles={['resident']}><ResidentHomePage /></RoleAccess>} />
         <Route path="resident-alerts" element={<RoleAccess roles={['resident']}><ResidentAlertsPage /></RoleAccess>} />
         <Route path="resident-report" element={<RoleAccess roles={['resident']}><ResidentReportHubPage /></RoleAccess>} />
+        <Route path="resident-new-report" element={<RoleAccess roles={['resident']}><ResidentIncidentReportPage /></RoleAccess>} />
         <Route path="resident-evacuation" element={<RoleAccess roles={['resident']}><ResidentEvacuationPage /></RoleAccess>} />
         <Route path="resident-hotlines" element={<RoleAccess roles={['resident']}><ResidentHotlinesPage /></RoleAccess>} />
         <Route path="my-responses" element={<RoleAccess roles={['responder']} allowBarangayRoles={['responder']}><ResponderWorkspacePage /></RoleAccess>} />
