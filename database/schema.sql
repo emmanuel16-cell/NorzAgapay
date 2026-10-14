@@ -1225,7 +1225,8 @@ CREATE TABLE IF NOT EXISTS barangay_users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   barangay_id UUID REFERENCES barangays(id) ON DELETE CASCADE,
   full_name TEXT NOT NULL DEFAULT '',
-  email TEXT UNIQUE NOT NULL DEFAULT '',
+  email TEXT UNIQUE,
+  username TEXT,
   phone VARCHAR(15),
   password_hash TEXT NOT NULL DEFAULT '',
   role barangay_role NOT NULL DEFAULT 'staff',
@@ -1238,6 +1239,7 @@ CREATE TABLE IF NOT EXISTS barangay_users (
 ALTER TABLE barangay_users ADD COLUMN IF NOT EXISTS barangay_id UUID REFERENCES barangays(id) ON DELETE CASCADE;
 ALTER TABLE barangay_users ADD COLUMN IF NOT EXISTS full_name TEXT NOT NULL DEFAULT '';
 ALTER TABLE barangay_users ADD COLUMN IF NOT EXISTS email TEXT;
+ALTER TABLE barangay_users ADD COLUMN IF NOT EXISTS username TEXT;
 ALTER TABLE barangay_users ADD COLUMN IF NOT EXISTS phone VARCHAR(15);
 ALTER TABLE barangay_users ADD COLUMN IF NOT EXISTS password_hash TEXT NOT NULL DEFAULT '';
 ALTER TABLE barangay_users ADD COLUMN IF NOT EXISTS role barangay_role NOT NULL DEFAULT 'staff';
@@ -1245,8 +1247,12 @@ ALTER TABLE barangay_users ADD COLUMN IF NOT EXISTS added_by UUID REFERENCES bar
 ALTER TABLE barangay_users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true;
 ALTER TABLE barangay_users ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now();
 
+ALTER TABLE barangay_users ALTER COLUMN email DROP NOT NULL;
+ALTER TABLE barangay_users ALTER COLUMN email DROP DEFAULT;
+
 CREATE INDEX IF NOT EXISTS idx_barangay_users_barangay_id ON barangay_users(barangay_id);
 CREATE INDEX IF NOT EXISTS idx_barangay_users_email ON barangay_users(email);
+CREATE UNIQUE INDEX IF NOT EXISTS barangay_users_username_lower_unique_idx ON barangay_users (lower(username)) WHERE username IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_barangay_users_role ON barangay_users(role);
 
 -- ============================================

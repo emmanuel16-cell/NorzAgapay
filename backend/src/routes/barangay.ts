@@ -687,25 +687,29 @@ router.post('/register', (_req: Request, res: Response): void => {
 
 router.post('/login', async (req: Request, res: Response): Promise<void> => {
   try {
-    const email = typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+    const identifier = typeof req.body.identifier === 'string'
+      ? req.body.identifier.trim().toLowerCase()
+      : typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+    const isEmail = z.string().email().safeParse(identifier).success;
+    const isUsername = /^[a-z0-9._-]{3,32}$/.test(identifier);
     const { password } = req.body;
-    if (!z.string().email().safeParse(email).success || !password) {
-      res.status(400).json({ error: 'Email and password required' });
+    if ((!isEmail && !isUsername) || !password) {
+      res.status(400).json({ error: 'A valid username or email and password are required.' });
       return;
     }
 
     // ── Path A: Check active barangay accounts ──
-    const { data: user } = await supabaseAdmin
+    let accountLookup = supabaseAdmin
       .from('barangay_users')
-      .select('id, full_name, email, phone, role, barangay_id, password_hash, is_active, position_designation')
-      .eq('email', email)
-      .maybeSingle();
+      .select('id, full_name, username, email, phone, role, barangay_id, password_hash, is_active, position_designation');
+    accountLookup = isEmail ? accountLookup.eq('email', identifier) : accountLookup.eq('username', identifier);
+    const { data: user } = await accountLookup.maybeSingle();
 
     if (user) {
       const role = normalizeBarangayRole(user.role);
       const valid = await bcrypt.compare(password, user.password_hash);
       if (!valid) {
-        res.status(401).json({ error: 'Invalid email or password' });
+        res.status(401).json({ error: 'Invalid username, email, or password.' });
         return;
       }
 
@@ -744,6 +748,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
         user: {
           id: user.id,
           full_name: user.full_name,
+          username: user.username,
           email: user.email,
           phone: user.phone,
           role,
@@ -761,12 +766,12 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
     }
 
     // ── Path B: Legacy pending dispatcher accounts ──
-    const pendingRecord = await DispatcherVerificationService.findByEmail(email);
+    const pendingRecord = isEmail ? await DispatcherVerificationService.findByEmail(identifier) : null;
 
     if (pendingRecord && pendingRecord._password_hash) {
       const valid = await bcrypt.compare(password, pendingRecord._password_hash);
       if (!valid) {
-        res.status(401).json({ error: 'Invalid email or password' });
+        res.status(401).json({ error: 'Invalid username, email, or password.' });
         return;
       }
 
@@ -810,7 +815,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    res.status(401).json({ error: 'Invalid email or password' });
+    res.status(401).json({ error: 'Invalid username, email, or password.' });
   } catch (err) {
     console.error('Barangay login error:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -826,7 +831,7 @@ router.get('/me', authenticateBarangay, async (req: any, res: Response) => {
     // First try barangay_users (approved barangay accounts)
     const { data: user } = await supabaseAdmin
       .from('barangay_users')
-      .select('id, full_name, email, phone, role, barangay_id, position_designation, is_active, created_at')
+      .select('id, full_name, username, email, phone, role, barangay_id, position_designation, is_active, created_at')
       .eq('id', userId)
       .maybeSingle();
 
@@ -1388,7 +1393,7 @@ router.get('/team', authenticateBarangay, async (req: any, res: Response) => {
   try {
     let query = supabaseAdmin
       .from('barangay_users')
-      .select('id, full_name, email, phone, role, is_active, created_at, added_by')
+      .select('id, full_name, username, email, phone, role, is_active, created_at, added_by')
       .eq('barangay_id', req.barangayUser.barangayId)
       .order('role', { ascending: true });
 
@@ -1459,7 +1464,7 @@ router.get('/team/crew-roster', authenticateBarangay, requireRole(['responder'])
 
 const addMemberSchema = z.object({
   full_name: z.string().min(2),
-  email: z.string().trim().email().transform((value) => value.toLowerCase()),
+  username: z.string().trim().min(3).max(32).regex(/^[A-Za-z0-9._-]+$/).transform((value) => value.toLowerCase()),
   password: z.string().min(8),
   phone: z.string().optional(),
   role: z.enum(['dispatcher', 'responder', 'staff']),
@@ -1494,7 +1499,8 @@ router.post('/team', authenticateBarangay, requireRole(['admin']), async (req: a
       .from('barangay_users')
       .insert({
         full_name: body.full_name,
-        email: body.email,
+        username: body.username,
+        email: null,
         phone: body.phone || null,
         password_hash,
         barangay_id: req.barangayUser.barangayId,
@@ -1502,12 +1508,12 @@ router.post('/team', authenticateBarangay, requireRole(['admin']), async (req: a
         added_by: req.barangayUser.userId,
         is_active: true,
       })
-      .select('id, full_name, email, phone, role, barangay_id, is_active, created_at')
+      .select('id, full_name, username, email, phone, role, barangay_id, is_active, created_at')
       .single();
 
     if (error) {
       if (error.code === '23505') {
-        res.status(409).json({ error: 'Email already registered' });
+        res.status(409).json({ error: 'That username is already in use.' });
         return;
       }
       throw error;
@@ -1532,7 +1538,7 @@ router.patch('/team/:id', authenticateBarangay, requireRole(['admin']), async (r
   try {
     const schema = z.object({
       full_name: z.string().trim().min(2).max(120),
-      email: z.string().trim().email(),
+      username: z.string().trim().min(3).max(32).regex(/^[A-Za-z0-9._-]+$/).transform((value) => value.toLowerCase()),
       phone: z.string().trim().max(20).optional().nullable(),
       role: z.enum(['dispatcher', 'responder', 'staff']),
       password: z.string().min(8).optional().or(z.literal('')),
@@ -1561,7 +1567,7 @@ router.patch('/team/:id', authenticateBarangay, requireRole(['admin']), async (r
     }
     const update: Record<string, unknown> = {
       full_name: parsed.data.full_name,
-      email: parsed.data.email.toLowerCase(),
+      username: parsed.data.username,
       phone: parsed.data.phone?.trim() || null,
       role: parsed.data.role,
     };
@@ -1572,9 +1578,9 @@ router.patch('/team/:id', authenticateBarangay, requireRole(['admin']), async (r
       .eq('id', req.params.id)
       .eq('barangay_id', req.barangayUser.barangayId)
       .neq('role', 'admin')
-      .select('id, full_name, email, phone, role, barangay_id, is_active, created_at, added_by')
+      .select('id, full_name, username, email, phone, role, barangay_id, is_active, created_at, added_by')
       .maybeSingle();
-    if (error?.code === '23505') { res.status(409).json({ error: 'Email already registered.' }); return; }
+    if (error?.code === '23505') { res.status(409).json({ error: 'That username is already in use.' }); return; }
     if (error) throw error;
     if (!data) { res.status(404).json({ error: 'Team member not found.' }); return; }
     if (currentMember.role === 'dispatcher' && parsed.data.role !== 'dispatcher') {

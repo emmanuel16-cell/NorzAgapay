@@ -219,13 +219,13 @@ export default function LoginPage() {
             </select>
           </div>
           <div className="form-group">
-            <label className="form-label" htmlFor="login-email">{loginAccountKind === 'resident' ? 'Username or mobile number' : loginAccountKind === 'mdrrmo' ? 'Username or email' : loginAccountKind === 'auto' ? 'Email, username, or mobile number' : 'Email Address'}</label>
+            <label className="form-label" htmlFor="login-email">{loginAccountKind === 'resident' ? 'Username or mobile number' : loginAccountKind === 'mdrrmo' ? 'Username or email' : loginAccountKind === 'auto' ? 'Email, username, or mobile number' : 'Username or email'}</label>
             <input
               id="login-email"
-              type={loginAccountKind === 'barangay' ? 'email' : 'text'}
-              autoComplete={loginAccountKind === 'barangay' ? 'email' : 'username'}
+              type="text"
+              autoComplete="username"
               className="form-input"
-              placeholder={loginAccountKind === 'resident' ? 'username or 09XXXXXXXXX' : loginAccountKind === 'auto' ? 'email, username, or 09XXXXXXXXX' : loginAccountKind === 'mdrrmo' ? 'username or admin@mdrrmo.gov.ph' : 'admin@barangay.gov.ph'}
+              placeholder={loginAccountKind === 'resident' ? 'username or 09XXXXXXXXX' : loginAccountKind === 'auto' ? 'email, username, or 09XXXXXXXXX' : loginAccountKind === 'mdrrmo' ? 'username or admin@mdrrmo.gov.ph' : 'username or email'}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required

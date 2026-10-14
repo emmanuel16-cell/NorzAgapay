@@ -41,9 +41,9 @@ router.get('/accounts', debugOnly, async (req: Request, res: Response) => {
       }
       const { data, error } = await supabaseAdmin
         .from('barangay_users')
-        .select('id, full_name, email, role, barangay_id, is_active, barangays!barangay_id(name)')
+        .select('id, full_name, username, email, phone, role, barangay_id, is_active, barangays!barangay_id(name)')
         .eq('is_active', true)
-        .in('role', ['admin', 'dispatcher', 'responder'])
+        .in('role', ['admin', 'dispatcher', 'responder', 'staff'])
         .in('barangay_id', verifiedBarangayIds)
         .order('full_name');
       if (error) throw error;
@@ -132,8 +132,8 @@ router.post('/quick-login', debugOnly, async (req: Request, res: Response) => {
       const verifiedBarangayIds = await getVerifiedBarangayIds();
       const { data: user, error } = await supabaseAdmin
         .from('barangay_users')
-        .select('id, full_name, email, phone, role, barangay_id, is_active')
-        .eq('id', accountId).eq('is_active', true).in('role', ['admin', 'dispatcher', 'responder']).single();
+        .select('id, full_name, username, email, phone, role, barangay_id, is_active')
+        .eq('id', accountId).eq('is_active', true).in('role', ['admin', 'dispatcher', 'responder', 'staff']).single();
       if (error || !user) {
         res.status(404).json({ error: 'Active account not found' });
         return;
