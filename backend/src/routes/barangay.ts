@@ -675,6 +675,20 @@ router.post('/verify-register-otp', async (req: Request, res: Response): Promise
       return;
     }
     const email = typeof record.email === 'string' ? record.email : '';
+    const recordDeliveryMethod = record.deliveryMethod;
+    if (recordDeliveryMethod !== 'sms' && recordDeliveryMethod !== 'email') {
+      res.status(400).json({ error: 'Registration verification details are incomplete. Please register again.' });
+      return;
+    }
+    if (recordDeliveryMethod !== deliveryMethod) {
+      res.status(400).json({ error: 'The verification channel does not match this registration. Request a new code.' });
+      return;
+    }
+    const deliveryAddress = recordDeliveryMethod === 'sms' ? record.contactNumber : email;
+    if (!deliveryAddress) {
+      res.status(400).json({ error: `The ${recordDeliveryMethod === 'sms' ? 'mobile number' : 'email address'} for this registration is missing. Please register again.` });
+      return;
+    }
     if (await isUsernameTaken(record.username)) {
       await deleteOtp(otpKey);
       res.status(409).json({ error: 'That username was just claimed. Request a new code with another username.' });
@@ -720,13 +734,13 @@ router.post('/verify-register-otp', async (req: Request, res: Response): Promise
       return;
     }
 
-    const passwordSent = record.deliveryMethod === 'sms'
-      ? await smsService.sendTemporaryPasswordSms(record.contactNumber, temporaryPassword)
-      : await emailService.sendTemporaryPasswordEmail(email, temporaryPassword, record.fullName, 'barangay');
+    const passwordSent = recordDeliveryMethod === 'sms'
+      ? await smsService.sendTemporaryPasswordSms(deliveryAddress, temporaryPassword)
+      : await emailService.sendTemporaryPasswordEmail(deliveryAddress, temporaryPassword, record.fullName, 'barangay');
     if (!passwordSent) {
       await supabaseAdmin.from('barangay_users').delete().eq('id', user.id);
       await deleteOtp(otpKey);
-      res.status(503).json({ error: `The temporary password could not be sent by ${record.deliveryMethod}. Request a new verification code to try again.` });
+      res.status(503).json({ error: `The temporary password could not be sent by ${recordDeliveryMethod}. Request a new verification code to try again.` });
       return;
     }
     await deleteOtp(otpKey);
@@ -737,7 +751,7 @@ router.post('/verify-register-otp', async (req: Request, res: Response): Promise
     );
     res.status(201).json({
       success: true,
-      message: `${record.deliveryMethod === 'sms' ? 'Mobile number' : 'Email'} verified. Your temporary password was sent by ${record.deliveryMethod}.`,
+      message: `${recordDeliveryMethod === 'sms' ? 'Mobile number' : 'Email'} verified. Your temporary password was sent by ${recordDeliveryMethod}.`,
       temporaryPassword,
       user: { ...user, barangay_name: barangay.name, municipality: barangay.municipality, coordination_verified: false, verification_status: 'pending_document', coordination_prompt_pending: false },
       token,

@@ -106,9 +106,12 @@ export const deleteBarangayResponderGpsLocation = (userId: string) =>
 
 export interface ResidentOtpRecord {
   otp: string;
+  accountId?: string;
   fullName?: string;
   username?: string;
+  email?: string;
   contactNumber?: string;
+  destination?: string;
   failedAttempts?: number;
   barangayName?: string;
   barangayId?: string;
