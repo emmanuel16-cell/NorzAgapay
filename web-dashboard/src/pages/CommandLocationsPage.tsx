@@ -29,7 +29,7 @@ function MapSizeAndFocus({ point }: { point: [number, number] }) {
 export default function CommandLocationsPage() {
   const { user } = useAuth();
   const isBarangay = user?.account_kind === 'barangay';
-  const canEdit = user?.role === 'admin' || user?.role === 'master_admin';
+  const canEdit = user?.role === 'admin' || user?.role === 'logistics' || user?.role === 'master_admin';
   const [office, setOffice] = useState<LocationPin | null>(null);
   const [barangay, setBarangay] = useState<LocationPin | null>(null);
   const [barangays, setBarangays] = useState<LocationPin[]>([]);

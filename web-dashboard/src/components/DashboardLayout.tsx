@@ -148,8 +148,10 @@ function navigationForRole(role?: string, accountKind?: string, isMasterAdmin = 
     ];
   }
   if (isMasterAdmin) return navItems.filter((item) => !['/my-reports', '/my-responses', '/barangay-workspace'].includes(item.path || ''));
-  if (role === 'admin') return navItems.filter((item) => ['Operations', '/locations', '/officers', 'Administration', '/verification/barangay', '/users', '/alert-broadcasts', '/analytics'].includes(item.path || item.label));
-  if (role === 'logistics') return navItems.filter((item) => ['Operations', '/municipality-boundary', '/respond-units', '/officers'].includes(item.path || item.label));
+  if (role === 'admin' || role === 'logistics') return navItems.filter((item) => [
+    'Operations', '/municipality-boundary', '/respond-units', '/officers', '/locations',
+    'Administration', '/verification/barangay', '/users', '/alert-broadcasts', '/analytics',
+  ].includes(item.path || item.label));
   if (role === 'dispatcher') return navItems.filter((item) => ['Incident Monitoring', '/command-center', '/reports', '/requests', 'Operations', '/locations', '/respond-units'].includes(item.path || item.label));
   return [];
 }

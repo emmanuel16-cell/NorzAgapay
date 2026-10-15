@@ -199,7 +199,7 @@ router.get('/', async (_req: Request, res: Response) => {
 });
 
 // MDRRMO post manager data.
-router.get('/mdrrmo', authenticate, authorize('admin', 'master_admin', 'responder'), async (_req: AuthRequest, res: Response) => {
+router.get('/mdrrmo', authenticate, authorize('admin', 'logistics', 'master_admin', 'responder'), async (_req: AuthRequest, res: Response) => {
   try {
     const { data, error } = await supabaseAdmin
       .from('public_broadcasts')
@@ -217,7 +217,7 @@ router.get('/mdrrmo', authenticate, authorize('admin', 'master_admin', 'responde
   }
 });
 
-router.post('/mdrrmo', authenticate, authorize('admin', 'master_admin'), upload.array('media'), async (req: AuthRequest, res: Response) => {
+router.post('/mdrrmo', authenticate, authorize('admin', 'logistics', 'master_admin'), upload.array('media'), async (req: AuthRequest, res: Response) => {
   let storagePaths: string[] = [];
   try {
     const category = String(req.body.category || 'safety_advisory');
@@ -263,7 +263,7 @@ router.post('/mdrrmo', authenticate, authorize('admin', 'master_admin'), upload.
   }
 });
 
-router.patch('/mdrrmo/:id/pin', authenticate, authorize('admin', 'master_admin'), async (req: AuthRequest, res: Response) => {
+router.patch('/mdrrmo/:id/pin', authenticate, authorize('admin', 'logistics', 'master_admin'), async (req: AuthRequest, res: Response) => {
   if (typeof req.body?.is_pinned !== 'boolean') {
     res.status(400).json({ error: 'is_pinned must be a boolean.' });
     return;
@@ -291,7 +291,7 @@ router.patch('/mdrrmo/:id/pin', authenticate, authorize('admin', 'master_admin')
   }
 });
 
-router.patch('/mdrrmo/:id', authenticate, authorize('admin', 'master_admin'), upload.array('media'), async (req: AuthRequest, res: Response) => {
+router.patch('/mdrrmo/:id', authenticate, authorize('admin', 'logistics', 'master_admin'), upload.array('media'), async (req: AuthRequest, res: Response) => {
   let storagePaths: string[] = [];
   try {
     const category = String(req.body.category || '');
@@ -340,7 +340,7 @@ router.patch('/mdrrmo/:id', authenticate, authorize('admin', 'master_admin'), up
   }
 });
 
-router.delete('/mdrrmo/:id', authenticate, authorize('admin', 'master_admin'), async (req: AuthRequest, res: Response) => {
+router.delete('/mdrrmo/:id', authenticate, authorize('admin', 'logistics', 'master_admin'), async (req: AuthRequest, res: Response) => {
   try {
     const { data, error } = await supabaseAdmin
       .from('public_broadcasts')

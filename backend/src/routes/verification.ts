@@ -132,7 +132,7 @@ async function restoreUserById(userId: string) {
 router.get(
   '/pending',
   authenticate,
-  authorize('admin'),
+  authorize('admin', 'logistics'),
   async (req: AuthRequest, res: Response): Promise<void> => {
     try {
       const { data: pendingUsers, error: usersError } = await supabaseAdmin
@@ -184,7 +184,7 @@ router.get(
 router.get(
   '/archived',
   authenticate,
-  authorize('admin'),
+  authorize('admin', 'logistics'),
   async (req: AuthRequest, res: Response): Promise<void> => {
     try {
       const { data: archivedUsers, error: usersError } = await supabaseAdmin
@@ -236,7 +236,7 @@ router.get(
 router.post(
   '/bulk-approve',
   authenticate,
-  authorize('admin'),
+  authorize('admin', 'logistics'),
   async (req: AuthRequest, res: Response): Promise<void> => {
     try {
       const { userIds } = req.body;
@@ -268,7 +268,7 @@ router.post(
 router.post(
   '/bulk-reject',
   authenticate,
-  authorize('admin'),
+  authorize('admin', 'logistics'),
   async (req: AuthRequest, res: Response): Promise<void> => {
     try {
       const { userIds, reason } = req.body;
@@ -300,7 +300,7 @@ router.post(
 router.post(
   '/bulk-restore',
   authenticate,
-  authorize('admin'),
+  authorize('admin', 'logistics'),
   async (req: AuthRequest, res: Response): Promise<void> => {
     try {
       const { userIds } = req.body;
@@ -332,7 +332,7 @@ router.post(
 router.post(
   '/:userId/approve',
   authenticate,
-  authorize('admin'),
+  authorize('admin', 'logistics'),
   async (req: AuthRequest, res: Response): Promise<void> => {
     try {
       const { userId } = req.params;
@@ -355,7 +355,7 @@ router.post(
 router.post(
   '/:userId/reject',
   authenticate,
-  authorize('admin'),
+  authorize('admin', 'logistics'),
   async (req: AuthRequest, res: Response): Promise<void> => {
     try {
       const { userId } = req.params;
@@ -380,7 +380,7 @@ router.post(
 router.post(
   '/:userId/restore',
   authenticate,
-  authorize('admin'),
+  authorize('admin', 'logistics'),
   async (req: AuthRequest, res: Response): Promise<void> => {
     try {
       const { userId } = req.params;
@@ -402,7 +402,7 @@ router.post(
 router.get(
   ['/barangay-accounts/pending', '/dispatchers/pending'],
   authenticate,
-  authorize('admin'),
+  authorize('admin', 'logistics'),
   async (_req: AuthRequest, res: Response): Promise<void> => {
     try {
       const pending = await DispatcherVerificationService.getPending();
@@ -418,7 +418,7 @@ router.get(
 router.get(
   ['/barangay-accounts/archived', '/dispatchers/archived'],
   authenticate,
-  authorize('admin'),
+  authorize('admin', 'logistics'),
   async (_req: AuthRequest, res: Response): Promise<void> => {
     try {
       const archived = await DispatcherVerificationService.getArchived();
@@ -433,7 +433,7 @@ router.get(
 router.get(
   ['/barangay-accounts/approved', '/dispatchers/approved'],
   authenticate,
-  authorize('admin'),
+  authorize('admin', 'logistics'),
   async (_req: AuthRequest, res: Response): Promise<void> => {
     try {
       res.json({ approved_dispatchers: await DispatcherVerificationService.getApproved() });
@@ -448,7 +448,7 @@ router.get(
 router.post(
   ['/barangay-accounts/:id/approve', '/dispatchers/:id/approve'],
   authenticate,
-  authorize('admin'),
+  authorize('admin', 'logistics'),
   async (req: AuthRequest, res: Response): Promise<void> => {
     try {
       const { id } = req.params;
@@ -470,7 +470,7 @@ router.post(
 router.post(
   ['/barangay-accounts/:id/reject', '/dispatchers/:id/reject'],
   authenticate,
-  authorize('admin'),
+  authorize('admin', 'logistics'),
   async (req: AuthRequest, res: Response): Promise<void> => {
     try {
       const { id } = req.params;
@@ -491,7 +491,7 @@ router.post(
 router.post(
   ['/barangay-accounts/:id/request-correction', '/dispatchers/:id/request-correction'],
   authenticate,
-  authorize('admin'),
+  authorize('admin', 'logistics'),
   async (req: AuthRequest, res: Response): Promise<void> => {
     try {
       const { id } = req.params;
@@ -511,7 +511,7 @@ router.post(
 router.patch(
   ['/barangay-accounts/:id/active', '/dispatchers/:id/active'],
   authenticate,
-  authorize('admin'),
+  authorize('admin', 'logistics'),
   async (req: AuthRequest, res: Response): Promise<void> => {
     try {
       if (typeof req.body?.is_active !== 'boolean') {

@@ -243,7 +243,7 @@ router.get('/my-unit', authenticate, authorize('responder'), async (req: AuthReq
   }
 });
 
-router.get('/leader-accounts', authenticate, authorize('logistics', 'master_admin'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.get('/leader-accounts', authenticate, authorize('admin', 'logistics', 'master_admin'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const currentUnitId = typeof req.query.unit_id === 'string' ? req.query.unit_id : '';
     const [{ data: users, error: usersError }, { data: leaders, error: leadersError }, { data: officers, error: officersError }] = await Promise.all([
@@ -307,7 +307,7 @@ router.get('/', authenticate, authorize('logistics', 'admin', 'dispatcher', 'mas
   }
 });
 
-router.put('/:id/activation-today', authenticate, authorize('logistics', 'master_admin'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.put('/:id/activation-today', authenticate, authorize('admin', 'logistics', 'master_admin'), async (req: AuthRequest, res: Response): Promise<void> => {
   const parsed = z.object({ active: z.boolean() }).safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: 'Choose whether this unit should be active today.' }); return; }
   try {
@@ -325,7 +325,7 @@ router.put('/:id/activation-today', authenticate, authorize('logistics', 'master
   }
 });
 
-router.post('/activate-all-today', authenticate, authorize('logistics', 'master_admin'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/activate-all-today', authenticate, authorize('admin', 'logistics', 'master_admin'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { data, error } = await supabaseAdmin.rpc('emergency_activate_all_respond_units_today_v1', {
       p_activated_by: req.user!.userId,
@@ -337,7 +337,7 @@ router.post('/activate-all-today', authenticate, authorize('logistics', 'master_
   }
 });
 
-router.post('/', authenticate, authorize('logistics', 'master_admin'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/', authenticate, authorize('admin', 'logistics', 'master_admin'), async (req: AuthRequest, res: Response): Promise<void> => {
   const schema = z.object({
     unit_name: z.string().trim().min(2).max(100),
     specialization: z.string().trim().min(1).max(120).default('mixed'),
@@ -406,7 +406,7 @@ router.post('/', authenticate, authorize('logistics', 'master_admin'), async (re
   }
 });
 
-router.patch('/:id', authenticate, authorize('logistics', 'master_admin'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.patch('/:id', authenticate, authorize('admin', 'logistics', 'master_admin'), async (req: AuthRequest, res: Response): Promise<void> => {
   const parsed = z.object({
     unit_name: z.string().trim().min(2).max(100).optional(),
     specialization: z.string().trim().min(1).max(120).optional(),
@@ -431,7 +431,7 @@ router.patch('/:id', authenticate, authorize('logistics', 'master_admin'), async
   }
 });
 
-router.put('/:id/team-leader', authenticate, authorize('logistics', 'master_admin'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.put('/:id/team-leader', authenticate, authorize('admin', 'logistics', 'master_admin'), async (req: AuthRequest, res: Response): Promise<void> => {
   const parsed = z.object({ responder_user_id: z.string().uuid() }).safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: 'Choose an active responder account.' }); return; }
   try {
@@ -471,7 +471,7 @@ router.put('/:id/team-leader', authenticate, authorize('logistics', 'master_admi
   }
 });
 
-router.delete('/:id/team-leader', authenticate, authorize('logistics', 'master_admin'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.delete('/:id/team-leader', authenticate, authorize('admin', 'logistics', 'master_admin'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { error } = await supabaseAdmin.rpc('clear_respond_unit_team_leader_v1', {
       p_unit_id: req.params.id,
@@ -486,7 +486,7 @@ router.delete('/:id/team-leader', authenticate, authorize('logistics', 'master_a
 
 router.post('/:id/members', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const isStaff = req.user!.role === 'logistics' || req.user!.role === 'master_admin';
+    const isStaff = ['admin', 'logistics', 'master_admin'].includes(req.user!.role);
     const { data: leaderMembership, error: leaderError } = await supabaseAdmin
       .from('respond_unit_members')
       .select('id')
@@ -571,7 +571,7 @@ router.post('/:id/members', authenticate, async (req: AuthRequest, res: Response
   }
 });
 
-router.patch('/:id/members/:memberId', authenticate, authorize('logistics', 'master_admin'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.patch('/:id/members/:memberId', authenticate, authorize('admin', 'logistics', 'master_admin'), async (req: AuthRequest, res: Response): Promise<void> => {
   const parsed = z.object({
     name: z.string().trim().min(2).max(120).optional(),
     phone: z.string().trim().max(30).nullable().optional(),
@@ -610,7 +610,7 @@ router.patch('/:id/members/:memberId', authenticate, authorize('logistics', 'mas
   }
 });
 
-router.delete('/:id/members/:memberId', authenticate, authorize('logistics', 'master_admin'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.delete('/:id/members/:memberId', authenticate, authorize('admin', 'logistics', 'master_admin'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { data: member, error: memberError } = await supabaseAdmin
       .from('respond_unit_members')
@@ -631,7 +631,7 @@ router.delete('/:id/members/:memberId', authenticate, authorize('logistics', 'ma
   }
 });
 
-router.delete('/:id', authenticate, authorize('logistics', 'master_admin'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.delete('/:id', authenticate, authorize('admin', 'logistics', 'master_admin'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { error } = await supabaseAdmin.rpc('delete_empty_respond_unit_v1', {
       p_unit_id: req.params.id,

@@ -16,6 +16,7 @@ const roleLabel = (role: string) => role === 'logistics' ? 'Staff' : role.replac
 export default function UsersPage() {
   const { user } = useAuth();
   const isMasterAdmin = user?.role === 'master_admin';
+  const canCreateAccounts = user?.role === 'admin' || isMasterAdmin;
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [roleFilter, setRoleFilter] = useState('');
@@ -105,7 +106,7 @@ export default function UsersPage() {
               <option value="dispatcher">Dispatcher</option>
               <option value="responder">Responder</option>
             </select>
-            <button className="workspace-primary-action" type="button" onClick={() => setShowCreate(true)}><Plus size={16} /> Create account</button>
+            {canCreateAccounts && <button className="workspace-primary-action" type="button" onClick={() => setShowCreate(true)}><Plus size={16} /> Create account</button>}
             <button className="workspace-secondary-action" type="button" onClick={fetchUsers} disabled={loading}><RefreshCw size={16} className={loading ? 'workspace-spinning' : ''} /> Refresh</button>
           </div>
         </header>
@@ -165,7 +166,7 @@ export default function UsersPage() {
         </div>
       )}
 
-      {showCreate && (
+      {canCreateAccounts && showCreate && (
         <div className="modal-backdrop" onClick={() => setShowCreate(false)}>
           <form className="modal" onSubmit={handleCreate} onClick={event => event.stopPropagation()}>
             <div className="modal-header">

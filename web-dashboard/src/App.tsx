@@ -48,7 +48,7 @@ function landingPath(user: { role?: string; account_kind?: string; coordination_
   if (user?.role === 'resident') return '/resident-home';
   if (user?.role === 'responder') return '/my-responses';
   if (user?.role === 'admin') return '/users';
-  if (user?.role === 'logistics') return '/respond-units';
+  if (user?.role === 'logistics') return '/users';
   return '/command-center';
 }
 
@@ -151,17 +151,17 @@ function AppRoutes() {
         <Route path="barangay-board" element={<BarangayBoardRoute />} />
         <Route path="barangay-assistance" element={<BarangayAssistanceRoute />} />
         <Route path="barangay-analytics" element={<BarangayAccess roles={['admin']}><BarangayAnalyticsPage /></BarangayAccess>} />
-        <Route path="locations" element={<RoleAccess roles={['admin', 'dispatcher']}><CommandLocationsPage /></RoleAccess>} />
+        <Route path="locations" element={<RoleAccess roles={['admin', 'logistics', 'dispatcher']}><CommandLocationsPage /></RoleAccess>} />
         <Route path="requests" element={<RoleAccess roles={['dispatcher']}><ResourceRequestsPage /></RoleAccess>} />
-        <Route path="municipality-boundary" element={<RoleAccess roles={['logistics']}><MunicipalityBoundaryPage /></RoleAccess>} />
+        <Route path="municipality-boundary" element={<RoleAccess roles={['admin', 'logistics']}><MunicipalityBoundaryPage /></RoleAccess>} />
         <Route path="verification" element={<Navigate to="/verification/barangay" replace />} />
         <Route path="verification/officers" element={<Navigate to="/verification/barangay" replace />} />
-        <Route path="verification/barangay" element={<RoleAccess roles={['admin']}><VerificationPage category="barangay" /></RoleAccess>} />
-        <Route path="respond-units" element={<RoleAccess roles={['logistics', 'dispatcher', 'master_admin']}><RespondUnitsPage /></RoleAccess>} />
-        <Route path="users" element={<RoleAccess roles={['admin']}><UsersPage /></RoleAccess>} />
-        <Route path="alert-broadcasts" element={<RoleAccess roles={['admin']}><AlertBroadcastsPage /></RoleAccess>} />
+        <Route path="verification/barangay" element={<RoleAccess roles={['admin', 'logistics']}><VerificationPage category="barangay" /></RoleAccess>} />
+        <Route path="respond-units" element={<RoleAccess roles={['admin', 'logistics', 'dispatcher', 'master_admin']}><RespondUnitsPage /></RoleAccess>} />
+        <Route path="users" element={<RoleAccess roles={['admin', 'logistics']}><UsersPage /></RoleAccess>} />
+        <Route path="alert-broadcasts" element={<RoleAccess roles={['admin', 'logistics']}><AlertBroadcastsPage /></RoleAccess>} />
         <Route path="officers" element={<RoleAccess roles={['admin', 'logistics']}><OfficersPage /></RoleAccess>} />
-        <Route path="analytics" element={<RoleAccess roles={['admin']}><AnalyticsPage /></RoleAccess>} />
+        <Route path="analytics" element={<RoleAccess roles={['admin', 'logistics']}><AnalyticsPage /></RoleAccess>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

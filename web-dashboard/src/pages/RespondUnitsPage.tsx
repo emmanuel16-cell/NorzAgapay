@@ -80,12 +80,12 @@ const roleIcons: Record<CrewRole, typeof Radio> = {
 
 export default function RespondUnitsPage() {
   const { user, isMasterAdmin } = useAuth();
-  const canManageRoster = isMasterAdmin || user?.role === 'logistics';
+  const canManageRoster = isMasterAdmin || user?.role === 'admin' || user?.role === 'logistics';
   const canActivateUnits = canManageRoster;
   const isDispatcher = user?.role === 'dispatcher';
   const noLeaderAccountsMessage = isMasterAdmin
     ? 'No available active responder accounts. You can create this unit now and assign a Team Leader after a responder account is available.'
-    : 'No available active responder accounts. You can create this unit now; ask a Master Admin to create or activate a Responder, then assign the Team Leader.';
+    : 'No available active responder accounts. You can create this unit now; ask an administrator to create or activate a Responder, then assign the Team Leader.';
   const [units, setUnits] = useState<RespondUnit[]>([]);
   const [selectedId, setSelectedId] = useState('');
   const [leaderAccounts, setLeaderAccounts] = useState<ResponderAccount[]>([]);

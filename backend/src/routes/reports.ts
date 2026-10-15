@@ -20,7 +20,7 @@ async function fetchAllRows<T>(buildQuery: () => any): Promise<T[]> {
 }
 
 // GET /api/reports/overview — dashboard stats
-router.get('/overview', authenticate, authorize('admin', 'master_admin'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.get('/overview', authenticate, authorize('admin', 'logistics', 'master_admin'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const [
       { count: totalUsers },
@@ -52,7 +52,7 @@ router.get('/overview', authenticate, authorize('admin', 'master_admin'), async 
 });
 
 // GET /api/reports/incidents — incident analytics
-router.get('/incidents', authenticate, authorize('admin', 'master_admin'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.get('/incidents', authenticate, authorize('admin', 'logistics', 'master_admin'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const since = new Date();
     since.setMonth(since.getMonth() - 5, 1);
@@ -81,7 +81,7 @@ router.get('/incidents', authenticate, authorize('admin', 'master_admin'), async
 });
 
 // GET /api/reports/responders — current MDRRMO responder deployment history
-router.get('/responders', authenticate, authorize('admin', 'master_admin'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.get('/responders', authenticate, authorize('admin', 'logistics', 'master_admin'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { data: responders, error: respondersError } = await supabaseAdmin
       .from('users')

@@ -28,7 +28,7 @@ const responderSpecializations = [
 router.get(
   '/',
   authenticate,
-  authorize('admin', 'master_admin', 'responder'),
+  authorize('admin', 'logistics', 'master_admin', 'responder'),
   async (req: AuthRequest, res: Response): Promise<void> => {
     try {
       const user = req.user!;
@@ -44,7 +44,7 @@ router.get(
         .select('id, full_name, username, email, phone, role, unit_type, status, verified, latitude, longitude, last_seen, created_at')
         .order('created_at', { ascending: false });
 
-      if (user.role === 'admin') query = query.in('role', ['logistics', 'dispatcher', 'responder']);
+      if (user.role === 'admin' || user.role === 'logistics') query = query.in('role', ['logistics', 'dispatcher', 'responder']);
       if (role) query = query.eq('role', role as string);
       if (status) query = query.eq('status', status as string);
       if (verified !== undefined) query = query.eq('verified', verified === 'true');
@@ -345,7 +345,7 @@ router.get('/:id', authenticate, async (req: AuthRequest, res: Response): Promis
     const user = req.user!;
 
     // Non-admin can only view their own profile
-    if (!['admin', 'master_admin'].includes(user.role) && user.userId !== req.params.id) {
+    if (!['admin', 'logistics', 'master_admin'].includes(user.role) && user.userId !== req.params.id) {
       res.status(403).json({ error: 'Access denied.' });
       return;
     }
@@ -361,8 +361,8 @@ router.get('/:id', authenticate, async (req: AuthRequest, res: Response): Promis
       return;
     }
 
-    if (user.role === 'admin' && !['logistics', 'dispatcher', 'responder'].includes(data.role)) {
-      res.status(403).json({ error: 'Admins may only view logistics, dispatcher, and responder accounts.' });
+    if (['admin', 'logistics'].includes(user.role) && !['logistics', 'dispatcher', 'responder'].includes(data.role)) {
+      res.status(403).json({ error: 'MDRRMO admin and staff accounts may only view logistics, dispatcher, and responder accounts.' });
       return;
     }
 
@@ -408,7 +408,7 @@ router.get('/:id', authenticate, async (req: AuthRequest, res: Response): Promis
 });
 
 // ============================================
-// PATCH /api/users/:id — update user (admin)
+// PATCH /api/users/:id — update dashboard user (admin or logistics staff)
 // ============================================
 
 const updateUserSchema = z.object({
@@ -440,7 +440,7 @@ const updateUserSchema = z.object({
 router.patch(
   '/:id',
   authenticate,
-  authorize('admin', 'master_admin'),
+  authorize('admin', 'logistics', 'master_admin'),
   async (req: AuthRequest, res: Response): Promise<void> => {
     try {
       const parsed = updateUserSchema.safeParse(req.body);
@@ -470,7 +470,7 @@ router.patch(
       }
       if (req.user!.role !== 'master_admin') {
         if (!['logistics', 'dispatcher', 'responder'].includes(target.role)) {
-          res.status(403).json({ error: 'Admins may only manage logistics, dispatcher, and responder accounts.' });
+          res.status(403).json({ error: 'MDRRMO admin and staff accounts may only manage logistics, dispatcher, and responder accounts.' });
           return;
         }
       }

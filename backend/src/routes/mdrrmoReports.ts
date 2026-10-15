@@ -388,7 +388,7 @@ router.post('/:id/recall-barangay', authenticate, authorize('dispatcher', 'admin
   void changeBarangayAssignment(req, res, 'recall');
 });
 
-router.get('/command-locations', authenticate, authorize('dispatcher', 'admin'), async (_req: AuthRequest, res: Response): Promise<void> => {
+router.get('/command-locations', authenticate, authorize('dispatcher', 'admin', 'logistics'), async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
     const [{ data: office, error: officeError }, { data: barangays, error: barangaysError }] = await Promise.all([
       supabaseAdmin.from('mdrrmo_command_locations').select('*').eq('location_key', 'office').maybeSingle(),
@@ -407,7 +407,7 @@ router.get('/command-locations', authenticate, authorize('dispatcher', 'admin'),
   }
 });
 
-router.put('/command-locations/office', authenticate, authorize('admin'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.put('/command-locations/office', authenticate, authorize('admin', 'logistics'), async (req: AuthRequest, res: Response): Promise<void> => {
   const parsed = z.object({
     latitude: z.number().min(-90).max(90),
     longitude: z.number().min(-180).max(180),

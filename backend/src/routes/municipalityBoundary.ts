@@ -11,7 +11,7 @@ import {
 
 const router = Router();
 
-router.get('/history', authenticate, authorize('logistics'), async (_req: AuthRequest, res: Response): Promise<void> => {
+router.get('/history', authenticate, authorize('admin', 'logistics'), async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { data, error } = await supabaseAdmin
       .from('municipality_boundary_history')
@@ -38,7 +38,7 @@ const activateSchema = z.object({
   expectedUpdatedAt: z.string().nullable(),
 });
 
-router.post('/history/:revision/use', authenticate, authorize('logistics'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/history/:revision/use', authenticate, authorize('admin', 'logistics'), async (req: AuthRequest, res: Response): Promise<void> => {
   const selectedRevision = Number(req.params.revision);
   if (!Number.isSafeInteger(selectedRevision) || selectedRevision < 1) {
     res.status(400).json({ error: 'A valid boundary revision is required.' });
@@ -133,7 +133,7 @@ const editVersionSchema = z.object({
   expectedUpdatedAt: z.string().nullable(),
 });
 
-router.put('/history/:revision', authenticate, authorize('logistics'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.put('/history/:revision', authenticate, authorize('admin', 'logistics'), async (req: AuthRequest, res: Response): Promise<void> => {
   const selectedRevision = Number(req.params.revision);
   if (!Number.isSafeInteger(selectedRevision) || selectedRevision < 1) {
     res.status(400).json({ error: 'A valid boundary revision is required.' });
@@ -262,7 +262,7 @@ router.put('/history/:revision', authenticate, authorize('logistics'), async (re
   }
 });
 
-router.delete('/history/:revision', authenticate, authorize('logistics'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.delete('/history/:revision', authenticate, authorize('admin', 'logistics'), async (req: AuthRequest, res: Response): Promise<void> => {
   const revision = Number(req.params.revision);
   if (!Number.isSafeInteger(revision) || revision < 1) {
     res.status(400).json({ error: 'A valid boundary revision is required.' });
@@ -317,7 +317,7 @@ const updateSchema = z.object({
   expectedUpdatedAt: z.string().nullable(),
 });
 
-router.put('/', authenticate, authorize('logistics'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.put('/', authenticate, authorize('admin', 'logistics'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const body = updateSchema.parse(req.body);
     const geometry = normalizeBoundaryGeometry(body.geometry);
