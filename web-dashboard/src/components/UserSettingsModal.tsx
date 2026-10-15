@@ -1,10 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { FileText, KeyRound, LogOut, MailCheck, MapPin, Moon, Phone, Save, ScrollText, Settings, ShieldCheck, Sun, UserRound, Users, X } from 'lucide-react';
+import { FileText, KeyRound, LogOut, MailCheck, MapPin, Moon, Phone, Save, ScrollText, Settings, ShieldCheck, Sun, UserRound, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import PasswordInput from './PasswordInput';
 import BarangayAdministrationPage, { type BarangaySettingsSection } from '../pages/BarangayAdministrationPage';
-import BarangayTeamPage from '../pages/BarangayTeamPage';
 import { authAPI, barangayAPI, reportAPI } from '../lib/api';
 
 type UserSettingsModalProps = {
@@ -14,7 +13,7 @@ type UserSettingsModalProps = {
   onSignOut: () => void;
 };
 
-type SettingsSection = 'general' | 'profile' | 'security' | 'management' | BarangaySettingsSection;
+type SettingsSection = 'general' | 'profile' | 'security' | BarangaySettingsSection;
 
 const emptyPasswordForm = { otp: '', currentPassword: '', newPassword: '', confirmPassword: '' };
 const messageOf = (error: any, fallback: string) => error?.response?.data?.error || fallback;
@@ -195,7 +194,6 @@ export default function UserSettingsModal({ theme, onThemeChange, onClose, onSig
             <button type="button" className={activeSection === 'general' ? 'active' : ''} aria-current={activeSection === 'general' ? 'page' : undefined} onClick={() => setActiveSection('general')}><UserRound size={17} /> General</button>
             <button type="button" className={activeSection === 'profile' ? 'active' : ''} aria-current={activeSection === 'profile' ? 'page' : undefined} onClick={() => setActiveSection('profile')}><UserRound size={17} /> Profile</button>
             <button type="button" className={activeSection === 'security' ? 'active' : ''} aria-current={activeSection === 'security' ? 'page' : undefined} onClick={() => setActiveSection('security')}><KeyRound size={17} /> Change password</button>
-            {isBarangayAdmin && <button type="button" className={activeSection === 'management' ? 'active' : ''} aria-current={activeSection === 'management' ? 'page' : undefined} onClick={() => setActiveSection('management')}><Users size={17} /> Barangay Management</button>}
             {isBarangayAdmin && <button type="button" className={activeSection === 'account' ? 'active' : ''} aria-current={activeSection === 'account' ? 'page' : undefined} onClick={() => setActiveSection('account')}><FileText size={17} /> Account Request</button>}
             {canViewHotlines && <button type="button" className={activeSection === 'hotlines' ? 'active' : ''} aria-current={activeSection === 'hotlines' ? 'page' : undefined} onClick={() => setActiveSection('hotlines')}><Phone size={17} /> Barangay Hotline</button>}
             {isBarangayAdmin && <button type="button" className={activeSection === 'location' ? 'active' : ''} aria-current={activeSection === 'location' ? 'page' : undefined} onClick={() => setActiveSection('location')}><MapPin size={17} /> Command Location</button>}
@@ -268,7 +266,7 @@ export default function UserSettingsModal({ theme, onThemeChange, onClose, onSig
                 <div className="user-settings-form-actions"><button className="btn btn-primary" disabled={savingPassword}><KeyRound size={15} /> Update password</button><button type="button" className="workspace-secondary-action" disabled={savingPassword} onClick={() => { setPasswordOtpSent(false); setPasswordForm(emptyPasswordForm); }}>Cancel</button><button type="button" className="workspace-secondary-action" disabled={savingPassword} onClick={() => void sendPasswordCode()}>Send a new code</button></div>
               </form>}
             </section>
-          </div> : activeSection === 'management' ? <div className="user-settings-content user-settings-content-barangay"><BarangayTeamPage embedded /></div> : <div className="user-settings-content user-settings-content-barangay"><BarangayAdministrationPage embedded section={activeSection as BarangaySettingsSection} /></div>}
+          </div> : <div className="user-settings-content user-settings-content-barangay"><BarangayAdministrationPage embedded section={activeSection as BarangaySettingsSection} /></div>}
           </div>
         </div>
 
