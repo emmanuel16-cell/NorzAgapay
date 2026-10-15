@@ -22,6 +22,7 @@ import {
   Calendar,
   User,
   Play,
+  RefreshCw,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { broadcastAPI, socket } from '../lib/api';
@@ -1193,16 +1194,26 @@ export default function AlertBroadcastsPage() {
             </p>
           </div>
         </div>
-        <button
-          className="btn btn-primary alert-broadcast-create-button"
-          onClick={() => {
-            setEditPost(null);
-            setCreateOpen(true);
-          }}
-          style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 18px', fontWeight: 700 }}
-        >
-          <Plus size={16} /> Create Post
-        </button>
+        <div className="alert-broadcast-header-actions">
+          <button
+            className="btn btn-primary alert-broadcast-create-button"
+            type="button"
+            onClick={() => {
+              setEditPost(null);
+              setCreateOpen(true);
+            }}
+          >
+            <Plus size={16} /> Create Post
+          </button>
+          <button
+            className="btn btn-outline alert-broadcast-refresh-button"
+            type="button"
+            onClick={() => void loadPosts()}
+            disabled={isLoading}
+          >
+            <RefreshCw size={15} className={isLoading ? 'workspace-spinning' : ''} /> Refresh
+          </button>
+        </div>
       </div>
 
       <div className="page-content alert-broadcast-content">
@@ -1245,7 +1256,7 @@ export default function AlertBroadcastsPage() {
             )}
           </div>
 
-          {/* Category filters stay beside the feed on wide screens and move above it on mobile. */}
+          {/* Desktop sidebar; the same category filters become a horizontal bar on small screens. */}
           <aside className="alert-broadcast-categories" aria-label="Filter broadcasts by category">
               <div className="alert-broadcast-category-list">
                 {CATEGORY_SIDEBAR_ITEMS.map(item => {
