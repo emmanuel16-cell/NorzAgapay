@@ -25,7 +25,17 @@ type PublicHotlines = {
   mdrrmo: Array<{ label: string; phone: string; email?: string }>;
   barangays: HotlineGroup[];
 };
+type PublicHotlineRow = {
+  id: string;
+  label: string;
+  detail: string;
+  phone: string;
+};
 const emptyHotlines: PublicHotlines = { national: [], mdrrmo: [], barangays: [] };
+const localEmergencyHotlines = [
+  { id: 'pnp-norzagaray', label: 'Philippine National Police (PNP)', detail: 'Norzagaray Municipal Police Station', phone: '0998-598-5389' },
+  { id: 'bfp-norzagaray', label: 'Bureau of Fire Protection (BFP)', detail: 'Norzagaray Fire Station', phone: '0943-348-1854' },
+];
 const incidentPinIcon = L.divIcon({ className: 'public-incident-pin', html: '<span></span>', iconSize: [24, 24], iconAnchor: [12, 12] });
 const defaultMapCenter: [number, number] = [14.9133, 121.0436];
 const communityCategories = [
@@ -152,6 +162,32 @@ export default function PublicReportPage() {
     setMapPickerOpen(false);
   };
 
+  const publicHotlineRows: PublicHotlineRow[] = [
+    ...(hotlines.national || []).map((line, index) => ({
+      id: `national-${index}-${line.phone}`,
+      label: line.label,
+      detail: 'National emergency assistance',
+      phone: line.phone,
+    })),
+    ...(hotlines.mdrrmo || []).map((line, index) => ({
+      id: `mdrrmo-${index}-${line.phone}`,
+      label: line.label,
+      detail: 'Municipal disaster response',
+      phone: line.phone,
+    })),
+    ...localEmergencyHotlines,
+    ...(hotlines.barangays || []).flatMap((group, groupIndex) => group.entries.flatMap((line, lineIndex) => {
+      const phones = [line.phone, line.number, ...(line.numbers || [])].filter((phone): phone is string => Boolean(phone));
+      const label = line.label || line.name || line.purpose || 'Barangay emergency contact';
+      return phones.map((phone, phoneIndex) => ({
+        id: `barangay-${groupIndex}-${group.barangay_name}-${lineIndex}-${phoneIndex}-${phone}`,
+        label,
+        detail: `Brgy. ${group.barangay_name}`,
+        phone,
+      }));
+    })),
+  ];
+
   const submitReport = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setMessage('');
@@ -253,12 +289,12 @@ export default function PublicReportPage() {
           <aside className="public-hotlines-panel" aria-labelledby="public-hotlines-title">
             <div className="public-hotlines-heading"><span><Phone size={18} aria-hidden="true" /></span><div><h2 id="public-hotlines-title">Emergency hotlines</h2><p>Call directly if you need immediate assistance.</p></div></div>
             <div className="public-hotline-list">
-              {[...(hotlines.national || []), ...(hotlines.mdrrmo || [])].map((line, index) => <a key={`${line.phone}-${index}`} href={`tel:${line.phone}`}><span>{line.label}</span><strong>{line.phone}</strong></a>)}
-              {(hotlines.barangays || []).map((group) => group.entries.flatMap((line, index) => {
-                const phones = [line.phone, line.number, ...(line.numbers || [])].filter((phone): phone is string => Boolean(phone));
-                return phones.map((phone, numberIndex) => <a key={`${group.barangay_name}-${phone}-${index}-${numberIndex}`} href={`tel:${phone}`}><span>{line.label || line.name || line.purpose || group.barangay_name} · Brgy. {group.barangay_name}</span><strong>{phone}</strong></a>);
-              }))}
-              {hotlines.national.length === 0 && hotlines.mdrrmo.length === 0 && hotlines.barangays.length === 0 && <p className="public-hotlines-empty">Hotline information is not available right now.</p>}
+              {publicHotlineRows.map((line) => <a key={line.id} href={`tel:${line.phone.replace(/[^\d+]/g, '')}`} aria-label={`Call ${line.label}, ${line.phone}`}>
+                <span className="public-hotline-row-icon"><Phone size={16} aria-hidden="true" /></span>
+                <span className="public-hotline-row-copy"><strong>{line.label}</strong><small>{line.detail}</small></span>
+                <span className="public-hotline-row-action"><strong>{line.phone}</strong><small>Call</small></span>
+              </a>)}
+              {publicHotlineRows.length === 0 && <p className="public-hotlines-empty">Hotline information is not available right now.</p>}
             </div>
           </aside>
         </div>

@@ -3850,11 +3850,16 @@ tbody tr:last-child td { border-bottom: none; }
 .public-hotlines-heading > span { width: 38px; height: 38px; border-radius: 11px; color: #74d7ec; background: #123353; }
 .public-hotlines-heading h2 { font-size: 16px; }
 .public-hotlines-heading p { font-size: 11px; }
-.public-hotline-list { display: grid; max-height: 60vh; grid-template-columns: minmax(0, 1fr); gap: 7px; overflow: auto; overscroll-behavior: contain; }
-.public-hotline-list > a { display: flex; min-width: 0; min-height: 44px; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 10px; border: 1px solid #2c4568; border-radius: 8px; color: #e4edfb; background: #10213d; font-size: 11px; text-decoration: none; }
-.public-hotline-list > a:hover { border-color: #5276a5; background: #142a4b; }
-.public-hotline-list > a span { min-width: 0; overflow-wrap: anywhere; }
-.public-hotline-list > a strong { flex: 0 0 auto; color: #75d7ec; font-size: 12px; }
+.public-hotline-list { display: grid; max-height: 60vh; grid-template-columns: minmax(0, 1fr); gap: 8px; overflow: auto; overscroll-behavior: contain; padding-right: 2px; }
+.public-hotline-list > a { display: grid; min-width: 0; min-height: 66px; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 10px; border: 1px solid #2c4568; border-radius: 11px; color: #e4edfb; background: linear-gradient(120deg, #10213d, #122747); text-decoration: none; transition: border-color .16s ease, background .16s ease, transform .16s ease; }
+.public-hotline-list > a:hover { transform: translateY(-1px); border-color: #2aa9c8; background: linear-gradient(120deg, #142a4b, #163052); }
+.public-hotline-row-icon { display: grid; width: 36px; height: 36px; place-items: center; border-radius: 10px; color: #31d3ed; background: #123353; }
+.public-hotline-row-copy { display: grid; min-width: 0; gap: 3px; }
+.public-hotline-row-copy strong { color: #edf5ff; font-size: 11px; line-height: 1.3; overflow-wrap: anywhere; }
+.public-hotline-row-copy small { color: #9db7df; font-size: 10px; line-height: 1.3; overflow-wrap: anywhere; }
+.public-hotline-row-action { display: grid; justify-items: end; gap: 4px; }
+.public-hotline-row-action strong { color: #75d7ec; font-size: 11px; line-height: 1.2; white-space: nowrap; }
+.public-hotline-row-action small { color: #8edff0; font-size: 9px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
 .public-hotline-email { display: inline-block; margin-top: 12px; color: #75d7ec; font-size: 12px; overflow-wrap: anywhere; }
 .public-hotlines-empty { margin: 2px 0; color: #a9bddb; font-size: 12px; line-height: 1.5; }
 .public-login-main .debug-dropdown { max-height: min(60vh, 520px); overflow: auto; }
