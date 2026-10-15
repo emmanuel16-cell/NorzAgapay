@@ -31,6 +31,7 @@ type PublicHotlineRow = {
   detail: string;
   phone: string;
 };
+type PublicBarangayOption = { id: string; name: string };
 const emptyHotlines: PublicHotlines = { national: [], mdrrmo: [], barangays: [] };
 const localEmergencyHotlines = [
   { id: 'pnp-norzagaray', label: 'Philippine National Police (PNP)', detail: 'Norzagaray Municipal Police Station', phone: '0998-598-5389' },
@@ -70,6 +71,7 @@ export default function PublicReportPage() {
   const [searchParams] = useSearchParams();
   const reportType = searchParams.get('type') === 'community' ? 'community' : 'emergency';
   const [hotlines, setHotlines] = useState<PublicHotlines>(emptyHotlines);
+  const [publicBarangays, setPublicBarangays] = useState<PublicBarangayOption[]>([]);
   const [selectedHotlineBarangay, setSelectedHotlineBarangay] = useState('');
   const [guestPhone, setGuestPhone] = useState('');
   const [incidentCategory, setIncidentCategory] = useState('not_sure');
@@ -108,6 +110,17 @@ export default function PublicReportPage() {
         });
       })
       .catch(() => setHotlines({ ...emptyHotlines, national: [{ label: 'National Emergency Hotline', phone: '911' }] }));
+  }, []);
+
+  useEffect(() => {
+    reportAPI.verifiedBarangays()
+      .then((response) => {
+        const rows = Array.isArray(response.data) ? response.data : [];
+        setPublicBarangays(rows
+          .filter((barangay: any) => typeof barangay?.name === 'string' && barangay.name.trim())
+          .map((barangay: any) => ({ id: String(barangay.id || barangay.name), name: barangay.name.trim() })));
+      })
+      .catch(() => setPublicBarangays([]));
   }, []);
 
   const requestLocation = () => {
@@ -178,20 +191,27 @@ export default function PublicReportPage() {
     })),
     ...localEmergencyHotlines,
   ];
-  const publicBarangayHotlineGroups = (hotlines.barangays || []).filter((group) => (group.entries || []).some((line) =>
-    [line.phone, line.number, ...(line.numbers || [])].some((phone) => Boolean(phone))));
-  const selectedBarangayHotlineGroup = publicBarangayHotlineGroups.find((group) => group.barangay_name === selectedHotlineBarangay)
-    || publicBarangayHotlineGroups[0];
+  const publicBarangayHotlineGroups = hotlines.barangays || [];
+  const publicBarangayNames = [...new Set([
+    ...publicBarangays.map((barangay) => barangay.name),
+    ...publicBarangayHotlineGroups.map((group) => group.barangay_name).filter(Boolean),
+  ])].sort((first, second) => first.localeCompare(second));
+  const firstBarangayWithHotlines = publicBarangayNames.find((name) => publicBarangayHotlineGroups.some((group) =>
+    group.barangay_name === name && (group.entries || []).some((line) => [line.phone, line.number, ...(line.numbers || [])].some(Boolean))));
+  const selectedBarangayName = publicBarangayNames.includes(selectedHotlineBarangay)
+    ? selectedHotlineBarangay
+    : firstBarangayWithHotlines || publicBarangayNames[0] || '';
+  const selectedBarangayHotlineGroup = publicBarangayHotlineGroups.find((group) => group.barangay_name === selectedBarangayName);
   const barangayHotlineRows: PublicHotlineRow[] = (selectedBarangayHotlineGroup?.entries || []).flatMap((line, lineIndex) => {
-      const phones = [line.phone, line.number, ...(line.numbers || [])].filter((phone): phone is string => Boolean(phone));
-      const label = line.label || line.name || line.purpose || 'Barangay emergency contact';
-      return phones.map((phone, phoneIndex) => ({
-        id: `barangay-${selectedBarangayHotlineGroup?.barangay_name}-${lineIndex}-${phoneIndex}-${phone}`,
-        label,
-        detail: `Brgy. ${selectedBarangayHotlineGroup?.barangay_name}`,
-        phone,
-      }));
-    });
+    const phones = [line.phone, line.number, ...(line.numbers || [])].filter((phone): phone is string => Boolean(phone));
+    const label = line.label || line.name || line.purpose || 'Barangay emergency contact';
+    return phones.map((phone, phoneIndex) => ({
+      id: `barangay-${selectedBarangayHotlineGroup?.barangay_name}-${lineIndex}-${phoneIndex}-${phone}`,
+      label,
+      detail: `Brgy. ${selectedBarangayHotlineGroup?.barangay_name}`,
+      phone,
+    }));
+  });
   const renderPublicHotlineRow = (line: PublicHotlineRow) => <a key={line.id} href={`tel:${line.phone.replace(/[^\d+]/g, '')}`} aria-label={`Call ${line.label}, ${line.phone}`}>
     <span className="public-hotline-row-icon"><Phone size={16} aria-hidden="true" /></span>
     <span className="public-hotline-row-copy"><strong>{line.label}</strong><small>{line.detail}</small></span>
@@ -303,13 +323,16 @@ export default function PublicReportPage() {
               <section className="public-hotline-group" aria-labelledby="public-barangay-hotlines-title">
                 <div className="public-hotline-group-heading">
                   <div><h3 id="public-barangay-hotlines-title">Barangay hotlines</h3><p>Choose a barangay to view its response contacts.</p></div>
-                  {publicBarangayHotlineGroups.length > 0 && <label className="public-hotline-barangay-select"><span>Barangay</span><select aria-label="Choose barangay hotline contacts" value={selectedBarangayHotlineGroup?.barangay_name || ''} onChange={(event) => setSelectedHotlineBarangay(event.target.value)}>
-                    {publicBarangayHotlineGroups.map((group) => <option key={group.barangay_name} value={group.barangay_name}>{group.barangay_name}</option>)}
-                  </select></label>}
+                  <label className="public-hotline-barangay-select"><span>Barangay</span><select aria-label="Choose barangay hotline contacts" value={selectedBarangayName} disabled={!publicBarangayNames.length} onChange={(event) => setSelectedHotlineBarangay(event.target.value)}>
+                    {!publicBarangayNames.length && <option value="">No verified barangays available</option>}
+                    {publicBarangays.length > 0
+                      ? publicBarangayNames.map((name) => <option key={name} value={name}>{name}</option>)
+                      : publicBarangayHotlineGroups.map((group) => <option key={group.barangay_name} value={group.barangay_name}>{group.barangay_name}</option>)}
+                  </select></label>
                 </div>
                 {barangayHotlineRows.length > 0
                   ? <div className="public-hotline-group-entries">{barangayHotlineRows.map(renderPublicHotlineRow)}</div>
-                  : <p className="public-hotlines-empty">No barangay hotline information is available right now.</p>}
+                  : <p className="public-hotlines-empty">{selectedBarangayName ? `No published hotline numbers for Brgy. ${selectedBarangayName} yet.` : 'Barangay choices could not be loaded right now.'}</p>}
               </section>
             </div>
           </aside>
