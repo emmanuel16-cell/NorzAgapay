@@ -201,7 +201,6 @@ export default function UserSettingsModal({ theme, onThemeChange, onClose, onSig
             {isBarangayAdmin && <button type="button" className={activeSection === 'location' ? 'active' : ''} aria-current={activeSection === 'location' ? 'page' : undefined} onClick={() => setActiveSection('location')}><MapPin size={17} /> Command Location</button>}
             {isBarangay && <button type="button" className={activeSection === 'terms' ? 'active' : ''} aria-current={activeSection === 'terms' ? 'page' : undefined} onClick={() => setActiveSection('terms')}><ScrollText size={17} /> Terms and Conditions</button>}
             {isBarangay && <button type="button" className={activeSection === 'privacy' ? 'active' : ''} aria-current={activeSection === 'privacy' ? 'page' : undefined} onClick={() => setActiveSection('privacy')}><ShieldCheck size={17} /> Privacy Policy</button>}
-            <button type="button" className="user-settings-signout" onClick={onSignOut}><LogOut size={17} /> Sign Out</button>
           </nav>
 
           <div className="user-settings-panel">
@@ -273,7 +272,11 @@ export default function UserSettingsModal({ theme, onThemeChange, onClose, onSig
           </div>
         </div>
 
-        <footer className="user-settings-footer"><span>Changes apply to this signed-in account.</span><button type="button" className="workspace-secondary-action" onClick={onClose}>Done</button></footer>
+        <footer className="user-settings-footer">
+          <button type="button" className="user-settings-signout" onClick={onSignOut}><LogOut size={17} /> Sign Out</button>
+          <span>Changes apply to this signed-in account.</span>
+          <button type="button" className="workspace-secondary-action" onClick={onClose}>Done</button>
+        </footer>
       </section>
     </div>
   );
