@@ -4654,8 +4654,8 @@ body.responder-map-open { overflow: hidden; }
 }
 
 .barangay-register-link { display: block; margin-top: 10px; text-align: center; }
-.barangay-registration-page { height: auto; min-height: 100vh; min-height: 100svh; overflow-y: auto; }
-.barangay-registration-main { display: grid; min-height: calc(100vh - 74px); place-items: start center; padding: 38px 16px 56px; background: radial-gradient(circle at 50% 0, rgba(16, 130, 171, .18), transparent 44%), #071326; }
+.barangay-registration-page { height: 100vh; height: 100svh; overflow: hidden; }
+.barangay-registration-main { display: grid; min-height: 0; flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; place-items: start center; padding: 38px 16px 56px; background: radial-gradient(circle at 50% 0, rgba(16, 130, 171, .18), transparent 44%), #071326; }
 .barangay-registration-card { width: min(100%, 620px); padding: clamp(20px, 4vw, 34px); border: 1px solid #2c4365; border-radius: 18px; color: #eff5ff; background: #0a1a33; box-shadow: 0 24px 65px rgba(0, 0, 0, .25); }
 .barangay-registration-back { display: inline-flex; align-items: center; gap: 7px; margin-bottom: 18px; color: #a9bbd6; font-size: 12px; text-decoration: none; }
 .barangay-registration-back:hover { color: #73d8e8; }
@@ -4665,7 +4665,8 @@ body.responder-map-open { overflow: hidden; }
 .barangay-registration-intro, .barangay-registration-footnote { color: #a9bbd6; font-size: 12px; line-height: 1.55; }
 .barangay-registration-form { display: flex; flex-direction: column; gap: 12px; margin-top: 19px; }
 .barangay-registration-form > label { display: flex; flex-direction: column; gap: 6px; color: #e7eefb; font-size: 12px; font-weight: 650; }
-.barangay-registration-form > label span { display: inline; color: #93a7c4; font-weight: 400; }
+.barangay-registration-contact-hint { color: #a9bbd6; font-size: 11px; line-height: 1.5; }
+.barangay-registration-contact-hint strong { color: #e7eefb; }
 .barangay-registration-form input, .barangay-registration-form select { width: 100%; min-height: 43px; padding: 10px 12px; border: 1px solid #375170; border-radius: 8px; color: #f0f6ff; background: #08172e; font: inherit; font-weight: 400; }
 .barangay-registration-form input:focus, .barangay-registration-form select:focus { border-color: #31c0d9; outline: 0; box-shadow: 0 0 0 2px rgba(49, 192, 217, .14); }
 .barangay-registration-form > .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 45px; margin-top: 3px; }
