@@ -3,13 +3,14 @@ import { Link } from 'react-router-dom';
 import { MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import {
-  AlertTriangle, ArrowRight, Bell, Check, CheckCircle2, ChevronDown, CircleHelp, Copy,
+  AlertTriangle, ArrowRight, Bell, Check, CheckCircle2, ChevronDown, Copy,
   Clock3, ExternalLink, FileText, Flame, LocateFixed, MapPin, Megaphone,
   Navigation, Phone, RefreshCw, ShieldCheck, Siren, TentTree, Users,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { broadcastAPI, evacuationAPI, reportAPI } from '../lib/api';
 import { CARTO_ATTRIBUTION, CARTO_DARK_MAP_URL } from '../lib/mapConfig';
+import CommunityAlertsBoard from '../components/CommunityAlertsBoard';
 
 type ResidentReport = {
   id: string; title?: string | null; description?: string | null; incident_type?: string | null;
@@ -156,41 +157,9 @@ export function ResidentHomePage() {
 export function ResidentAlertsPage() {
   const { user } = useAuth();
   const { posts, barangays, preferredBarangay, loading, error, refresh } = useResidentFeed();
-  const [source, setSource] = useState<'all' | 'barangay' | 'mdrrmo' | 'pinned'>('all');
-  const [category, setCategory] = useState('all');
-  const [selectedBarangay, setSelectedBarangay] = useState('');
-  const [pinned, setPinned] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem('resident_pinned_broadcasts') || '[]'); } catch { return []; } });
-  useEffect(() => { if (preferredBarangay) setSelectedBarangay((current) => current || preferredBarangay); }, [preferredBarangay]);
-  const togglePin = (post: Broadcast) => {
-    const key = `${post.is_mdrrmo === false ? 'barangay' : 'mdrrmo'}:${post.id}`;
-    const next = pinned.includes(key) ? pinned.filter((item) => item !== key) : [...pinned, key];
-    setPinned(next); localStorage.setItem('resident_pinned_broadcasts', JSON.stringify(next));
-  };
-  const filtered = posts.filter((post) => {
-    const isMdrrmo = post.is_mdrrmo !== false;
-    const key = `${isMdrrmo ? 'mdrrmo' : 'barangay'}:${post.id}`;
-    const sameBarangay = !selectedBarangay || post.barangay_name?.toLowerCase().replace(/^barangay\s+/i, '') === selectedBarangay.toLowerCase().replace(/^barangay\s+/i, '');
-    if (!isMdrrmo && !barangays.some((name) => name.toLowerCase() === post.barangay_name?.toLowerCase())) return false;
-    if ((source === 'all' && !isMdrrmo && !sameBarangay) || (source === 'barangay' && (isMdrrmo || !sameBarangay)) || (source === 'mdrrmo' && !isMdrrmo) || (source === 'pinned' && !pinned.includes(key))) return false;
-    const normalized = normalizeCategory(post.category);
-    return category === 'all' || (category === 'all_disaster' ? normalized.startsWith('disaster_') : normalized === category);
-  });
   return <main className="resident-portal-page">
     <header className="resident-page-heading"><div><span className="resident-kicker"><Bell size={15}/> COMMUNITY INFORMATION{user?.barangay_name ? ` · ${user.barangay_name}` : ''}</span><h1>Community alerts</h1><p>Official MDRRMO updates and posts from your selected barangay.</p></div><button className="resident-button resident-button-outline" type="button" onClick={refresh}><RefreshCw size={16}/> Refresh</button></header>
-    <section className="resident-feed-controls"><div className="resident-source-tabs" role="tablist" aria-label="Alert source">{(['all', 'barangay', 'mdrrmo', 'pinned'] as const).map((item) => <button type="button" role="tab" aria-selected={source === item} className={source === item ? 'selected' : ''} key={item} onClick={() => setSource(item)}>{item === 'all' ? 'All updates' : item === 'barangay' ? 'Barangay' : item === 'mdrrmo' ? 'MDRRMO' : 'Pinned'}</button>)}</div>
-      <label className="resident-select-label">Barangay posts<select value={selectedBarangay} onChange={(event) => setSelectedBarangay(event.target.value)}><option value="">All verified barangays</option>{barangays.map((name) => <option key={name} value={name}>{name}</option>)}</select><ChevronDown size={14}/></label>
-      <div className="resident-category-tabs" aria-label="Filter by alert type">{alertCategories.map((item) => <button type="button" key={item.id} className={category === item.id ? 'selected' : ''} onClick={() => setCategory(item.id)}>{item.label}</button>)}</div>
-    </section>
-    {error && <div className="resident-feedback error" role="alert"><CircleHelp size={17}/>{error}<button type="button" onClick={refresh}>Try again</button></div>}
-    {loading ? <div className="resident-feed-empty"><RefreshCw className="workspace-spinning" size={22}/><strong>Loading alerts</strong><span>Getting the latest official community updates.</span></div> : filtered.length ? <div className="resident-alert-grid">{filtered.map((post) => {
-      const sourceLabel = post.is_mdrrmo === false ? `Barangay ${post.barangay_name || ''}` : 'MDRRMO Norzagaray';
-      const key = `${post.is_mdrrmo === false ? 'barangay' : 'mdrrmo'}:${post.id}`;
-      return <article className={`resident-alert-card ${normalizeCategory(post.category)}`} key={key}><header><span className="resident-alert-icon">{normalizeCategory(post.category).startsWith('disaster_') ? <AlertTriangle size={17}/> : <Megaphone size={17}/>}</span><div><span>{categoryName(post.category)}</span><strong>{sourceLabel}</strong></div><button type="button" className={pinned.includes(key) ? 'resident-pin-button pinned' : 'resident-pin-button'} aria-label={pinned.includes(key) ? 'Unpin update' : 'Pin update'} onClick={() => togglePin(post)}>{pinned.includes(key) ? 'Pinned' : 'Pin'}</button></header><p>{post.content || 'Official community update.'}</p>
-        {!!post.media?.length && <div className="resident-alert-media">{post.media.map((media, index) => media.type === 'video' || /\.(mp4|mov|webm)(\?|$)/i.test(media.url) ? <video key={`${media.url}-${index}`} src={media.url} controls preload="metadata" /> : <a key={`${media.url}-${index}`} href={media.url} target="_blank" rel="noreferrer"><img src={media.url} alt={`${categoryName(post.category)} attachment`} loading="lazy"/></a>)}</div>}
-        {!!post.links?.length && <div className="resident-alert-links">{post.links.map((href) => <a key={href} href={href} target="_blank" rel="noreferrer"><ExternalLink size={14}/>{href.replace(/^https?:\/\//, '')}</a>)}</div>}
-        <footer><span>{post.author_name || sourceLabel}</span><time>{formatDate(post.created_at)}</time></footer>
-      </article>;
-    })}</div> : <div className="resident-feed-empty"><Megaphone size={24}/><strong>No alerts in this view</strong><span>Try another source or category, or refresh the feed.</span><button type="button" onClick={refresh}>Refresh alerts</button></div>}
+    <CommunityAlertsBoard posts={posts} barangays={barangays} initialBarangay={preferredBarangay} loading={loading} error={error} onRefresh={refresh}/>
   </main>;
 }
 

@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
-import { Bell, Check, Edit3, ExternalLink, Megaphone, Pin, Plus, RefreshCw, Share2, Trash2, X } from 'lucide-react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { Check, Plus, RefreshCw, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
-import { barangayAPI, broadcastAPI, socket } from '../lib/api';
+import { barangayAPI, broadcastAPI, reportAPI, socket } from '../lib/api';
+import CommunityAlertsBoard, { type CommunityAlert } from '../components/CommunityAlertsBoard';
 
 type MediaItem = { url: string; type: 'image' | 'video' };
-type Post = { id: string; barangay_id?: string | null; barangay_name?: string; author_name?: string; category?: string; content?: string; links?: string[]; media?: MediaItem[]; created_at?: string; updated_at?: string; is_mdrrmo?: boolean; is_from_mdrrmo?: boolean; is_pinned?: boolean; reposted_by?: string | null };
+type Post = CommunityAlert & { reposted_by?: string | null };
 type Category = 'disaster_yellow' | 'disaster_orange' | 'disaster_red' | 'safety_advisory' | 'relief_assistance' | 'all_clear';
 type PostForm = { category: Category; content: string; links: string; media: MediaItem[]; files: File[] };
 const initialForm: PostForm = { category: 'safety_advisory', content: '', links: '', media: [], files: [] };
@@ -17,7 +18,6 @@ const categories: Array<{ value: Category; label: string }> = [
   { value: 'relief_assistance', label: 'Relief and assistance' },
   { value: 'all_clear', label: 'All-clear notice' },
 ];
-const categoryLabel = (value?: string) => categories.find((item) => item.value === value)?.label || String(value || 'Safety advisory').replaceAll('_', ' ');
 const errorMessage = (error: any) => error?.response?.data?.error || 'The barangay board action could not be completed.';
 
 function toFormData(form: PostForm) {
@@ -35,10 +35,9 @@ function toFormData(form: PostForm) {
 
 export default function BarangayBoardPage() {
   const { user } = useAuth();
-  const isMdrrmoResponder = user?.account_kind !== 'barangay' && user?.role === 'responder';
-  const canManage = user?.role === 'admin' || user?.role === 'staff';
+  const canManage = user?.account_kind === 'barangay' && (user?.role === 'admin' || user?.role === 'staff');
   const [localPosts, setLocalPosts] = useState<Post[]>([]);
-  const [mdrrmoPosts, setMdrrmoPosts] = useState<Post[]>([]);
+  const [barangays, setBarangays] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -49,19 +48,15 @@ export default function BarangayBoardPage() {
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try {
-      if (isMdrrmoResponder) {
-        const feed = await broadcastAPI.publicFeed();
-        const posts: Post[] = Array.isArray(feed.data) ? feed.data : [];
-        setLocalPosts(posts.filter((post) => !post.is_mdrrmo));
-        setMdrrmoPosts(posts.filter((post) => post.is_mdrrmo));
-        return;
+      const [feedResult, barangayResult] = await Promise.allSettled([broadcastAPI.publicFeed(), reportAPI.verifiedBarangays()]);
+      if (feedResult.status === 'fulfilled') setLocalPosts(Array.isArray(feedResult.value.data) ? feedResult.value.data : []);
+      else setError((feedResult.reason as any)?.response?.data?.error || 'Community alerts could not be loaded.');
+      if (barangayResult.status === 'fulfilled') {
+        const list = Array.isArray(barangayResult.value.data) ? barangayResult.value.data : [];
+        setBarangays(list.filter((item: any) => item.is_verified !== false).map((item: any) => String(item.name || '')).filter(Boolean));
       }
-      const [local, municipal] = await Promise.all([barangayAPI.barangayBroadcasts(), barangayAPI.mdrrmoBroadcasts()]);
-      setLocalPosts(Array.isArray(local.data) ? local.data : []);
-      setMdrrmoPosts(Array.isArray(municipal.data) ? municipal.data : []);
-    } catch (loadError: any) { setError(loadError?.response?.data?.error || (isMdrrmoResponder ? 'MDRRMO advisories could not be loaded.' : 'Barangay and MDRRMO advisories could not be loaded.')); }
-    finally { setLoading(false); }
-  }, [isMdrrmoResponder]);
+    } finally { setLoading(false); }
+  }, []);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
@@ -84,7 +79,7 @@ export default function BarangayBoardPage() {
   }, [isFormOpen]);
   const editPost = (post: Post) => {
     setEditingId(post.id);
-    setForm({ category: (categories.some((item) => item.value === post.category) ? post.category : 'safety_advisory') as Category, content: post.content || '', links: (post.links || []).join('\n'), media: post.media || [], files: [] });
+    setForm({ category: (categories.some((item) => item.value === post.category) ? post.category : 'safety_advisory') as Category, content: post.content || '', links: (post.links || []).join('\n'), media: (post.media || []).map((item) => ({ url: item.url, type: item.type === 'video' ? 'video' : 'image' })), files: [] });
     setIsFormOpen(true);
   };
 
@@ -116,11 +111,12 @@ export default function BarangayBoardPage() {
     catch (actionError: any) { toast.error(errorMessage(actionError)); }
   };
 
-  const sortedLocal = useMemo(() => [...localPosts].sort((a, b) => Number(Boolean(b.is_pinned)) - Number(Boolean(a.is_pinned)) || Date.parse(b.created_at || '') - Date.parse(a.created_at || '')), [localPosts]);
+  const ownsBarangayPost = (post: CommunityAlert) => user?.account_kind === 'barangay' && Boolean(user.barangay_id || user.barangay_name)
+    && (post.barangay_id ? post.barangay_id === user.barangay_id : String(post.barangay_name || '').toLowerCase().replace(/^barangay\s+/i, '') === String(user.barangay_name || '').toLowerCase().replace(/^barangay\s+/i, ''));
 
   return (
     <div className="barangay-console-page">
-      <header className="barangay-console-header"><div><span className="workspace-eyebrow">{isMdrrmoResponder ? 'MDRRMO FIELD RESPONSE' : `COMMUNITY INFORMATION · ${user?.barangay_name || 'YOUR BARANGAY'}`}</span><h1>{isMdrrmoResponder ? 'MDRRMO board' : 'Barangay board'}</h1><p>{isMdrrmoResponder ? 'Official municipal emergency advisories for the response team.' : 'Publish local advisories and share official MDRRMO alerts with your community.'}</p></div><div className="barangay-console-header-actions">{canManage && !isFormOpen && <button className="workspace-primary-action" type="button" onClick={() => { setEditingId(null); setForm(initialForm); setIsFormOpen(true); }} aria-haspopup="dialog"><Plus size={16} /> Create Post</button>}<button className="workspace-secondary-action" type="button" onClick={() => void load()} disabled={loading}><RefreshCw size={16} className={loading ? 'workspace-spinning' : ''} /> Refresh</button></div></header>
+      <header className="barangay-console-header"><div><span className="workspace-eyebrow">COMMUNITY INFORMATION{user?.barangay_name ? ` · ${user.barangay_name}` : ''}</span><h1>Community alerts</h1><p>Official MDRRMO updates and posts from your selected barangay.</p></div><div className="barangay-console-header-actions">{canManage && !isFormOpen && <button className="workspace-primary-action" type="button" onClick={() => { setEditingId(null); setForm(initialForm); setIsFormOpen(true); }} aria-haspopup="dialog"><Plus size={16} /> Create Post</button>}<button className="workspace-secondary-action" type="button" onClick={() => void load()} disabled={loading}><RefreshCw size={16} className={loading ? 'workspace-spinning' : ''} /> Refresh</button></div></header>
 
       {canManage && isFormOpen && <div className="barangay-console-modal-backdrop" role="presentation" onKeyDown={(event) => {
         if (event.key === 'Escape') { event.stopPropagation(); if (!saving) resetForm(); }
@@ -146,26 +142,22 @@ export default function BarangayBoardPage() {
         </section>
       </div>}
 
-      {error && <div className="workspace-message workspace-message-error" role="alert">{error}<button type="button" onClick={() => void load()}>Try again</button></div>}
-      <div className={`barangay-board-columns${isMdrrmoResponder ? ' responder-public-board' : ''}`}>
-        <section className="barangay-console-panel"><header><div><h2><Bell size={19} /> {isMdrrmoResponder ? 'Community posts' : `${user?.barangay_name || 'Barangay'} posts`}</h2><p>{isMdrrmoResponder ? 'Public advisories and community updates from active barangay boards.' : 'Your barangay’s community posts and reposted MDRRMO advisories.'}</p></div></header>
-          {loading ? <p className="barangay-console-muted">Loading community posts…</p> : sortedLocal.length === 0 ? <div className="barangay-console-empty"><Bell size={24} /><strong>{isMdrrmoResponder ? 'No community posts yet' : 'No barangay posts yet'}</strong><span>{isMdrrmoResponder ? 'Public barangay advisories will appear here.' : 'Publish an advisory or repost an MDRRMO alert to get started.'}</span></div> : <div className="barangay-post-grid">{sortedLocal.map((post) => <article className="barangay-post-card" key={post.id}><div className="barangay-post-card-meta"><span className="barangay-post-category">{categoryLabel(post.category)}</span>{post.is_pinned && <span className="barangay-post-pinned"><Pin size={13} /> Pinned</span>}{post.is_from_mdrrmo && <span className="barangay-post-source">MDRRMO repost</span>}</div><h3>{post.author_name || post.barangay_name || user?.barangay_name || 'Barangay team'}</h3><p>{post.content}</p><PostMedia media={post.media || []} /><PostLinks links={post.links || []} />{post.reposted_by && <small>Shared by {post.reposted_by}</small>}{post.created_at && <time>{new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(post.created_at))}</time>}{canManage && <footer><button type="button" onClick={() => void togglePin(post)}><Pin size={15} /> {post.is_pinned ? 'Unpin' : 'Pin'}</button>{!post.is_from_mdrrmo && <button type="button" onClick={() => editPost(post)}><Edit3 size={15} /> Edit</button>}<button className="danger" type="button" onClick={() => void removePost(post)}><Trash2 size={15} /> Remove</button></footer>}</article>)}</div>}
-        </section>
-
-        <section className="barangay-console-panel"><header><div><h2><Megaphone size={19} /> MDRRMO alerts</h2><p>{isMdrrmoResponder ? 'Current municipal broadcasts from MDRRMO Command.' : 'Municipal alerts available for barangay reposting.'}</p></div></header>
-          {loading ? <p className="barangay-console-muted">Loading alerts…</p> : mdrrmoPosts.length === 0 ? <p className="barangay-console-muted">There are no current MDRRMO broadcasts.</p> : <div className="barangay-post-grid">{mdrrmoPosts.map((post) => <article className="barangay-post-card mdrrmo" key={post.id}><div className="barangay-post-card-meta"><span className="barangay-post-category">{categoryLabel(post.category)}</span>{post.is_pinned && <span className="barangay-post-pinned"><Pin size={13} /> Pinned</span>}</div><h3>{post.author_name || 'MDRRMO Norzagaray'}</h3><p>{post.content}</p><PostMedia media={post.media || []} /><PostLinks links={post.links || []} />{post.created_at && <time>{new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(post.created_at))}</time>}{canManage && <footer><button type="button" onClick={() => void repost(post)}><Share2 size={15} /> Repost to barangay board</button></footer>}</article>)}</div>}
-        </section>
-      </div>
+      <CommunityAlertsBoard
+        posts={localPosts}
+        barangays={barangays}
+        initialBarangay={user?.barangay_name || ''}
+        loading={loading}
+        error={error}
+        onRefresh={() => void load()}
+        canPinPost={(post) => canManage && ownsBarangayPost(post)}
+        onToggleServerPin={(post) => void togglePin(post)}
+        canEditPost={(post) => canManage && ownsBarangayPost(post) && !post.is_from_mdrrmo}
+        onEditPost={(post) => editPost(post)}
+        canRemovePost={(post) => canManage && ownsBarangayPost(post)}
+        onRemovePost={(post) => void removePost(post)}
+        canRepostPost={(post) => canManage && post.is_mdrrmo === true}
+        onRepostPost={(post) => void repost(post)}
+      />
     </div>
   );
-}
-
-function PostMedia({ media }: { media: MediaItem[] }) {
-  if (!media.length) return null;
-  return <div className="barangay-post-media">{media.map((item, index) => item.type === 'video' ? <video key={`${item.url}-${index}`} src={item.url} controls /> : <a key={`${item.url}-${index}`} href={item.url} target="_blank" rel="noreferrer"><img src={item.url} alt="Post attachment" /></a>)}</div>;
-}
-
-function PostLinks({ links }: { links: string[] }) {
-  if (!links.length) return null;
-  return <div className="barangay-post-links">{links.map((link, index) => <a key={`${link}-${index}`} href={link} target="_blank" rel="noreferrer"><ExternalLink size={14} /> {link}</a>)}</div>;
 }
