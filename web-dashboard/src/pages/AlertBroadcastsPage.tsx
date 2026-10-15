@@ -283,31 +283,31 @@ function MediaGrid({ media, onItemClick }: { media: MediaItem[]; onItemClick: (i
   const wrap: React.CSSProperties = { borderRadius: 12, overflow: 'hidden', marginTop: 12, display: 'flex', flexDirection: 'column', gap: 2 };
   const row = (h: number): React.CSSProperties => ({ display: 'flex', gap: 2, height: h });
 
-  if (count === 1) return <div style={wrap}><div style={row(340)}>{cell(0)}</div></div>;
-  if (count === 2) return <div style={wrap}><div style={row(300)}>{cell(0)}{cell(1)}</div></div>;
+  if (count === 1) return <div style={wrap}><div className="alert-broadcast-media-row" style={row(340)}>{cell(0)}</div></div>;
+  if (count === 2) return <div style={wrap}><div className="alert-broadcast-media-row" style={row(300)}>{cell(0)}{cell(1)}</div></div>;
   if (count === 3) return (
     <div style={wrap}>
-      <div style={row(220)}>{cell(0)}</div>
-      <div style={row(180)}>{cell(1)}{cell(2)}</div>
+      <div className="alert-broadcast-media-row" style={row(220)}>{cell(0)}</div>
+      <div className="alert-broadcast-media-row" style={row(180)}>{cell(1)}{cell(2)}</div>
     </div>
   );
   if (count === 4) return (
     <div style={wrap}>
-      <div style={row(200)}>{cell(0)}{cell(1)}</div>
-      <div style={row(200)}>{cell(2)}{cell(3)}</div>
+      <div className="alert-broadcast-media-row" style={row(200)}>{cell(0)}{cell(1)}</div>
+      <div className="alert-broadcast-media-row" style={row(200)}>{cell(2)}{cell(3)}</div>
     </div>
   );
   if (count === 5) return (
     <div style={wrap}>
-      <div style={row(220)}>{cell(0)}{cell(1)}</div>
-      <div style={row(160)}>{cell(2)}{cell(3)}{cell(4)}</div>
+      <div className="alert-broadcast-media-row" style={row(220)}>{cell(0)}{cell(1)}</div>
+      <div className="alert-broadcast-media-row" style={row(160)}>{cell(2)}{cell(3)}{cell(4)}</div>
     </div>
   );
   const extra = count - 5;
   return (
     <div style={wrap}>
-      <div style={row(220)}>{cell(0)}{cell(1)}</div>
-      <div style={row(160)}>{cell(2)}{cell(3)}{cell(4, extra)}</div>
+      <div className="alert-broadcast-media-row" style={row(220)}>{cell(0)}{cell(1)}</div>
+      <div className="alert-broadcast-media-row" style={row(160)}>{cell(2)}{cell(3)}{cell(4, extra)}</div>
     </div>
   );
 }
@@ -352,7 +352,7 @@ function Lightbox({ media, startIndex, onClose }: { media: MediaItem[]; startInd
       >
         <X size={18} /> Close
       </button>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 16 }} onClick={e => e.stopPropagation()}>
+      <div className="alert-broadcast-lightbox-stage" style={{ display: 'flex', alignItems: 'center', gap: 16 }} onClick={e => e.stopPropagation()}>
         <button
           disabled={current === 0}
           onClick={() => setCurrent(c => c - 1)}
@@ -376,13 +376,13 @@ function Lightbox({ media, startIndex, onClose }: { media: MediaItem[]; startInd
             src={item.url}
             controls
             autoPlay
-            style={{ maxWidth: '70vw', maxHeight: '80vh', borderRadius: 12, boxShadow: '0 8px 40px rgba(0,0,0,0.8)', background: '#000' }}
+            style={{ maxWidth: 'min(70vw, calc(100vw - 128px))', maxHeight: '80vh', borderRadius: 12, boxShadow: '0 8px 40px rgba(0,0,0,0.8)', background: '#000' }}
           />
         ) : (
           <img
             src={item.url}
             alt=""
-            style={{ maxWidth: '70vw', maxHeight: '80vh', objectFit: 'contain', borderRadius: 12, boxShadow: '0 8px 40px rgba(0,0,0,0.8)' }}
+            style={{ maxWidth: 'min(70vw, calc(100vw - 128px))', maxHeight: '80vh', objectFit: 'contain', borderRadius: 12, boxShadow: '0 8px 40px rgba(0,0,0,0.8)' }}
           />
         )}
         <button
@@ -423,7 +423,7 @@ function PostCard({ post, onEdit, onDelete, onTogglePin }: { post: BroadcastPost
 
   return (
     <div
-      className="card"
+      className="card alert-broadcast-post"
       style={{
         marginBottom: 16,
         borderLeft: `4px solid ${cfg.color}`,
@@ -432,8 +432,8 @@ function PostCard({ post, onEdit, onDelete, onTogglePin }: { post: BroadcastPost
       }}
     >
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div className="alert-broadcast-post-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>
+        <div className="alert-broadcast-post-identity" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           {/* Avatar */}
           <div
             style={{
@@ -453,7 +453,7 @@ function PostCard({ post, onEdit, onDelete, onTogglePin }: { post: BroadcastPost
           >
             M
           </div>
-          <div>
+          <div className="alert-broadcast-post-copy">
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <span style={{ fontWeight: 800, color: 'var(--text-primary)', fontSize: 15, letterSpacing: -0.2 }}>
                 {post.barangayName}
@@ -477,7 +477,7 @@ function PostCard({ post, onEdit, onDelete, onTogglePin }: { post: BroadcastPost
         </div>
 
         {/* 3-dot menu */}
-        <div style={{ position: 'relative' }}>
+        <div className="alert-broadcast-post-menu" style={{ position: 'relative' }}>
           <button
             onClick={() => setMenuOpen(v => !v)}
             style={{
@@ -749,33 +749,16 @@ function CreateModal({
 
   return (
     <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.65)',
-        zIndex: 2000,
-        display: 'flex',
-        alignItems: 'flex-start',
-        justifyContent: 'center',
-        padding: '40px 16px',
-        overflowY: 'auto',
-      }}
+      className="alert-broadcast-modal-backdrop"
       onClick={isSaving ? undefined : onClose}
     >
       <div
-        style={{
-          background: 'var(--bg-card, #1E293B)',
-          border: '1px solid var(--border-color, #334155)',
-          borderRadius: 16,
-          width: '100%',
-          maxWidth: 620,
-          boxShadow: 'var(--shadow-lg)',
-          overflow: 'hidden',
-        }}
+        className="alert-broadcast-modal"
         onClick={e => e.stopPropagation()}
       >
         {/* Modal Header */}
         <div
+          className="alert-broadcast-modal-header"
           style={{
             padding: '18px 22px',
             borderBottom: '1px solid var(--border-color, #334155)',
@@ -795,7 +778,7 @@ function CreateModal({
           </button>
         </div>
 
-        <div style={{ padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div className="alert-broadcast-modal-body" style={{ padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: 16 }}>
           {/* Category Pills */}
           <div>
             <label
@@ -1027,6 +1010,7 @@ function CreateModal({
 
         {/* Footer */}
         <div
+          className="alert-broadcast-modal-footer"
           style={{
             padding: '14px 22px',
             borderTop: '1px solid var(--border-color, #334155)',
@@ -1067,27 +1051,11 @@ function DeleteModal({
 }) {
   return (
     <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.65)',
-        zIndex: 2100,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
+      className="alert-broadcast-delete-backdrop"
       onClick={isDeleting ? undefined : onClose}
     >
       <div
-        style={{
-          background: 'var(--bg-card, #1E293B)',
-          border: '1px solid var(--border-color, #334155)',
-          borderRadius: 14,
-          padding: '28px 28px 22px',
-          maxWidth: 420,
-          width: '90%',
-          boxShadow: 'var(--shadow-lg)',
-        }}
+        className="alert-broadcast-delete-modal"
         onClick={e => e.stopPropagation()}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
@@ -1200,8 +1168,8 @@ export default function AlertBroadcastsPage() {
   return (
     <>
       {/* Page Header */}
-      <div className="page-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div className="page-header alert-broadcast-page-header">
+        <div className="alert-broadcast-heading">
           <div
             style={{
               width: 44,
@@ -1216,7 +1184,7 @@ export default function AlertBroadcastsPage() {
           >
             <Megaphone size={22} />
           </div>
-          <div>
+          <div className="alert-broadcast-heading-copy">
             <h1 className="page-title" style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>
               Alert Broadcasts
             </h1>
@@ -1226,7 +1194,7 @@ export default function AlertBroadcastsPage() {
           </div>
         </div>
         <button
-          className="btn btn-primary"
+          className="btn btn-primary alert-broadcast-create-button"
           onClick={() => {
             setEditPost(null);
             setCreateOpen(true);
@@ -1237,39 +1205,23 @@ export default function AlertBroadcastsPage() {
         </button>
       </div>
 
-      <div className="page-content">
-        {/* Main Content Area: Responsive Feed on Left + Fixed Collapsible Category Panel on Right (Matches img 1) */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: 20,
-            position: 'relative',
-            width: '100%',
-          }}
-        >
-          {/* Feed Column - adapts width automatically when category panel expands or minimizes */}
-          <div
-            style={{
-              flex: 1,
-              minWidth: 0,
-              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-            }}
-          >
+      <div className="page-content alert-broadcast-content">
+        <div className="alert-broadcast-layout">
+          <div className="alert-broadcast-feed">
             {/* Posts List */}
             {isLoading ? (
-              <div className="card" style={{ display: 'flex', justifyContent: 'center', padding: 60 }}>
+              <div className="card alert-broadcast-state" style={{ display: 'flex', justifyContent: 'center', padding: 60 }}>
                 <div className="spinner" />
               </div>
             ) : loadError ? (
-              <div className="card" style={{ textAlign: 'center', padding: '50px 24px' }}>
+              <div className="card alert-broadcast-state" style={{ textAlign: 'center', padding: '50px 24px' }}>
                 <AlertTriangle size={40} color="#F97316" style={{ marginBottom: 12 }} />
                 <h3 style={{ margin: '0 0 8px', color: 'var(--text-primary)', fontSize: 16 }}>Could not load alert broadcasts</h3>
                 <p style={{ margin: '0 0 16px', color: 'var(--text-muted)', fontSize: 13 }}>{loadError}</p>
                 <button className="btn btn-primary" onClick={() => void loadPosts()}>Try Again</button>
               </div>
             ) : filtered.length === 0 ? (
-              <div className="card" style={{ textAlign: 'center', padding: '60px 24px' }}>
+              <div className="card alert-broadcast-state" style={{ textAlign: 'center', padding: '60px 24px' }}>
                 <Megaphone size={44} color="var(--text-muted)" style={{ marginBottom: 14 }} />
                 <h3 style={{ margin: '0 0 6px', color: 'var(--text-primary)', fontSize: 16 }}>
                   No alert broadcasts found
@@ -1293,72 +1245,25 @@ export default function AlertBroadcastsPage() {
             )}
           </div>
 
-          {/* Category List Sidebar (Fixed / Sticky on Right - Always Maximized) */}
-          <div
-            style={{
-              width: 250,
-              flexShrink: 0,
-              position: 'sticky',
-              top: 'calc(var(--header-height, 64px) + 20px)',
-              background: 'var(--bg-card, #1A2332)',
-              border: '1px solid var(--border-color, rgba(255, 255, 255, 0.08))',
-              borderRadius: 20,
-              padding: '16px 14px 18px',
-              boxShadow: 'var(--shadow-md)',
-              zIndex: 40,
-              alignSelf: 'flex-start',
-              maxHeight: 'calc(100vh - var(--header-height, 64px) - 36px)',
-              overflowY: 'auto',
-            }}
-          >
-
-              {/* Category button items (Exactly styled like img 1) */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+          {/* Category filters stay beside the feed on wide screens and move above it on mobile. */}
+          <aside className="alert-broadcast-categories" aria-label="Filter broadcasts by category">
+              <div className="alert-broadcast-category-list">
                 {CATEGORY_SIDEBAR_ITEMS.map(item => {
                   const isSelected = selectedCategory === item.id;
                   return (
                     <button
                       key={item.id}
+                      type="button"
+                      aria-pressed={isSelected}
                       onClick={() => setSelectedCategory(item.id)}
-                      style={{
-                        width: '100%',
-                        padding: '12px 14px',
-                        borderRadius: 12,
-                        fontSize: 13,
-                        fontWeight: 600,
-                        textAlign: 'center',
-                        cursor: 'pointer',
-                        border: isSelected
-                          ? '1px solid #38BDF8'
-                          : '1px solid rgba(255, 255, 255, 0.07)',
-                        background: isSelected
-                          ? 'rgba(56, 189, 248, 0.08)'
-                          : 'rgba(20, 30, 48, 0.65)',
-                        color: isSelected ? '#38BDF8' : 'rgba(226, 232, 240, 0.85)',
-                        transition: 'all 0.2s ease',
-                        boxShadow: isSelected
-                          ? '0 0 10px rgba(56, 189, 248, 0.22), inset 0 0 6px rgba(56, 189, 248, 0.05)'
-                          : 'none',
-                      }}
-                      onMouseOver={e => {
-                        if (!isSelected) {
-                          e.currentTarget.style.background = 'rgba(51, 65, 85, 0.4)';
-                          e.currentTarget.style.color = '#fff';
-                        }
-                      }}
-                      onMouseOut={e => {
-                        if (!isSelected) {
-                          e.currentTarget.style.background = 'rgba(20, 30, 48, 0.65)';
-                          e.currentTarget.style.color = 'rgba(226, 232, 240, 0.85)';
-                        }
-                      }}
+                      className={isSelected ? 'selected' : ''}
                     >
                       {item.label}
                     </button>
                   );
                 })}
               </div>
-            </div>
+          </aside>
           </div>
         </div>
 

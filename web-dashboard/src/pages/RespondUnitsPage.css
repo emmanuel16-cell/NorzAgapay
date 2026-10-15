@@ -128,7 +128,7 @@
 }
 @media (max-width: 760px) {
   .ru-page { height: auto; min-height: 100vh; overflow: visible; }
-  .ru-page-header { position: sticky; top: 0; z-index: 5; min-height: 68px; flex-basis: auto; flex-wrap: wrap; gap: 8px; padding: 10px 14px; }
+  .ru-page-header { position: sticky; top: 52px; z-index: 5; min-height: 68px; flex-basis: auto; flex-wrap: wrap; gap: 8px; padding: 10px 14px; }
   .ru-title-group { align-items: flex-start; flex-direction: column; gap: 2px; }
   .ru-title-group h1 { font-size: 18px; }
   .ru-title-group > span { font-size: 12px; }
