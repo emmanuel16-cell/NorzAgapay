@@ -9,6 +9,7 @@ import { emailService } from '../services/emailService';
 import { smsService } from '../services/smsService';
 import { setOtp, getOtp, deleteOtp } from '../config/redis';
 import { randomBytes, randomInt } from 'crypto';
+import { isGlobalUsernameConflict, isUsernameTaken, normalizeUsername } from '../services/accountUsernameService';
 
 const router = Router();
 
@@ -18,6 +19,7 @@ const router = Router();
 
 const registerSchema = z.object({
   full_name: z.string().min(2, 'Full name is required'),
+  username: z.string().trim().min(3).max(32).regex(/^[a-zA-Z0-9_.-]+$/, 'Use only letters, numbers, dots, underscores, or hyphens.').transform(normalizeUsername),
   email: z.string().trim().email('Invalid email address').transform((value) => value.toLowerCase()),
   phone: z.string().max(30).optional().nullable(),
   password: z.string().min(8, 'Password must be at least 8 characters'),
@@ -37,6 +39,7 @@ const loginSchema = z.object({
 
 const masterAdminSetupSchema = z.object({
   full_name: z.string().trim().min(2).max(120),
+  username: z.string().trim().min(3).max(32).regex(/^[a-zA-Z0-9_.-]+$/).transform(normalizeUsername),
   email: z.string().trim().email().transform((value) => value.toLowerCase()),
   password: z.string().min(12).max(128),
 });
@@ -96,13 +99,21 @@ router.post('/master-admin-setup', async (req: Request, res: Response): Promise<
       res.status(409).json({ error: 'Master admin setup is already complete.' });
       return;
     }
-    const { full_name, email, password } = parsed.data;
+    const { full_name, username, email, password } = parsed.data;
+    if (await isUsernameTaken(username)) {
+      res.status(409).json({ error: 'That username is already in use.' });
+      return;
+    }
     const password_hash = await bcrypt.hash(password, 12);
     const { data, error } = await supabaseAdmin
       .from('users')
-      .insert({ full_name, email, password_hash, role: 'master_admin', status: 'active', verified: true })
-      .select('id, full_name, email, role, status, verified')
+      .insert({ full_name, username, email, password_hash, role: 'master_admin', status: 'active', verified: true })
+      .select('id, full_name, username, email, role, status, verified')
       .single();
+    if (isGlobalUsernameConflict(error)) {
+      res.status(409).json({ error: 'That username is already in use.' });
+      return;
+    }
     if (error?.code === '23505') {
       res.status(409).json({ error: 'Setup was completed already, or this email is already registered.' });
       return;
@@ -131,7 +142,12 @@ router.post('/register', authenticate, authorize('admin', 'master_admin'), async
       return;
     }
 
-    const { full_name, email, phone, password, role, unit_type } = parsed.data;
+    const { full_name, username, email, phone, password, role, unit_type } = parsed.data;
+
+    if (await isUsernameTaken(username)) {
+      res.status(409).json({ error: 'That username is already in use.' });
+      return;
+    }
 
     // Check if user already exists
     const { data: existingUser } = await supabaseAdmin
@@ -164,6 +180,7 @@ router.post('/register', authenticate, authorize('admin', 'master_admin'), async
       .from('users')
       .insert({
         full_name,
+        username,
         email,
         phone: phone || null,
         password_hash,
@@ -172,10 +189,14 @@ router.post('/register', authenticate, authorize('admin', 'master_admin'), async
         status: initialStatus,
         verified: isAutoActive,
       })
-      .select('id, full_name, email, role, unit_type, status, verified')
+      .select('id, full_name, username, email, role, unit_type, status, verified')
       .single();
 
     if (insertError) {
+      if (isGlobalUsernameConflict(insertError)) {
+        res.status(409).json({ error: 'That username is already in use.' });
+        return;
+      }
       console.error('Registration error:', insertError);
       res.status(500).json({ error: 'Failed to create user account.' });
       return;
@@ -511,15 +532,14 @@ router.patch('/profile', authenticate, async (req: AuthRequest, res: Response): 
     }
 
     const userId = req.user!.userId;
-    const [{ data: existingUsername, error: usernameError }, { data: existingEmail, error: emailError }] = await Promise.all([
-      supabaseAdmin.from('users').select('id').eq('username', username).neq('id', userId).limit(1).maybeSingle(),
+    const [{ data: existingEmail, error: emailError }, usernameTaken] = await Promise.all([
       emailInput
         ? supabaseAdmin.from('users').select('id').eq('email', emailInput).neq('id', userId).limit(1).maybeSingle()
         : Promise.resolve({ data: null, error: null } as any),
+      isUsernameTaken(username, { table: 'users', id: userId }),
     ]);
-    if (usernameError) throw usernameError;
     if (emailError) throw emailError;
-    if (existingUsername) { res.status(409).json({ error: 'That username is already in use.' }); return; }
+    if (usernameTaken) { res.status(409).json({ error: 'That username is already in use.' }); return; }
     if (existingEmail) { res.status(409).json({ error: 'That email address is already linked to another account.' }); return; }
 
     const { data, error } = await supabaseAdmin
@@ -529,6 +549,7 @@ router.patch('/profile', authenticate, async (req: AuthRequest, res: Response): 
       .select('id, full_name, username, email, phone, role')
       .maybeSingle();
     if (error) {
+      if (isGlobalUsernameConflict(error)) { res.status(409).json({ error: 'That username is already in use.' }); return; }
       if (error.code === '23505') { res.status(409).json({ error: 'That username or email is already in use.' }); return; }
       throw error;
     }
@@ -568,10 +589,7 @@ router.patch('/resident/profile', authenticate, async (req: AuthRequest, res: Re
         res.status(400).json({ error: 'Username must be 3–32 characters and use letters, numbers, dots, underscores, or hyphens.' });
         return;
       }
-      const { data: existingUsername, error: usernameError } = await supabaseAdmin
-        .from('resident_user').select('id').eq('username', username).neq('id', req.user.userId).limit(1).maybeSingle();
-      if (usernameError) throw usernameError;
-      if (existingUsername) { res.status(409).json({ error: 'That username is already in use.' }); return; }
+      if (await isUsernameTaken(username, { table: 'resident_user', id: req.user.userId })) { res.status(409).json({ error: 'That username is already in use.' }); return; }
       updates.username = username;
     }
     if (req.body?.email !== undefined) {
@@ -625,6 +643,10 @@ router.patch('/resident/profile', authenticate, async (req: AuthRequest, res: Re
       .select('id, full_name, username, email, phone, barangay_name, role')
       .single();
 
+    if (isGlobalUsernameConflict(error)) {
+      res.status(409).json({ error: 'That username is already in use.' });
+      return;
+    }
     if (error || !data) {
       console.error('Resident profile update error:', error);
       res.status(500).json({ error: 'Failed to update resident profile.' });
@@ -817,6 +839,7 @@ router.post(
     try {
       const schema = z.object({
         full_name: z.string().min(2),
+        username: z.string().trim().min(3).max(32).regex(/^[a-zA-Z0-9_.-]+$/).transform(normalizeUsername),
         email: z.string().email(),
         password: z.string().min(6),
         role: z.enum(['admin']),
@@ -828,23 +851,32 @@ router.post(
         return;
       }
 
-      const { full_name, email, password, role } = parsed.data;
+      const { full_name, username, email, password, role } = parsed.data;
+      if (await isUsernameTaken(username)) {
+        res.status(409).json({ error: 'That username is already in use.' });
+        return;
+      }
       const password_hash = await bcrypt.hash(password, 12);
 
       const { data: newUser, error } = await supabaseAdmin
         .from('users')
         .insert({
           full_name,
+          username,
           email,
           password_hash,
           role,
           status: 'active',
           verified: true,
         })
-        .select('id, full_name, email, role, status')
+        .select('id, full_name, username, email, role, status')
         .single();
 
       if (error) {
+        if (isGlobalUsernameConflict(error)) {
+          res.status(409).json({ error: 'That username is already in use.' });
+          return;
+        }
         res.status(500).json({ error: 'Failed to create admin user.' });
         return;
       }
@@ -881,14 +913,13 @@ router.post('/resident/web-register-otp', async (req: Request, res: Response): P
       return;
     }
 
-    const normalizedUsername = username.toLowerCase();
-    const [{ data: existingUsername, error: usernameError }, { data: existingPhone, error: phoneError }] = await Promise.all([
-      supabaseAdmin.from('resident_user').select('id').eq('username', normalizedUsername).limit(1).maybeSingle(),
+    const normalizedUsername = normalizeUsername(username);
+    const [usernameTaken, { data: existingPhone, error: phoneError }] = await Promise.all([
+      isUsernameTaken(normalizedUsername),
       supabaseAdmin.from('resident_user').select('id').eq('phone', phone).limit(1).maybeSingle(),
     ]);
-    if (usernameError) throw usernameError;
     if (phoneError) throw phoneError;
-    if (existingUsername) {
+    if (usernameTaken) {
       res.status(409).json({ error: 'That username is already taken. Choose another one.' });
       return;
     }
@@ -945,15 +976,14 @@ router.post('/resident/web-verify-register-otp', async (req: Request, res: Respo
       return;
     }
 
-    const [{ data: existingUsername, error: usernameError }, { data: existingPhone, error: phoneError }] = await Promise.all([
-      supabaseAdmin.from('resident_user').select('id').eq('username', record.username).limit(1).maybeSingle(),
+    const [usernameTaken, { data: existingPhone, error: phoneError }] = await Promise.all([
+      isUsernameTaken(record.username),
       supabaseAdmin.from('resident_user').select('id').eq('phone', phone).limit(1).maybeSingle(),
     ]);
-    if (usernameError) throw usernameError;
     if (phoneError) throw phoneError;
-    if (existingUsername || existingPhone) {
+    if (usernameTaken || existingPhone) {
       await deleteOtp(otpKey);
-      res.status(409).json({ error: existingUsername ? 'That username was just claimed. Request a new code with another username.' : 'That mobile number already has a resident account.' });
+      res.status(409).json({ error: usernameTaken ? 'That username was just claimed. Request a new code with another username.' : 'That mobile number already has a resident account.' });
       return;
     }
 
@@ -1022,8 +1052,18 @@ router.get('/resident/register-otp', (_req: Request, res: Response): void => {
 // 1. Request OTP for Citizen Account Registration
 router.post('/resident/register-otp', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { full_name, email, contact_number, barangay_name, barangay_id } = req.body;
+    const { full_name, username, email, contact_number, barangay_name, barangay_id } = req.body;
     const deliveryMethod = String(req.body.delivery_method || 'email').toLowerCase();
+    const normalizedUsername = typeof username === 'string' ? normalizeUsername(username) : '';
+
+    if (!/^[a-z0-9_.-]{3,32}$/.test(normalizedUsername)) {
+      res.status(400).json({ error: 'Username must be 3–32 characters and use only letters, numbers, dots, underscores, or hyphens.' });
+      return;
+    }
+    if (await isUsernameTaken(normalizedUsername)) {
+      res.status(409).json({ error: 'That username is already in use. Choose another one.' });
+      return;
+    }
 
     if (deliveryMethod !== 'email' && deliveryMethod !== 'sms') {
       res.status(400).json({ error: 'Choose email or SMS for verification.' });
@@ -1068,6 +1108,7 @@ router.post('/resident/register-otp', async (req: Request, res: Response): Promi
     // Store in Redis with 10-minute TTL (survives restarts)
     await setOtp(key, {
       otp,
+      username: normalizedUsername,
       fullName: full_name.trim(),
       contactNumber: contact_number?.trim() || '',
       barangayName: barangay_name?.trim() || 'Poblacion',
@@ -1129,7 +1170,7 @@ router.post('/resident/verify-register-otp', async (req: Request, res: Response)
     const key = email.toLowerCase().trim();
     const record = await getOtp(key);
 
-    if (!record || record.purpose !== 'registration') {
+    if (!record || record.purpose !== 'registration' || !record.username) {
       res.status(400).json({ error: 'No pending registration found for this email, or code has expired. Please request a new code.' });
       return;
     }
@@ -1150,6 +1191,11 @@ router.post('/resident/verify-register-otp', async (req: Request, res: Response)
     const barangayName = record.barangayName || 'Poblacion';
 
     // Prevent duplicate resident accounts while allowing the same email in other apps.
+    if (await isUsernameTaken(record.username)) {
+      res.status(409).json({ error: 'That username was just claimed. Request a new code with another username.' });
+      return;
+    }
+
     const { data: existingUser } = await supabaseAdmin
       .from('resident_user')
       .select('id, email')
@@ -1163,6 +1209,7 @@ router.post('/resident/verify-register-otp', async (req: Request, res: Response)
     const { data: finalUser, error: insertError } = await supabaseAdmin
       .from('resident_user')
       .insert({
+        username: record.username,
         full_name: fullName,
         email: key,
         phone: contactNumber,
@@ -1175,6 +1222,10 @@ router.post('/resident/verify-register-otp', async (req: Request, res: Response)
       .single();
 
     if (insertError || !finalUser) {
+      if (isGlobalUsernameConflict(insertError)) {
+        res.status(409).json({ error: 'That username was just claimed. Request a new code with another username.' });
+        return;
+      }
       if (insertError?.code === '23505') {
         res.status(409).json({ error: 'This email already has a resident account. Sign in instead.' });
         return;
@@ -1633,30 +1684,52 @@ router.post('/resident/forgot-password', async (req: Request, res: Response): Pr
 
 router.post('/barangay/password-otp', async (req: Request, res: Response): Promise<void> => {
   try {
-    const email = typeof req.body?.email === 'string' ? req.body.email.toLowerCase().trim() : '';
-    if (!email || !email.includes('@')) {
-      res.status(400).json({ error: 'Valid email address is required.' });
+    const identifier = typeof req.body?.identifier === 'string'
+      ? req.body.identifier.trim().toLowerCase()
+      : typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+    const deliveryMethod = req.body?.delivery_method === 'sms' ? 'sms' : req.body?.delivery_method === 'email' ? 'email' : 'email';
+    if (!identifier) {
+      res.status(400).json({ error: 'Enter your username, email, or mobile number.' });
       return;
     }
-    const { data: user, error } = await supabaseAdmin
-      .from('barangay_users')
-      .select('id, full_name, email')
-      .eq('email', email)
-      .maybeSingle();
+    if (deliveryMethod === 'sms' && !config.textBeeApiKey) {
+      res.status(503).json({ error: 'SMS verification is not configured. Choose email or contact the administrator.' });
+      return;
+    }
+    const isEmail = z.string().email().safeParse(identifier).success;
+    const mobile = identifier.replace(/\D/g, '');
+    const isMobile = /^09\d{9}$/.test(mobile);
+    let userLookup = supabaseAdmin.from('barangay_users').select('id, full_name, email, phone');
+    userLookup = isEmail ? userLookup.eq('email', identifier) : isMobile ? userLookup.eq('phone', mobile) : userLookup.eq('username', identifier);
+    const { data: user, error } = await userLookup.maybeSingle();
     if (error) throw error;
     if (!user) {
-      res.status(404).json({ error: 'No Barangay account found with this email address.' });
+      res.status(404).json({ error: 'No Barangay account was found for that username, email, or mobile number.' });
+      return;
+    }
+    const accountEmail = typeof user.email === 'string' ? user.email.trim().toLowerCase() : '';
+    const accountPhone = typeof user.phone === 'string' ? user.phone.replace(/\D/g, '') : '';
+    if (deliveryMethod === 'email' && !z.string().email().safeParse(accountEmail).success) {
+      res.status(400).json({ error: 'No email address is linked to this account. Choose mobile SMS instead.' });
+      return;
+    }
+    if (deliveryMethod === 'sms' && !/^09\d{9}$/.test(accountPhone)) {
+      res.status(400).json({ error: 'No valid mobile number is linked to this account.' });
       return;
     }
     const otp = randomInt(100000, 1000000).toString();
-    await setOtp(email, { otp, fullName: user.full_name, purpose: 'barangay_password_change' });
-    const sent = await emailService.sendOtpEmail(email, otp, 'barangay_password_change');
+    const otpKey = `barangay-password-change:${user.id}`;
+    await setOtp(otpKey, { otp, accountId: user.id, fullName: user.full_name, deliveryMethod, purpose: 'barangay_password_change' });
+    const sent = deliveryMethod === 'sms'
+      ? await smsService.sendPasswordChangeOtp(accountPhone, otp, 'barangay')
+      : await emailService.sendOtpEmail(accountEmail, otp, 'barangay_password_change');
     if (!sent) {
-      await deleteOtp(email);
-      res.status(503).json({ error: 'We could not send the verification email. Please try again later.' });
+      await deleteOtp(otpKey);
+      res.status(503).json({ error: `We could not send the verification ${deliveryMethod === 'sms' ? 'SMS' : 'email'}. Please try again later.` });
       return;
     }
-    res.json({ success: true, message: `Password change verification code sent to ${email}.`, expiresInMinutes: 10 });
+    const destination = deliveryMethod === 'sms' ? maskMobileNumber(accountPhone) : maskEmailAddress(accountEmail);
+    res.json({ success: true, message: `Password change verification code sent to ${destination}.`, expiresInMinutes: 10, deliveryMethod });
   } catch (err: any) {
     console.error('Barangay password-otp error:', err);
     res.status(500).json({ error: 'Internal server error.' });
@@ -1666,32 +1739,42 @@ router.post('/barangay/password-otp', async (req: Request, res: Response): Promi
 router.post('/barangay/change-password', async (req: Request, res: Response): Promise<void> => {
   try {
     const { otp, current_password, new_password } = req.body;
-    const email = typeof req.body?.email === 'string' ? req.body.email.toLowerCase().trim() : '';
-    if (!email || !otp || !current_password || !new_password) {
-      res.status(400).json({ error: 'Email, verification code, current password, and new password are required.' });
+    const identifier = typeof req.body?.identifier === 'string'
+      ? req.body.identifier.trim().toLowerCase()
+      : typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+    const deliveryMethod = req.body?.delivery_method === 'sms' ? 'sms' : req.body?.delivery_method === 'email' ? 'email' : 'email';
+    if (!identifier || !otp || !current_password || !new_password) {
+      res.status(400).json({ error: 'Account identifier, verification code, current password, and new password are required.' });
       return;
     }
     if (typeof new_password !== 'string' || new_password.length < 6) {
       res.status(400).json({ error: 'New password must be at least 6 characters long.' });
       return;
     }
-    const record = await getOtp(email);
-    if (!record || record.purpose !== 'barangay_password_change') {
-      res.status(400).json({ error: 'No password change request found or code has expired. Please request a new code.' });
+    const isEmail = z.string().email().safeParse(identifier).success;
+    const mobile = identifier.replace(/\D/g, '');
+    const isMobile = /^09\d{9}$/.test(mobile);
+    let userLookup = supabaseAdmin.from('barangay_users').select('id, password_hash');
+    userLookup = isEmail ? userLookup.eq('email', identifier) : isMobile ? userLookup.eq('phone', mobile) : userLookup.eq('username', identifier);
+    const { data: user, error: fetchError } = await userLookup.maybeSingle();
+    if (fetchError) throw fetchError;
+    if (!user) {
+      res.status(404).json({ error: 'Barangay account not found.' });
+      return;
+    }
+    const otpKey = `barangay-password-change:${user.id}`;
+    let activeOtpKey = otpKey;
+    let record = await getOtp(otpKey);
+    if (!record && isEmail) {
+      activeOtpKey = identifier;
+      record = await getOtp(activeOtpKey);
+    }
+    if (!record || record.purpose !== 'barangay_password_change' || (record.deliveryMethod && record.deliveryMethod !== deliveryMethod) || (record.accountId && record.accountId !== user.id)) {
+      res.status(400).json({ error: 'No matching password change request found or code has expired. Please request a new code.' });
       return;
     }
     if (record.otp !== otp.toString().trim()) {
       res.status(400).json({ error: 'Invalid verification code.' });
-      return;
-    }
-    const { data: user, error: fetchError } = await supabaseAdmin
-      .from('barangay_users')
-      .select('id, password_hash')
-      .eq('email', email)
-      .maybeSingle();
-    if (fetchError) throw fetchError;
-    if (!user) {
-      res.status(404).json({ error: 'Barangay account not found.' });
       return;
     }
     if (!await bcrypt.compare(current_password, user.password_hash)) {
@@ -1704,7 +1787,7 @@ router.post('/barangay/change-password', async (req: Request, res: Response): Pr
       .update({ password_hash, updated_at: new Date().toISOString() })
       .eq('id', user.id);
     if (updateError) throw updateError;
-    await deleteOtp(email);
+    await deleteOtp(activeOtpKey);
     res.json({ success: true, message: 'Password updated successfully.' });
   } catch (err: any) {
     console.error('Barangay change-password error:', err);
@@ -1716,47 +1799,63 @@ router.post('/barangay/change-password', async (req: Request, res: Response): Pr
 // continue to require the current password as an additional check.
 router.post('/barangay/forgot-password-otp', async (req: Request, res: Response): Promise<void> => {
   try {
-    const parsed = passwordResetOtpSchema.safeParse(req.body);
+    const parsed = z.object({
+      identifier: z.string().trim().min(1).max(254).optional(),
+      email: z.string().trim().max(254).optional(),
+      delivery_method: z.enum(['email', 'sms']).default('email'),
+    }).safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: parsed.error.issues[0]?.message || 'Enter a valid email and delivery method.' });
+      res.status(400).json({ error: parsed.error.issues[0]?.message || 'Enter your username, email, or mobile number and a delivery method.' });
       return;
     }
 
-    const { email, delivery_method: deliveryMethod } = parsed.data;
+    const identifier = (parsed.data.identifier || parsed.data.email || '').trim().toLowerCase();
+    const deliveryMethod = parsed.data.delivery_method;
+    if (!identifier) {
+      res.status(400).json({ error: 'Enter your username, email, or mobile number.' });
+      return;
+    }
     if (deliveryMethod === 'sms' && !config.textBeeApiKey) {
       res.status(503).json({ error: 'SMS verification is not configured. Choose email or contact the administrator.' });
       return;
     }
 
-    const { data: user, error: lookupError } = await supabaseAdmin
-      .from('barangay_users')
-      .select('id, full_name, email, phone')
-      .eq('email', email)
-      .maybeSingle();
+    const isEmail = z.string().email().safeParse(identifier).success;
+    const mobile = identifier.replace(/\D/g, '');
+    const isMobile = /^09\d{9}$/.test(mobile);
+    let userLookup = supabaseAdmin.from('barangay_users').select('id, full_name, username, email, phone');
+    userLookup = isEmail ? userLookup.eq('email', identifier) : isMobile ? userLookup.eq('phone', mobile) : userLookup.eq('username', identifier);
+    const { data: user, error: lookupError } = await userLookup.maybeSingle();
     if (lookupError) throw lookupError;
     if (!user) {
-      res.status(404).json({ error: 'No Barangay account found with this email address.' });
+      res.status(404).json({ error: 'No Barangay account was found for that username, email, or mobile number.' });
       return;
     }
 
-    const mobile = typeof user.phone === 'string' ? user.phone.trim() : '';
-    if (deliveryMethod === 'sms' && !mobile) {
-      res.status(400).json({ error: 'No mobile number is linked to this Barangay account. Choose email instead.' });
+    const accountPhone = typeof user.phone === 'string' ? user.phone.trim() : '';
+    const accountEmail = typeof user.email === 'string' ? user.email.trim().toLowerCase() : '';
+    if (deliveryMethod === 'sms' && !accountPhone) {
+      res.status(400).json({ error: 'No mobile number is linked to this Barangay account.' });
+      return;
+    }
+    if (deliveryMethod === 'email' && !accountEmail) {
+      res.status(400).json({ error: 'No email address is linked to this Barangay account. Choose mobile SMS instead.' });
       return;
     }
 
     const otp = randomInt(100000, 1000000).toString();
-    const otpKey = `barangay-password-reset:${email}`;
+    const otpKey = `barangay-password-reset:${user.id}`;
     await setOtp(otpKey, {
       otp,
+      accountId: user.id,
       fullName: user.full_name,
       deliveryMethod,
       purpose: 'barangay_password_reset',
     });
 
     const sent = deliveryMethod === 'sms'
-      ? await smsService.sendPasswordResetOtp(mobile, otp, 'barangay')
-      : await emailService.sendOtpEmail(email, otp, 'barangay_password_reset');
+      ? await smsService.sendPasswordResetOtp(accountPhone, otp, 'barangay')
+      : await emailService.sendOtpEmail(accountEmail, otp, 'barangay_password_reset');
     if (!sent) {
       await deleteOtp(otpKey);
       res.status(503).json({
@@ -1767,7 +1866,7 @@ router.post('/barangay/forgot-password-otp', async (req: Request, res: Response)
       return;
     }
 
-    const destination = deliveryMethod === 'sms' ? maskMobileNumber(mobile) : maskEmailAddress(email);
+    const destination = deliveryMethod === 'sms' ? maskMobileNumber(accountPhone) : maskEmailAddress(accountEmail);
     res.json({
       success: true,
       deliveryMethod,
@@ -1782,33 +1881,47 @@ router.post('/barangay/forgot-password-otp', async (req: Request, res: Response)
 
 router.post('/barangay/forgot-password', async (req: Request, res: Response): Promise<void> => {
   try {
-    const parsed = passwordResetSchema.safeParse(req.body);
+    const parsed = z.object({
+      identifier: z.string().trim().min(1).max(254).optional(),
+      email: z.string().trim().max(254).optional(),
+      otp: z.string().trim().regex(/^\d{6}$/),
+      new_password: z.string().min(6).max(128),
+    }).safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: parsed.error.issues[0]?.message || 'Enter the email, code, and a valid new password.' });
+      res.status(400).json({ error: parsed.error.issues[0]?.message || 'Enter your account identifier, code, and a valid new password.' });
       return;
     }
 
-    const { email, otp, new_password: newPassword } = parsed.data;
-    const otpKey = `barangay-password-reset:${email}`;
+    const identifier = (parsed.data.identifier || parsed.data.email || '').trim().toLowerCase();
+    if (!identifier) {
+      res.status(400).json({ error: 'Enter your username, email, or mobile number.' });
+      return;
+    }
+    const isEmail = z.string().email().safeParse(identifier).success;
+    const mobile = identifier.replace(/\D/g, '');
+    const isMobile = /^09\d{9}$/.test(mobile);
+    let userLookup = supabaseAdmin.from('barangay_users').select('id');
+    userLookup = isEmail ? userLookup.eq('email', identifier) : isMobile ? userLookup.eq('phone', mobile) : userLookup.eq('username', identifier);
+    const { data: user, error: lookupError } = await userLookup.maybeSingle();
+    if (lookupError) throw lookupError;
+    if (!user) {
+      res.status(404).json({ error: 'The account for this reset request is no longer available.' });
+      return;
+    }
+
+    const { otp, new_password: newPassword } = parsed.data;
+    const otpKey = `barangay-password-reset:${user.id}`;
     const record = await getOtp(otpKey);
-    if (!record || record.purpose !== 'barangay_password_reset') {
+    const legacyOtpKey = isEmail ? `barangay-password-reset:${identifier}` : '';
+    const legacyRecord = !record && legacyOtpKey ? await getOtp(legacyOtpKey) : null;
+    const activeOtpKey = record ? otpKey : legacyOtpKey;
+    const activeRecord = record || legacyRecord;
+    if (!activeRecord || activeRecord.purpose !== 'barangay_password_reset' || (activeRecord.accountId && activeRecord.accountId !== user.id)) {
       res.status(400).json({ error: 'No password reset request was found or the code has expired. Request a new code.' });
       return;
     }
-    if (record.otp !== otp) {
+    if (activeRecord.otp !== otp) {
       res.status(400).json({ error: 'Invalid verification code.' });
-      return;
-    }
-
-    const { data: user, error: lookupError } = await supabaseAdmin
-      .from('barangay_users')
-      .select('id')
-      .eq('email', email)
-      .maybeSingle();
-    if (lookupError) throw lookupError;
-    if (!user) {
-      await deleteOtp(otpKey);
-      res.status(400).json({ error: 'The account for this reset request is no longer available.' });
       return;
     }
 
@@ -1819,7 +1932,7 @@ router.post('/barangay/forgot-password', async (req: Request, res: Response): Pr
       .eq('id', user.id);
     if (updateError) throw updateError;
 
-    await deleteOtp(otpKey);
+    await deleteOtp(activeOtpKey);
     res.json({ success: true, message: 'Password reset successfully. Sign in with your new password.' });
   } catch (err: any) {
     console.error('Barangay forgot-password completion error:', err);

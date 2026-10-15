@@ -485,22 +485,23 @@ class ApiService {
     throw Exception(data['error'] ?? 'Failed to update team member');
   }
 
-  static Future<void> sendBarangayPasswordOtp(String email) async {
+  static Future<String> sendBarangayPasswordOtp({required String identifier, required String deliveryMethod}) async {
     final res = await http.post(
       Uri.parse('$baseUrl/auth/barangay/password-otp'),
       headers: {
         'Content-Type': 'application/json',
         'ngrok-skip-browser-warning': 'true',
       },
-      body: jsonEncode({'email': email}),
+      body: jsonEncode({'identifier': identifier, 'delivery_method': deliveryMethod}),
     );
-    if (res.statusCode == 200) return;
     final data = jsonDecode(res.body);
+    if (res.statusCode == 200) return data['message']?.toString() ?? 'Verification code sent.';
     throw Exception(data['error'] ?? 'Failed to send verification code');
   }
 
   static Future<void> changeBarangayPassword({
-    required String email,
+    required String identifier,
+    required String deliveryMethod,
     required String otp,
     required String currentPassword,
     required String newPassword,
@@ -512,7 +513,8 @@ class ApiService {
         'ngrok-skip-browser-warning': 'true',
       },
       body: jsonEncode({
-        'email': email,
+        'identifier': identifier,
+        'delivery_method': deliveryMethod,
         'otp': otp,
         'current_password': currentPassword,
         'new_password': newPassword,
@@ -524,7 +526,7 @@ class ApiService {
   }
 
   static Future<String> sendBarangayForgotPasswordOtp({
-    required String email,
+    required String identifier,
     required String deliveryMethod,
   }) async {
     final res = await http.post(
@@ -533,7 +535,7 @@ class ApiService {
         'Content-Type': 'application/json',
         'ngrok-skip-browser-warning': 'true',
       },
-      body: jsonEncode({'email': email, 'delivery_method': deliveryMethod}),
+      body: jsonEncode({'identifier': identifier, 'delivery_method': deliveryMethod}),
     );
     final data = jsonDecode(res.body);
     if (res.statusCode == 200) {
@@ -543,7 +545,7 @@ class ApiService {
   }
 
   static Future<void> resetBarangayPassword({
-    required String email,
+    required String identifier,
     required String otp,
     required String newPassword,
   }) async {
@@ -554,7 +556,7 @@ class ApiService {
         'ngrok-skip-browser-warning': 'true',
       },
       body: jsonEncode({
-        'email': email,
+        'identifier': identifier,
         'otp': otp,
         'new_password': newPassword,
       }),

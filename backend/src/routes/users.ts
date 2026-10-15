@@ -3,6 +3,7 @@ import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import { supabaseAdmin } from '../config/supabase';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth';
+import { isGlobalUsernameConflict, isUsernameTaken, normalizeUsername } from '../services/accountUsernameService';
 
 const router = Router();
 const responderSpecializations = [
@@ -105,7 +106,7 @@ router.get(
 router.post('/', authenticate, authorize('admin', 'master_admin'), async (req: AuthRequest, res: Response): Promise<void> => {
   const schema = z.object({
     full_name: z.string().trim().min(2).max(120),
-    username: z.string().trim().min(3).max(32).regex(/^[a-zA-Z0-9_.-]+$/, 'Use only letters, numbers, dots, underscores, or hyphens.').transform((value) => value.toLowerCase()).optional(),
+    username: z.string().trim().min(3).max(32).regex(/^[a-zA-Z0-9_.-]+$/, 'Use only letters, numbers, dots, underscores, or hyphens.').transform(normalizeUsername),
     email: z.string().trim().email().transform((value) => value.toLowerCase()).optional(),
     password: z.string().min(8).max(128),
     phone: z.string().trim().max(30).nullable().optional(),
@@ -114,9 +115,6 @@ router.post('/', authenticate, authorize('admin', 'master_admin'), async (req: A
       z.array(z.enum(responderSpecializations)).max(responderSpecializations.length),
     ]).nullable().optional(),
     role: z.enum(['admin', 'logistics', 'dispatcher', 'responder']),
-  }).refine((value) => Boolean(value.username || value.email), {
-    message: 'A username is required.',
-    path: ['username'],
   });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) {
@@ -124,6 +122,10 @@ router.post('/', authenticate, authorize('admin', 'master_admin'), async (req: A
     return;
   }
   const { role, full_name, username, email, password, phone } = parsed.data;
+  if (await isUsernameTaken(username)) {
+    res.status(409).json({ error: 'That username is already in use.' });
+    return;
+  }
   if (req.user!.role !== 'master_admin' && role === 'admin') {
     res.status(403).json({ error: 'Only a master admin can create admin accounts.' });
     return;
@@ -143,7 +145,7 @@ router.post('/', authenticate, authorize('admin', 'master_admin'), async (req: A
       .from('users')
       .insert({
         full_name,
-        username: username || null,
+        username,
         email: email || null,
         phone: phone?.trim() || null,
         password_hash,
@@ -154,8 +156,12 @@ router.post('/', authenticate, authorize('admin', 'master_admin'), async (req: A
       })
       .select('id, full_name, username, email, role, phone, unit_type, status, verified, created_at')
       .single();
+    if (isGlobalUsernameConflict(error)) {
+      res.status(409).json({ error: 'That username is already in use.' });
+      return;
+    }
     if (error?.code === '23505') {
-      res.status(409).json({ error: username ? 'That username is already in use.' : 'An account with this email already exists.' });
+      res.status(409).json({ error: 'An account with this email already exists.' });
       return;
     }
     if (error || !data) {
@@ -407,6 +413,7 @@ router.get('/:id', authenticate, async (req: AuthRequest, res: Response): Promis
 
 const updateUserSchema = z.object({
   full_name: z.string().optional(),
+  username: z.string().trim().min(3).max(32).regex(/^[a-zA-Z0-9_.-]+$/).transform(normalizeUsername).optional(),
   phone: z.string().max(15).optional(),
   role: z.enum(['master_admin', 'admin', 'logistics', 'dispatcher', 'responder']).optional(),
   unit_type: z.enum([
@@ -457,6 +464,10 @@ router.patch(
         res.status(404).json({ error: 'User not found.' });
         return;
       }
+      if (parsed.data.username && await isUsernameTaken(parsed.data.username, { table: 'users', id: req.params.id })) {
+        res.status(409).json({ error: 'That username is already in use.' });
+        return;
+      }
       if (req.user!.role !== 'master_admin') {
         if (!['logistics', 'dispatcher', 'responder'].includes(target.role)) {
           res.status(403).json({ error: 'Admins may only manage logistics, dispatcher, and responder accounts.' });
@@ -478,10 +489,14 @@ router.patch(
         .from('users')
         .update(updateData)
         .eq('id', req.params.id)
-        .select('id, full_name, email, role, status, verified')
+        .select('id, full_name, username, email, role, status, verified')
         .single();
 
       if (error) {
+        if (isGlobalUsernameConflict(error)) {
+          res.status(409).json({ error: 'That username is already in use.' });
+          return;
+        }
         res.status(500).json({ error: 'Failed to update user.' });
         return;
       }

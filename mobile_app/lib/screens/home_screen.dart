@@ -489,7 +489,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               iconColor: const Color(0xFFD97706),
               label: 'Change Password',
               subtitle: 'Update your account password securely',
-              onTap: () => _showChangePasswordDialog(user?.email ?? ''),
+              onTap: () => _showChangePasswordDialog(
+                user?.username ?? user?.email ?? user?.phone ?? '',
+                hasEmail: user?.email.trim().isNotEmpty == true,
+                hasPhone: user?.phone?.trim().isNotEmpty == true,
+              ),
             ),
 
             const SizedBox(height: 12),
@@ -745,7 +749,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     phoneController.dispose();
   }
 
-  Future<void> _showChangePasswordDialog(String email) async {
+  Future<void> _showChangePasswordDialog(String identifier, {required bool hasEmail, required bool hasPhone}) async {
     final otp = TextEditingController();
     final currentPassword = TextEditingController();
     final newPassword = TextEditingController();
@@ -753,6 +757,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     var otpSent = false;
     var sendingOtp = false;
     var updating = false;
+    var deliveryMethod = hasEmail ? 'email' : 'sms';
     String? error;
     String? success;
 
@@ -767,17 +772,26 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Account: $email',
+                  'Account: $identifier',
                   style: const TextStyle(
                     color: Color(0xFF1B4F72),
                     fontWeight: FontWeight.w600,
                   ),
                 ),
                 const SizedBox(height: 8),
-                const Text(
-                  'Verify your email and current password to set a new password.',
+                Text(
+                  'Verify your ${deliveryMethod == 'sms' ? 'mobile number' : 'email'} and current password to set a new password.',
                 ),
                 const SizedBox(height: 14),
+                if (!otpSent && hasEmail && hasPhone) ...[
+                  const Text('Send verification code by', style: TextStyle(fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 8),
+                  Wrap(spacing: 8, children: [
+                    ChoiceChip(label: const Text('Email'), selected: deliveryMethod == 'email', onSelected: sendingOtp ? null : (_) => setDialogState(() => deliveryMethod = 'email')),
+                    ChoiceChip(label: const Text('Mobile SMS'), selected: deliveryMethod == 'sms', onSelected: sendingOtp ? null : (_) => setDialogState(() => deliveryMethod = 'sms')),
+                  ]),
+                  const SizedBox(height: 12),
+                ],
                 if (!otpSent)
                   SizedBox(
                     width: double.infinity,
@@ -790,10 +804,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                 error = null;
                               });
                               try {
-                                await ApiService.sendBarangayPasswordOtp(email);
+                                success = await ApiService.sendBarangayPasswordOtp(identifier: identifier, deliveryMethod: deliveryMethod);
                                 setDialogState(() {
                                   otpSent = true;
-                                  success = 'Verification code sent to $email.';
                                 });
                               } catch (e) {
                                 setDialogState(() => error = e.toString());
@@ -807,11 +820,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                               height: 16,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : const Icon(Icons.mark_email_read_outlined),
+                          : Icon(deliveryMethod == 'sms' ? Icons.sms_outlined : Icons.mark_email_read_outlined),
                       label: Text(
                         sendingOtp
                             ? 'Sending code…'
-                            : 'Send Email Verification Code',
+                            : 'Send ${deliveryMethod == 'sms' ? 'SMS' : 'Email'} Verification Code',
                       ),
                     ),
                   ),
@@ -831,7 +844,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     keyboardType: TextInputType.number,
                     maxLength: 6,
                     decoration: const InputDecoration(
-                      labelText: '6-digit email code',
+                      labelText: '6-digit verification code',
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -883,9 +896,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     ? null
                     : () async {
                         if (otp.text.trim().length != 6) {
-                          setDialogState(
-                            () => error = 'Enter the 6-digit email code.',
-                          );
+                          setDialogState(() => error = 'Enter the 6-digit verification code.');
                           return;
                         }
                         if (newPassword.text.length < 6) {
@@ -913,7 +924,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         });
                         try {
                           await ApiService.changeBarangayPassword(
-                            email: email,
+                            identifier: identifier,
+                            deliveryMethod: deliveryMethod,
                             otp: otp.text.trim(),
                             currentPassword: currentPassword.text,
                             newPassword: newPassword.text,

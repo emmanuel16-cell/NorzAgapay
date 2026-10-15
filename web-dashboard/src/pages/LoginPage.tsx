@@ -26,9 +26,10 @@ function groupDebugAccounts(accounts: DebugAccount[]) {
 }
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
+  const [setupUsername, setSetupUsername] = useState('');
+  const [setupEmail, setSetupEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [loginAccountKind, setLoginAccountKind] = useState<'auto' | 'mdrrmo' | 'barangay' | 'resident'>('auto');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showDebugAccounts, setShowDebugAccounts] = useState(false);
@@ -51,7 +52,7 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      await login(email, password, loginAccountKind);
+      await login(identifier, password, 'auto');
       // The login call in AuthContext updates state, we check it here
     } catch (err: any) {
       setError(err.response?.data?.error || 'Login failed. Please try again.');
@@ -64,9 +65,9 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      await authAPI.createMasterAdmin({ full_name: setupName, email, password });
+      await authAPI.createMasterAdmin({ full_name: setupName, username: setupUsername, email: setupEmail, password });
       setSetupRequired(false);
-      await login(email, password, 'mdrrmo');
+      await login(setupUsername, password, 'auto');
     } catch (err: any) {
       setError(err.response?.data?.error || 'Master admin setup failed. Please try again.');
       setLoading(false);
@@ -194,8 +195,12 @@ export default function LoginPage() {
               <input className="form-input" autoComplete="name" value={setupName} onChange={event => setSetupName(event.target.value)} required minLength={2} />
             </div>
             <div className="form-group">
+              <label className="form-label">Username</label>
+              <input className="form-input" autoComplete="username" value={setupUsername} onChange={event => setSetupUsername(event.target.value)} required minLength={3} maxLength={32} pattern="[A-Za-z0-9_.-]+" title="Use 3–32 letters, numbers, dots, underscores, or hyphens." />
+            </div>
+            <div className="form-group">
               <label className="form-label">Email Address</label>
-              <input className="form-input" type="email" autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} required />
+              <input className="form-input" type="email" autoComplete="email" value={setupEmail} onChange={event => setSetupEmail(event.target.value)} required />
             </div>
             <div className="form-group">
               <label className="form-label">Password (at least 12 characters)</label>
@@ -210,24 +215,15 @@ export default function LoginPage() {
           </form>
         ) : <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label className="form-label" htmlFor="login-account-kind">Account type</label>
-            <select id="login-account-kind" className="form-input" value={loginAccountKind} onChange={(event) => setLoginAccountKind(event.target.value as typeof loginAccountKind)}>
-              <option value="auto">Find my account automatically</option>
-              <option value="resident">Resident</option>
-              <option value="barangay">Barangay team</option>
-              <option value="mdrrmo">MDRRMO team</option>
-            </select>
-          </div>
-          <div className="form-group">
-            <label className="form-label" htmlFor="login-email">{loginAccountKind === 'resident' ? 'Username or mobile number' : loginAccountKind === 'mdrrmo' ? 'Username or email' : loginAccountKind === 'auto' ? 'Email, username, or mobile number' : 'Username or email'}</label>
+            <label className="form-label" htmlFor="login-username">Username</label>
             <input
-              id="login-email"
+              id="login-username"
               type="text"
               autoComplete="username"
               className="form-input"
-              placeholder={loginAccountKind === 'resident' ? 'username or 09XXXXXXXXX' : loginAccountKind === 'auto' ? 'email, username, or 09XXXXXXXXX' : loginAccountKind === 'mdrrmo' ? 'username or admin@mdrrmo.gov.ph' : 'username or email'}
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              placeholder="Enter your username"
+              value={identifier}
+              onChange={(e) => setIdentifier(e.target.value)}
               required
             />
           </div>
@@ -253,7 +249,7 @@ export default function LoginPage() {
           </button>
         </form>}
 
-        {!showSetup && loginAccountKind === 'barangay' && (
+        {!showSetup && (
           <Link className="login-setup-toggle barangay-register-link" to="/barangay/register">Need an account? Register your barangay administrator</Link>
         )}
 

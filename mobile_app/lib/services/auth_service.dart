@@ -130,9 +130,11 @@ class AuthService extends ChangeNotifier {
 
   Future<void> sendBarangayRegistrationOtp({
     required String fullName,
-    required String email,
+    required String username,
     required String barangayId,
     required String positionDesignation,
+    required String deliveryMethod,
+    String? email,
     String? phone,
   }) async {
     _isLoading = true;
@@ -143,8 +145,10 @@ class AuthService extends ChangeNotifier {
         headers: {'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true'},
         body: jsonEncode({
           'full_name': fullName,
-          'email': email,
-          'phone': phone,
+          'username': username,
+          if (email != null && email.trim().isNotEmpty) 'email': email.trim(),
+          if (phone != null && phone.trim().isNotEmpty) 'phone': phone.trim(),
+          'delivery_method': deliveryMethod,
           'barangay_id': barangayId,
           'position_designation': positionDesignation,
         }),
@@ -157,14 +161,14 @@ class AuthService extends ChangeNotifier {
     }
   }
 
-  Future<Map<String, dynamic>> verifyBarangayRegistrationOtp({required String email, required String otp}) async {
+  Future<Map<String, dynamic>> verifyBarangayRegistrationOtp({required String deliveryMethod, required String destination, required String otp}) async {
     _isLoading = true;
     notifyListeners();
     try {
       final response = await http.post(
         Uri.parse('$_apiBaseUrl/barangay/verify-register-otp'),
         headers: {'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true'},
-        body: jsonEncode({'email': email, 'otp': otp}),
+        body: jsonEncode({'delivery_method': deliveryMethod, 'destination': destination, 'otp': otp}),
       );
       final data = Map<String, dynamic>.from(jsonDecode(response.body));
       if (response.statusCode != 201) throw Exception(data['error'] ?? 'Could not verify account');

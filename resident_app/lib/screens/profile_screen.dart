@@ -44,6 +44,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final _signInPasswordController = TextEditingController();
 
   final _regNameController = TextEditingController();
+  final _regUsernameController = TextEditingController();
   final _regContactController = TextEditingController();
   final _regEmailController = TextEditingController();
 
@@ -542,6 +543,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (!_regFormKey.currentState!.validate()) return;
 
     final fullName = _regNameController.text.trim();
+    final username = _regUsernameController.text.trim();
     final contact = _regContactController.text.trim();
     final email = _regEmailController.text.trim().toLowerCase();
     final barangayName = _selectedBarangayName ?? 'Poblacion';
@@ -557,6 +559,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         },
         body: jsonEncode({
           'full_name': fullName,
+          'username': username,
           'contact_number': contact,
           'email': email,
           'barangay_name': barangayName,
@@ -574,6 +577,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _showRegistrationOtpDialog(
         email: email,
         fullName: fullName,
+        username: username,
         contact: contact,
         barangayName: barangayName,
         deliveryMethod: _registrationOtpChannel,
@@ -594,6 +598,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _showRegistrationOtpDialog({
     required String email,
     required String fullName,
+    required String username,
     required String contact,
     required String barangayName,
     required String deliveryMethod,
@@ -727,6 +732,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     headers: {'Content-Type': 'application/json'},
                                     body: jsonEncode({
                                       'full_name': fullName,
+                                      'username': username,
                                       'contact_number': contact,
                                       'email': email,
                                       'barangay_name': barangayName,
@@ -855,6 +861,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     await OfflineService.saveProfile({
                                       'user_id': u['id'],
                                       'full_name': fullName,
+                                      'username': u['username'] ?? username,
                                       'contact_number': contact,
                                       'email': email,
                                       'barangay_name': barangayName,
@@ -2028,6 +2035,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           const SizedBox(height: 12),
           TextFormField(
+            controller: _regUsernameController,
+            textCapitalization: TextCapitalization.none,
+            decoration: InputDecoration(
+              labelText: 'Username',
+              hintText: 'Choose a username',
+              prefixIcon: const Icon(Icons.alternate_email, color: Color(0xFF1B4F72)),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              filled: true,
+              fillColor: Colors.white,
+            ),
+            validator: (value) => RegExp(r'^[A-Za-z0-9_.-]{3,32}$').hasMatch(value?.trim() ?? '')
+                ? null
+                : 'Use 3–32 letters, numbers, dots, underscores, or hyphens.',
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
             controller: _regContactController,
             keyboardType: TextInputType.phone,
             inputFormatters: PhoneNumberUtils.inputFormatters,
@@ -2165,6 +2188,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _signInContactController.dispose();
     _signInPasswordController.dispose();
     _regNameController.dispose();
+    _regUsernameController.dispose();
     _regContactController.dispose();
     _regEmailController.dispose();
     _registrationCooldownTimer?.cancel();

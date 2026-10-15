@@ -21,6 +21,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _nameController = TextEditingController();
+  final _usernameController = TextEditingController();
   final _phoneController = TextEditingController();
   final _positionController = TextEditingController();
 
@@ -30,8 +31,20 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _loadingBarangays = false;
   bool _barangaysLoadFailed = false;
   bool _obscurePassword = true;
+  String _registrationOtpChannel = 'sms';
   int _registrationCooldownSeconds = 0;
   Timer? _registrationCooldownTimer;
+
+  String get _registrationDeliveryMethod {
+    final hasEmail = _emailController.text.trim().isNotEmpty;
+    final hasPhone = _phoneController.text.trim().isNotEmpty;
+    if (hasEmail && hasPhone) return _registrationOtpChannel;
+    return hasEmail ? 'email' : 'sms';
+  }
+
+  String get _registrationDestination => _registrationDeliveryMethod == 'sms'
+      ? _phoneController.text.trim()
+      : _emailController.text.trim().toLowerCase();
 
   @override
   void initState() {
@@ -91,8 +104,10 @@ class _LoginScreenState extends State<LoginScreen> {
         }
         await auth.sendBarangayRegistrationOtp(
           fullName: _nameController.text.trim(),
+          username: _usernameController.text.trim(),
           email: _emailController.text.trim(),
           phone: _phoneController.text.trim(),
+          deliveryMethod: _registrationDeliveryMethod,
           barangayId: _selectedBarangayId!,
           positionDesignation: _positionController.text.trim(),
         );
@@ -123,7 +138,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(width: 14),
                 const Expanded(
                   child: Text(
-                    'Email Verified',
+                    '${_registrationDeliveryMethod == 'sms' ? 'Mobile' : 'Email'} Verified',
                     style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold, color: Color(0xFF1F2937)),
                   ),
                 ),
@@ -142,7 +157,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     border: const Border(left: BorderSide(color: Color(0xFF1B4F72), width: 5)),
                   ),
                   child: const Text(
-                    'Norz-Agapay sent a temporary password. Don’t share it with anyone. If you didn’t request it, please ignore this message.',
+                    'Norz-Agapay sent a temporary password using your selected verification channel. Don’t share it with anyone.',
                     style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, height: 1.5, color: Color(0xFF0F172A)),
                   ),
                 ),
@@ -169,7 +184,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 14),
                 Text(
-                  'A temporary password was also sent to ${_emailController.text.trim()}. You can use it to sign in and change it later in your account settings.',
+                  'A temporary password was also sent to ${_registrationDestination}. You can use it to sign in and change it later in your account settings.',
                   style: TextStyle(fontSize: 14, color: Colors.grey.shade700, height: 1.5),
                 ),
                 Align(
@@ -243,16 +258,16 @@ class _LoginScreenState extends State<LoginScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'Enter the email on your Barangay account, then choose where to receive the one-time code.',
+                    'Enter your username, email, or mobile number, then choose where to receive the one-time code.',
                     style: TextStyle(color: Color(0xFF64748B)),
                   ),
                   const SizedBox(height: 14),
                   TextField(
                     controller: emailController,
-                    keyboardType: TextInputType.emailAddress,
+                    keyboardType: TextInputType.text,
                     enabled: !otpSent,
                     decoration: _inputDecoration(
-                      'Account Email',
+                      'Username, email, or mobile number',
                       Icons.email_outlined,
                     ),
                   ),
@@ -375,12 +390,10 @@ class _LoginScreenState extends State<LoginScreen> {
                         });
                         try {
                           if (!otpSent) {
-                            if (!email.contains('@') || !email.contains('.')) {
-                              throw 'Enter a valid email address.';
-                            }
+                            if (email.isEmpty) throw 'Enter your username, email, or mobile number.';
                             final message =
                                 await ApiService.sendBarangayForgotPasswordOtp(
-                                  email: email,
+                                  identifier: email,
                                   deliveryMethod: deliveryMethod,
                                 );
                             if (!dialogContext.mounted) return;
@@ -398,7 +411,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             if (password != confirmPasswordController.text)
                               throw 'The passwords do not match.';
                             await ApiService.resetBarangayPassword(
-                              email: email,
+                              identifier: email,
                               otp: otp,
                               newPassword: password,
                             );
@@ -485,10 +498,10 @@ class _LoginScreenState extends State<LoginScreen> {
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(color: const Color(0xFFF5F8FC), borderRadius: BorderRadius.circular(14)),
-                    child: const Icon(Icons.mark_email_read_rounded, color: Color(0xFF1B4F72), size: 27),
+                    child: Icon(_registrationDeliveryMethod == 'sms' ? Icons.sms_rounded : Icons.mark_email_read_rounded, color: const Color(0xFF1B4F72), size: 27),
                   ),
                   const SizedBox(width: 12),
-                  const Expanded(child: Text('Email Verification', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 21, color: Color(0xFF171B20)))),
+                  Expanded(child: Text('${_registrationDeliveryMethod == 'sms' ? 'SMS' : 'Email'} Verification', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 21, color: Color(0xFF171B20)))),
                 ],
               ),
               content: SingleChildScrollView(
@@ -496,9 +509,9 @@ class _LoginScreenState extends State<LoginScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('We sent a 6-digit verification code to:', style: TextStyle(fontSize: 15, color: Color(0xFF70757C))),
+                    Text('We sent a 6-digit verification code to your ${_registrationDeliveryMethod == 'sms' ? 'mobile number' : 'email address'}:', style: const TextStyle(fontSize: 15, color: Color(0xFF70757C))),
                     const SizedBox(height: 3),
-                    Text(_emailController.text.trim(), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF1B4F72))),
+                    Text(_registrationDestination, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF1B4F72))),
                     const SizedBox(height: 18),
                     TextField(
                       controller: otpController,
@@ -529,13 +542,15 @@ class _LoginScreenState extends State<LoginScreen> {
                             try {
                               await auth.sendBarangayRegistrationOtp(
                                 fullName: _nameController.text.trim(),
+                                username: _usernameController.text.trim(),
                                 email: _emailController.text.trim(),
                                 barangayId: _selectedBarangayId!,
                                 positionDesignation: _positionController.text.trim(),
                                 phone: _phoneController.text.trim(),
+                                deliveryMethod: _registrationDeliveryMethod,
                               );
                               if (!dialogContext.mounted) return;
-                              setDialogState(() { resending = false; resendCooldownSeconds = 60; error = 'A new code has been sent to your email.'; });
+                              setDialogState(() { resending = false; resendCooldownSeconds = 60; error = 'A new code has been sent to $_registrationDestination.'; });
                               resendTimer?.cancel();
                               resendTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
                                 if (!dialogContext.mounted) { timer.cancel(); return; }
@@ -560,7 +575,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       context: dialogContext,
                       builder: (confirmContext) => AlertDialog(
                         title: const Text('Cancel account creation?'),
-                        content: const Text('If you close email verification, you’ll need to wait 60 seconds before requesting another code.'),
+                        content: const Text('If you close verification, you’ll need to wait 60 seconds before requesting another code.'),
                         actions: [
                           TextButton(onPressed: () => Navigator.pop(confirmContext, false), child: const Text('Keep verifying')),
                           FilledButton(onPressed: () => Navigator.pop(confirmContext, true), child: const Text('Cancel registration')),
@@ -578,12 +593,12 @@ class _LoginScreenState extends State<LoginScreen> {
                   style: FilledButton.styleFrom(backgroundColor: const Color(0xFF1B4F72), foregroundColor: Colors.white, shape: const StadiumBorder(), padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12)),
                   onPressed: verifying || resending ? null : () async {
                     if (otpController.text.trim().length != 6) {
-                      setDialogState(() => error = 'Enter the 6-digit code from your email.');
+                      setDialogState(() => error = 'Enter the 6-digit verification code.');
                       return;
                     }
                     setDialogState(() { verifying = true; error = null; });
                     try {
-                      final result = await auth.verifyBarangayRegistrationOtp(email: _emailController.text.trim(), otp: otpController.text.trim());
+                      final result = await auth.verifyBarangayRegistrationOtp(deliveryMethod: _registrationDeliveryMethod, destination: _registrationDestination, otp: otpController.text.trim());
                       if (dialogContext.mounted) Navigator.pop(dialogContext, result);
                     } catch (exception) {
                       if (dialogContext.mounted) setDialogState(() { verifying = false; error = exception.toString().replaceFirst('Exception: ', ''); });
@@ -759,6 +774,16 @@ class _LoginScreenState extends State<LoginScreen> {
                           validator: (v) => v == null || v.isEmpty ? 'Name required' : null,
                         ),
                         const SizedBox(height: 14),
+                        TextFormField(
+                          controller: _usernameController,
+                          textCapitalization: TextCapitalization.none,
+                          style: const TextStyle(color: Color(0xFF0F172A)),
+                          decoration: _inputDecoration('Username', Icons.alternate_email),
+                          validator: (value) => RegExp(r'^[A-Za-z0-9_.-]{3,32}$').hasMatch(value?.trim() ?? '')
+                              ? null
+                              : 'Use 3–32 letters, numbers, dots, underscores, or hyphens.',
+                        ),
+                        const SizedBox(height: 14),
                         // Barangay Dropdown
                         DropdownButtonFormField<String>(
                           dropdownColor: Colors.white,
@@ -809,9 +834,13 @@ class _LoginScreenState extends State<LoginScreen> {
                           inputFormatters: PhoneNumberUtils.inputFormatters,
                           style: const TextStyle(color: Color(0xFF0F172A)),
                           decoration: _inputDecoration('Contact Number', Icons.phone),
-                          validator: (v) => !_isRegisterMode
-                              ? null
-                              : PhoneNumberUtils.validationMessage(v),
+                          onChanged: (_) => setState(() {}),
+                          validator: (v) {
+                            if (!_isRegisterMode) return null;
+                            final phone = v?.trim() ?? '';
+                            if (phone.isEmpty && _emailController.text.trim().isEmpty) return 'Enter a mobile number or email for verification.';
+                            return phone.isEmpty ? null : PhoneNumberUtils.validationMessage(phone);
+                          },
                         ),
                         const SizedBox(height: 14),
                         TextFormField(
@@ -827,10 +856,26 @@ class _LoginScreenState extends State<LoginScreen> {
                         controller: _emailController,
                         keyboardType: TextInputType.emailAddress,
                         style: const TextStyle(color: Color(0xFF0F172A)),
-                        decoration: _inputDecoration('Email Address', Icons.email),
-                        validator: (v) => v == null || !v.contains('@') ? 'Valid email required' : null,
+                        decoration: _inputDecoration(_isRegisterMode ? 'Email Address (optional)' : 'Username or Email', Icons.email),
+                        onChanged: (_) => setState(() {}),
+                        validator: (v) {
+                          final emailOrIdentifier = v?.trim() ?? '';
+                          if (!_isRegisterMode) return emailOrIdentifier.isEmpty ? 'Username or email is required' : null;
+                          if (emailOrIdentifier.isEmpty && _phoneController.text.trim().isEmpty) return 'Enter an email address or mobile number for verification.';
+                          if (emailOrIdentifier.isEmpty) return null;
+                          return emailOrIdentifier.contains('@') && emailOrIdentifier.contains('.') ? null : 'Enter a valid email address.';
+                        },
                       ),
                       const SizedBox(height: 14),
+                      if (_isRegisterMode && _emailController.text.trim().isNotEmpty && _phoneController.text.trim().isNotEmpty) ...[
+                        Align(alignment: Alignment.centerLeft, child: Text('Send verification code by', style: TextStyle(color: Colors.grey.shade700, fontWeight: FontWeight.w600))),
+                        const SizedBox(height: 8),
+                        Wrap(spacing: 8, children: [
+                          ChoiceChip(label: const Text('Mobile SMS'), selected: _registrationOtpChannel == 'sms', onSelected: (selected) { if (selected) setState(() => _registrationOtpChannel = 'sms'); }),
+                          ChoiceChip(label: const Text('Email'), selected: _registrationOtpChannel == 'email', onSelected: (selected) { if (selected) setState(() => _registrationOtpChannel = 'email'); }),
+                        ]),
+                        const SizedBox(height: 14),
+                      ],
                       if (!_isRegisterMode) ...[
                         TextFormField(
                           controller: _passwordController,
@@ -947,6 +992,7 @@ class _LoginScreenState extends State<LoginScreen> {
     _emailController.dispose();
     _passwordController.dispose();
     _nameController.dispose();
+    _usernameController.dispose();
     _phoneController.dispose();
     _positionController.dispose();
     super.dispose();
