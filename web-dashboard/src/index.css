@@ -4654,6 +4654,7 @@ body.responder-map-open { overflow: hidden; }
 }
 
 .barangay-register-link { display: block; margin-top: 10px; text-align: center; }
+.barangay-registration-page { height: auto; min-height: 100vh; min-height: 100svh; overflow-y: auto; }
 .barangay-registration-main { display: grid; min-height: calc(100vh - 74px); place-items: start center; padding: 38px 16px 56px; background: radial-gradient(circle at 50% 0, rgba(16, 130, 171, .18), transparent 44%), #071326; }
 .barangay-registration-card { width: min(100%, 620px); padding: clamp(20px, 4vw, 34px); border: 1px solid #2c4365; border-radius: 18px; color: #eff5ff; background: #0a1a33; box-shadow: 0 24px 65px rgba(0, 0, 0, .25); }
 .barangay-registration-back { display: inline-flex; align-items: center; gap: 7px; margin-bottom: 18px; color: #a9bbd6; font-size: 12px; text-decoration: none; }

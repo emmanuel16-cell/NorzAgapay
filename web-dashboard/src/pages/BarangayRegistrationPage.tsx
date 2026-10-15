@@ -71,7 +71,7 @@ export default function BarangayRegistrationPage() {
   };
 
   return (
-    <div className="public-login-page">
+    <div className="public-login-page barangay-registration-page">
       <PublicHeader />
       <main className="barangay-registration-main">
         <section className="barangay-registration-card">
