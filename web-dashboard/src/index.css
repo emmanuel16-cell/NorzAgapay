@@ -3854,8 +3854,16 @@ tbody tr:last-child td { border-bottom: none; }
 .public-hotlines-heading h2 { font-size: 16px; }
 .public-hotlines-heading p { font-size: 11px; }
 .public-hotline-list { display: grid; max-height: 60vh; grid-template-columns: minmax(0, 1fr); gap: 8px; overflow: auto; overscroll-behavior: contain; padding-right: 2px; }
-.public-hotline-list > a { display: grid; min-width: 0; min-height: 66px; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 10px; border: 1px solid #2c4568; border-radius: 11px; color: #e4edfb; background: linear-gradient(120deg, #10213d, #122747); text-decoration: none; transition: border-color .16s ease, background .16s ease, transform .16s ease; }
-.public-hotline-list > a:hover { transform: translateY(-1px); border-color: #2aa9c8; background: linear-gradient(120deg, #142a4b, #163052); }
+.public-hotline-list > a, .public-hotline-group-entries > a { display: grid; min-width: 0; min-height: 66px; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 10px; border: 1px solid #2c4568; border-radius: 11px; color: #e4edfb; background: linear-gradient(120deg, #10213d, #122747); text-decoration: none; transition: border-color .16s ease, background .16s ease, transform .16s ease; }
+.public-hotline-list > a:hover, .public-hotline-group-entries > a:hover { transform: translateY(-1px); border-color: #2aa9c8; background: linear-gradient(120deg, #142a4b, #163052); }
+.public-hotline-group { display: grid; min-width: 0; gap: 10px; margin-top: 4px; padding-top: 14px; border-top: 1px solid rgba(123, 155, 195, .22); }
+.public-hotline-group-heading { display: flex; min-width: 0; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.public-hotline-group-heading > div { min-width: 0; }
+.public-hotline-group-heading h3 { margin: 0; color: #edf5ff; font-size: 13px; }
+.public-hotline-group-heading p { margin: 4px 0 0; color: #9db7df; font-size: 10px; line-height: 1.4; }
+.public-hotline-barangay-select { display: grid; min-width: 135px; gap: 4px; color: #a9bddb; font-size: 10px; font-weight: 700; }
+.public-hotline-barangay-select select { width: 100%; min-height: 38px; box-sizing: border-box; appearance: none; padding: 8px 32px 8px 10px; border: 1px solid #2c4568; border-radius: 9px; color: #edf5ff; background-color: #0b1931; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%239db7df' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 9px center; font: inherit; font-size: 11px; cursor: pointer; }
+.public-hotline-group-entries { display: grid; min-width: 0; gap: 8px; }
 .public-hotline-row-icon { display: grid; width: 36px; height: 36px; place-items: center; border-radius: 10px; color: #31d3ed; background: #123353; }
 .public-hotline-row-copy { display: grid; min-width: 0; gap: 3px; }
 .public-hotline-row-copy strong { color: #edf5ff; font-size: 11px; line-height: 1.3; overflow-wrap: anywhere; }
@@ -3885,6 +3893,8 @@ tbody tr:last-child td { border-bottom: none; }
   .public-report-location-actions { grid-template-columns: minmax(0, 1fr); }
   .public-hotlines-panel { order: 2; }
   .public-hotline-list { max-height: 42vh; }
+  .public-hotline-group-heading { align-items: stretch; flex-direction: column; }
+  .public-hotline-barangay-select { width: 100%; }
   .public-login-main { min-height: 0; align-items: flex-start; justify-content: center; padding: 14px 14px; }
   .public-login-main .login-card { padding: 20px 22px; border-radius: 20px; }
   .public-login-main .login-subtitle { margin-bottom: 14px; }
