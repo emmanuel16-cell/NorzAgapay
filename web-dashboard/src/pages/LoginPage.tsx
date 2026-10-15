@@ -153,7 +153,7 @@ export default function LoginPage() {
 
   return (
     <div className="public-login-page">
-      <PublicHeader />
+      <PublicHeader showActions={false} />
       <main className="login-page public-login-main">
       <div className="login-card">
         {!showSetup && (

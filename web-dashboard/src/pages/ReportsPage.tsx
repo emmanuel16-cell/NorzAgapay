@@ -434,6 +434,7 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
               </div></section>
 
               <section className="reports-detail-section-v2"><h3>Resident’s report</h3><div className="reports-text-card-v2">{selected.description?.trim() || 'No details provided.'}</div></section>
+              {selected.incident_type === 'other' && selected.specifics?.trim() && <section className="reports-detail-section-v2"><h3>Other emergency type</h3><div className="reports-text-card-v2">{selected.specifics.replace(/^Other emergency:\s*/i, '')}</div></section>}
 
               <section className="reports-detail-section-v2">
                 <div className="reports-section-heading-v2"><h3>Proof of incident</h3><span>{proofs.length} attachment{proofs.length === 1 ? '' : 's'}</span></div>

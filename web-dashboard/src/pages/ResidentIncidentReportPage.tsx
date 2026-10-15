@@ -47,6 +47,7 @@ export default function ResidentIncidentReportPage() {
   const [params] = useSearchParams();
   const type = params.get('type') === 'community' ? 'community' : 'emergency';
   const [category, setCategory] = useState<string>(INCIDENT_TYPE_OPTIONS[0]?.value || 'not_sure');
+  const [otherEmergency, setOtherEmergency] = useState('');
   const [communityCategory, setCommunityCategory] = useState(incidentTypes[0]);
   const [phone, setPhone] = useState(() => normalizeMobile(user?.phone));
   const [description, setDescription] = useState('');
@@ -90,19 +91,20 @@ export default function ResidentIncidentReportPage() {
     event.preventDefault(); setError(''); setMessage(''); setSubmitted(false);
     const normalizedPhone = normalizeMobile(phone);
     if (!/^09\d{9}$/.test(normalizedPhone)) { setError('Enter an 11-digit mobile number starting with 09.'); return; }
+    if (type !== 'community' && category === 'other' && !otherEmergency.trim()) { setError('Describe the other emergency.'); return; }
     if (!location) { setError('Add the incident location before submitting.'); return; }
     if (description.trim().length < 8) { setError('Describe what happened in at least 8 characters.'); return; }
     setBusy(true);
     try {
       const title = type === 'community' ? communityCategory : 'Resident Incident Report';
-      const fingerprint = JSON.stringify([type, title, type === 'community' ? communityCategory : category, normalizedPhone, description.trim(), location.latitude, location.longitude, evidence ? [evidence.name, evidence.size, evidence.lastModified] : null]);
+      const fingerprint = JSON.stringify([type, title, type === 'community' ? communityCategory : category, category === 'other' ? otherEmergency.trim() : '', normalizedPhone, description.trim(), location.latitude, location.longitude, evidence ? [evidence.name, evidence.size, evidence.lastModified] : null]);
       if (requestFingerprintRef.current !== fingerprint) {
         requestIdRef.current = requestId();
         requestStartedAtRef.current = new Date().toISOString();
         requestFingerprintRef.current = fingerprint;
       }
       const response = await reportAPI.guestReport({
-        type, title, specifics: type === 'community' ? communityCategory : '', description: description.trim(),
+        type, title, specifics: type === 'community' ? communityCategory : category === 'other' ? `Other emergency: ${otherEmergency.trim()}` : '', description: description.trim(),
         latitude: location.latitude, longitude: location.longitude, contact_number: normalizedPhone,
         send_to: 'mdrrmo', incident_type: type === 'community'
           ? communityCategory.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
@@ -113,7 +115,7 @@ export default function ResidentIncidentReportPage() {
       setReference(typeof reportId === 'string' ? reportId : '');
       setSubmitted(true);
       setMessage(type === 'community' ? 'Your community concern was sent to MDRRMO for review.' : 'Your report was sent to MDRRMO for review and coordination.');
-      setDescription(''); setLocation(null); setLocationSource(null); setEvidence(null);
+      setDescription(''); setOtherEmergency(''); setLocation(null); setLocationSource(null); setEvidence(null);
       requestIdRef.current = requestId(); requestFingerprintRef.current = ''; requestStartedAtRef.current = '';
       const fileInput = document.getElementById('resident-report-evidence') as HTMLInputElement | null;
       if (fileInput) fileInput.value = '';
@@ -130,7 +132,7 @@ export default function ResidentIncidentReportPage() {
     <div className="resident-compose-layout"><section className="resident-compose-card">
       <div className="resident-compose-account"><span><ShieldCheck size={18}/></span><div><strong>{user?.full_name || 'Resident account'}</strong><small>{user?.barangay_name ? `Resident · ${user.barangay_name}` : 'Resident report'}</small></div><button type="button" onClick={() => navigate('/my-reports')}>My reports <ArrowLeft size={13}/></button></div>
       <form className="resident-compose-form" onSubmit={(event) => void submit(event)}>
-        {type === 'community' ? <label>Concern category<select value={communityCategory} onChange={(event) => setCommunityCategory(event.target.value)}>{incidentTypes.map((item) => <option key={item} value={item}>{item}</option>)}</select></label> : <label>Incident category<select value={category} onChange={(event) => setCategory(event.target.value)}>{INCIDENT_TYPE_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>}
+        {type === 'community' ? <label>Concern category<select value={communityCategory} onChange={(event) => setCommunityCategory(event.target.value)}>{incidentTypes.map((item) => <option key={item} value={item}>{item}</option>)}</select></label> : <><label>Incident category<select value={category} onChange={(event) => setCategory(event.target.value)}>{INCIDENT_TYPE_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>{category === 'other' && <label>What kind of emergency?<input type="text" required maxLength={120} value={otherEmergency} onChange={(event) => setOtherEmergency(event.target.value)} placeholder="Describe the emergency" /></label>}</>}
         <label>Mobile number<input type="tel" inputMode="numeric" autoComplete="tel" maxLength={11} placeholder="09XXXXXXXXX" value={phone} onChange={(event) => setPhone(event.target.value.replace(/\D/g, '').slice(0, 11))} required/><small>Responders may use this number to contact you about the report.</small></label>
         <label>What happened?<textarea rows={5} minLength={8} maxLength={2000} placeholder={type === 'community' ? 'Describe the hazard and where it is affecting the community…' : 'Describe what happened, who needs help, and any immediate danger…'} value={description} onChange={(event) => setDescription(event.target.value)} required/></label>
         <fieldset className="resident-location-field"><legend>Incident location <b>Required</b></legend><p>Place the pin at the incident site. This helps responders find the right location.</p><div className="resident-location-actions"><button type="button" onClick={() => useCurrentLocation()}><LocateFixed size={15}/>{locationSource === 'current' ? 'Update current location' : 'Use current location'}</button><button type="button" onClick={openMapPicker}><MapPin size={15}/>{locationSource === 'map' ? 'Change map location' : 'Choose on map'}</button></div><div className={`resident-picked-location ${location ? 'located' : ''}`}><MapPin size={15}/>{location ? `${locationSource === 'map' ? 'Map pin' : 'Current location'} · ${location.latitude.toFixed(5)}, ${location.longitude.toFixed(5)}` : 'No location selected yet'}</div></fieldset>

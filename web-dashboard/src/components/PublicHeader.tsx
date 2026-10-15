@@ -1,7 +1,7 @@
 import { Bell, Search, UserRound } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
-export default function PublicHeader() {
+export default function PublicHeader({ showActions = true }: { showActions?: boolean }) {
   return (
     <header className="public-site-header">
       <div className="public-site-header-inner">
@@ -9,7 +9,7 @@ export default function PublicHeader() {
           <img src="/NA-icon.png" alt="" />
           <span>Norz-Agapay</span>
         </Link>
-        <nav className="public-site-actions" aria-label="Main navigation">
+        {showActions && <nav className="public-site-actions" aria-label="Main navigation">
           <Link className="public-site-action public-site-login" to="/track-report">
             <Search size={20} strokeWidth={2.2} aria-hidden="true" />
             <span>Track Report</span>
@@ -22,7 +22,7 @@ export default function PublicHeader() {
             <Bell size={20} strokeWidth={2.2} aria-hidden="true" />
             <span>Report Incident</span>
           </Link>
-        </nav>
+        </nav>}
       </div>
     </header>
   );

@@ -9,6 +9,7 @@ type TrackedReport = {
   id: string;
   title?: string | null;
   description?: string | null;
+  specifics?: string | null;
   incident_type?: string | null;
   send_to?: string | null;
   status?: string | null;
@@ -167,7 +168,7 @@ export default function TrackReportPage() {
   };
 
   return <div className="public-report-page">
-    <PublicHeader />
+    <PublicHeader showActions={false} />
     <main className="public-report-layout public-track-layout">
       <div className="public-report-intro">
         <span className="public-home-eyebrow">PUBLIC REPORT TRACKING</span>
@@ -187,6 +188,7 @@ export default function TrackReportPage() {
         {report && <article className="public-tracked-report" aria-live="polite">
           <header><div><span className="public-home-eyebrow">{INCIDENT_TYPE_OPTIONS.find((item) => item.value === report.incident_type)?.label || 'Incident report'}</span><h2>{statusLabel(report)}</h2></div><span className={`resident-status ${statusLabel(report) === 'Resolved' ? 'resolved' : statusLabel(report) === 'Response in progress' ? 'responding' : ''}`}>{statusLabel(report)}</span></header>
           <p>{report.description?.trim() || report.title || 'No incident details were provided.'}</p>
+          {report.incident_type === 'other' && report.specifics?.trim() && <p><strong>Other emergency:</strong> {report.specifics.replace(/^Other emergency:\s*/i, '')}</p>}
           <div className="resident-report-meta"><span><FileText size={14} /> Received {dateLabel(report.created_at)}</span><span><MapPin size={14} /> {report.response_barangay_name || report.barangay_name || 'Norzagaray'}</span></div>
           <ol className="resident-report-timeline public-tracked-timeline">
             {timelineFor(report).map((event, index) => <li key={`${event.label}-${event.at || index}`}><span className="resident-timeline-marker" aria-hidden="true" /><div><strong>{event.label}</strong><time>{dateLabel(event.at)}</time>{event.detail && <p>{event.detail}</p>}</div></li>)}

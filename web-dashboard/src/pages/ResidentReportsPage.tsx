@@ -9,6 +9,7 @@ type ResidentReport = {
   id: string;
   title?: string | null;
   description?: string | null;
+  specifics?: string | null;
   incident_type?: string | null;
   type?: string | null;
   source_type?: string | null;
@@ -240,6 +241,7 @@ export default function ResidentReportsPage() {
                 <div className="resident-report-card-main">
                   <div className="resident-report-card-heading"><strong>{categoryLabel(report)}</strong><span className={`resident-status ${status === 'Resolved' ? 'resolved' : status === 'Response in progress' ? 'responding' : ''}`}>{status}</span></div>
                   <p>{report.description?.trim() || report.title || 'No incident details were provided.'}</p>
+                  {report.incident_type === 'other' && report.specifics?.trim() && <p className="resident-report-other-emergency"><strong>Other emergency:</strong> {report.specifics.replace(/^Other emergency:\s*/i, '')}</p>}
                   <div className="resident-report-meta"><span><FileText size={14} /> {formatReportDate(report.created_at)}</span><span><MapPin size={14} /> {report.response_barangay_name || report.barangay_name || 'Norzagaray'}</span></div>
                   <details className="resident-report-timeline">
                     <summary>Track report history</summary>
