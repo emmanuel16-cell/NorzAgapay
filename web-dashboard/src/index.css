@@ -5222,9 +5222,15 @@ body.responder-map-open { overflow: hidden; }
 }
 .user-settings-content-tools > .command-locations-page .command-location-map-card { min-height: 380px; }
 .user-settings-content-tools > .page-header.municipality-boundary-page-header {
+  position: static;
+  z-index: auto;
   min-height: 0;
   flex: 0 0 auto;
   padding: 0 0 12px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
 }
 .user-settings-content-tools > .page-content.municipality-boundary-page {
   height: auto;
