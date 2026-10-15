@@ -30,6 +30,7 @@ import BarangayBoardPage from './pages/BarangayBoardPage';
 import BarangayAssistancePage from './pages/BarangayAssistancePage';
 import BarangayAnalyticsPage from './pages/BarangayAnalyticsPage';
 import BarangayRegistrationPage from './pages/BarangayRegistrationPage';
+import ResponderUnitTeamPage from './pages/ResponderUnitTeamPage';
 import ResidentRegistrationPage from './pages/ResidentRegistrationPage';
 import { MunicipalityBoundaryProvider } from './context/MunicipalityBoundaryContext';
 
@@ -87,8 +88,37 @@ function BarangayAccess({ roles, children, allowInactive = false }: { roles: str
 }
 
 function IncidentReportsRoute() {
+  const { user, isMasterAdmin } = useAuth();
+  const isBarangay = user?.account_kind === 'barangay';
+  const allowed = isBarangay
+    ? Boolean(user?.coordination_verified) && ['dispatcher', 'responder'].includes(user?.role || '')
+    : ['dispatcher', 'responder'].includes(user?.role || '') || isMasterAdmin;
+  if (!allowed) return <Navigate to={landingPath(user)} replace />;
+  return <ReportsPage readOnlyResponder={user?.role === 'responder'} />;
+}
+
+function BarangayTeamRoute() {
   const { user } = useAuth();
-  return <ReportsPage readOnlyResponder={user?.account_kind === 'barangay' && user.role === 'responder'} />;
+  if (user?.account_kind === 'barangay') {
+    return <BarangayAccess roles={['admin', 'dispatcher', 'responder', 'staff']}><BarangayTeamPage /></BarangayAccess>;
+  }
+  return <RoleAccess roles={['responder']}><ResponderUnitTeamPage /></RoleAccess>;
+}
+
+function BarangayBoardRoute() {
+  const { user } = useAuth();
+  if (user?.account_kind === 'barangay') {
+    return <BarangayAccess roles={['admin', 'dispatcher', 'responder', 'staff']}><BarangayBoardPage /></BarangayAccess>;
+  }
+  return <RoleAccess roles={['responder']}><BarangayBoardPage /></RoleAccess>;
+}
+
+function BarangayAssistanceRoute() {
+  const { user } = useAuth();
+  if (user?.account_kind === 'barangay') {
+    return <BarangayAccess roles={['dispatcher', 'responder']}><BarangayAssistancePage /></BarangayAccess>;
+  }
+  return <RoleAccess roles={['responder']}><BarangayAssistancePage /></RoleAccess>;
 }
 
 function AppRoutes() {
@@ -105,7 +135,7 @@ function AppRoutes() {
         <Route path="weather-monitoring" element={<Navigate to="/command-center" replace />} />
         <Route path="advisories" element={<Navigate to="/command-center" replace />} />
         <Route path="earthquakes" element={<Navigate to="/command-center" replace />} />
-        <Route path="reports" element={<RoleAccess roles={['dispatcher']} allowBarangayRoles={['dispatcher', 'responder']}><IncidentReportsRoute /></RoleAccess>} />
+        <Route path="reports" element={<IncidentReportsRoute />} />
         <Route path="my-reports" element={<RoleAccess roles={['resident']}><ResidentReportsPage /></RoleAccess>} />
         <Route path="resident-home" element={<RoleAccess roles={['resident']}><ResidentHomePage /></RoleAccess>} />
         <Route path="resident-alerts" element={<RoleAccess roles={['resident']}><ResidentAlertsPage /></RoleAccess>} />
@@ -117,9 +147,9 @@ function AppRoutes() {
         <Route path="barangay-workspace" element={<BarangayAccess roles={['admin', 'staff']}><BarangayStaffWorkspacePage /></BarangayAccess>} />
         <Route path="barangay-dashboard" element={<BarangayAccess roles={['admin', 'dispatcher']}><BarangayDashboardPage /></BarangayAccess>} />
         <Route path="barangay-settings" element={<BarangayAccess roles={['admin', 'dispatcher', 'responder', 'staff']} allowInactive><BarangayAdministrationPage /></BarangayAccess>} />
-        <Route path="barangay-team" element={<BarangayAccess roles={['admin', 'dispatcher', 'responder', 'staff']}><BarangayTeamPage /></BarangayAccess>} />
-        <Route path="barangay-board" element={<BarangayAccess roles={['admin', 'dispatcher', 'responder', 'staff']}><BarangayBoardPage /></BarangayAccess>} />
-        <Route path="barangay-assistance" element={<BarangayAccess roles={['dispatcher', 'responder']}><BarangayAssistancePage /></BarangayAccess>} />
+        <Route path="barangay-team" element={<BarangayTeamRoute />} />
+        <Route path="barangay-board" element={<BarangayBoardRoute />} />
+        <Route path="barangay-assistance" element={<BarangayAssistanceRoute />} />
         <Route path="barangay-analytics" element={<BarangayAccess roles={['admin']}><BarangayAnalyticsPage /></BarangayAccess>} />
         <Route path="locations" element={<RoleAccess roles={['admin', 'dispatcher']}><CommandLocationsPage /></RoleAccess>} />
         <Route path="requests" element={<RoleAccess roles={['dispatcher']}><ResourceRequestsPage /></RoleAccess>} />

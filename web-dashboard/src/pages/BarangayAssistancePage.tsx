@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { ClipboardList, Check, HandHelping, RefreshCw, Send, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
-import { barangayAPI, reportAPI, socket } from '../lib/api';
+import { barangayAPI, reportAPI, requestAPI, socket } from '../lib/api';
 
 type Incident = { id: string; title?: string; incident_type?: string; description?: string; response_status?: string; barangay_response_status?: string; created_at?: string };
 type Assistance = {
@@ -27,7 +27,7 @@ function RequestFields({ form, setForm, incidents }: { form: RequestForm; setFor
   </>;
 }
 
-export default function BarangayAssistancePage() {
+function BarangayAssistanceWorkspace() {
   const { user } = useAuth();
   const isResponder = user?.role === 'responder';
   const [requests, setRequests] = useState<Assistance[]>([]);
@@ -149,3 +149,128 @@ export default function BarangayAssistancePage() {
 }
 
 function Edit3Icon() { return <ClipboardList size={15} />; }
+
+type MdrrmoIncident = { id: string; title?: string; incident_type?: string; response_status?: string; created_at?: string };
+type MdrrmoAssistance = {
+  id: string;
+  incident_id: string;
+  request_type: 'responders' | 'goods';
+  sub_type?: string | null;
+  details?: string;
+  status?: 'pending' | 'approved' | 'rejected' | 'fulfilled';
+  dispatcher_notes?: string | null;
+  created_at?: string;
+};
+type MdrrmoRequestForm = { incident_id: string; category: string; details: string };
+const initialMdrrmoRequest: MdrrmoRequestForm = { incident_id: '', category: 'manpower', details: '' };
+
+function MdrrmoResponderAssistanceWorkspace() {
+  const [requests, setRequests] = useState<MdrrmoAssistance[]>([]);
+  const [incidents, setIncidents] = useState<MdrrmoIncident[]>([]);
+  const [form, setForm] = useState<MdrrmoRequestForm>(initialMdrrmoRequest);
+  const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const [requestResponse, incidentResponse] = await Promise.all([requestAPI.mine(), reportAPI.mdrrmoQueue()]);
+      setRequests(Array.isArray(requestResponse.data) ? requestResponse.data : []);
+      const reports = Array.isArray(incidentResponse.data) ? incidentResponse.data : [];
+      setIncidents(reports);
+    } catch (loadError: any) {
+      setError(loadError?.response?.data?.error || 'Your MDRRMO assistance requests could not be loaded.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    socket.on('resource:request', load);
+    socket.on('incident_report:updated', load);
+    return () => {
+      socket.off('resource:request', load);
+      socket.off('incident_report:updated', load);
+    };
+  }, [load]);
+
+  const reset = () => { setForm(initialMdrrmoRequest); setIsRequestModalOpen(false); };
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!form.incident_id) { toast.error('Choose an active incident for this request.'); return; }
+    setSaving(true);
+    try {
+      await requestAPI.create({
+        request_type: form.category === 'manpower' ? 'responders' : 'goods',
+        sub_type: form.category,
+        details: form.details.trim(),
+        incident_id: form.incident_id,
+      });
+      toast.success('Assistance request submitted to MDRRMO dispatch.');
+      reset();
+      await load();
+    } catch (saveError: any) {
+      toast.error(saveError?.response?.data?.error || 'The assistance request could not be submitted.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const confirmReceived = async (request: MdrrmoAssistance) => {
+    setSaving(true);
+    try {
+      await requestAPI.updateStatus(request.id, 'fulfilled');
+      toast.success('Assistance receipt confirmed.');
+      await load();
+    } catch (actionError: any) {
+      toast.error(actionError?.response?.data?.error || 'Assistance receipt could not be confirmed.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const incidentName = (id: string) => {
+    const incident = incidents.find((item) => item.id === id);
+    return incident?.title || incident?.incident_type?.replaceAll('_', ' ') || 'Assigned incident';
+  };
+  const activeIncidents = incidents.filter((incident) => !['resolved', 'closed', 'rejected'].includes(String(incident.response_status || '').toLowerCase()));
+
+  return (
+    <div className="barangay-console-page">
+      <header className="barangay-console-header"><div><span className="workspace-eyebrow">MDRRMO FIELD RESPONSE</span><h1>My assistance requests</h1><p>Request additional resources or responders for an incident assigned to your unit.</p></div><div className="barangay-console-header-actions"><button className="workspace-primary-action" type="button" onClick={() => { setForm(initialMdrrmoRequest); setIsRequestModalOpen(true); }} aria-haspopup="dialog"><HandHelping size={16} /> Request assistance</button><button className="workspace-secondary-action" type="button" onClick={() => void load()} disabled={loading}><RefreshCw size={16} className={loading ? 'workspace-spinning' : ''} /> Refresh</button></div></header>
+
+      {isRequestModalOpen && <div className="barangay-console-modal-backdrop" role="presentation" onKeyDown={(event) => { if (event.key === 'Escape' && !saving) reset(); }} onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) reset(); }}>
+        <section className="barangay-console-panel barangay-console-form-modal barangay-assistance-request-modal" role="dialog" aria-modal="true" aria-labelledby="mdrrmo-assistance-request-title">
+          <header><div><h2 id="mdrrmo-assistance-request-title">Request MDRRMO assistance</h2><p>Link the request to an active incident assigned to your responder account.</p></div><button autoFocus className="workspace-secondary-action" type="button" onClick={reset} disabled={saving}><X size={15} /> Cancel</button></header>
+          <form className="barangay-console-form-grid" onSubmit={(event) => void submit(event)}>
+            <label className="barangay-console-form-wide">Linked incident<select required value={form.incident_id} onChange={(event) => setForm((current) => ({ ...current, incident_id: event.target.value }))}><option value="">Choose an assigned incident</option>{activeIncidents.map((incident) => <option value={incident.id} key={incident.id}>{incident.title || incident.incident_type?.replaceAll('_', ' ') || 'Incident'}</option>)}</select></label>
+            <label className="barangay-console-form-wide">Assistance type<select value={form.category} onChange={(event) => setForm((current) => ({ ...current, category: event.target.value }))}><option value="manpower">Additional responders</option><option value="supplies">Supplies or resources</option><option value="equipment">Equipment</option><option value="other">Other support</option></select></label>
+            <label className="barangay-console-form-wide">Explain what is needed<textarea required minLength={10} rows={3} value={form.details} onChange={(event) => setForm((current) => ({ ...current, details: event.target.value }))} placeholder="Describe the support needed and why…" /></label>
+            <div className="barangay-console-form-actions"><button className="btn btn-primary" type="submit" disabled={saving || activeIncidents.length === 0}>{saving ? 'Submitting…' : <><Send size={16} /> Submit request</>}</button>{activeIncidents.length === 0 && <span className="barangay-console-muted">There are no active assigned incidents to link.</span>}</div>
+          </form>
+        </section>
+      </div>}
+
+      {error && <div className="workspace-message workspace-message-error" role="alert">{error}<button type="button" onClick={() => void load()}>Try again</button></div>}
+      <section className="barangay-console-panel"><header><div><h2><ClipboardList size={19} /> Request history</h2><p>Your requests and the dispatcher’s response.</p></div><span className="barangay-console-status pending">{requests.filter((request) => request.status === 'pending').length} pending</span></header>
+        {loading ? <p className="barangay-console-muted">Loading assistance requests…</p> : requests.length === 0 ? <div className="barangay-console-empty"><HandHelping size={25} /><strong>No assistance requests</strong><span>Requests submitted for your assigned incidents will appear here.</span></div> : <div className="barangay-assistance-list">{requests.map((request) => <article className="barangay-assistance-card" key={request.id}>
+          <div className="barangay-assistance-card-heading"><div><span className={`barangay-console-status ${request.status || 'pending'}`}>{statusLabel(request.status)}</span><strong>{incidentName(request.incident_id)}</strong></div><time>{request.created_at ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(request.created_at)) : 'Time unavailable'}</time></div>
+          <div className="barangay-assistance-meta"><span>{request.sub_type?.replaceAll('_', ' ') || (request.request_type === 'responders' ? 'Additional responders' : 'Resources')}</span><span>Incident {incidentName(request.incident_id)}</span></div>
+          <p className="barangay-assistance-explanation">{request.details || 'No request details provided.'}</p>
+          {request.dispatcher_notes && <div className="barangay-assistance-decision"><strong>Dispatcher response</strong><p>{request.dispatcher_notes}</p></div>}
+          {request.status === 'approved' && <footer><button type="button" onClick={() => void confirmReceived(request)} disabled={saving}><Check size={15} /> Confirm received</button></footer>}
+        </article>)}</div>}
+      </section>
+    </div>
+  );
+}
+
+export default function BarangayAssistancePage() {
+  const { user } = useAuth();
+  if (user?.account_kind !== 'barangay' && user?.role === 'responder') return <MdrrmoResponderAssistanceWorkspace />;
+  return <BarangayAssistanceWorkspace />;
+}

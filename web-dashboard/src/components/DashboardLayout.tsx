@@ -135,7 +135,18 @@ function navigationForRole(role?: string, accountKind?: string, isMasterAdmin = 
     }));
     return visibleItems;
   }
-  if (role === 'responder') return navItems.filter((item) => item.path === '/my-responses');
+  if (role === 'responder') {
+    const item = (path: string) => navItems.find((navItem) => navItem.path === path)!;
+    return [
+      { label: 'Incident Monitoring', section: true },
+      item('/my-responses'),
+      item('/reports'),
+      { ...item('/barangay-assistance'), label: 'Assistance Requests' },
+      { label: 'MDRRMO Operations', section: true },
+      { ...item('/barangay-board'), label: 'MDRRMO Board' },
+      { ...item('/barangay-team'), label: 'Response Unit' },
+    ];
+  }
   if (isMasterAdmin) return navItems.filter((item) => !['/my-reports', '/my-responses', '/barangay-workspace'].includes(item.path || ''));
   if (role === 'admin') return navItems.filter((item) => ['Operations', '/locations', '/officers', 'Administration', '/verification/barangay', '/users', '/alert-broadcasts', '/analytics'].includes(item.path || item.label));
   if (role === 'logistics') return navItems.filter((item) => ['Operations', '/municipality-boundary', '/respond-units', '/officers'].includes(item.path || item.label));

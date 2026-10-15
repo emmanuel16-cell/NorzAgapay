@@ -4389,6 +4389,7 @@ body.responder-map-open { overflow: hidden; }
 .barangay-location-marker > span { position: absolute; top: 3px; left: 5px; width: 24px; height: 24px; transform: rotate(-45deg); border: 3px solid #e7fbff; border-radius: 50% 50% 50% 0; background: #0799b7; box-shadow: 0 3px 12px #0008; }
 .barangay-location-marker > span::after { position: absolute; top: 5px; left: 5px; width: 8px; height: 8px; border-radius: 50%; background: #e7fbff; content: ''; }
 .barangay-board-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; gap: 12px; }
+.barangay-board-columns.responder-public-board { grid-template-columns: minmax(0, 1fr); }
 .barangay-board-columns .barangay-post-grid { grid-template-columns: 1fr; }
 .barangay-policy-details { padding: 13px 0; border-top: 1px solid var(--border-color, #253d5f); }
 .barangay-policy-details:first-of-type { border-top: 0; }

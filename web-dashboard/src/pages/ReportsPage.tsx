@@ -114,7 +114,7 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
   const { user } = useAuth();
   const isBarangay = user?.account_kind === 'barangay';
   const isReadOnlyBarangay = readOnlyBarangay && isBarangay && user?.role === 'admin';
-  const isReadOnlyResponder = readOnlyResponder && isBarangay && user?.role === 'responder';
+  const isReadOnlyResponder = readOnlyResponder && user?.role === 'responder';
   const isReadOnlyWorkspace = isReadOnlyBarangay || isReadOnlyResponder;
   const [searchParams, setSearchParams] = useSearchParams();
   const [currentTime, setCurrentTime] = useState(() => new Date().toLocaleTimeString());
@@ -172,8 +172,8 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
     const handleUpdate = (updated: IncidentReport) => {
       if (!updated?.id) return;
       void fetchReports();
-      // Responder sockets are barangay-wide; refetch the responder-scoped list instead of
-      // merging a possibly unrelated report event into the signed-in responder's queue.
+      // Refetch the responder-scoped queue instead of merging a possibly unrelated
+      // incident event into the signed-in responder's queue.
       if (isReadOnlyResponder) return;
       setReports((current) => {
         if (!isBarangay && !isVisibleToMdrrmo(updated)) return current.filter((item) => item.id !== updated.id);
@@ -384,7 +384,7 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
   return (
     <main className={`reports-workspace-v2 ${isReadOnlyResponder ? 'responder-mobile-workspace-v2' : ''}`}>
       <header className="reports-page-header-v2">
-        <div><h1>Incidents Reports</h1><span>{isReadOnlyResponder ? `Responder workspace · ${user?.barangay_name || 'Your barangay'} · assigned to you` : isReadOnlyBarangay ? `Read-only incident workspace · ${user?.barangay_name || 'Your barangay'}` : isBarangay ? `Barangay response workspace · ${user?.barangay_name || 'Your barangay'}` : 'Dispatcher workspace'}</span></div>
+        <div><h1>Incidents Reports</h1><span>{isReadOnlyResponder ? `Responder workspace · ${isBarangay ? user?.barangay_name || 'Your barangay' : 'MDRRMO'} · assigned to you` : isReadOnlyBarangay ? `Read-only incident workspace · ${user?.barangay_name || 'Your barangay'}` : isBarangay ? `Barangay response workspace · ${user?.barangay_name || 'Your barangay'}` : 'Dispatcher workspace'}</span></div>
         <div className="reports-live-indicator"><i /> Live <span>·</span> {currentTime}</div>
       </header>
       {!isBarangay && <nav className="reports-group-tabs-v2" aria-label="Report type">
