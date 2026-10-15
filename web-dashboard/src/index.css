@@ -5208,3 +5208,36 @@ body.responder-map-open { overflow: hidden; }
   .resident-submit-report { width: 100%; }
   .resident-report-success-actions { display: grid; width: 100%; }
 }
+
+/* Command setup pages can also live inside the fixed-height Settings modal. */
+.user-settings-content-tools > .command-locations-page {
+  min-height: 0;
+  flex: 0 0 auto;
+  padding: 0;
+  background: transparent;
+}
+.user-settings-content-tools > .command-locations-page .command-locations-grid {
+  min-height: 480px;
+  flex: 0 0 auto;
+}
+.user-settings-content-tools > .command-locations-page .command-location-map-card { min-height: 380px; }
+.user-settings-content-tools > .page-header.municipality-boundary-page-header {
+  min-height: 0;
+  flex: 0 0 auto;
+  padding: 0 0 12px;
+}
+.user-settings-content-tools > .page-content.municipality-boundary-page {
+  height: auto;
+  min-height: 600px;
+  flex: 0 0 auto;
+  overflow: visible;
+}
+.user-settings-content-tools .municipality-boundary-workspace { min-height: 440px; flex: 1 0 auto; }
+@media (max-width: 768px) {
+  .user-settings-content-tools > .command-locations-page .command-locations-grid {
+    display: flex;
+    min-height: 0;
+    flex-direction: column;
+  }
+  .user-settings-content-tools > .command-locations-page .command-location-map-card { min-height: 42vh; }
+}
