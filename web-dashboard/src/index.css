@@ -4941,7 +4941,7 @@ body.responder-map-open { overflow: hidden; }
 .resident-back-link { display: inline-flex; align-items: center; gap: 6px; justify-self: start; color: var(--text-secondary); font-size: 11px; font-weight: 700; text-decoration: none; }
 .resident-back-link:hover { color: var(--primary-light); }
 .resident-compose-layout { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(260px, .55fr); align-items: start; gap: 14px; }
-.resident-compose-card, .resident-compose-aside > section { border: 1px solid var(--border-color); border-radius: 13px; background: var(--bg-secondary); }
+.resident-compose-card, .resident-compose-aside > section, .resident-compose-aside > .resident-compose-emergency { border: 1px solid var(--border-color); border-radius: 13px; background: var(--bg-secondary); }
 .resident-compose-card { overflow: hidden; }
 .resident-compose-account { display: flex; align-items: center; gap: 10px; padding: 13px 16px; border-bottom: 1px solid var(--border-color); }
 .resident-compose-account > span { display: grid; width: 34px; height: 34px; flex: 0 0 auto; place-items: center; border-radius: 10px; color: var(--primary-light); background: rgba(55, 189, 216, .12); }
@@ -4978,7 +4978,7 @@ body.responder-map-open { overflow: hidden; }
 .resident-submit-report:hover { background: #d74954; }
 .resident-submit-report:disabled { opacity: .58; cursor: wait; }
 .resident-compose-aside { display: grid; gap: 11px; }
-.resident-compose-aside > section { padding: 15px; }
+.resident-compose-aside > section, .resident-compose-aside > .resident-compose-emergency { padding: 15px; }
 .resident-aside-icon { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 10px; color: var(--primary-light); background: rgba(55, 189, 216, .12); }
 .resident-compose-aside h2 { margin: 10px 0 13px; color: var(--text-primary); font-size: 14px; }
 .resident-compose-aside ol { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
@@ -4987,10 +4987,12 @@ body.responder-map-open { overflow: hidden; }
 .resident-compose-aside li > div { display: grid; gap: 3px; }
 .resident-compose-aside li strong { color: var(--text-primary); font-size: 10px; }
 .resident-compose-aside li small { color: var(--text-muted); font-size: 9px; line-height: 1.4; }
-.resident-compose-emergency { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 9px; border-color: rgba(237, 113, 100, .26) !important; color: #f08d83; background: rgba(141, 49, 44, .1) !important; }
+.resident-compose-emergency { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 9px; border-color: rgba(237, 113, 100, .26) !important; color: #f08d83; background: rgba(141, 49, 44, .1) !important; text-decoration: none; transition: background .15s ease, border-color .15s ease; }
+.resident-compose-emergency:hover { border-color: rgba(237, 113, 100, .48) !important; color: #f08d83; background: rgba(141, 49, 44, .18) !important; }
+.resident-compose-emergency:focus-visible { outline: 3px solid #ffd66f; outline-offset: 2px; }
 .resident-compose-emergency strong { color: var(--text-primary); font-size: 11px; }
 .resident-compose-emergency p { margin: 4px 0 7px; color: var(--text-secondary); font-size: 9px; }
-.resident-compose-emergency a { color: #f39b91; font-size: 10px; font-weight: 800; text-decoration: none; }
+.resident-compose-emergency-link { color: #f39b91; font-size: 10px; font-weight: 800; }
 .resident-map-modal { position: fixed; z-index: 1600; inset: 0; display: grid; place-items: center; padding: 18px; background: rgba(2, 8, 18, .76); backdrop-filter: blur(5px); }
 .resident-map-modal > section { display: grid; width: min(900px, 100%); max-height: min(90vh, 850px); grid-template-rows: auto auto minmax(250px, 1fr) auto auto; gap: 10px; overflow: hidden; padding: 15px; border: 1px solid var(--border-color); border-radius: 13px; background: var(--bg-secondary); box-shadow: 0 20px 70px rgba(0,0,0,.4); }
 .resident-map-modal > section > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
