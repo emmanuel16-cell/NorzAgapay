@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
-import { BadgeCheck, Check, Download, Edit3, FileCheck2, FileText, LocateFixed, MapPin, Phone, Plus, Save, ShieldAlert, Trash2 } from 'lucide-react';
+import { BadgeCheck, Check, Download, Edit3, FileCheck2, FileText, LocateFixed, MapPin, Phone, Plus, Save, ShieldAlert, Trash2, ImagePlus, Pencil } from 'lucide-react';
 import { MapContainer, Marker, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import { API_BASE, barangayAPI, reportAPI, socket } from '../lib/api';
 import { CARTO_ATTRIBUTION, CARTO_DARK_MAP_URL } from '../lib/mapConfig';
+import { createLocationMapIcon } from '../lib/locationMapIcon';
+import LocationIconEditorModal from '../components/LocationIconEditorModal';
 
 type HotlineEntry = { purpose: string; numbers: string[] };
 type CoordinatePoint = [number, number];
@@ -94,12 +96,15 @@ type BarangayAdministrationPageProps = { embedded?: boolean; section?: BarangayS
 export default function BarangayAdministrationPage({ embedded = false, section = 'all' }: BarangayAdministrationPageProps) {
   const { user, updateUser } = useAuth();
   const isAdmin = user?.role === 'admin';
+  const canManageLocation = user?.role === 'admin' || user?.role === 'staff';
   const canManageHotlines = user?.role === 'admin' || user?.role === 'staff';
   const canViewHotlines = Boolean(user?.barangay_id);
   const active = Boolean(user?.coordination_verified);
   const [official, setOfficial] = useState({ official_name: '', official_position: '', position_designation: user?.position_designation || '' });
   const [verification, setVerification] = useState<Verification | null>(null);
   const [location, setLocation] = useState({ latitude: '', longitude: '', address: '' });
+  const [locationIconUrl, setLocationIconUrl] = useState<string | null>(null);
+  const [iconEditorOpen, setIconEditorOpen] = useState(false);
   const [hotlines, setHotlines] = useState<HotlineEntry[]>([]);
   const [editingHotlineIndex, setEditingHotlineIndex] = useState<number | null>(null);
   const [selectedHotlinePhones, setSelectedHotlinePhones] = useState<Record<number, number[]>>({});
@@ -144,7 +149,7 @@ export default function BarangayAdministrationPage({ embedded = false, section =
     try {
       const tasks: Promise<any>[] = [];
       if (isAdmin) tasks.push(barangayAPI.accountRequest());
-      if (active && isAdmin) tasks.push(reportAPI.barangayLocation());
+      if (active && canManageLocation) tasks.push(reportAPI.barangayLocation());
       if (active && canViewHotlines && user?.barangay_id) {
         tasks.push(canManageHotlines ? barangayAPI.hotlineSettings() : barangayAPI.publishedHotlines(user.barangay_id));
       }
@@ -164,13 +169,14 @@ export default function BarangayAdministrationPage({ embedded = false, section =
           position_designation: record?.position_designation || user?.position_designation || '',
         });
       }
-      if (active && isAdmin) {
+      if (active && canManageLocation) {
         const barangay = results[index++]?.data?.barangay;
         setLocation({
           latitude: barangay?.location_latitude == null ? '' : String(barangay.location_latitude),
           longitude: barangay?.location_longitude == null ? '' : String(barangay.location_longitude),
           address: barangay?.location_address || '',
         });
+        setLocationIconUrl(barangay?.location_icon_url || null);
       }
       if (active && canViewHotlines) {
         const entries = results[index]?.data?.entries;
@@ -184,7 +190,7 @@ export default function BarangayAdministrationPage({ embedded = false, section =
     } finally {
       setLoading(false);
     }
-  }, [active, canManageHotlines, canViewHotlines, isAdmin, updateUser, user?.barangay_id, user?.position_designation, user?.verification_status]);
+  }, [active, canManageHotlines, canManageLocation, canViewHotlines, isAdmin, updateUser, user?.barangay_id, user?.position_designation, user?.verification_status]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
@@ -257,6 +263,28 @@ export default function BarangayAdministrationPage({ embedded = false, section =
       await reportAPI.saveBarangayLocation({ latitude, longitude, address: location.address.trim() || null });
       toast.success('Barangay command location saved.');
     } catch (saveError: any) { toast.error(messageOf(saveError, 'Barangay location could not be saved.')); }
+    finally { setSaving(false); }
+  };
+
+  const saveLocationIcon = async (file: File) => {
+    setSaving(true);
+    try {
+      const { data } = await reportAPI.saveBarangayLocationIcon(file);
+      setLocationIconUrl(data.barangay?.location_icon_url || null);
+      setIconEditorOpen(false);
+      toast.success('Barangay map icon saved.');
+    } catch (saveError: any) { toast.error(messageOf(saveError, 'Barangay map icon could not be saved.')); }
+    finally { setSaving(false); }
+  };
+
+  const removeLocationIcon = async () => {
+    setSaving(true);
+    try {
+      await reportAPI.removeBarangayLocationIcon();
+      setLocationIconUrl(null);
+      setIconEditorOpen(false);
+      toast.success('Barangay map icon removed.');
+    } catch (saveError: any) { toast.error(messageOf(saveError, 'Barangay map icon could not be removed.')); }
     finally { setSaving(false); }
   };
 
@@ -349,8 +377,10 @@ export default function BarangayAdministrationPage({ embedded = false, section =
         {Array.isArray(verification?.verification_history) && verification!.verification_history!.length > 0 && <div className="barangay-account-history"><h3>Review history</h3>{[...verification!.verification_history!].reverse().map((item, index) => <article key={`${item.timestamp || item.action}-${index}`}><span>{String(item.action || 'Update').replaceAll('_', ' ')}</span><p>{item.note || item.actor || 'Status updated'}</p><time>{item.timestamp ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(item.timestamp)) : ''}</time></article>)}</div>}
       </section>}
 
-      {showLocation && isAdmin && active && <section className="barangay-console-panel barangay-location-panel"><div className="barangay-location-layout">
+      {showLocation && canManageLocation && active && <section className="barangay-console-panel barangay-location-panel"><div className="barangay-location-layout">
         <div className="barangay-location-info"><header><div><h2>Barangay command location</h2><p>Used as the barangay operations location in command maps.</p></div></header>
+          <div className="barangay-location-icon-setting"><div className="barangay-location-icon-preview">{locationIconUrl ? <img src={locationIconUrl} alt="Barangay map icon" /> : <ImagePlus size={20} />}</div><div><strong>{locationIconUrl ? 'Barangay map icon' : 'Add barangay icon'}</strong><span>This badge appears as the barangay dot on command maps.</span></div><button type="button" onClick={() => setIconEditorOpen(true)} disabled={!hasValidLocationCoordinates} title={!hasValidLocationCoordinates ? 'Save the map location first' : undefined}><Pencil size={15} />{locationIconUrl ? 'Edit icon' : 'Add icon'}</button></div>
+          {!hasValidLocationCoordinates && <p className="barangay-location-icon-note">Choose and save the barangay location on the map before adding its icon.</p>}
           <form className="barangay-console-form-grid barangay-location-fields" onSubmit={(event) => void saveLocation(event)}>
             <label>Latitude<input required type="number" min={-90} max={90} step="any" value={location.latitude} onChange={(event) => setLocation((value) => ({ ...value, latitude: event.target.value }))} /></label>
             <label>Longitude<input required type="number" min={-180} max={180} step="any" value={location.longitude} onChange={(event) => setLocation((value) => ({ ...value, longitude: event.target.value }))} /></label>
@@ -363,12 +393,14 @@ export default function BarangayAdministrationPage({ embedded = false, section =
             <TileLayer url={CARTO_DARK_MAP_URL} attribution={CARTO_ATTRIBUTION} />
             <BarangayLocationMapFocus point={mapPoint} />
             <BarangayLocationMapPicker onPick={updateLocationCoordinates} />
-            {hasValidLocationCoordinates && <Marker position={mapPoint} icon={barangayLocationMarker} draggable eventHandlers={{ dragend: handleLocationMarkerDragEnd }}><Popup>{location.address || 'Barangay command location'}</Popup></Marker>}
+            {hasValidLocationCoordinates && <Marker position={mapPoint} icon={createLocationMapIcon(locationIconUrl, 'barangay', barangayLocationMarker)} draggable eventHandlers={{ dragend: handleLocationMarkerDragEnd }}><Popup>{location.address || 'Barangay command location'}</Popup></Marker>}
           </MapContainer>
           <button className="barangay-location-map-current" type="button" onClick={useCurrentLocation} title="Use current location" aria-label="Use current location"><LocateFixed size={17} /></button>
           <div className="barangay-location-map-hint"><MapPin size={14} /> Click the map or drag the pin to set coordinates</div>
         </section>
       </div></section>}
+
+      {iconEditorOpen && <LocationIconEditorModal title="Edit barangay map icon" currentIconUrl={locationIconUrl} saving={saving} onClose={() => { if (!saving) setIconEditorOpen(false); }} onSave={saveLocationIcon} onRemove={locationIconUrl ? removeLocationIcon : undefined} />}
 
       {showHotlines && active && canViewHotlines && <section className="barangay-console-panel"><header><div><h2>Public hotline directory</h2><p>{canManageHotlines ? 'These entries are shown to residents for your barangay.' : 'Published hotline numbers for your barangay.'}</p></div>{canManageHotlines && <button className="workspace-secondary-action" type="button" onClick={addHotline}><Plus size={16} /> Add hotline</button>}</header>
         {canManageHotlines ? <form onSubmit={(event) => void saveHotlines(event)}>

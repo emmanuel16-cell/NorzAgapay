@@ -24,6 +24,7 @@ export default function UserSettingsModal({ theme, onThemeChange, onClose, onSig
   const { user, updateUser, updateToken } = useAuth();
   const isBarangay = user?.account_kind === 'barangay';
   const isBarangayAdmin = isBarangay && user?.role === 'admin';
+  const canManageBarangayLocation = isBarangay && (user?.role === 'admin' || user?.role === 'staff');
   const isMdrrmoAdminOrStaff = !isBarangay && (user?.role === 'admin' || user?.role === 'logistics');
   const isResident = user?.account_kind === 'resident' && user.role === 'resident';
   const canViewHotlines = isBarangay && Boolean(user?.barangay_id);
@@ -201,7 +202,7 @@ export default function UserSettingsModal({ theme, onThemeChange, onClose, onSig
             {isMdrrmoAdminOrStaff && <button type="button" className={activeSection === 'municipalityBoundary' ? 'active' : ''} aria-current={activeSection === 'municipalityBoundary' ? 'page' : undefined} onClick={() => setActiveSection('municipalityBoundary')}><MapIcon size={17} /> Municipality Boundary</button>}
             {isBarangayAdmin && <button type="button" className={activeSection === 'account' ? 'active' : ''} aria-current={activeSection === 'account' ? 'page' : undefined} onClick={() => setActiveSection('account')}><FileText size={17} /> Account Request</button>}
             {canViewHotlines && <button type="button" className={activeSection === 'hotlines' ? 'active' : ''} aria-current={activeSection === 'hotlines' ? 'page' : undefined} onClick={() => setActiveSection('hotlines')}><Phone size={17} /> Barangay Hotline</button>}
-            {isBarangayAdmin && <button type="button" className={activeSection === 'location' ? 'active' : ''} aria-current={activeSection === 'location' ? 'page' : undefined} onClick={() => setActiveSection('location')}><MapPin size={17} /> Command Location</button>}
+            {canManageBarangayLocation && <button type="button" className={activeSection === 'location' ? 'active' : ''} aria-current={activeSection === 'location' ? 'page' : undefined} onClick={() => setActiveSection('location')}><MapPin size={17} /> Command Location</button>}
             {isBarangay && <button type="button" className={activeSection === 'terms' ? 'active' : ''} aria-current={activeSection === 'terms' ? 'page' : undefined} onClick={() => setActiveSection('terms')}><ScrollText size={17} /> Terms and Conditions</button>}
             {isBarangay && <button type="button" className={activeSection === 'privacy' ? 'active' : ''} aria-current={activeSection === 'privacy' ? 'page' : undefined} onClick={() => setActiveSection('privacy')}><ShieldCheck size={17} /> Privacy Policy</button>}
           </nav>

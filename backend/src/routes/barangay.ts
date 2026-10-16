@@ -26,6 +26,7 @@ import {
   isBarangayVerified,
 } from '../services/verifiedBarangayService';
 import { IncidentResolutionPdfService, IncompleteResolutionReportError } from '../services/incidentResolutionPdfService';
+import { isValidLocationIcon, removeStoredLocationIcon, storeLocationIcon } from '../services/locationIconStorage';
 import { formatIncidentReport } from './incidentReports';
 import { isReportResolved, reportStageDurations, summarizeReportTimings } from '../services/reportTiming';
 import { isDirectMdrrmoReport } from '../services/mdrrmoReportVisibility';
@@ -33,6 +34,7 @@ import { isGlobalUsernameConflict, isUsernameTaken, normalizeUsername } from '..
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
+const locationIconUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024, files: 1 } });
 
 async function getAccountPositionDesignation(userId: string, fallback?: string | null): Promise<string> {
   const { data: account } = await supabaseAdmin
@@ -329,9 +331,9 @@ router.get('/list', async (req: Request, res: Response) => {
 router.get('/location', authenticateBarangay, async (req: any, res: Response): Promise<void> => {
   try {
     const [{ data: barangay, error: barangayError }, { data: office, error: officeError }] = await Promise.all([
-      supabaseAdmin.from('barangays').select('id, name, location_latitude, location_longitude, location_address')
+      supabaseAdmin.from('barangays').select('id, name, location_latitude, location_longitude, location_address, location_icon_url')
         .eq('id', req.barangayUser.barangayId).maybeSingle(),
-      supabaseAdmin.from('mdrrmo_command_locations').select('*').eq('location_key', 'office').maybeSingle(),
+      supabaseAdmin.from('mdrrmo_command_locations').select('location_key, latitude, longitude, address, icon_url').eq('location_key', 'office').maybeSingle(),
     ]);
     if (barangayError) throw barangayError;
     if (officeError) throw officeError;
@@ -342,7 +344,7 @@ router.get('/location', authenticateBarangay, async (req: any, res: Response): P
   }
 });
 
-router.put('/location', authenticateBarangay, requireRole(['admin']), async (req: any, res: Response): Promise<void> => {
+router.put('/location', authenticateBarangay, requireRole(['admin', 'staff']), async (req: any, res: Response): Promise<void> => {
   const parsed = z.object({
     latitude: z.number().min(-90).max(90),
     longitude: z.number().min(-180).max(180),
@@ -358,7 +360,7 @@ router.put('/location', authenticateBarangay, requireRole(['admin']), async (req
       location_longitude: parsed.data.longitude,
       location_address: parsed.data.address || null,
     }).eq('id', req.barangayUser.barangayId)
-      .select('id, name, location_latitude, location_longitude, location_address').single();
+      .select('id, name, location_latitude, location_longitude, location_address, location_icon_url').single();
     if (error) throw error;
     io.to('dashboard_staff').emit('command:locations_updated', { type: 'barangay', barangay: data });
     io.to(`barangay:${req.barangayUser.barangayId}`).emit('command:locations_updated', { type: 'barangay', barangay: data });
@@ -366,6 +368,61 @@ router.put('/location', authenticateBarangay, requireRole(['admin']), async (req
   } catch (error) {
     console.error('Save barangay location failed:', error);
     res.status(500).json({ error: 'Could not save the barangay location.' });
+  }
+});
+
+router.put('/location/icon', authenticateBarangay, requireRole(['admin', 'staff']), locationIconUpload.single('icon'), async (req: any, res: Response): Promise<void> => {
+  const file = req.file as Express.Multer.File | undefined;
+  if (!isValidLocationIcon(file)) {
+    res.status(400).json({ error: 'Upload a valid PNG icon. The edited image must be 2 MB or smaller.' });
+    return;
+  }
+  const barangayId = req.barangayUser.barangayId as string;
+  let stored: { url: string; storagePath: string } | null = null;
+  try {
+    const { data: current, error: readError } = await supabaseAdmin.from('barangays')
+      .select('location_icon_storage_path').eq('id', barangayId).maybeSingle();
+    if (readError) throw readError;
+    if (!current) { res.status(404).json({ error: 'Barangay location was not found.' }); return; }
+    stored = await storeLocationIcon(file, `barangay/${barangayId}`);
+    const { data, error } = await supabaseAdmin.from('barangays').update({
+      location_icon_url: stored.url,
+      location_icon_storage_path: stored.storagePath,
+    }).eq('id', barangayId).select('id, name, location_icon_url').single();
+    if (error) throw error;
+    if (current.location_icon_storage_path) {
+      void removeStoredLocationIcon(current.location_icon_storage_path).catch((cleanupError) => console.warn('Could not remove replaced barangay location icon:', cleanupError));
+    }
+    io.to('dashboard_staff').emit('command:locations_updated', { type: 'barangay', barangay: data });
+    io.to(`barangay:${barangayId}`).emit('command:locations_updated', { type: 'barangay', barangay: data });
+    res.json({ barangay: data });
+  } catch (error) {
+    if (stored) void removeStoredLocationIcon(stored.storagePath).catch(() => undefined);
+    console.error('Save barangay location icon failed:', error);
+    res.status(500).json({ error: 'Could not save the barangay map icon.' });
+  }
+});
+
+router.delete('/location/icon', authenticateBarangay, requireRole(['admin', 'staff']), async (req: any, res: Response): Promise<void> => {
+  const barangayId = req.barangayUser.barangayId as string;
+  try {
+    const { data: current, error: readError } = await supabaseAdmin.from('barangays')
+      .select('location_icon_storage_path').eq('id', barangayId).maybeSingle();
+    if (readError) throw readError;
+    const { data, error } = await supabaseAdmin.from('barangays').update({
+      location_icon_url: null,
+      location_icon_storage_path: null,
+    }).eq('id', barangayId).select('id, name, location_icon_url').single();
+    if (error) throw error;
+    if (current?.location_icon_storage_path) {
+      void removeStoredLocationIcon(current.location_icon_storage_path).catch((cleanupError) => console.warn('Could not remove barangay location icon:', cleanupError));
+    }
+    io.to('dashboard_staff').emit('command:locations_updated', { type: 'barangay', barangay: data });
+    io.to(`barangay:${barangayId}`).emit('command:locations_updated', { type: 'barangay', barangay: data });
+    res.json({ barangay: data });
+  } catch (error) {
+    console.error('Remove barangay location icon failed:', error);
+    res.status(500).json({ error: 'Could not remove the barangay map icon.' });
   }
 });
 

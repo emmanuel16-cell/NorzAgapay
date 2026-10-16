@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { CARTO_DARK_MAP_URL, CARTO_ATTRIBUTION } from '../lib/mapConfig';
 import 'leaflet/dist/leaflet.css';
 import { reportAPI, requestAPI, respondUnitAPI, socket } from '../lib/api';
+import { createLocationMapIcon } from '../lib/locationMapIcon';
 import { getMdrrmoReportGroup, isVisibleToMdrrmo } from '../lib/mdrrmoReportVisibility';
 import { useAuth } from '../context/AuthContext';
 import { useMunicipalityBoundary } from '../context/MunicipalityBoundaryContext';
@@ -138,6 +139,7 @@ interface CommandLocationPin {
   latitude: number;
   longitude: number;
   address?: string | null;
+  iconUrl?: string | null;
   barangay_id?: string;
 }
 
@@ -1024,10 +1026,10 @@ export default function CommandCenter() {
           const office = response.data.office;
           const own = response.data.barangay;
           if (office?.latitude != null && office?.longitude != null) pins.push({
-            id: 'office', name: 'MDRRMO office', type: 'office', latitude: Number(office.latitude), longitude: Number(office.longitude), address: office.address,
+            id: 'office', name: 'MDRRMO office', type: 'office', latitude: Number(office.latitude), longitude: Number(office.longitude), address: office.address, iconUrl: office.icon_url,
           });
           if (own?.location_latitude != null && own?.location_longitude != null) pins.push({
-            id: own.id, barangay_id: own.id, name: `Barangay ${own.name || user?.barangay_name || ''}`.trim(), type: 'barangay', latitude: Number(own.location_latitude), longitude: Number(own.location_longitude), address: own.location_address,
+            id: own.id, barangay_id: own.id, name: `Barangay ${own.name || user?.barangay_name || ''}`.trim(), type: 'barangay', latitude: Number(own.location_latitude), longitude: Number(own.location_longitude), address: own.location_address, iconUrl: own.location_icon_url,
           });
           setCommandLocationPins(pins);
         } else {
@@ -1036,11 +1038,11 @@ export default function CommandCenter() {
           const pins: CommandLocationPin[] = [];
           const office = response.data.office;
           if (office?.latitude != null && office?.longitude != null) pins.push({
-            id: 'office', name: 'MDRRMO office', type: 'office', latitude: Number(office.latitude), longitude: Number(office.longitude), address: office.address,
+            id: 'office', name: 'MDRRMO office', type: 'office', latitude: Number(office.latitude), longitude: Number(office.longitude), address: office.address, iconUrl: office.icon_url,
           });
           for (const row of response.data.barangays || []) {
             if (row.location_latitude == null || row.location_longitude == null) continue;
-            pins.push({ id: row.id, barangay_id: row.id, name: `Barangay ${row.name}`, type: 'barangay', latitude: Number(row.location_latitude), longitude: Number(row.location_longitude), address: row.location_address });
+            pins.push({ id: row.id, barangay_id: row.id, name: `Barangay ${row.name}`, type: 'barangay', latitude: Number(row.location_latitude), longitude: Number(row.location_longitude), address: row.location_address, iconUrl: row.location_icon_url });
           }
           setCommandLocationPins(pins.filter((pin) => Number.isFinite(pin.latitude) && Number.isFinite(pin.longitude)));
         }
@@ -1550,7 +1552,7 @@ export default function CommandCenter() {
             <Marker
               key={`command-location-pin-${pin.id}`}
               position={[pin.latitude, pin.longitude]}
-              icon={pin.type === 'office' ? commandOfficePinIcon : commandBarangayPinIcon}
+              icon={createLocationMapIcon(pin.iconUrl, pin.type, pin.type === 'office' ? commandOfficePinIcon : commandBarangayPinIcon)}
               zIndexOffset={1800}
               eventHandlers={{ click: () => void openAvailabilityForPin(pin) }}
             >

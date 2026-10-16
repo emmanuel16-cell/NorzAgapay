@@ -5495,13 +5495,17 @@ BEGIN;
 ALTER TABLE public.barangays
   ADD COLUMN IF NOT EXISTS location_latitude DOUBLE PRECISION,
   ADD COLUMN IF NOT EXISTS location_longitude DOUBLE PRECISION,
-  ADD COLUMN IF NOT EXISTS location_address TEXT;
+  ADD COLUMN IF NOT EXISTS location_address TEXT,
+  ADD COLUMN IF NOT EXISTS location_icon_url TEXT,
+  ADD COLUMN IF NOT EXISTS location_icon_storage_path TEXT;
 
 CREATE TABLE IF NOT EXISTS public.mdrrmo_command_locations (
   location_key TEXT PRIMARY KEY CHECK (location_key = 'office'),
   latitude DOUBLE PRECISION NOT NULL CHECK (latitude BETWEEN -90 AND 90),
   longitude DOUBLE PRECISION NOT NULL CHECK (longitude BETWEEN -180 AND 180),
   address TEXT,
+  icon_url TEXT,
+  icon_storage_path TEXT,
   updated_by UUID REFERENCES public.users(id) ON DELETE SET NULL,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

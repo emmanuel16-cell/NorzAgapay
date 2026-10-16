@@ -293,6 +293,10 @@ export const reportAPI = {
   availableBarangayResponders: () => api.get('/barangay/location/available-responders'),
   saveBarangayLocation: (data: { latitude: number; longitude: number; address?: string | null }) => api.put('/barangay/location', data),
   saveOfficeLocation: (data: { latitude: number; longitude: number; address?: string | null }) => api.put('/mdrrmo/reports/command-locations/office', data),
+  saveBarangayLocationIcon: (file: File) => { const body = new FormData(); body.append('icon', file); return api.put('/barangay/location/icon', body, { headers: { 'Content-Type': 'multipart/form-data' } }); },
+  removeBarangayLocationIcon: () => api.delete('/barangay/location/icon'),
+  saveOfficeLocationIcon: (file: File) => { const body = new FormData(); body.append('icon', file); return api.put('/mdrrmo/reports/command-locations/office/icon', body, { headers: { 'Content-Type': 'multipart/form-data' } }); },
+  removeOfficeLocationIcon: () => api.delete('/mdrrmo/reports/command-locations/office/icon'),
   guestReport: (data: { type: string; title: string; description: string; latitude: number; longitude: number; contact_number: string; send_to: 'mdrrmo'; incident_type?: string; specifics?: string; incident_time_choice?: string; incident_occurred_at?: string | null; incident_time_precision?: string; client_request_id?: string; client_submitted_at?: string }, evidence?: File | null) => {
     const body = new FormData();
     Object.entries(data).forEach(([key, value]) => body.append(key, value == null ? '' : String(value)));

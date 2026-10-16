@@ -12,9 +12,11 @@ import { getDispatchableRespondUnits } from '../services/respondUnitAvailability
 import { getBarangayCoordinates, distanceMeters as distanceBetweenCoordinates } from '../services/nearestBarangay';
 import { getVerifiedBarangayIds } from '../services/verifiedBarangayService';
 import { getBarangayResponderGpsLocation, getResponderGpsLocation, RESPONDER_GPS_TTL_SECONDS } from '../config/redis';
+import { isValidLocationIcon, removeStoredLocationIcon, storeLocationIcon } from '../services/locationIconStorage';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
+const locationIconUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024, files: 1 } });
 const isMdrrmoReport = isVisibleToMdrrmo;
 
 function parseList(value: unknown): string[] {
@@ -391,8 +393,8 @@ router.post('/:id/recall-barangay', authenticate, authorize('dispatcher', 'admin
 router.get('/command-locations', authenticate, authorize('dispatcher', 'admin', 'logistics'), async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
     const [{ data: office, error: officeError }, { data: barangays, error: barangaysError }] = await Promise.all([
-      supabaseAdmin.from('mdrrmo_command_locations').select('*').eq('location_key', 'office').maybeSingle(),
-      supabaseAdmin.from('barangays').select('id, name, location_latitude, location_longitude, location_address').order('name', { ascending: true }),
+      supabaseAdmin.from('mdrrmo_command_locations').select('location_key, latitude, longitude, address, icon_url').eq('location_key', 'office').maybeSingle(),
+      supabaseAdmin.from('barangays').select('id, name, location_latitude, location_longitude, location_address, location_icon_url').order('name', { ascending: true }),
     ]);
     if (officeError) throw officeError;
     if (barangaysError) throw barangaysError;
@@ -418,8 +420,12 @@ router.put('/command-locations/office', authenticate, authorize('admin', 'logist
     return;
   }
   try {
+    const { data: current, error: readError } = await supabaseAdmin.from('mdrrmo_command_locations')
+      .select('icon_url, icon_storage_path').eq('location_key', 'office').maybeSingle();
+    if (readError) throw readError;
     const { data, error } = await supabaseAdmin.from('mdrrmo_command_locations').upsert({
-      location_key: 'office', ...parsed.data, updated_by: req.user!.userId, updated_at: new Date().toISOString(),
+      location_key: 'office', ...parsed.data, icon_url: current?.icon_url || null,
+      icon_storage_path: current?.icon_storage_path || null, updated_by: req.user!.userId, updated_at: new Date().toISOString(),
     }, { onConflict: 'location_key' }).select('*').single();
     if (error) throw error;
     io.emit('command:locations_updated', { type: 'office' });
@@ -427,6 +433,61 @@ router.put('/command-locations/office', authenticate, authorize('admin', 'logist
   } catch (error) {
     console.error('Save MDRRMO office location failed:', error);
     res.status(500).json({ error: 'Could not save the MDRRMO office location.' });
+  }
+});
+
+router.put('/command-locations/office/icon', authenticate, authorize('admin', 'logistics'), locationIconUpload.single('icon'), async (req: AuthRequest, res: Response): Promise<void> => {
+  const file = req.file as Express.Multer.File | undefined;
+  if (!isValidLocationIcon(file)) {
+    res.status(400).json({ error: 'Upload a valid PNG icon. The edited image must be 2 MB or smaller.' });
+    return;
+  }
+  let stored: { url: string; storagePath: string } | null = null;
+  try {
+    const { data: current, error: readError } = await supabaseAdmin.from('mdrrmo_command_locations')
+      .select('icon_storage_path').eq('location_key', 'office').maybeSingle();
+    if (readError) throw readError;
+    if (!current) { res.status(409).json({ error: 'Save the MDRRMO office location before adding its map icon.' }); return; }
+    stored = await storeLocationIcon(file, 'mdrrmo/office');
+    const { data, error } = await supabaseAdmin.from('mdrrmo_command_locations').update({
+      icon_url: stored.url,
+      icon_storage_path: stored.storagePath,
+      updated_by: req.user!.userId,
+      updated_at: new Date().toISOString(),
+    }).eq('location_key', 'office').select('location_key, latitude, longitude, address, icon_url').single();
+    if (error) throw error;
+    if (current.icon_storage_path) {
+      void removeStoredLocationIcon(current.icon_storage_path).catch((cleanupError) => console.warn('Could not remove replaced MDRRMO location icon:', cleanupError));
+    }
+    io.emit('command:locations_updated', { type: 'office' });
+    res.json({ office: data });
+  } catch (error) {
+    if (stored) void removeStoredLocationIcon(stored.storagePath).catch(() => undefined);
+    console.error('Save MDRRMO location icon failed:', error);
+    res.status(500).json({ error: 'Could not save the MDRRMO map icon.' });
+  }
+});
+
+router.delete('/command-locations/office/icon', authenticate, authorize('admin', 'logistics'), async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { data: current, error: readError } = await supabaseAdmin.from('mdrrmo_command_locations')
+      .select('icon_storage_path').eq('location_key', 'office').maybeSingle();
+    if (readError) throw readError;
+    const { data, error } = await supabaseAdmin.from('mdrrmo_command_locations').update({
+      icon_url: null,
+      icon_storage_path: null,
+      updated_by: req.user!.userId,
+      updated_at: new Date().toISOString(),
+    }).eq('location_key', 'office').select('location_key, latitude, longitude, address, icon_url').single();
+    if (error) throw error;
+    if (current?.icon_storage_path) {
+      void removeStoredLocationIcon(current.icon_storage_path).catch((cleanupError) => console.warn('Could not remove MDRRMO location icon:', cleanupError));
+    }
+    io.emit('command:locations_updated', { type: 'office' });
+    res.json({ office: data });
+  } catch (error) {
+    console.error('Remove MDRRMO location icon failed:', error);
+    res.status(500).json({ error: 'Could not remove the MDRRMO map icon.' });
   }
 });
 

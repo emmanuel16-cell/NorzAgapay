@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { MapContainer, Marker, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
-import { MapPin, Save, LocateFixed } from 'lucide-react';
+import { MapPin, Save, LocateFixed, ImagePlus, Pencil } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { reportAPI } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { CARTO_DARK_MAP_URL, CARTO_ATTRIBUTION } from '../lib/mapConfig';
+import { createLocationMapIcon } from '../lib/locationMapIcon';
+import LocationIconEditorModal from '../components/LocationIconEditorModal';
 import 'leaflet/dist/leaflet.css';
 
-type LocationPin = { id?: string; name?: string; location_key?: string; latitude?: number | string | null; longitude?: number | string | null; location_latitude?: number | string | null; location_longitude?: number | string | null; address?: string | null; location_address?: string | null };
+type LocationPin = { id?: string; name?: string; location_key?: string; latitude?: number | string | null; longitude?: number | string | null; location_latitude?: number | string | null; location_longitude?: number | string | null; address?: string | null; location_address?: string | null; icon_url?: string | null; location_icon_url?: string | null };
 type DraftPin = { latitude: number; longitude: number } | null;
 
 const officeIcon = L.divIcon({ className: 'command-location-marker office', html: '<span>OFFICE</span>', iconSize: [74, 38], iconAnchor: [37, 19] });
@@ -29,7 +31,7 @@ function MapSizeAndFocus({ point }: { point: [number, number] }) {
 export default function CommandLocationsPage() {
   const { user } = useAuth();
   const isBarangay = user?.account_kind === 'barangay';
-  const canEdit = user?.role === 'admin' || user?.role === 'logistics' || user?.role === 'master_admin';
+  const canEdit = isBarangay ? user?.role === 'admin' || user?.role === 'staff' : user?.role === 'admin' || user?.role === 'logistics';
   const [office, setOffice] = useState<LocationPin | null>(null);
   const [barangay, setBarangay] = useState<LocationPin | null>(null);
   const [barangays, setBarangays] = useState<LocationPin[]>([]);
@@ -37,6 +39,8 @@ export default function CommandLocationsPage() {
   const [address, setAddress] = useState('');
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [iconTarget, setIconTarget] = useState<'office' | 'barangay' | null>(null);
+  const [iconSaving, setIconSaving] = useState(false);
 
   const readPin = (pin: LocationPin | null | undefined): DraftPin => {
     if (!pin) return null;
@@ -97,6 +101,32 @@ export default function CommandLocationsPage() {
   };
 
   const displayedPins = useMemo(() => isBarangay ? [] : barangays, [isBarangay, barangays]);
+  const targetPin = iconTarget === 'office' ? office : barangay;
+  const targetIconUrl = iconTarget === 'office' ? office?.icon_url : barangay?.location_icon_url;
+  const saveIcon = async (file: File) => {
+    if (!iconTarget) return;
+    setIconSaving(true);
+    try {
+      if (iconTarget === 'office') await reportAPI.saveOfficeLocationIcon(file);
+      else await reportAPI.saveBarangayLocationIcon(file);
+      toast.success('Map icon saved.');
+      setIconTarget(null);
+      await load();
+    } catch (error: any) { toast.error(error?.response?.data?.error || 'Could not save the map icon.'); }
+    finally { setIconSaving(false); }
+  };
+  const removeIcon = async () => {
+    if (!iconTarget) return;
+    setIconSaving(true);
+    try {
+      if (iconTarget === 'office') await reportAPI.removeOfficeLocationIcon();
+      else await reportAPI.removeBarangayLocationIcon();
+      toast.success('Map icon removed.');
+      setIconTarget(null);
+      await load();
+    } catch (error: any) { toast.error(error?.response?.data?.error || 'Could not remove the map icon.'); }
+    finally { setIconSaving(false); }
+  };
 
   return (
     <main className="command-locations-page">
@@ -110,10 +140,8 @@ export default function CommandLocationsPage() {
               <button className="command-location-current" type="button" onClick={useCurrentLocation}><LocateFixed size={16} /> Use current location</button>
               <label htmlFor="command-location-address">Address or landmark <span>(optional)</span></label>
               <input id="command-location-address" value={address} onChange={(event) => setAddress(event.target.value)} maxLength={240} placeholder="Office or barangay hall address" />
-              <div className="command-location-coordinates">
-                <div><span>Latitude</span><strong>{draft ? draft.latitude.toFixed(6) : 'Click map to select'}</strong></div>
-                <div><span>Longitude</span><strong>{draft ? draft.longitude.toFixed(6) : 'Click map to select'}</strong></div>
-              </div>
+              <div className="command-location-icon-setting"><div className="command-location-icon-preview">{(isBarangay ? barangay?.location_icon_url : office?.icon_url) ? <img src={(isBarangay ? barangay?.location_icon_url : office?.icon_url) || ''} alt="Current map icon" /> : <ImagePlus size={21} />}</div><div><strong>{(isBarangay ? barangay?.location_icon_url : office?.icon_url) ? 'Map icon set' : 'Location map icon'}</strong><span>Use your barangay or MDRRMO badge on the map.</span></div><button type="button" onClick={() => setIconTarget(isBarangay ? 'barangay' : 'office')} disabled={!readPin(isBarangay ? barangay : office)} title={!readPin(isBarangay ? barangay : office) ? 'Save the map location first' : undefined}><Pencil size={15} />{(isBarangay ? barangay?.location_icon_url : office?.icon_url) ? 'Edit' : 'Add icon'}</button></div>
+              {!readPin(isBarangay ? barangay : office) && <p className="command-location-instruction">Save the location pin before adding its map icon.</p>}
               <button className="btn btn-primary command-location-save" type="button" disabled={saving || !draft} onClick={() => void save()}><Save size={16} />{saving ? 'Saving…' : 'Save official location'}</button>
             </> : <div className="command-location-readonly">Only the account administrator can update this location pin.</div>}
             {office && <div className="command-location-reference"><strong>MDRRMO office reference</strong><span>{office.address || (office.latitude != null ? `${Number(office.latitude).toFixed(6)}, ${Number(office.longitude).toFixed(6)}` : 'No office pin saved yet')}</span></div>}
@@ -125,16 +153,17 @@ export default function CommandLocationsPage() {
             <TileLayer url={CARTO_DARK_MAP_URL} attribution={CARTO_ATTRIBUTION} />
             <MapSizeAndFocus point={center} />
             <PinPicker enabled={canEdit} onPick={setDraft} />
-            {officePoint && <Marker position={[officePoint.latitude, officePoint.longitude]} icon={officeIcon}><Popup>MDRRMO office{office?.address ? ` · ${office.address}` : ''}</Popup></Marker>}
-            {isBarangay && ownBarangayPoint && <Marker position={[ownBarangayPoint.latitude, ownBarangayPoint.longitude]} icon={barangayIcon}><Popup>Barangay {barangay?.name || user?.barangay_name}</Popup></Marker>}
+            {officePoint && <Marker position={[officePoint.latitude, officePoint.longitude]} icon={createLocationMapIcon(office?.icon_url, 'office', officeIcon)}><Popup>MDRRMO office{office?.address ? ` · ${office.address}` : ''}</Popup></Marker>}
+            {isBarangay && ownBarangayPoint && <Marker position={[ownBarangayPoint.latitude, ownBarangayPoint.longitude]} icon={createLocationMapIcon(barangay?.location_icon_url, 'barangay', barangayIcon)}><Popup>Barangay {barangay?.name || user?.barangay_name}</Popup></Marker>}
             {displayedPins.map((row) => {
               const pin = readPin(row);
-              return pin ? <Marker key={row.id} position={[pin.latitude, pin.longitude]} icon={barangayIcon}><Popup>Barangay {row.name}{row.location_address ? ` · ${row.location_address}` : ''}</Popup></Marker> : null;
+              return pin ? <Marker key={row.id} position={[pin.latitude, pin.longitude]} icon={createLocationMapIcon(row.location_icon_url, 'barangay', barangayIcon)}><Popup>Barangay {row.name}{row.location_address ? ` · ${row.location_address}` : ''}</Popup></Marker> : null;
             })}
             {draft && <Marker position={[draft.latitude, draft.longitude]} icon={draftIcon}><Popup>Selected location</Popup></Marker>}
           </MapContainer>
         </section>
       </div>
+      {iconTarget && <LocationIconEditorModal title={`Edit ${iconTarget === 'office' ? 'MDRRMO' : 'barangay'} map icon`} currentIconUrl={targetIconUrl} saving={iconSaving} onClose={() => { if (!iconSaving) setIconTarget(null); }} onSave={saveIcon} onRemove={targetPin && targetIconUrl ? removeIcon : undefined} />}
     </main>
   );
 }
