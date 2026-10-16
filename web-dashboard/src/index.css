@@ -3673,11 +3673,9 @@ tbody tr:last-child td { border-bottom: none; }
 .command-location-icon-setting button, .barangay-location-icon-setting button { display: inline-flex; min-height: 34px; align-items: center; justify-content: center; gap: 5px; padding: 0 9px; border: 1px solid var(--border-hover); border-radius: 8px; color: var(--text-primary); background: var(--bg-secondary); font: inherit; font-size: 11px; font-weight: 700; cursor: pointer; }
 .command-location-icon-setting button:disabled, .barangay-location-icon-setting button:disabled { opacity: .55; cursor: not-allowed; }
 .barangay-location-icon-note { margin: -8px 0 0; }
-.location-map-image-icon { border: 0; background: transparent; }
-.location-map-image-icon > span { display: grid; width: 44px; height: 44px; overflow: hidden; place-items: center; border: 3px solid #fff; border-radius: 50%; background: #102a49; box-shadow: 0 3px 12px #0009; }
-.location-map-image-icon.office > span { outline: 2px solid #d73f4e; }
-.location-map-image-icon.barangay > span { outline: 2px solid #078eaa; }
-.location-map-image-icon img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.leaflet-marker-icon.location-map-image-icon { box-sizing: border-box; border: 3px solid #fff; border-radius: 50%; object-fit: contain; background: #102a49; box-shadow: 0 3px 12px #0009; }
+.leaflet-marker-icon.location-map-image-icon.office { outline: 2px solid #d73f4e; }
+.leaflet-marker-icon.location-map-image-icon.barangay { outline: 2px solid #078eaa; }
 .location-icon-modal-backdrop { position: fixed; z-index: 12000; inset: 0; display: grid; overflow-y: auto; place-items: center; padding: 12px; background: #030916c9; backdrop-filter: blur(5px); }
 .location-icon-modal { display: flex; width: min(460px, 100%); max-height: min(94dvh, 850px); min-height: 0; flex-direction: column; overflow: hidden; border: 1px solid var(--border-hover); border-radius: 16px; color: var(--text-primary); background: var(--bg-secondary); box-shadow: 0 24px 80px #0009; }
 .location-icon-modal-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 15px 17px; border-bottom: 1px solid var(--border-color); }
