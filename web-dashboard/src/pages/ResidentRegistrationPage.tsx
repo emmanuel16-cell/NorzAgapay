@@ -3,7 +3,9 @@ import { ArrowLeft, ArrowRight, CheckCircle2, ClipboardCopy, KeyRound, Phone, Sh
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import PublicHeader from '../components/PublicHeader';
+import MobileNumberInput from '../components/MobileNumberInput';
 import { authAPI } from '../lib/api';
+import { formatMobileNumber, isValidMobileNumber, normalizeMobileNumberInput } from '../lib/mobileNumber';
 
 type RegistrationResult = {
   token: string;
@@ -30,9 +32,10 @@ export default function ResidentRegistrationPage() {
     event.preventDefault();
     setError('');
     setNotice('');
+    if (!isValidMobileNumber(phone)) { setError('Enter exactly 11 digits starting with 09.'); return; }
     setLoading(true);
     try {
-      const response = await authAPI.requestResidentWebRegistrationOtp({ username: username.trim(), phone });
+      const response = await authAPI.requestResidentWebRegistrationOtp({ username: username.trim(), phone: normalizeMobileNumberInput(phone) });
       setNotice(response.data.message || 'A verification code was sent to your mobile number.');
       setStep('verify');
     } catch (requestError: any) {
@@ -45,9 +48,10 @@ export default function ResidentRegistrationPage() {
   const verifyCode = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError('');
+    if (!isValidMobileNumber(phone)) { setError('Enter exactly 11 digits starting with 09.'); setStep('details'); return; }
     setLoading(true);
     try {
-      const response = await authAPI.verifyResidentWebRegistrationOtp({ phone, otp });
+      const response = await authAPI.verifyResidentWebRegistrationOtp({ phone: normalizeMobileNumberInput(phone), otp });
       setResult(response.data as RegistrationResult);
       setStep('password');
     } catch (verifyError: any) {
@@ -87,14 +91,14 @@ export default function ResidentRegistrationPage() {
             {error && <div className="resident-register-error" role="alert">{error}</div>}
             <form onSubmit={(event) => void requestCode(event)}>
               <div className="form-group"><label className="form-label" htmlFor="resident-register-username">Username</label><div className="resident-register-input-wrap"><UserRound size={17} /><input id="resident-register-username" className="form-input" autoComplete="username" minLength={3} maxLength={32} pattern="[A-Za-z0-9_.-]{3,32}" title="Use 3–32 letters, numbers, dots, underscores, or hyphens." value={username} onChange={(event) => setUsername(event.target.value)} placeholder="Choose a username" required /></div><small>3–32 letters, numbers, dots, underscores, or hyphens.</small></div>
-              <div className="form-group"><label className="form-label" htmlFor="resident-register-phone">Mobile number</label><div className="resident-register-input-wrap"><Phone size={17} /><input id="resident-register-phone" className="form-input" type="tel" inputMode="numeric" autoComplete="tel" pattern="09[0-9]{9}" maxLength={11} value={phone} onChange={(event) => setPhone(event.target.value.replace(/\D/g, '').slice(0, 11))} placeholder="09XXXXXXXXX" required /></div><small>We’ll text a one-time verification code to this number.</small></div>
+              <div className="form-group"><label className="form-label" htmlFor="resident-register-phone">Mobile number</label><div className="resident-register-input-wrap"><Phone size={17} /><MobileNumberInput id="resident-register-phone" className="form-input" value={phone} onValueChange={setPhone} placeholder="09XXXXXXXXX" required /></div><small>We’ll text a one-time verification code to this number.</small></div>
               <button type="submit" className="btn btn-primary btn-lg resident-register-submit" disabled={loading}><Phone size={17} /> {loading ? 'Sending code…' : 'Send verification code'}</button>
             </form>
           </>}
 
           {step === 'verify' && <>
             <h1 className="login-title" id="resident-register-title">Verify your mobile</h1>
-            <p className="login-subtitle">Enter the 6-digit code sent to <strong>{phone}</strong>. It expires in 10 minutes.</p>
+            <p className="login-subtitle">Enter the 6-digit code sent to <strong>{formatMobileNumber(phone)}</strong>. It expires in 10 minutes.</p>
             <div className="resident-register-steps" aria-label="Step 2 of 3"><span className="complete">✓</span><i className="complete" /><span className="current">2</span><i /><span>3</span></div>
             {notice && <div className="resident-register-notice" role="status">{notice}</div>}
             {error && <div className="resident-register-error" role="alert">{error}</div>}

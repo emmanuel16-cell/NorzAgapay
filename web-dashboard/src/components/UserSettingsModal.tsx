@@ -3,10 +3,12 @@ import { FileText, KeyRound, LogOut, MailCheck, Map as MapIcon, MapPin, Moon, Ph
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import PasswordInput from './PasswordInput';
+import MobileNumberInput from './MobileNumberInput';
 import BarangayAdministrationPage, { type BarangaySettingsSection } from '../pages/BarangayAdministrationPage';
 import CommandLocationsPage from '../pages/CommandLocationsPage';
 import MunicipalityBoundaryPage from '../pages/MunicipalityBoundaryPage';
 import { authAPI, barangayAPI, reportAPI } from '../lib/api';
+import { formatMobileNumber, isValidMobileNumber, normalizeMobileNumberInput } from '../lib/mobileNumber';
 
 type UserSettingsModalProps = {
   theme: 'dark' | 'light';
@@ -29,13 +31,13 @@ export default function UserSettingsModal({ theme, onThemeChange, onClose, onSig
   const isResident = user?.account_kind === 'resident' && user.role === 'resident';
   const canViewHotlines = isBarangay && Boolean(user?.barangay_id);
   const hasEmailContact = Boolean(user?.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(user.email));
-  const hasPhoneContact = Boolean(user?.phone && /^09\d{9}$/.test(user.phone.replace(/\D/g, '')));
+  const hasPhoneContact = isValidMobileNumber(user?.phone);
   const [activeSection, setActiveSection] = useState<SettingsSection>('general');
   const [profile, setProfile] = useState({
     full_name: user?.full_name || '',
     username: user?.username || '',
     email: user?.email || '',
-    phone: user?.phone || '',
+    phone: normalizeMobileNumberInput(user?.phone),
   });
   const [residentBarangays, setResidentBarangays] = useState<Array<{ id: string; name: string }>>([]);
   const [residentBarangay, setResidentBarangay] = useState(user?.barangay_name || '');
@@ -82,13 +84,17 @@ export default function UserSettingsModal({ theme, onThemeChange, onClose, onSig
 
   const saveProfile = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (profile.phone && !isValidMobileNumber(profile.phone)) {
+      toast.error('Enter exactly 11 digits starting with 09.');
+      return;
+    }
     setSavingProfile(true);
     try {
       const updates = {
         full_name: profile.full_name.trim(),
         username: profile.username.trim(),
         email: profile.email.trim() ? profile.email.trim().toLowerCase() : null,
-        phone: profile.phone.trim() ? profile.phone.replace(/\D/g, '') : null,
+        phone: profile.phone.trim() ? normalizeMobileNumberInput(profile.phone) : null,
       };
       const { data } = isResident
         ? await authAPI.updateResidentProfile(updates)
@@ -97,7 +103,7 @@ export default function UserSettingsModal({ theme, onThemeChange, onClose, onSig
           : await authAPI.updateProfile(updates);
       if (data.token) updateToken(data.token);
       updateUser({ full_name: data.full_name, username: data.username, email: data.email, phone: data.phone });
-      setProfile({ full_name: data.full_name, username: data.username || '', email: data.email || '', phone: data.phone || '' });
+      setProfile({ full_name: data.full_name, username: data.username || '', email: data.email || '', phone: normalizeMobileNumberInput(data.phone) });
       toast.success('Profile details saved.');
     } catch (error: any) {
       toast.error(messageOf(error, 'Profile details could not be saved.'));
@@ -211,7 +217,7 @@ export default function UserSettingsModal({ theme, onThemeChange, onClose, onSig
           {activeSection === 'general' ? <div className="user-settings-content">
           <section className="user-settings-section user-settings-account">
             <div className="user-settings-avatar" aria-hidden="true">{initials}</div>
-            <div className="user-settings-account-copy"><strong>{user?.full_name || 'Dashboard user'}</strong><span>{isResident ? user?.username ? `@${user.username}` : user?.phone || 'Resident account' : user?.email || 'No email on this account'}</span><small>{user?.role === 'logistics' ? 'Staff' : user?.role?.replace(/_/g, ' ')}{user?.account_kind === 'barangay' && user.barangay_name ? ` · ${user.barangay_name}` : ''}</small></div>
+            <div className="user-settings-account-copy"><strong>{user?.full_name || 'Dashboard user'}</strong><span>{isResident ? user?.username ? `@${user.username}` : formatMobileNumber(user?.phone) || 'Resident account' : user?.email || 'No email on this account'}</span><small>{user?.role === 'logistics' ? 'Staff' : user?.role?.replace(/_/g, ' ')}{user?.account_kind === 'barangay' && user.barangay_name ? ` · ${user.barangay_name}` : ''}</small></div>
           </section>
 
           <section className="user-settings-section">
@@ -243,7 +249,7 @@ export default function UserSettingsModal({ theme, onThemeChange, onClose, onSig
                 <label>Full name<input required minLength={2} maxLength={100} autoComplete="name" value={profile.full_name} onChange={(event) => setProfile((value) => ({ ...value, full_name: event.target.value }))} /></label>
                 <label>Username<input required minLength={3} maxLength={32} pattern="[A-Za-z0-9._-]{3,32}" autoComplete="username" value={profile.username} onChange={(event) => setProfile((value) => ({ ...value, username: event.target.value }))} /></label>
                 <label>Gmail / email address<input type="email" maxLength={254} autoComplete="email" value={profile.email} onChange={(event) => setProfile((value) => ({ ...value, email: event.target.value }))} placeholder="name@gmail.com" /></label>
-                <label>Contact number<input type="tel" inputMode="numeric" autoComplete="tel" pattern="09[0-9]{9}" title="Enter 11 digits starting with 09" maxLength={11} value={profile.phone} onChange={(event) => setProfile((value) => ({ ...value, phone: event.target.value.replace(/\D/g, '').slice(0, 11) }))} placeholder="09XXXXXXXXX" /></label>
+                <label>Contact number <MobileNumberInput value={profile.phone} onValueChange={(phone) => setProfile((value) => ({ ...value, phone }))} placeholder="09XXXXXXXXX" /></label>
                 <label>Role<input value={user?.role === 'logistics' ? 'Staff' : user?.role?.replace(/_/g, ' ') || ''} readOnly /></label>
                 <p className="user-settings-managed-note">Roles are assigned by an administrator and can’t be changed from your profile.</p>
                 <div className="user-settings-form-actions"><button className="btn btn-primary" disabled={savingProfile}><Save size={15} /> {savingProfile ? 'Saving…' : 'Save profile'}</button></div>
@@ -256,7 +262,7 @@ export default function UserSettingsModal({ theme, onThemeChange, onClose, onSig
                 <label>Current password<PasswordInput required autoComplete="current-password" value={passwordForm.currentPassword} onChange={(event) => setPasswordForm((value) => ({ ...value, currentPassword: event.target.value }))} /></label>
                 <label>Send code to<select value={passwordDeliveryMethod} onChange={(event) => setPasswordDeliveryMethod(event.target.value as 'email' | 'sms')}>
                   <option value="email" disabled={!hasEmailContact}>Gmail / email{hasEmailContact ? ` · ${user?.email}` : ' · add one in Profile'}</option>
-                  <option value="sms" disabled={!hasPhoneContact}>Mobile number{hasPhoneContact ? ` · ${user?.phone}` : ' · add one in Profile'}</option>
+                  <option value="sms" disabled={!hasPhoneContact}>Mobile number{hasPhoneContact ? ` · ${formatMobileNumber(user?.phone)}` : ' · add one in Profile'}</option>
                 </select></label>
                 {!hasEmailContact && !hasPhoneContact && <p className="user-settings-managed-note">Add a Gmail address or mobile number in Profile to receive a verification code.</p>}
                 <button type="button" className="btn btn-primary" onClick={() => void sendPasswordCode()} disabled={savingPassword || !passwordForm.currentPassword || (passwordDeliveryMethod === 'email' ? !hasEmailContact : !hasPhoneContact)}>

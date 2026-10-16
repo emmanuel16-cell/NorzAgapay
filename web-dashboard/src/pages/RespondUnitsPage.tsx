@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { Activity, HeartPulse, MapPin, Pencil, Plus, Power, Radio, Search, Shield, Trash2, Users, X, Zap } from 'lucide-react';
 import { officerAPI, respondUnitAPI } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
+import MobileNumberInput from '../components/MobileNumberInput';
+import { formatMobileNumber, isValidMobileNumber, normalizeMobileNumberInput } from '../lib/mobileNumber';
 import toast from 'react-hot-toast';
 import './RespondUnitsPage.css';
 
@@ -245,11 +247,12 @@ export default function RespondUnitsPage() {
   const addMember = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!selectedUnit) return;
+    if (memberForm.phone && !isValidMobileNumber(memberForm.phone)) { toast.error('Enter exactly 11 digits starting with 09.'); return; }
     setSaving(true);
     try {
       const response = await respondUnitAPI.addMember(selectedUnit.id, {
         name: memberForm.name,
-        phone: memberForm.phone || undefined,
+        phone: memberForm.phone.trim() ? normalizeMobileNumberInput(memberForm.phone) : undefined,
         member_role: memberForm.member_role,
       });
       toast.success(`${roleLabels[memberForm.member_role]} added.`);
@@ -403,7 +406,7 @@ export default function RespondUnitsPage() {
                   <div className="ru-add-member-title"><strong>Add unit member</strong><button type="button" aria-label="Close add member form" onClick={() => setShowMemberForm(false)}><X size={16} /></button></div>
                   <div className="ru-add-member-fields">
                     <input className="form-input" required minLength={2} maxLength={120} placeholder="Full name" value={memberForm.name} onChange={(event) => setMemberForm({ ...memberForm, name: event.target.value })} />
-                    <input className="form-input" maxLength={30} placeholder="Phone (optional)" value={memberForm.phone} onChange={(event) => setMemberForm({ ...memberForm, phone: event.target.value })} />
+                    <MobileNumberInput className="form-input" placeholder="Phone (optional)" value={memberForm.phone} onValueChange={(phone) => setMemberForm({ ...memberForm, phone })} />
                     <select className="form-select" value={memberForm.member_role} onChange={(event) => setMemberForm({ ...memberForm, member_role: event.target.value as CrewRole })}>
                       {roles.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}
                     </select>
@@ -433,7 +436,7 @@ export default function RespondUnitsPage() {
                       {members.length ? members.map((member) => (
                         <div className="ru-roster-member" key={member.id}>
                           <div className="ru-member-avatar">{member.name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()}</div>
-                          <div className="ru-member-info"><strong>{member.name}</strong><span>{member.phone || member.specialization || 'Unit crew'}</span></div>
+                          <div className="ru-member-info"><strong>{member.name}</strong><span>{member.phone ? formatMobileNumber(member.phone) : member.specialization || 'Unit crew'}</span></div>
                           {canManageRoster && <select aria-label={`Position for ${member.name}`} value={member.member_role} onChange={(event) => void updateMemberRole(member, event.target.value as CrewRole)}>
                             {roles.map((choice) => <option key={choice.value} value={choice.value}>{choice.label}</option>)}
                           </select>}

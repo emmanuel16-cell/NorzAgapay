@@ -2,8 +2,10 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, BadgeCheck, MailCheck } from 'lucide-react';
 import PublicHeader from '../components/PublicHeader';
+import MobileNumberInput from '../components/MobileNumberInput';
 import { useAuth } from '../context/AuthContext';
 import { authAPI } from '../lib/api';
+import { formatMobileNumber, isValidMobileNumber, normalizeMobileNumberInput } from '../lib/mobileNumber';
 
 type BarangayOption = { id: string; name: string; municipality?: string };
 type RegistrationForm = { full_name: string; username: string; email: string; phone: string; delivery_method: 'email' | 'sms'; barangay_id: string; position_designation: string };
@@ -43,7 +45,8 @@ export default function BarangayRegistrationPage() {
     event?.preventDefault(); setError(''); setMessage(''); setSaving(true);
     try {
       const email = form.email.trim().toLowerCase();
-      const phone = form.phone.trim().replace(/\D/g, '');
+      const phone = normalizeMobileNumberInput(form.phone);
+      if (form.phone && !isValidMobileNumber(phone)) throw new Error('Enter exactly 11 digits starting with 09.');
       if (!email && !phone) throw new Error('Enter an email address or mobile number to receive a verification code.');
       const deliveryMethod = selectedDeliveryMethod;
       const destination = deliveryMethod === 'email' ? email : phone;
@@ -79,7 +82,7 @@ export default function BarangayRegistrationPage() {
           <div className="barangay-registration-mark">{otpSent ? <MailCheck size={25} /> : <BadgeCheck size={25} />}</div>
           <span className="workspace-eyebrow">BARANGAY ACCOUNT</span>
           <h1>{otpSent ? `Verify your ${otpDeliveryMethod === 'sms' ? 'mobile number' : 'email'}` : 'Create a barangay administrator account'}</h1>
-          <p className="barangay-registration-intro">{otpSent ? `Enter the 6-digit code sent to ${otpDestination}. The code expires after 10 minutes.` : 'This creates the first administrator account for an eligible barangay. MDRRMO must review the signed Barangay Account Request before operational access is activated.'}</p>
+          <p className="barangay-registration-intro">{otpSent ? `Enter the 6-digit code sent to ${otpDeliveryMethod === 'sms' ? formatMobileNumber(otpDestination) : otpDestination}. The code expires after 10 minutes.` : 'This creates the first administrator account for an eligible barangay. MDRRMO must review the signed Barangay Account Request before operational access is activated.'}</p>
           {error && <div className="barangay-registration-error" role="alert">{error}</div>}
           {message && <div className="barangay-registration-message" role="status">{message}</div>}
 
@@ -87,7 +90,7 @@ export default function BarangayRegistrationPage() {
             <label>Full name<input required minLength={2} maxLength={120} autoComplete="name" value={form.full_name} onChange={(event) => setForm((current) => ({ ...current, full_name: event.target.value }))} /></label>
             <label>Username<input required minLength={3} maxLength={32} pattern="[A-Za-z0-9_.-]+" title="Use 3–32 letters, numbers, dots, underscores, or hyphens." autoComplete="username" value={form.username} onChange={(event) => setForm((current) => ({ ...current, username: event.target.value }))} placeholder="Choose a username" /></label>
             <label>Email address<input type="email" autoComplete="email" value={form.email} onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))} /></label>
-            <label>Mobile number<input type="tel" inputMode="numeric" pattern="09[0-9]{9}" maxLength={11} autoComplete="tel" value={form.phone} onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value.replace(/\D/g, '').slice(0, 11) }))} placeholder="09XXXXXXXXX" /></label>
+            <label>Mobile number <MobileNumberInput value={form.phone} onValueChange={(phone) => setForm((current) => ({ ...current, phone }))} placeholder="09XXXXXXXXX" /></label>
             <small className="barangay-registration-contact-hint"><strong>At least one contact method is required.</strong> If you enter both, choose where to receive your verification code.</small>
             {hasEmail && hasPhone && <label>Send verification code by<select value={form.delivery_method} onChange={(event) => setForm((current) => ({ ...current, delivery_method: event.target.value as 'email' | 'sms' }))}><option value="sms">Mobile SMS</option><option value="email">Email</option></select></label>}
             <label>Barangay<select required value={form.barangay_id} disabled={loading || barangays.length === 0} onChange={(event) => setForm((current) => ({ ...current, barangay_id: event.target.value }))}>{loading && <option value="">Loading eligible barangays…</option>}{!loading && barangays.length === 0 && <option value="">No eligible barangays available</option>}{barangays.map((barangay) => <option key={barangay.id} value={barangay.id}>{barangay.name}</option>)}</select></label>

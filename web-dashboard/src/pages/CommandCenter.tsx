@@ -12,6 +12,7 @@ import { useMunicipalityBoundary } from '../context/MunicipalityBoundaryContext'
 import MunicipalityBoundaryMapLayer from '../components/MunicipalityBoundaryMapLayer';
 import CurrentWeatherPanel from '../components/CurrentWeatherPanel';
 import { boundaryRings, isCoordinateInsideBoundary, type MunicipalityBoundary } from '../lib/municipalityBoundary';
+import { formatMobileNumber } from '../lib/mobileNumber';
 import toast from 'react-hot-toast';
 import { AlertTriangle, Siren, Users, CheckCircle2, X } from 'lucide-react';
 
@@ -381,7 +382,7 @@ function ResponderAssessmentPanel({
               </div>
               <p>{request.details}</p>
               {request.dispatcher_notes && <p><b>Dispatcher notes:</b> {request.dispatcher_notes}</p>}
-              {request.requested_by_user && <small>Requested by {request.requested_by_user.full_name || 'Responder'}{request.requested_by_user.phone ? ` · ${request.requested_by_user.phone}` : ''}</small>}
+              {request.requested_by_user && <small>Requested by {request.requested_by_user.full_name || 'Responder'}{request.requested_by_user.phone ? ` · ${formatMobileNumber(request.requested_by_user.phone)}` : ''}</small>}
             </div>
           )) : <div className="assistance-request-card"><strong>Assistance Request</strong><span>No assistance request details provided.</span></div>}
           {assistanceRequests.length > 1 && <small className="assistance-request-history-count">Showing the latest of {assistanceRequests.length} requests.</small>}
@@ -1623,7 +1624,7 @@ export default function CommandCenter() {
             ? <p>Only MDRRMO command-center users can view MDRRMO responder availability.</p>
             : availabilityLoading ? <p>Checking active assignments and fresh GPS…</p>
               : availableResponderPins.length === 0 ? <p>No responders currently meet the availability and location requirements.</p>
-                : <ul>{availableResponderPins.map((responder) => <li key={responder.id}><span><strong>{responder.full_name}</strong>{responder.phone && <a href={`tel:${responder.phone}`}>{responder.phone}</a>}</span><small>{responder.distance_m} m away</small></li>)}</ul>}
+                : <ul>{availableResponderPins.map((responder) => <li key={responder.id}><span><strong>{responder.full_name}</strong>{responder.phone && <a href={`tel:${responder.phone}`}>{formatMobileNumber(responder.phone)}</a>}</span><small>{responder.distance_m} m away</small></li>)}</ul>}
         </aside>}
 
         {!(activeModalType === 'escalated' || (activeModalType === 'incident' && selectedIncident?.status !== 'pending')) && <CurrentWeatherPanel />}
@@ -1654,12 +1655,12 @@ export default function CommandCenter() {
                     </div>
                     <div className="user-details-text">
                       <span className="user-title">{selectedIncident.reporter_name || 'Resident'}</span>
-                      {selectedIncident.reporter_phone && <span className="user-phone">{selectedIncident.reporter_phone}</span>}
+                      {selectedIncident.reporter_phone && <span className="user-phone">{formatMobileNumber(selectedIncident.reporter_phone)}</span>}
                     </div>
                   </div>
                   <div className="reporter-phone-row">
                     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2A19.8 19.8 0 0 1 11.19 18a19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.09 3.18 2 2 0 0 1 4.08 1h3a2 2 0 0 1 2 1.72c.12.9.34 1.78.65 2.62a2 2 0 0 1-.45 2.11L8 8.73a16 16 0 0 0 6 6l1.28-1.28a2 2 0 0 1 2.11-.45c.84.31 1.72.53 2.62.65A2 2 0 0 1 22 16.92z" /></svg>
-                    <span>{selectedIncident.reporter_phone || 'Phone number unavailable'}</span>
+                    <span>{formatMobileNumber(selectedIncident.reporter_phone) || 'Phone number unavailable'}</span>
                   </div>
                   {selectedIncident.reporter_phone && <button
                     className="copy-btn"
@@ -1925,12 +1926,12 @@ export default function CommandCenter() {
                     </div>
                     <div className="user-details-text">
                       <span className="user-title">{selectedIncident.reporter_name || 'Resident'}</span>
-                      {selectedIncident.reporter_phone && <span className="user-phone">{selectedIncident.reporter_phone}</span>}
+                      {selectedIncident.reporter_phone && <span className="user-phone">{formatMobileNumber(selectedIncident.reporter_phone)}</span>}
                     </div>
                   </div>
                   <div className="reporter-phone-row">
                     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2A19.8 19.8 0 0 1 11.19 18a19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.09 3.18 2 2 0 0 1 4.08 1h3a2 2 0 0 1 2 1.72c.12.9.34 1.78.65 2.62a2 2 0 0 1-.45 2.11L8 8.73a16 16 0 0 0 6 6l1.28-1.28a2 2 0 0 1 2.11-.45c.84.31 1.72.53 2.62.65A2 2 0 0 1 22 16.92z" /></svg>
-                    <span>{selectedIncident.reporter_phone || 'Phone number unavailable'}</span>
+                    <span>{formatMobileNumber(selectedIncident.reporter_phone) || 'Phone number unavailable'}</span>
                   </div>
                   {selectedIncident.reporter_phone && <button
                     className="copy-btn"
@@ -2165,7 +2166,7 @@ export default function CommandCenter() {
                         Responder: {selectedIncident.responder_name || selectedIncident.barangay_responder_name || 'N/A'}
                       </span>
                       {selectedIncident.responder_phone && (
-                        <span className="user-phone purple">{selectedIncident.responder_phone}</span>
+                        <span className="user-phone purple">{formatMobileNumber(selectedIncident.responder_phone)}</span>
                       )}
                     </div>
                   </div>

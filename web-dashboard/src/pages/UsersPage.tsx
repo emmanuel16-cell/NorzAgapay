@@ -4,6 +4,8 @@ import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import PasswordInput from '../components/PasswordInput';
 import { CircleUserRound, Edit3, Plus, RefreshCw, UserRoundX, UsersRound } from 'lucide-react';
+import MobileNumberInput from '../components/MobileNumberInput';
+import { formatMobileNumber, isValidMobileNumber, normalizeMobileNumberInput } from '../lib/mobileNumber';
 
 interface User {
   id: string; full_name: string; username?: string | null; email: string | null; phone?: string | null;
@@ -56,11 +58,12 @@ export default function UsersPage() {
 
   const handleCreate = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (createForm.phone && !isValidMobileNumber(createForm.phone)) { toast.error('Enter exactly 11 digits starting with 09.'); return; }
     setCreating(true);
     try {
       await userAPI.create({
         ...createForm,
-        phone: createForm.phone.trim() || undefined,
+        phone: createForm.phone.trim() ? normalizeMobileNumberInput(createForm.phone) : undefined,
         unit_type: createForm.role === 'responder' ? createForm.unit_type || undefined : undefined,
       });
       toast.success(`${roleLabel(createForm.role)} account created`);
@@ -84,7 +87,7 @@ export default function UsersPage() {
         <strong>{entry.full_name}</strong>
         <span className="barangay-console-status">{roleLabel(entry.role)}</span>
         <span className={`barangay-console-status ${entry.status === 'active' ? 'active' : entry.status === 'inactive' ? 'inactive' : 'pending'}`}>{entry.status.replaceAll('_', ' ')}</span>
-        <small>{entry.username ? `@${entry.username}` : 'Username not set'}{entry.phone ? ` · ${entry.phone}` : ''}</small>
+        <small>{entry.username ? `@${entry.username}` : 'Username not set'}{entry.phone ? ` · ${formatMobileNumber(entry.phone)}` : ''}</small>
       </div>
       <div className="barangay-team-card-actions">
         <button type="button" title="Edit account" aria-label={`Edit ${entry.full_name}`} onClick={() => openEdit(entry)}><Edit3 size={16} /></button>
@@ -183,7 +186,7 @@ export default function UsersPage() {
             </div>
             <div className="form-group">
               <label className="form-label">Contact Number (optional)</label>
-              <input className="form-input" type="tel" maxLength={30} value={createForm.phone} onChange={event => setCreateForm({...createForm,phone:event.target.value})} />
+              <MobileNumberInput className="form-input" value={createForm.phone} onValueChange={(phone) => setCreateForm({...createForm, phone})} placeholder="09XXXXXXXXX" />
             </div>
             <div className="form-group">
               <label className="form-label">Role</label>

@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { authAPI, debugAPI } from '../lib/api';
 import PublicHeader from '../components/PublicHeader';
 import PasswordInput from '../components/PasswordInput';
+import { formatMobileNumber } from '../lib/mobileNumber';
 
 type DebugAccount = { id: string; full_name: string; username?: string | null; email?: string | null; phone?: string | null; role: string; audience: 'standard' | 'barangay' | 'resident'; barangay_id?: string; barangay_name?: string };
 
@@ -124,7 +125,7 @@ export default function LoginPage() {
       disabled={debugLoading}
     >
       <div className="debug-account-name">{account.full_name}</div>
-      <div className="debug-account-meta">{account.username || account.email || account.phone || 'No username'} · {account.role.replaceAll('_', ' ')}</div>
+      <div className="debug-account-meta">{account.username || account.email || formatMobileNumber(account.phone) || 'No username'} · {account.role.replaceAll('_', ' ')}</div>
     </button>
   );
 

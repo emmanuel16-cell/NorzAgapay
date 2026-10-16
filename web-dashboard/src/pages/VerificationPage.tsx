@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { verificationAPI, API_BASE, socket } from '../lib/api';
 import toast from 'react-hot-toast';
+import { formatMobileNumber } from '../lib/mobileNumber';
 
 interface PendingUser {
   id: string;
@@ -1281,7 +1282,7 @@ export default function VerificationPage({ category }: { category: 'officers' | 
                       <td>
                         <div className="disp-applicant-name">{disp.full_name}</div>
                         <div className="disp-applicant-meta">
-                          {disp.email} {disp.phone ? `• ${disp.phone}` : ''}
+                          {disp.email} {disp.phone ? `• ${formatMobileNumber(disp.phone)}` : ''}
                         </div>
                       </td>
                       <td>
@@ -1450,7 +1451,7 @@ export default function VerificationPage({ category }: { category: 'officers' | 
                 </div>
                 <div>
                   <div className="review-field-label">Contact Number</div>
-                  <div className="review-field-value">{selectedDispatcher.phone || 'Not provided'}</div>
+                  <div className="review-field-value">{formatMobileNumber(selectedDispatcher.phone) || 'Not provided'}</div>
                 </div>
                 <div>
                   <div className="review-field-label">Date Submitted</div>

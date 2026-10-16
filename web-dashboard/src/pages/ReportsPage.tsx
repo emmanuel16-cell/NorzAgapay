@@ -9,6 +9,7 @@ import { INCIDENT_SEVERITY_OPTIONS, INCIDENT_TYPE_OPTIONS } from '../lib/inciden
 import { getMdrrmoReportGroup, isVisibleToMdrrmo } from '../lib/mdrrmoReportVisibility';
 import { createDemoResponderReport } from '../demoResponderReport';
 import ResponderLocationMapModal from '../components/ResponderLocationMapModal';
+import { formatMobileNumber } from '../lib/mobileNumber';
 
 type ReportGroup = 'resident' | 'escalated';
 type ReportStage = 'pending' | 'responding' | 'resolved';
@@ -430,7 +431,7 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
 
               <section className="reports-detail-section-v2"><h3>Reporter details</h3><div className="reports-info-grid-v2">
                 <div className="reports-info-card-v2"><span>Resident</span><strong><UserRound size={17} /> {reporterName}</strong></div>
-                <div className="reports-info-card-v2"><span>Contact number</span><strong><Phone size={17} /> {selected.reporter_phone || 'Not provided'}</strong></div>
+                <div className="reports-info-card-v2"><span>Contact number</span><strong><Phone size={17} /> {formatMobileNumber(selected.reporter_phone) || 'Not provided'}</strong></div>
               </div></section>
 
               <section className="reports-detail-section-v2"><h3>Resident’s report</h3><div className="reports-text-card-v2">{selected.description?.trim() || 'No details provided.'}</div></section>
@@ -559,7 +560,7 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
           <label htmlFor="report-priority-v2">Priority</label><select id="report-priority-v2" value={severity} onChange={(event) => setSeverity(event.target.value)}><option value="">Select priority</option>{INCIDENT_SEVERITY_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>
           <label htmlFor="report-dispatch-notes-v2">Dispatcher notes <span>(optional)</span></label><textarea id="report-dispatch-notes-v2" rows={3} maxLength={1000} value={dispatchNotes} onChange={(event) => setDispatchNotes(event.target.value)} placeholder="Add instructions or response details…" />
           <div className="reports-responder-list-heading-v2"><strong>Active MDRRMO responders</strong>{responders.length > 0 && <button type="button" onClick={() => setResponderIds(responderIds.length === responders.length ? [] : responders.map((item) => item.id))}>{responderIds.length === responders.length ? 'Deselect all' : 'Select all'}</button>}</div>
-          <div className="reports-responder-list-v2">{loadingResponders ? <p>Loading active responders…</p> : responderError ? <p className="error">{responderError}</p> : responders.length === 0 ? <p>No units are active for dispatch today.</p> : responders.map((item) => <label key={item.id}><input type="checkbox" checked={responderIds.includes(item.id)} onChange={(event) => setResponderIds((current) => event.target.checked ? [...current, item.id] : current.filter((id) => id !== item.id))} /><span><strong>{item.full_name}</strong><small>{[item.unit_name, item.unit_type, item.phone].filter(Boolean).join(' · ')}</small></span></label>)}</div>
+          <div className="reports-responder-list-v2">{loadingResponders ? <p>Loading active responders…</p> : responderError ? <p className="error">{responderError}</p> : responders.length === 0 ? <p>No units are active for dispatch today.</p> : responders.map((item) => <label key={item.id}><input type="checkbox" checked={responderIds.includes(item.id)} onChange={(event) => setResponderIds((current) => event.target.checked ? [...current, item.id] : current.filter((id) => id !== item.id))} /><span><strong>{item.full_name}</strong><small>{[item.unit_name, item.unit_type, item.phone ? formatMobileNumber(item.phone) : ''].filter(Boolean).join(' · ')}</small></span></label>)}</div>
           <footer><button type="button" className="reports-invalid-button-v2" onClick={() => setDispatchReport(null)}>Cancel</button><button type="button" className="reports-dispatch-button-v2" disabled={saving || loadingResponders || !incidentType || !severity || responderIds.length === 0} onClick={() => void submitDispatch()}>{saving ? 'Saving dispatch…' : 'Send responders'}</button></footer>
         </section>
       </div>}

@@ -8,6 +8,7 @@ import { API_BASE, barangayAPI, reportAPI, socket } from '../lib/api';
 import { CARTO_ATTRIBUTION, CARTO_DARK_MAP_URL } from '../lib/mapConfig';
 import { createLocationMapIcon } from '../lib/locationMapIcon';
 import LocationIconEditorModal from '../components/LocationIconEditorModal';
+import { formatMobileNumber, isValidMobileNumber, normalizeMobileNumberInput, sanitizeMobileNumberInput } from '../lib/mobileNumber';
 
 type HotlineEntry = { purpose: string; numbers: string[] };
 type CoordinatePoint = [number, number];
@@ -292,10 +293,22 @@ export default function BarangayAdministrationPage({ embedded = false, section =
     event.preventDefault(); setSaving(true);
     const cleanEntries = hotlines.map((entry) => ({
       purpose: entry.purpose.trim(),
-      numbers: entry.numbers.map((number) => number.trim()).filter(Boolean),
+      numbers: entry.numbers.map((number) => {
+        const trimmed = number.trim();
+        const digits = trimmed.replace(/\D/g, '');
+        return digits.startsWith('09') || digits.startsWith('639')
+          ? isValidMobileNumber(trimmed) ? normalizeMobileNumberInput(trimmed) : trimmed
+          : trimmed;
+      }).filter(Boolean),
     }));
     if (cleanEntries.some((entry) => !entry.purpose || entry.numbers.length === 0)) {
       toast.error('Each hotline needs a purpose and at least one phone number.'); setSaving(false); return;
+    }
+    if (cleanEntries.some((entry) => entry.numbers.some((number) => {
+      const digits = number.replace(/\D/g, '');
+      return (digits.startsWith('09') || digits.startsWith('639')) && !isValidMobileNumber(number);
+    }))) {
+      toast.error('Mobile hotline numbers must contain exactly 11 digits and start with 09.'); setSaving(false); return;
     }
     try { const { data } = await barangayAPI.saveHotlines(cleanEntries); setHotlines(data.entries || []); setEditingHotlineIndex(null); setSelectedHotlinePhones({}); toast.success('Barangay hotline directory saved.'); }
     catch (saveError: any) { toast.error(messageOf(saveError, 'Barangay hotlines could not be saved.')); }
@@ -322,7 +335,11 @@ export default function BarangayAdministrationPage({ embedded = false, section =
     });
   };
   const updateHotlinePhone = (index: number, phoneIndex: number, value: string) => setHotlines((entries) => entries.map((entry, entryIndex) => entryIndex === index
-    ? { ...entry, numbers: entry.numbers.map((number, currentPhoneIndex) => currentPhoneIndex === phoneIndex ? value : number) }
+    ? { ...entry, numbers: entry.numbers.map((number, currentPhoneIndex) => {
+      if (currentPhoneIndex !== phoneIndex) return number;
+      const digits = value.replace(/\D/g, '');
+      return digits.startsWith('09') || digits.startsWith('639') ? sanitizeMobileNumberInput(value) : value;
+    }) }
     : entry));
   const removeHotlinePhone = (index: number, phoneIndex: number) => {
     setHotlines((entries) => entries.map((entry, entryIndex) => entryIndex === index
@@ -416,12 +433,12 @@ export default function BarangayAdministrationPage({ embedded = false, section =
                   <button type="button" title="Remove phone number" aria-label={`Remove phone number ${phoneIndex + 1}`} onClick={() => removeHotlinePhone(index, phoneIndex)}><Trash2 size={16} /></button>
                 </div>)}
                 <div className="barangay-hotline-editor-actions"><button type="button" className="barangay-hotline-add-phone" onClick={() => updateHotline(index, { numbers: [...entry.numbers, ''] })}><Plus size={15} /> Add phone</button>{selectedPhones.length > 0 && <button type="button" className="barangay-hotline-remove-selected" onClick={() => removeSelectedHotlinePhones(index)}><Trash2 size={15} /> Remove selected ({selectedPhones.length})</button>}</div>
-              </div> : <div className="barangay-hotline-card-phones"><span>Phone numbers</span>{entry.numbers.filter(Boolean).length > 0 ? <div>{entry.numbers.filter(Boolean).map((number, phoneIndex) => <a href={`tel:${number}`} key={`${number}-${phoneIndex}`}><Phone size={14} />{number}</a>)}</div> : <p>No phone numbers added.</p>}</div>}
+              </div> : <div className="barangay-hotline-card-phones"><span>Phone numbers</span>{entry.numbers.filter(Boolean).length > 0 ? <div>{entry.numbers.filter(Boolean).map((number, phoneIndex) => <a href={`tel:${number.replace(/[^+\d]/g, '')}`} key={`${number}-${phoneIndex}`}><Phone size={14} />{formatMobileNumber(number)}</a>)}</div> : <p>No phone numbers added.</p>}</div>}
               {canManageHotlines && <footer className="barangay-hotline-card-actions"><button type="button" onClick={() => { setEditingHotlineIndex(isEditing ? null : index); setSelectedHotlinePhones((selected) => ({ ...selected, [index]: [] })); }}>{isEditing ? <><Check size={15} /> Done</> : <><Edit3 size={15} /> Edit</>}</button><button type="button" className="danger" onClick={() => removeHotline(index)}><Trash2 size={15} /> Remove hotline</button></footer>}
             </article>;
           })}</div>}
           <div className="barangay-console-form-actions"><button className="btn btn-primary" disabled={saving || hotlines.length === 0}><Save size={16} /> {saving ? 'Saving…' : 'Save hotline directory'}</button></div>
-        </form> : hotlines.length === 0 ? <p className="barangay-console-muted">No public hotline entries have been published for this barangay.</p> : <div className="barangay-hotline-list">{hotlines.map((entry, index) => <article className="barangay-hotline-card" key={`${entry.purpose}-${index}`}><div className="barangay-hotline-card-heading"><span className="barangay-hotline-card-icon"><Phone size={18} /></span><div><small>PUBLIC HOTLINE</small><h3>{entry.purpose || 'Emergency hotline'}</h3></div></div><div className="barangay-hotline-card-phones"><span>Phone numbers</span><div>{entry.numbers.filter(Boolean).map((number, phoneIndex) => <a key={`${number}-${phoneIndex}`} href={`tel:${number}`}><Phone size={14} />{number}</a>)}</div></div></article>)}</div>}
+        </form> : hotlines.length === 0 ? <p className="barangay-console-muted">No public hotline entries have been published for this barangay.</p> : <div className="barangay-hotline-list">{hotlines.map((entry, index) => <article className="barangay-hotline-card" key={`${entry.purpose}-${index}`}><div className="barangay-hotline-card-heading"><span className="barangay-hotline-card-icon"><Phone size={18} /></span><div><small>PUBLIC HOTLINE</small><h3>{entry.purpose || 'Emergency hotline'}</h3></div></div><div className="barangay-hotline-card-phones"><span>Phone numbers</span><div>{entry.numbers.filter(Boolean).map((number, phoneIndex) => <a key={`${number}-${phoneIndex}`} href={`tel:${number.replace(/[^+\d]/g, '')}`}><Phone size={14} />{formatMobileNumber(number)}</a>)}</div></div></article>)}</div>}
       </section>}
 
       {policies.length > 0 && <section className="barangay-console-panel">{showAll ? <><header><div><h2>Terms and privacy</h2><p>Review the policies shown in the mobile app.</p></div></header>

@@ -4,6 +4,8 @@ import { AlertCircle, FileText, MapPin, Search } from 'lucide-react';
 import PublicHeader from '../components/PublicHeader';
 import { reportAPI } from '../lib/api';
 import { INCIDENT_TYPE_OPTIONS } from '../lib/incidentClassification';
+import MobileNumberInput from '../components/MobileNumberInput';
+import { isValidMobileNumber, normalizeMobileNumberInput } from '../lib/mobileNumber';
 
 type TrackedReport = {
   id: string;
@@ -152,11 +154,12 @@ export default function TrackReportPage() {
 
   const trackReport = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setLoading(true);
     setError('');
+    if (!isValidMobileNumber(phone)) { setError('Enter exactly 11 digits starting with 09.'); return; }
+    setLoading(true);
     setReport(null);
     try {
-      const response = await reportAPI.trackGuestReport(reference.trim(), phone.replace(/\D/g, ''));
+      const response = await reportAPI.trackGuestReport(reference.trim(), normalizeMobileNumberInput(phone));
       setReport(response.data);
     } catch (trackError: any) {
       setError(trackError?.response?.status === 404
@@ -181,7 +184,7 @@ export default function TrackReportPage() {
           <label htmlFor="tracking-reference">Report reference <b>Required</b></label>
           <input id="tracking-reference" autoComplete="off" value={reference} onChange={(event) => setReference(event.target.value)} required />
           <label htmlFor="tracking-phone">Mobile number <b>Required</b></label>
-          <input id="tracking-phone" type="tel" inputMode="numeric" autoComplete="tel" pattern="09[0-9]{9}" maxLength={11} placeholder="09XXXXXXXXX" value={phone} onChange={(event) => setPhone(event.target.value.replace(/\D/g, '').slice(0, 11))} required />
+          <MobileNumberInput id="tracking-phone" value={phone} onValueChange={setPhone} placeholder="09XXXXXXXXX" required />
           {error && <p className="public-report-error" role="alert"><AlertCircle size={15} /> {error}</p>}
           <button className="btn btn-primary btn-lg public-report-submit" type="submit" disabled={loading}>{loading ? 'Loading report…' : 'View report status'}</button>
         </form>

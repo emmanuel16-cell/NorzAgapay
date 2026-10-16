@@ -3,6 +3,8 @@ import { Award, Edit3, Plus, RefreshCw, ShieldCheck, Trash2, UsersRound } from '
 import { officerAPI } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
+import MobileNumberInput from '../components/MobileNumberInput';
+import { formatMobileNumber, isValidMobileNumber, normalizeMobileNumberInput } from '../lib/mobileNumber';
 
 interface Officer {
   id: string;
@@ -73,11 +75,12 @@ export default function OfficersPage() {
 
   const handleAdd = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (form.phone && !isValidMobileNumber(form.phone)) { toast.error('Enter exactly 11 digits starting with 09.'); return; }
     setSaving(true);
     try {
       await officerAPI.create({
         ...form,
-        phone: form.phone.trim() || null,
+        phone: form.phone.trim() ? normalizeMobileNumberInput(form.phone) : null,
         email: form.email.trim() || null,
         rank: form.rank.trim() || null,
       });
@@ -106,11 +109,12 @@ export default function OfficersPage() {
   const handleUpdate = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!editOfficer) return;
+    if (form.phone && !isValidMobileNumber(form.phone)) { toast.error('Enter exactly 11 digits starting with 09.'); return; }
     setSaving(true);
     try {
       await officerAPI.update(editOfficer.id, {
         ...form,
-        phone: form.phone.trim() || null,
+        phone: form.phone.trim() ? normalizeMobileNumberInput(form.phone) : null,
         email: form.email.trim() || null,
         rank: form.rank.trim() || null,
       });
@@ -151,7 +155,7 @@ export default function OfficersPage() {
     <div className="officers-form-grid">
       <div className="form-group">
         <label className="form-label" htmlFor={isEdit ? 'edit-officer-phone' : 'new-officer-phone'}>Phone</label>
-        <input id={isEdit ? 'edit-officer-phone' : 'new-officer-phone'} className="form-input" type="tel" maxLength={30} placeholder="e.g. 0912-345-6789" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} />
+        <MobileNumberInput id={isEdit ? 'edit-officer-phone' : 'new-officer-phone'} className="form-input" placeholder="09XXXXXXXXX" value={form.phone} onValueChange={(phone) => setForm({ ...form, phone })} />
       </div>
       <div className="form-group">
         <label className="form-label" htmlFor={isEdit ? 'edit-officer-email' : 'new-officer-email'}>Email</label>
@@ -223,7 +227,7 @@ export default function OfficersPage() {
                     <strong>{officer.name}</strong>
                     <span className="barangay-console-status">{specialtyLabel(officer.specialization)}</span>
                     <span className={`barangay-console-status ${officer.status === 'active' ? 'active' : 'inactive'}`}>{officer.status || 'unknown'}</span>
-                    <small>{officer.rank || 'Rank not set'}{officer.phone ? ` · ${officer.phone}` : ''}</small>
+                    <small>{officer.rank || 'Rank not set'}{officer.phone ? ` · ${formatMobileNumber(officer.phone)}` : ''}</small>
                   </div>
                   {canManageOfficers && <div className="barangay-team-card-actions"><button type="button" title="Edit officer details" aria-label={`Edit ${officer.name}`} onClick={() => openEdit(officer)}><Edit3 size={16} /></button></div>}
                 </article>

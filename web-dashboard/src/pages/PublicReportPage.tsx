@@ -8,6 +8,8 @@ import { reportAPI } from '../lib/api';
 import { INCIDENT_TYPE_OPTIONS } from '../lib/incidentClassification';
 import { CARTO_ATTRIBUTION, CARTO_DARK_MAP_URL } from '../lib/mapConfig';
 import { useAuth } from '../context/AuthContext';
+import MobileNumberInput from '../components/MobileNumberInput';
+import { formatMobileNumber, isValidMobileNumber, normalizeMobileNumberInput } from '../lib/mobileNumber';
 
 function createGuestRequestId() {
   const bytes = new Uint8Array(16);
@@ -47,10 +49,7 @@ const communityCategories = [
   'Earthquake Damage Observation',
 ];
 function normalizePhilippineMobile(value?: string | null) {
-  let digits = String(value || '').replace(/\D/g, '');
-  if (digits.startsWith('63')) digits = `0${digits.slice(2)}`;
-  else if (digits.startsWith('9')) digits = `0${digits}`;
-  return digits.slice(0, 11);
+  return normalizeMobileNumberInput(value);
 }
 
 function IncidentMapClickPicker({ onPick }: { onPick: (point: { latitude: number; longitude: number }) => void }) {
@@ -215,15 +214,15 @@ export default function PublicReportPage() {
   const renderPublicHotlineRow = (line: PublicHotlineRow) => <a key={line.id} href={`tel:${line.phone.replace(/[^\d+]/g, '')}`} aria-label={`Call ${line.label}, ${line.phone}`}>
     <span className="public-hotline-row-icon"><Phone size={16} aria-hidden="true" /></span>
     <span className="public-hotline-row-copy"><strong>{line.label}</strong><small>{line.detail}</small></span>
-    <span className="public-hotline-row-action"><strong>{line.phone}</strong><small>Call</small></span>
+    <span className="public-hotline-row-action"><strong>{formatMobileNumber(line.phone)}</strong><small>Call</small></span>
   </a>;
 
   const submitReport = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setMessage('');
     setSubmitted(false);
-    const phone = guestPhone.replace(/\D/g, '');
-    if (!/^09\d{9}$/.test(phone)) { setMessage('Enter an 11-digit mobile number starting with 09.'); return; }
+    const phone = normalizeMobileNumberInput(guestPhone);
+    if (!isValidMobileNumber(phone)) { setMessage('Enter exactly 11 digits starting with 09.'); return; }
     if (reportType === 'emergency' && incidentCategory === 'other' && !otherEmergency.trim()) { setMessage('Describe the other emergency.'); return; }
     if (!location) { setMessage('Add the incident location before submitting.'); return; }
     if (description.trim().length < 8) { setMessage('Describe the incident in at least 8 characters.'); return; }
@@ -293,7 +292,7 @@ export default function PublicReportPage() {
             <form className="public-report-form" onSubmit={(event) => void submitReport(event)}>
               {reportType === 'community' ? <><label htmlFor="public-report-community-category">Concern category</label><select id="public-report-community-category" value={communityCategory} onChange={(event) => setCommunityCategory(event.target.value)}>{communityCategories.map((item) => <option key={item} value={item}>{item}</option>)}</select></> : <><label htmlFor="public-report-category">Incident category</label><select id="public-report-category" value={incidentCategory} onChange={(event) => setIncidentCategory(event.target.value)}>{INCIDENT_TYPE_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>{incidentCategory === 'other' && <><label htmlFor="public-report-other-emergency">What kind of emergency? <b>Required</b></label><input id="public-report-other-emergency" type="text" maxLength={120} value={otherEmergency} onChange={(event) => setOtherEmergency(event.target.value)} placeholder="Describe the emergency" required /></>}</>}
               <label htmlFor="public-report-phone">Mobile number <b>Required</b></label>
-              <input id="public-report-phone" type="tel" inputMode="numeric" autoComplete="tel" pattern="09[0-9]{9}" title="Enter an 11-digit mobile number starting with 09." maxLength={11} placeholder="09XXXXXXXXX" value={guestPhone} onChange={(event) => setGuestPhone(event.target.value.replace(/\D/g, '').slice(0, 11))} required />
+              <MobileNumberInput id="public-report-phone" value={guestPhone} onValueChange={setGuestPhone} placeholder="09XXXXXXXXX" required />
               <label htmlFor="public-report-description">Incident details <b>Required</b></label>
               <textarea id="public-report-description" rows={5} minLength={8} maxLength={2000} placeholder="Describe what happened and who needs help…" value={description} onChange={(event) => setDescription(event.target.value)} required />
               <span className="public-report-field-label">Incident location <b>Required</b></span>

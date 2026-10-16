@@ -7,6 +7,8 @@ import { useAuth } from '../context/AuthContext';
 import { reportAPI } from '../lib/api';
 import { INCIDENT_TYPE_OPTIONS } from '../lib/incidentClassification';
 import { CARTO_ATTRIBUTION, CARTO_DARK_MAP_URL } from '../lib/mapConfig';
+import MobileNumberInput from '../components/MobileNumberInput';
+import { isValidMobileNumber, normalizeMobileNumberInput } from '../lib/mobileNumber';
 
 const incidentTypes = [
   'Minor Flooding', 'Drainage Blockage', 'Small Fire Incident', 'Fallen Tree Report', 'Road Damage Report',
@@ -26,10 +28,7 @@ function requestId() {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-${((parseInt(hex[16], 16) & 0x3) | 0x8).toString(16)}${hex.slice(17, 20)}-${hex.slice(20)}`;
 }
 function normalizeMobile(value?: string | null) {
-  let digits = String(value || '').replace(/\D/g, '');
-  if (digits.startsWith('63')) digits = `0${digits.slice(2)}`;
-  else if (digits.startsWith('9')) digits = `0${digits}`;
-  return digits.slice(0, 11);
+  return normalizeMobileNumberInput(value);
 }
 function MapPickerEvents({ onPick }: { onPick: (point: Point) => void }) {
   useMapEvents({ click: ({ latlng }) => onPick({ latitude: latlng.lat, longitude: latlng.lng }) });
@@ -90,7 +89,7 @@ export default function ResidentIncidentReportPage() {
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault(); setError(''); setMessage(''); setSubmitted(false);
     const normalizedPhone = normalizeMobile(phone);
-    if (!/^09\d{9}$/.test(normalizedPhone)) { setError('Enter an 11-digit mobile number starting with 09.'); return; }
+    if (!isValidMobileNumber(normalizedPhone)) { setError('Enter exactly 11 digits starting with 09.'); return; }
     if (type !== 'community' && category === 'other' && !otherEmergency.trim()) { setError('Describe the other emergency.'); return; }
     if (!location) { setError('Add the incident location before submitting.'); return; }
     if (description.trim().length < 8) { setError('Describe what happened in at least 8 characters.'); return; }
@@ -133,7 +132,7 @@ export default function ResidentIncidentReportPage() {
       <div className="resident-compose-account"><span><ShieldCheck size={18}/></span><div><strong>{user?.full_name || 'Resident account'}</strong><small>{user?.barangay_name ? `Resident · ${user.barangay_name}` : 'Resident report'}</small></div><button type="button" onClick={() => navigate('/my-reports')}>My reports <ArrowLeft size={13}/></button></div>
       <form className="resident-compose-form" onSubmit={(event) => void submit(event)}>
         {type === 'community' ? <label>Concern category<select value={communityCategory} onChange={(event) => setCommunityCategory(event.target.value)}>{incidentTypes.map((item) => <option key={item} value={item}>{item}</option>)}</select></label> : <><label>Incident category<select value={category} onChange={(event) => setCategory(event.target.value)}>{INCIDENT_TYPE_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>{category === 'other' && <label>What kind of emergency?<input type="text" required maxLength={120} value={otherEmergency} onChange={(event) => setOtherEmergency(event.target.value)} placeholder="Describe the emergency" /></label>}</>}
-        <label>Mobile number<input type="tel" inputMode="numeric" autoComplete="tel" maxLength={11} placeholder="09XXXXXXXXX" value={phone} onChange={(event) => setPhone(event.target.value.replace(/\D/g, '').slice(0, 11))} required/><small>Responders may use this number to contact you about the report.</small></label>
+        <label>Mobile number <MobileNumberInput value={phone} onValueChange={setPhone} placeholder="09XXXXXXXXX" required/><small>Responders may use this number to contact you about the report.</small></label>
         <label>What happened?<textarea rows={5} minLength={8} maxLength={2000} placeholder={type === 'community' ? 'Describe the hazard and where it is affecting the community…' : 'Describe what happened, who needs help, and any immediate danger…'} value={description} onChange={(event) => setDescription(event.target.value)} required/></label>
         <fieldset className="resident-location-field"><legend>Incident location <b>Required</b></legend><p>Place the pin at the incident site. This helps responders find the right location.</p><div className="resident-location-actions"><button type="button" onClick={() => useCurrentLocation()}><LocateFixed size={15}/>{locationSource === 'current' ? 'Update current location' : 'Use current location'}</button><button type="button" onClick={openMapPicker}><MapPin size={15}/>{locationSource === 'map' ? 'Change map location' : 'Choose on map'}</button></div><div className={`resident-picked-location ${location ? 'located' : ''}`}><MapPin size={15}/>{location ? `${locationSource === 'map' ? 'Map pin' : 'Current location'} · ${location.latitude.toFixed(5)}, ${location.longitude.toFixed(5)}` : 'No location selected yet'}</div></fieldset>
         <label className="resident-evidence-picker" htmlFor="resident-report-evidence"><span><Upload size={17}/></span><strong>Add a photo or video <small>Optional · attach evidence for responders</small></strong><input id="resident-report-evidence" type="file" accept="image/*,video/*" onChange={(event) => setEvidence(event.target.files?.[0] || null)}/></label>

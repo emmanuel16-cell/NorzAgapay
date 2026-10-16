@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { RefreshCw, ShieldAlert, Users } from 'lucide-react';
 import { respondUnitAPI } from '../lib/api';
+import { formatMobileNumber } from '../lib/mobileNumber';
 
 type UnitMember = {
   id: string;
@@ -78,7 +79,7 @@ export default function ResponderUnitTeamPage() {
               <div className="barangay-team-card-info">
                 <strong>{name}</strong>
                 <span className="barangay-console-status active">{member.role_label || member.member_role?.replaceAll('_', ' ') || 'Responder'}</span>
-                <small>{member.phone || member.email || 'MDRRMO response crew'}</small>
+                <small>{member.phone ? formatMobileNumber(member.phone) : member.email || 'MDRRMO response crew'}</small>
               </div>
             </article>;
           })}

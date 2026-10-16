@@ -5,6 +5,7 @@ import { AlertTriangle, ClipboardList, Phone, UserRound } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { requestAPI, socket } from '../lib/api';
 import { getMdrrmoReportGroup, type MdrrmoReportGroup } from '../lib/mdrrmoReportVisibility';
+import { formatMobileNumber } from '../lib/mobileNumber';
 
 type RequestStatus = 'pending' | 'approved' | 'rejected' | 'fulfilled';
 
@@ -255,7 +256,7 @@ export default function ResourceRequestsPage() {
                   <h3>Requester details</h3>
                   <div className="reports-info-grid-v2">
                     <div className="reports-info-card-v2"><span>Responder</span><strong><UserRound size={17} /> {selected.requested_by_user?.full_name || 'Unknown responder'}</strong></div>
-                    <div className="reports-info-card-v2"><span>Contact number</span><strong><Phone size={17} /> {selected.requested_by_user?.phone || 'Not provided'}</strong></div>
+                    <div className="reports-info-card-v2"><span>Contact number</span><strong><Phone size={17} /> {formatMobileNumber(selected.requested_by_user?.phone) || 'Not provided'}</strong></div>
                   </div>
                 </section>
 
