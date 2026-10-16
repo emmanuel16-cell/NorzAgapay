@@ -15,7 +15,6 @@ type DraftPin = { latitude: number; longitude: number } | null;
 
 const officeIcon = L.divIcon({ className: 'command-location-marker office', html: '<span>OFFICE</span>', iconSize: [74, 38], iconAnchor: [37, 19] });
 const barangayIcon = L.divIcon({ className: 'command-location-marker barangay', html: '<span>BRGY</span>', iconSize: [68, 36], iconAnchor: [34, 18] });
-const draftIcon = L.divIcon({ className: 'command-location-marker draft', html: '<span>NEW PIN</span>', iconSize: [76, 38], iconAnchor: [38, 19] });
 
 function PinPicker({ enabled, onPick }: { enabled: boolean; onPick: (pin: DraftPin) => void }) {
   useMapEvents({ click: (event) => { if (enabled) onPick({ latitude: event.latlng.lat, longitude: event.latlng.lng }); } });
@@ -101,6 +100,12 @@ export default function CommandLocationsPage() {
   };
 
   const displayedPins = useMemo(() => isBarangay ? [] : barangays, [isBarangay, barangays]);
+  const editableMarkerIconUrl = isBarangay ? barangay?.location_icon_url : office?.icon_url;
+  const editableMarkerFallback = isBarangay ? barangayIcon : officeIcon;
+  const moveDraftMarker = (event: L.LeafletEvent) => {
+    const point = (event.target as L.Marker).getLatLng();
+    setDraft({ latitude: point.lat, longitude: point.lng });
+  };
   const targetPin = iconTarget === 'office' ? office : barangay;
   const targetIconUrl = iconTarget === 'office' ? office?.icon_url : barangay?.location_icon_url;
   const saveIcon = async (file: File) => {
@@ -153,13 +158,13 @@ export default function CommandLocationsPage() {
             <TileLayer url={CARTO_DARK_MAP_URL} attribution={CARTO_ATTRIBUTION} />
             <MapSizeAndFocus point={center} />
             <PinPicker enabled={canEdit} onPick={setDraft} />
-            {officePoint && <Marker position={[officePoint.latitude, officePoint.longitude]} icon={createLocationMapIcon(office?.icon_url, 'office', officeIcon)}><Popup>MDRRMO office{office?.address ? ` · ${office.address}` : ''}</Popup></Marker>}
-            {isBarangay && ownBarangayPoint && <Marker position={[ownBarangayPoint.latitude, ownBarangayPoint.longitude]} icon={createLocationMapIcon(barangay?.location_icon_url, 'barangay', barangayIcon)}><Popup>Barangay {barangay?.name || user?.barangay_name}</Popup></Marker>}
+            {officePoint && (isBarangay || !canEdit) && <Marker position={[officePoint.latitude, officePoint.longitude]} icon={createLocationMapIcon(office?.icon_url, 'office', officeIcon)}><Popup>MDRRMO office{office?.address ? ` · ${office.address}` : ''}</Popup></Marker>}
+            {isBarangay && ownBarangayPoint && !canEdit && <Marker position={[ownBarangayPoint.latitude, ownBarangayPoint.longitude]} icon={createLocationMapIcon(barangay?.location_icon_url, 'barangay', barangayIcon)}><Popup>Barangay {barangay?.name || user?.barangay_name}</Popup></Marker>}
             {displayedPins.map((row) => {
               const pin = readPin(row);
               return pin ? <Marker key={row.id} position={[pin.latitude, pin.longitude]} icon={createLocationMapIcon(row.location_icon_url, 'barangay', barangayIcon)}><Popup>Barangay {row.name}{row.location_address ? ` · ${row.location_address}` : ''}</Popup></Marker> : null;
             })}
-            {draft && <Marker position={[draft.latitude, draft.longitude]} icon={draftIcon}><Popup>Selected location</Popup></Marker>}
+            {canEdit && draft && <Marker position={[draft.latitude, draft.longitude]} icon={createLocationMapIcon(editableMarkerIconUrl, isBarangay ? 'barangay' : 'office', editableMarkerFallback)} draggable eventHandlers={{ dragend: moveDraftMarker }}><Popup>{isBarangay ? `Barangay ${barangay?.name || user?.barangay_name || ''}` : 'MDRRMO office'} · selected location</Popup></Marker>}
           </MapContainer>
         </section>
       </div>

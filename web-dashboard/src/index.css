@@ -3664,7 +3664,6 @@ tbody tr:last-child td { border-bottom: none; }
 .command-location-marker { display: flex; align-items: center; justify-content: center; border: 2px solid white; border-radius: 18px; color: white; box-shadow: 0 3px 12px #0008; font: 800 9px Inter, sans-serif; letter-spacing: .08em; }
 .command-location-marker.office { background: #d73f4e; }
 .command-location-marker.barangay { background: #087da8; }
-.command-location-marker.draft { background: #19a96c; }
 .command-location-icon-setting, .barangay-location-icon-setting { display: grid; grid-template-columns: 46px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 10px; border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-card); }
 .command-location-icon-preview, .barangay-location-icon-preview { display: grid; width: 44px; height: 44px; overflow: hidden; place-items: center; border: 1px solid var(--border-hover); border-radius: 50%; color: #54d5e4; background: #102a49; }
 .command-location-icon-preview img, .barangay-location-icon-preview img { width: 100%; height: 100%; object-fit: contain; }
