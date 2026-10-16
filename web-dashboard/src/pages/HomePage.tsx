@@ -3,9 +3,9 @@ import { Link } from 'react-router-dom';
 import PublicHeader from '../components/PublicHeader';
 
 const reportSteps = [
-  { icon: MapPin, title: 'Share the location', description: 'Pin the incident location so responders know where help is needed.' },
-  { icon: ShieldCheck, title: 'Choose who receives it', description: 'Send it to the closest active barangay or directly to MDRRMO.' },
-  { icon: CheckCircle2, title: 'Follow the response', description: 'A barangay can escalate to MDRRMO, and MDRRMO can assign a nearby barangay.' },
+  { icon: MapPin, title: 'Share the location and evidence', description: 'Pin where it happened and, if available, attach a photo or video to help responders assess the situation.' },
+  { icon: ShieldCheck, title: 'MDRRMO reviews your report', description: 'Guest and resident reports go to MDRRMO first. A dispatcher can assign a nearby active barangay when local response is needed.' },
+  { icon: CheckCircle2, title: 'Track progress and updates', description: 'Guests can use their report reference and mobile number; signed-in residents can follow updates in My Reports.' },
 ];
 
 export default function HomePage() {
@@ -17,7 +17,7 @@ export default function HomePage() {
           <div className="public-home-hero-content">
             <span className="public-home-eyebrow">NORZAGARAY EMERGENCY RESPONSE</span>
             <h1 id="public-home-title">When help is needed, <span>start here.</span></h1>
-            <p className="public-home-intro">Share the incident location and details, then choose whether the closest active barangay or MDRRMO should receive your report.</p>
+            <p className="public-home-intro">Share the incident location and details, and attach a photo or video if available. MDRRMO reviews reports first and can coordinate a barangay response.</p>
             <div className="public-home-hero-actions">
               <Link className="public-home-primary-action" to="/report">Report an incident <ArrowRight size={19} aria-hidden="true" /></Link>
               <Link className="public-home-secondary-action" to="/login">Command center login</Link>
