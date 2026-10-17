@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { ArrowUpRight, House, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { authAPI, debugAPI } from '../lib/api';
 import PublicHeader from '../components/PublicHeader';
@@ -194,7 +195,8 @@ export default function LoginPage() {
     <div className="public-login-page">
       <PublicHeader showActions={false} />
       <main className="login-page public-login-main">
-      <div className="login-card">
+      <div className="public-login-content">
+      <section className="login-card public-login-card" aria-label={showSetup ? 'Create master admin account' : showRecovery ? 'Reset password' : 'Sign in'}>
         {!showSetup && (
           <button
             type="button"
@@ -314,12 +316,6 @@ export default function LoginPage() {
           </button>
         </form>}
 
-        {!showSetup && (
-          <Link className="login-setup-toggle barangay-register-link" to="/barangay/register">Need an account? Register your barangay administrator</Link>
-        )}
-
-        {!showSetup && <Link className="login-setup-toggle resident-register-link" to="/resident/register">Create a resident account</Link>}
-
         {!showSetup && setupRequired && (
           <button type="button" className="login-setup-toggle" onClick={() => { setShowSetup(true); setError(''); }}>
             First time here? Create the Master Admin account
@@ -354,8 +350,33 @@ export default function LoginPage() {
         )}
 
         <p style={{ textAlign: 'center', marginTop: '20px', fontSize: '12px', color: 'var(--text-muted)' }}>
-          MDRRMO and barangay teams, responders, and residents can sign in here.
+          Secure access for MDRRMO, barangay teams, and residents.
         </p>
+      </section>
+
+      <aside className="public-login-callout" aria-labelledby="public-login-callout-title">
+          <div className="public-login-callout-copy">
+            <span className="public-login-eyebrow">NORZAGARAY EMERGENCY RESPONSE</span>
+            <h1 id="public-login-callout-title">Fast, coordinated response starts with your barangay.</h1>
+            <p>Connect your barangay with the MDRRMO and help your community get the support it needs.</p>
+          </div>
+
+          <div className="public-login-actions">
+            <Link className="public-login-register primary" to="/barangay/register">
+              <ShieldCheck size={21} aria-hidden="true" />
+              <span>Register Your Barangay</span>
+              <ArrowUpRight size={19} aria-hidden="true" />
+            </Link>
+            <span className="public-login-or">or</span>
+            <Link className="public-login-register secondary" to="/resident/register">
+              <House size={20} aria-hidden="true" />
+              <span>Create a Resident Account</span>
+              <ArrowUpRight size={19} aria-hidden="true" />
+            </Link>
+          </div>
+
+          <p className="public-login-callout-note">Create an account to report emergencies, follow updates, and coordinate local response.</p>
+      </aside>
       </div>
       </main>
     </div>
