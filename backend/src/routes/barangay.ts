@@ -30,6 +30,8 @@ import { formatIncidentReport } from './incidentReports';
 import { isReportResolved, reportStageDurations, summarizeReportTimings } from '../services/reportTiming';
 import { isDirectMdrrmoReport } from '../services/mdrrmoReportVisibility';
 import { isMobileNumberRegistryConflict, normalizeMobileNumber } from '../services/mobileNumberService';
+import { countPasswordMatchesForPhone, hasPasswordReuseForPhone, hasPhoneInAccountType, withPhoneAccountLock } from '../services/accountAuthService';
+import { decryptPendingPassword, encryptPendingPassword } from '../services/pendingPasswordService';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -628,11 +630,12 @@ router.post('/register-otp', async (req: Request, res: Response): Promise<void> 
       return;
     }
     const body = parsed.data;
-    const { data: reservation, error: reservationError } = await supabaseAdmin
-      .from('account_mobile_numbers').select('account_id').eq('phone_normalized', body.phone).maybeSingle();
-    if (reservationError) throw reservationError;
-    if (reservation) {
-      res.status(409).json({ error: 'That mobile number is already linked to an account.' });
+    if (await hasPhoneInAccountType(body.phone, 'barangay_users')) {
+      res.status(409).json({ error: 'That mobile number already has a Barangay account.' });
+      return;
+    }
+    if (await hasPasswordReuseForPhone(body.phone, body.password, 'barangay_users')) {
+      res.status(409).json({ error: 'Choose a password different from the password used by your other account with this mobile number.' });
       return;
     }
     const barangayIdsWithApprovedAdmins = await getBarangayIdsWithApprovedAdmins();
@@ -641,7 +644,6 @@ router.post('/register-otp', async (req: Request, res: Response): Promise<void> 
       return;
     }
     const otp = randomInt(100000, 1000000).toString();
-    const passwordHash = await bcrypt.hash(body.password, 12);
     const otpKey = 'barangay-registration:' + body.phone;
     const cooldown = await getOtpResendCooldownSeconds(otpKey);
     if (cooldown > 0) { res.status(429).json({ error: 'A code was sent recently. Try again in ' + cooldown + ' seconds.' }); return; }
@@ -649,7 +651,7 @@ router.post('/register-otp', async (req: Request, res: Response): Promise<void> 
       otp,
       fullName: body.full_name,
       phone: body.phone,
-      passwordHash,
+      passwordCiphertext: encryptPendingPassword(body.password),
       barangayId: body.barangay_id,
       positionDesignation: body.position_designation,
       purpose: 'barangay_registration',
@@ -681,7 +683,7 @@ router.post('/verify-register-otp', async (req: Request, res: Response): Promise
     }
     const otpKey = 'barangay-registration:' + phone;
     const record = await getOtp(otpKey);
-    if (!record || record.purpose !== 'barangay_registration' || record.phone !== phone || !record.passwordHash || !record.barangayId) {
+    if (!record || record.purpose !== 'barangay_registration' || record.phone !== phone || !record.passwordCiphertext || !record.barangayId) {
       res.status(400).json({ error: 'No pending registration was found or the code expired. Request a new code.' });
       return;
     }
@@ -698,32 +700,39 @@ router.post('/verify-register-otp', async (req: Request, res: Response): Promise
       res.status(409).json({ error: approvedAdminExistsMessage });
       return;
     }
-    const { data: reservation, error: reservationError } = await supabaseAdmin
-      .from('account_mobile_numbers').select('account_id').eq('phone_normalized', phone).maybeSingle();
-    if (reservationError) throw reservationError;
-    if (reservation) {
-      await deleteOtp(otpKey);
-      res.status(409).json({ error: 'That mobile number is already linked to an account.' });
-      return;
-    }
+    const password = decryptPendingPassword(record.passwordCiphertext);
     const { data: barangay, error: barangayError } = await supabaseAdmin
       .from('barangays').select('name, municipality').eq('id', record.barangayId).maybeSingle();
     if (barangayError || !barangay) {
       res.status(400).json({ error: 'Selected barangay was not found.' });
       return;
     }
-    const { data: user, error: insertError } = await supabaseAdmin.from('barangay_users').insert({
-      full_name: record.fullName,
-      phone,
-      password_hash: record.passwordHash,
-      barangay_id: record.barangayId,
-      role: 'admin',
-      position_designation: record.positionDesignation,
-      is_active: true,
-    }).select('id, full_name, phone, role, barangay_id, position_designation, is_active').single();
+    const creation = await withPhoneAccountLock(phone, async () => {
+      if (await hasPhoneInAccountType(phone, 'barangay_users')) return { kind: 'phone_conflict' as const };
+      if (await hasPasswordReuseForPhone(phone, password, 'barangay_users')) return { kind: 'password_reuse' as const };
+      const passwordHash = await bcrypt.hash(password, 12);
+      const { data, error } = await supabaseAdmin.from('barangay_users').insert({
+        full_name: record.fullName,
+        phone,
+        password_hash: passwordHash,
+        barangay_id: record.barangayId,
+        role: 'admin',
+        position_designation: record.positionDesignation,
+        is_active: true,
+      }).select('id, full_name, phone, role, barangay_id, position_designation, is_active').single();
+      return { kind: 'created' as const, data, error };
+    });
+    if (creation.kind === 'phone_conflict' || creation.kind === 'password_reuse') {
+      await deleteOtp(otpKey);
+      res.status(409).json({ error: creation.kind === 'phone_conflict'
+        ? 'That mobile number already has a Barangay account.'
+        : 'Choose a password different from the password used by your other account with this mobile number.' });
+      return;
+    }
+    const { data: user, error: insertError } = creation;
     if (isMobileNumberRegistryConflict(insertError) || insertError?.code === '23505') {
       await deleteOtp(otpKey);
-      res.status(409).json({ error: 'That mobile number is already linked to an account.' });
+      res.status(409).json({ error: 'That mobile number already has a Barangay account.' });
       return;
     }
     if (insertError || !user) throw insertError || new Error('Barangay account insert failed.');
@@ -755,6 +764,10 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
     const password = typeof req.body?.password === 'string' ? req.body.password : '';
     if (!phone || !password) {
       res.status(400).json({ error: 'A valid mobile number and password are required.' });
+      return;
+    }
+    if (await countPasswordMatchesForPhone(phone, password) > 1) {
+      res.status(409).json({ code: 'AMBIGUOUS_ACCOUNT_CREDENTIALS', error: 'This password matches more than one account using this mobile number. Reset the password for one account type by SMS, then sign in again.' });
       return;
     }
     const { data: user, error } = await supabaseAdmin.from('barangay_users')
@@ -886,11 +899,12 @@ router.post('/profile/phone-otp', authenticateBarangay, async (req: any, res: Re
       res.status(400).json({ error: 'That mobile number is already linked to your account.' });
       return;
     }
-    const { data: reservation, error: reservationError } = await supabaseAdmin
-      .from('account_mobile_numbers').select('account_table, account_id').eq('phone_normalized', phone).maybeSingle();
-    if (reservationError) throw reservationError;
-    if (reservation && !(reservation.account_table === 'barangay_users' && reservation.account_id === account.id)) {
-      res.status(409).json({ error: 'That mobile number is already linked to another account.' });
+    if (await hasPhoneInAccountType(phone, 'barangay_users', account.id)) {
+      res.status(409).json({ error: 'That mobile number already has a Barangay account.' });
+      return;
+    }
+    if (await hasPasswordReuseForPhone(phone, currentPassword, 'barangay_users', { table: 'barangay_users', id: account.id })) {
+      res.status(409).json({ error: 'Your current password is used by another account at that mobile number. Change this account password before changing its number.' });
       return;
     }
     if (!config.textBeeApiKey) {
@@ -945,8 +959,16 @@ router.post('/profile/change-phone', authenticateBarangay, async (req: any, res:
       res.status(400).json({ error: failedAttempts >= 5 ? 'Too many incorrect codes. Request a new verification code.' : 'That verification code is incorrect.' });
       return;
     }
-    const { error: updateError } = await supabaseAdmin.from('barangay_users')
-      .update({ phone }).eq('id', account.id).eq('barangay_id', req.barangayUser.barangayId);
+    const phoneUpdate = await withPhoneAccountLock(phone, async () => {
+      if (await hasPhoneInAccountType(phone, 'barangay_users', account.id)) return { conflict: true as const };
+      if (await hasPasswordReuseForPhone(phone, currentPassword, 'barangay_users', { table: 'barangay_users', id: account.id })) return { reused: true as const };
+      const { error } = await supabaseAdmin.from('barangay_users')
+        .update({ phone }).eq('id', account.id).eq('barangay_id', req.barangayUser.barangayId);
+      return { conflict: false as const, reused: false as const, error };
+    });
+    if ('conflict' in phoneUpdate && phoneUpdate.conflict) { res.status(409).json({ error: 'That mobile number already has a Barangay account.' }); return; }
+    if ('reused' in phoneUpdate && phoneUpdate.reused) { res.status(409).json({ error: 'Your current password is used by another account at that mobile number. Change this account password before changing its number.' }); return; }
+    const updateError = 'error' in phoneUpdate ? phoneUpdate.error : null;
     if (isMobileNumberRegistryConflict(updateError)) {
       res.status(409).json({ error: 'That mobile number is already linked to another account.' });
       return;
@@ -1008,7 +1030,7 @@ router.post('/profile/change-password', authenticateBarangay, async (req: any, r
       return;
     }
     const { data: account, error } = await supabaseAdmin.from('barangay_users')
-      .select('id, password_hash').eq('id', req.barangayUser.userId)
+      .select('id, phone, password_hash').eq('id', req.barangayUser.userId)
       .eq('barangay_id', req.barangayUser.barangayId).maybeSingle();
     if (error) throw error;
     if (!account) { res.status(404).json({ error: 'Barangay account not found.' }); return; }
@@ -1033,9 +1055,17 @@ router.post('/profile/change-password', authenticateBarangay, async (req: any, r
       res.status(400).json({ error: failedAttempts >= 5 ? 'Too many incorrect codes. Request a new verification code.' : 'That verification code is incorrect.' });
       return;
     }
-    const passwordHash = await bcrypt.hash(newPassword, 12);
-    const { error: updateError } = await supabaseAdmin.from('barangay_users')
-      .update({ password_hash: passwordHash }).eq('id', account.id).eq('barangay_id', req.barangayUser.barangayId);
+    const phone = normalizeMobileNumber(account.phone);
+    if (!phone) { res.status(400).json({ error: 'Add a valid mobile number before changing your password.' }); return; }
+    const passwordUpdate = await withPhoneAccountLock(phone, async () => {
+      if (await hasPasswordReuseForPhone(phone, newPassword, 'barangay_users', { table: 'barangay_users', id: account.id })) return { reused: true as const };
+      const passwordHash = await bcrypt.hash(newPassword, 12);
+      const { error } = await supabaseAdmin.from('barangay_users')
+        .update({ password_hash: passwordHash }).eq('id', account.id).eq('barangay_id', req.barangayUser.barangayId);
+      return { reused: false as const, error };
+    });
+    if (passwordUpdate.reused) { res.status(409).json({ error: 'Choose a password different from the password used by your other account with this mobile number.' }); return; }
+    const updateError = passwordUpdate.error;
     if (updateError) throw updateError;
     await deleteOtp(otpKey);
     res.json({ success: true, message: 'Password changed successfully.' });
@@ -1594,13 +1624,6 @@ router.post('/team', authenticateBarangay, requireRole(['admin']), async (req: a
     }
 
     const body = addMemberSchema.parse(req.body);
-    const { data: reservation, error: reservationError } = await supabaseAdmin
-      .from('account_mobile_numbers').select('account_id').eq('phone_normalized', body.phone).maybeSingle();
-    if (reservationError) throw reservationError;
-    if (reservation) {
-      res.status(409).json({ error: 'That mobile number is already linked to an account.' });
-      return;
-    }
 
     if (req.barangayUser.role === 'admin' && body.role === 'dispatcher') {
       const coordination = await DispatcherVerificationService.getByUserId(req.barangayUser.userId);
@@ -1610,24 +1633,32 @@ router.post('/team', authenticateBarangay, requireRole(['admin']), async (req: a
       }
     }
 
-    const password_hash = await bcrypt.hash(body.password, 12);
-    const { data: member, error } = await supabaseAdmin
-      .from('barangay_users')
-      .insert({
-        full_name: body.full_name,
-        phone: body.phone,
-        password_hash,
-        barangay_id: req.barangayUser.barangayId,
-        role: body.role,
-        added_by: req.barangayUser.userId,
-        is_active: true,
-      })
-      .select('id, full_name, phone, role, barangay_id, is_active, created_at')
-      .single();
+    const creation = await withPhoneAccountLock(body.phone, async () => {
+      if (await hasPhoneInAccountType(body.phone, 'barangay_users')) return { kind: 'phone_conflict' as const };
+      if (await hasPasswordReuseForPhone(body.phone, body.password, 'barangay_users')) return { kind: 'password_reuse' as const };
+      const password_hash = await bcrypt.hash(body.password, 12);
+      const { data, error } = await supabaseAdmin
+        .from('barangay_users')
+        .insert({
+          full_name: body.full_name,
+          phone: body.phone,
+          password_hash,
+          barangay_id: req.barangayUser.barangayId,
+          role: body.role,
+          added_by: req.barangayUser.userId,
+          is_active: true,
+        })
+        .select('id, full_name, phone, role, barangay_id, is_active, created_at')
+        .single();
+      return { kind: 'created' as const, data, error };
+    });
+    if (creation.kind === 'phone_conflict') { res.status(409).json({ error: 'That mobile number already has a Barangay account.' }); return; }
+    if (creation.kind === 'password_reuse') { res.status(409).json({ error: 'Choose a password different from the password used by your other account with this mobile number.' }); return; }
+    const { data: member, error } = creation;
 
     if (error) {
       if (isMobileNumberRegistryConflict(error) || error.code === '23505') {
-        res.status(409).json({ error: 'That mobile number is already linked to an account.' });
+        res.status(409).json({ error: 'That mobile number already has a Barangay account.' });
         return;
       }
       throw error;
@@ -1670,7 +1701,7 @@ router.patch('/team/:id', authenticateBarangay, requireRole(['admin']), async (r
     }
     const { data: currentMember, error: currentMemberError } = await supabaseAdmin
       .from('barangay_users')
-      .select('role')
+      .select('id, role, phone')
       .eq('id', req.params.id)
       .eq('barangay_id', req.barangayUser.barangayId)
       .neq('role', 'admin')
@@ -1685,20 +1716,35 @@ router.patch('/team/:id', authenticateBarangay, requireRole(['admin']), async (r
         return;
       }
     }
-    const update: Record<string, unknown> = {
-      full_name: parsed.data.full_name,
-      phone: parsed.data.phone,
-      role: parsed.data.role,
-    };
-    if (parsed.data.password) update.password_hash = await bcrypt.hash(parsed.data.password, 12);
-    const { data, error } = await supabaseAdmin
-      .from('barangay_users')
-      .update(update)
-      .eq('id', req.params.id)
-      .eq('barangay_id', req.barangayUser.barangayId)
-      .neq('role', 'admin')
-      .select('id, full_name, phone, role, barangay_id, is_active, created_at, added_by')
-      .maybeSingle();
+    const phoneChanged = normalizeMobileNumber(currentMember.phone) !== parsed.data.phone;
+    if (phoneChanged && !parsed.data.password) {
+      res.status(400).json({ error: 'Set a new password when changing this member’s mobile number.' });
+      return;
+    }
+    const updateResult = await withPhoneAccountLock(parsed.data.phone, async () => {
+      if (await hasPhoneInAccountType(parsed.data.phone, 'barangay_users', currentMember.id)) return { kind: 'phone_conflict' as const };
+      if (parsed.data.password && await hasPasswordReuseForPhone(parsed.data.phone, parsed.data.password, 'barangay_users', { table: 'barangay_users', id: currentMember.id })) {
+        return { kind: 'password_reuse' as const };
+      }
+      const update: Record<string, unknown> = {
+        full_name: parsed.data.full_name,
+        phone: parsed.data.phone,
+        role: parsed.data.role,
+      };
+      if (parsed.data.password) update.password_hash = await bcrypt.hash(parsed.data.password, 12);
+      const { data, error } = await supabaseAdmin
+        .from('barangay_users')
+        .update(update)
+        .eq('id', req.params.id)
+        .eq('barangay_id', req.barangayUser.barangayId)
+        .neq('role', 'admin')
+        .select('id, full_name, phone, role, barangay_id, is_active, created_at, added_by')
+        .maybeSingle();
+      return { kind: 'updated' as const, data, error };
+    });
+    if (updateResult.kind === 'phone_conflict') { res.status(409).json({ error: 'That mobile number already has a Barangay account.' }); return; }
+    if (updateResult.kind === 'password_reuse') { res.status(409).json({ error: 'Choose a password different from the password used by your other account with this mobile number.' }); return; }
+    const { data, error } = updateResult;
     if (isMobileNumberRegistryConflict(error) || error?.code === '23505') { res.status(409).json({ error: 'That mobile number is already linked to an account.' }); return; }
     if (error) throw error;
     if (!data) { res.status(404).json({ error: 'Team member not found.' }); return; }

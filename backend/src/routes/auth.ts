@@ -10,6 +10,8 @@ import { setOtp, getOtp, deleteOtp, getOtpResendCooldownSeconds } from '../confi
 import type { ResidentOtpRecord } from '../config/redis';
 import { randomInt } from 'crypto';
 import { isMobileNumberRegistryConflict, normalizeMobileNumber } from '../services/mobileNumberService';
+import { countPasswordMatchesForPhone, hasPasswordReuseForPhone, hasPhoneInAccountType, withPhoneAccountLock } from '../services/accountAuthService';
+import { decryptPendingPassword, encryptPendingPassword } from '../services/pendingPasswordService';
 
 const router = Router();
 
@@ -94,12 +96,24 @@ router.post('/master-admin-setup', async (req: Request, res: Response): Promise<
       return;
     }
     const { full_name, phone, password } = parsed.data;
-    const password_hash = await bcrypt.hash(password, 12);
-    const { data, error } = await supabaseAdmin
-      .from('users')
-      .insert({ full_name, phone, password_hash, role: 'master_admin', status: 'active', verified: true })
-      .select('id, full_name, phone, role, status, verified')
-      .single();
+    const { data, error } = await withPhoneAccountLock(phone, async () => {
+      if (await hasPhoneInAccountType(phone, 'users')) return { data: null, error: { code: 'ACCOUNT_PHONE_CONFLICT' } as any };
+      if (await hasPasswordReuseForPhone(phone, password, 'users')) return { data: null, error: { code: 'PASSWORD_REUSE' } as any };
+      const password_hash = await bcrypt.hash(password, 12);
+      return supabaseAdmin
+        .from('users')
+        .insert({ full_name, phone, password_hash, role: 'master_admin', status: 'active', verified: true })
+        .select('id, full_name, phone, role, status, verified')
+        .single();
+    });
+    if (error?.code === 'PASSWORD_REUSE') {
+      res.status(409).json({ error: 'Choose a password different from the password used by your other account with this mobile number.' });
+      return;
+    }
+    if (error?.code === 'ACCOUNT_PHONE_CONFLICT') {
+      res.status(409).json({ error: 'That mobile number already has an MDRRMO account.' });
+      return;
+    }
     if (isMobileNumberRegistryConflict(error)) {
       res.status(409).json({ error: 'That mobile number is already linked to an account.' });
       return;
@@ -134,9 +148,6 @@ router.post('/register', authenticate, authorize('admin', 'master_admin'), async
 
     const { full_name, phone, password, role, unit_type } = parsed.data;
 
-    // Hash password
-    const password_hash = await bcrypt.hash(password, 12);
-
     // Insert user
     const isAutoActive = true;
     const initialStatus = 'active';
@@ -149,19 +160,21 @@ router.post('/register', authenticate, authorize('admin', 'master_admin'), async
       .filter(Boolean);
     const primaryUnitType = specs[0] || null;
 
-    const { data: newUser, error: insertError } = await supabaseAdmin
-      .from('users')
-      .insert({
-        full_name,
-        phone,
-        password_hash,
-        role,
-        unit_type: primaryUnitType,
-        status: initialStatus,
-        verified: isAutoActive,
-      })
-      .select('id, full_name, phone, role, unit_type, status, verified')
-      .single();
+    const { data: newUser, error: insertError } = await withPhoneAccountLock(phone, async () => {
+      if (await hasPhoneInAccountType(phone, 'users')) return { data: null, error: { code: '23505' } as any };
+      if (await hasPasswordReuseForPhone(phone, password, 'users')) return { data: null, error: { code: 'PASSWORD_REUSE' } as any };
+      const password_hash = await bcrypt.hash(password, 12);
+      return supabaseAdmin
+        .from('users')
+        .insert({ full_name, phone, password_hash, role, unit_type: primaryUnitType, status: initialStatus, verified: isAutoActive })
+        .select('id, full_name, phone, role, unit_type, status, verified')
+        .single();
+    });
+
+    if (insertError?.code === 'PASSWORD_REUSE') {
+      res.status(409).json({ error: 'Choose a password different from the password used by your other account with this mobile number.' });
+      return;
+    }
 
     if (insertError) {
       if (isMobileNumberRegistryConflict(insertError)) {
@@ -170,6 +183,10 @@ router.post('/register', authenticate, authorize('admin', 'master_admin'), async
       }
       if (insertError.code === '23505') { res.status(409).json({ error: 'That mobile number is already linked to an account.' }); return; }
       console.error('Registration error:', insertError);
+      res.status(500).json({ error: 'Failed to create user account.' });
+      return;
+    }
+    if (!newUser) {
       res.status(500).json({ error: 'Failed to create user account.' });
       return;
     }
@@ -214,6 +231,10 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
     }
 
     const { phone, password } = parsed.data;
+    if (await countPasswordMatchesForPhone(phone, password) > 1) {
+      res.status(409).json({ code: 'AMBIGUOUS_ACCOUNT_CREDENTIALS', error: 'This password matches more than one account using this mobile number. Reset the password for one account type by SMS, then sign in again.' });
+      return;
+    }
     const { data: user, error } = await supabaseAdmin.from('users').select('*').eq('phone', phone).maybeSingle();
     if (error) {
       console.error('Login lookup error:', error);
@@ -317,6 +338,11 @@ router.post('/resident/login', async (req: Request, res: Response): Promise<void
     const password = typeof req.body?.password === 'string' ? req.body.password : '';
     if (!phone || !password) {
       res.status(400).json({ error: 'Enter a valid mobile number and password.' });
+      return;
+    }
+
+    if (await countPasswordMatchesForPhone(phone, password) > 1) {
+      res.status(409).json({ code: 'AMBIGUOUS_ACCOUNT_CREDENTIALS', error: 'This password matches more than one account using this mobile number. Reset the password for one account type by SMS, then sign in again.' });
       return;
     }
 
@@ -564,9 +590,13 @@ router.post('/profile/phone-otp', authenticate, async (req: AuthRequest, res: Re
       res.status(400).json({ error: 'That mobile number is already linked to your account.' });
       return;
     }
+    if (await hasPasswordReuseForPhone(phone, currentPassword, accountTable, { table: accountTable, id: account.id })) {
+      res.status(409).json({ error: 'Your current password is used by another account at that mobile number. Change this account password before changing its number.' });
+      return;
+    }
     const { data: reservation, error: reservationError } = await supabaseAdmin
       .from('account_mobile_numbers').select('account_table, account_id')
-      .eq('phone_normalized', phone).maybeSingle();
+      .eq('account_table', accountTable).eq('phone_normalized', phone).maybeSingle();
     if (reservationError) throw reservationError;
     if (reservation && !(reservation.account_table === accountTable && reservation.account_id === account.id)) {
       res.status(409).json({ error: 'That mobile number is already linked to another account.' });
@@ -624,8 +654,24 @@ router.post('/profile/change-phone', authenticate, async (req: AuthRequest, res:
       res.status(400).json({ error: failedAttempts >= 5 ? 'Too many incorrect codes. Request a new verification code.' : 'That verification code is incorrect.' });
       return;
     }
-    const { error: updateError } = await supabaseAdmin.from(accountTable)
-      .update({ phone, updated_at: new Date().toISOString() }).eq('id', account.id);
+    const phoneUpdate = await withPhoneAccountLock(phone, async () => {
+      if (await hasPhoneInAccountType(phone, accountTable, account.id)) return { kind: 'phone_conflict' as const };
+      if (await hasPasswordReuseForPhone(phone, currentPassword, accountTable, { table: accountTable, id: account.id })) {
+        return { kind: 'password_reuse' as const };
+      }
+      const { error } = await supabaseAdmin.from(accountTable)
+        .update({ phone, updated_at: new Date().toISOString() }).eq('id', account.id);
+      return { kind: 'updated' as const, error };
+    });
+    if (phoneUpdate.kind === 'phone_conflict') {
+      res.status(409).json({ error: 'That mobile number already has an account of this type.' });
+      return;
+    }
+    if (phoneUpdate.kind === 'password_reuse') {
+      res.status(409).json({ error: 'Your current password is used by another account at that mobile number. Change this account password before changing its number.' });
+      return;
+    }
+    const updateError = phoneUpdate.error;
     if (isMobileNumberRegistryConflict(updateError)) {
       res.status(409).json({ error: 'That mobile number is already linked to another account.' });
       return;
@@ -695,7 +741,7 @@ router.post('/profile/change-password', authenticate, async (req: AuthRequest, r
     }
     const accountTable = req.user?.role === 'resident' ? 'resident_user' : 'users';
     const { data: account, error } = await supabaseAdmin
-      .from(accountTable).select('id, password_hash').eq('id', req.user!.userId).maybeSingle();
+      .from(accountTable).select('id, phone, password_hash').eq('id', req.user!.userId).maybeSingle();
     if (error) throw error;
     if (!account) { res.status(404).json({ error: 'Account not found.' }); return; }
     if (!(await bcrypt.compare(currentPassword, account.password_hash))) {
@@ -719,9 +765,20 @@ router.post('/profile/change-password', authenticate, async (req: AuthRequest, r
       res.status(400).json({ error: failedAttempts >= 5 ? 'Too many incorrect codes. Request a new verification code.' : 'That verification code is incorrect.' });
       return;
     }
-    const passwordHash = await bcrypt.hash(newPassword, 12);
-    const { error: updateError } = await supabaseAdmin.from(accountTable)
-      .update({ password_hash: passwordHash, updated_at: new Date().toISOString() }).eq('id', account.id);
+    const phone = normalizeMobileNumber(account.phone);
+    if (!phone) { res.status(400).json({ error: 'Add a valid mobile number before changing your password.' }); return; }
+    const passwordUpdate = await withPhoneAccountLock(phone, async () => {
+      if (await hasPasswordReuseForPhone(phone, newPassword, accountTable, { table: accountTable, id: account.id })) return { reused: true as const };
+      const passwordHash = await bcrypt.hash(newPassword, 12);
+      const { error } = await supabaseAdmin.from(accountTable)
+        .update({ password_hash: passwordHash, updated_at: new Date().toISOString() }).eq('id', account.id);
+      return { reused: false as const, error };
+    });
+    if (passwordUpdate.reused) {
+      res.status(409).json({ error: 'Choose a password different from the password used by your other account with this mobile number.' });
+      return;
+    }
+    const updateError = passwordUpdate.error;
     if (updateError) throw updateError;
     await deleteOtp(otpKey);
     res.json({ success: true, message: 'Password changed successfully.' });
@@ -813,20 +870,25 @@ router.post(
       }
 
       const { full_name, phone, password, role } = parsed.data;
-      const password_hash = await bcrypt.hash(password, 12);
+      const { data: newUser, error } = await withPhoneAccountLock(phone, async () => {
+        if (await hasPhoneInAccountType(phone, 'users')) return { data: null, error: { code: 'ACCOUNT_PHONE_CONFLICT' } as any };
+        if (await hasPasswordReuseForPhone(phone, password, 'users')) return { data: null, error: { code: 'PASSWORD_REUSE' } as any };
+        const password_hash = await bcrypt.hash(password, 12);
+        return supabaseAdmin
+          .from('users')
+          .insert({ full_name, phone, password_hash, role, status: 'active', verified: true })
+          .select('id, full_name, phone, role, status')
+          .single();
+      });
 
-      const { data: newUser, error } = await supabaseAdmin
-        .from('users')
-        .insert({
-          full_name,
-          phone,
-          password_hash,
-          role,
-          status: 'active',
-          verified: true,
-        })
-        .select('id, full_name, phone, role, status')
-        .single();
+      if (error?.code === 'PASSWORD_REUSE') {
+        res.status(409).json({ error: 'Choose a password different from the password used by your other account with this mobile number.' });
+        return;
+      }
+      if (error?.code === 'ACCOUNT_PHONE_CONFLICT') {
+        res.status(409).json({ error: 'That mobile number already has an MDRRMO account.' });
+        return;
+      }
 
       if (error) {
         if (isMobileNumberRegistryConflict(error) || error.code === '23505') {
@@ -861,15 +923,15 @@ async function sendResidentRegistrationOtp(req: Request, res: Response): Promise
       res.status(503).json({ error: 'SMS verification is not configured. Contact an administrator.' });
       return;
     }
-    const { data: reservation, error: reservationError } = await supabaseAdmin
-      .from('account_mobile_numbers').select('account_id').eq('phone_normalized', phone).maybeSingle();
-    if (reservationError) throw reservationError;
-    if (reservation) {
-      res.status(409).json({ error: 'That mobile number is already linked to an account. Sign in instead.' });
+    if (await hasPhoneInAccountType(phone, 'resident_user')) {
+      res.status(409).json({ error: 'That mobile number already has a resident account. Sign in instead.' });
+      return;
+    }
+    if (await hasPasswordReuseForPhone(phone, password, 'resident_user')) {
+      res.status(409).json({ error: 'Choose a password different from the password used by your other account with this mobile number.' });
       return;
     }
     const otp = randomInt(100000, 1000000).toString();
-    const passwordHash = await bcrypt.hash(password, 12);
     const otpKey = 'resident-registration:' + phone;
     const cooldown = await getOtpResendCooldownSeconds(otpKey);
     if (cooldown > 0) { res.status(429).json({ error: 'A code was sent recently. Try again in ' + cooldown + ' seconds.' }); return; }
@@ -877,7 +939,7 @@ async function sendResidentRegistrationOtp(req: Request, res: Response): Promise
       otp,
       fullName,
       phone,
-      passwordHash,
+      passwordCiphertext: encryptPendingPassword(password),
       barangayName: barangayName || 'Poblacion',
       purpose: 'resident_registration',
     });
@@ -903,7 +965,7 @@ async function verifyResidentRegistrationOtp(req: Request, res: Response): Promi
     }
     const otpKey = 'resident-registration:' + phone;
     const record = await getOtp(otpKey);
-    if (!record || record.purpose !== 'resident_registration' || record.phone !== phone || !record.passwordHash) {
+    if (!record || record.purpose !== 'resident_registration' || record.phone !== phone || !record.passwordCiphertext) {
       res.status(400).json({ error: 'No pending registration was found or the code expired. Request a new code.' });
       return;
     }
@@ -914,26 +976,36 @@ async function verifyResidentRegistrationOtp(req: Request, res: Response): Promi
       res.status(400).json({ error: failedAttempts >= 5 ? 'Too many incorrect codes. Request a new verification code.' : 'That verification code is incorrect.' });
       return;
     }
-    const { data: reservation, error: reservationError } = await supabaseAdmin
-      .from('account_mobile_numbers').select('account_id').eq('phone_normalized', phone).maybeSingle();
-    if (reservationError) throw reservationError;
-    if (reservation) {
+    const password = decryptPendingPassword(record.passwordCiphertext);
+    const creation = await withPhoneAccountLock(phone, async () => {
+      if (await hasPhoneInAccountType(phone, 'resident_user')) return { kind: 'phone_conflict' as const };
+      if (await hasPasswordReuseForPhone(phone, password, 'resident_user')) return { kind: 'password_reuse' as const };
+      const password_hash = await bcrypt.hash(password, 12);
+      const { data, error } = await supabaseAdmin
+        .from('resident_user')
+        .insert({
+          full_name: record.fullName,
+          phone,
+          password_hash,
+          barangay_name: record.barangayName || 'Poblacion',
+          status: 'active',
+          verified: true,
+        })
+        .select('id, full_name, phone, barangay_name, role, status, verified')
+        .single();
+      return { kind: 'inserted' as const, data, error };
+    });
+    if (creation.kind === 'phone_conflict') {
       await deleteOtp(otpKey);
-      res.status(409).json({ error: 'That mobile number is already linked to an account. Sign in instead.' });
+      res.status(409).json({ error: 'That mobile number already has a resident account. Sign in instead.' });
       return;
     }
-    const { data: resident, error: insertError } = await supabaseAdmin
-      .from('resident_user')
-      .insert({
-        full_name: record.fullName,
-        phone,
-        password_hash: record.passwordHash,
-        barangay_name: record.barangayName || 'Poblacion',
-        status: 'active',
-        verified: true,
-      })
-      .select('id, full_name, phone, barangay_name, role, status, verified')
-      .single();
+    if (creation.kind === 'password_reuse') {
+      await deleteOtp(otpKey);
+      res.status(409).json({ error: 'Choose a password different from the password used by your other account with this mobile number.' });
+      return;
+    }
+    const { data: resident, error: insertError } = creation;
     if (isMobileNumberRegistryConflict(insertError) || insertError?.code === '23505') {
       res.status(409).json({ error: 'That mobile number is already linked to an account. Sign in instead.' });
       return;
@@ -1027,7 +1099,7 @@ router.post('/resident/web-change-password', authenticate, async (req: AuthReque
     }
 
     const { data: resident, error } = await supabaseAdmin
-      .from('resident_user').select('id, password_hash').eq('id', req.user.userId).maybeSingle();
+      .from('resident_user').select('id, phone, password_hash').eq('id', req.user.userId).maybeSingle();
     if (error) throw error;
     if (!resident) {
       res.status(404).json({ error: 'Resident account not found.' });
@@ -1056,11 +1128,22 @@ router.post('/resident/web-change-password', authenticate, async (req: AuthReque
       return;
     }
 
-    const passwordHash = await bcrypt.hash(newPassword, 12);
-    const { error: updateError } = await supabaseAdmin
-      .from('resident_user')
-      .update({ password_hash: passwordHash, updated_at: new Date().toISOString() })
-      .eq('id', resident.id);
+    const phone = normalizeMobileNumber(resident.phone);
+    if (!phone) { res.status(400).json({ error: 'Add a valid mobile number before changing your password.' }); return; }
+    const passwordUpdate = await withPhoneAccountLock(phone, async () => {
+      if (await hasPasswordReuseForPhone(phone, newPassword, 'resident_user', { table: 'resident_user', id: resident.id })) return { reused: true as const };
+      const passwordHash = await bcrypt.hash(newPassword, 12);
+      const { error } = await supabaseAdmin
+        .from('resident_user')
+        .update({ password_hash: passwordHash, updated_at: new Date().toISOString() })
+        .eq('id', resident.id);
+      return { reused: false as const, error };
+    });
+    if (passwordUpdate.reused) {
+      res.status(409).json({ error: 'Choose a password different from the password used by your other account with this mobile number.' });
+      return;
+    }
+    const updateError = passwordUpdate.error;
     if (updateError) throw updateError;
 
     await deleteOtp(otpKey);
@@ -1086,7 +1169,7 @@ async function startPasswordReset(
   req: Request,
   res: Response,
   table: PasswordAccountTable,
-  audience: 'resident' | 'barangay' | 'responder',
+  audience: 'resident' | 'barangay' | 'responder' | 'MDRRMO',
   purpose: ResidentOtpRecord['purpose'],
   role?: string,
 ): Promise<void> {
@@ -1134,7 +1217,7 @@ async function finishPasswordReset(
   req: Request,
   res: Response,
   table: PasswordAccountTable,
-  audience: 'resident' | 'barangay' | 'responder',
+  audience: 'resident' | 'barangay' | 'responder' | 'MDRRMO',
   purpose: ResidentOtpRecord['purpose'],
   role?: string,
 ): Promise<void> {
@@ -1164,9 +1247,17 @@ async function finishPasswordReset(
       res.status(400).json({ error: 'The account for this reset request is no longer available.' });
       return;
     }
-    const passwordHash = await bcrypt.hash(newPassword, 12);
-    const { error } = await supabaseAdmin.from(table).update({ password_hash: passwordHash }).eq('id', user.id);
-    if (error) throw error;
+    const passwordUpdate = await withPhoneAccountLock(phone, async () => {
+      if (await hasPasswordReuseForPhone(phone, newPassword, table, { table, id: user.id })) return { reused: true as const };
+      const passwordHash = await bcrypt.hash(newPassword, 12);
+      const { error } = await supabaseAdmin.from(table).update({ password_hash: passwordHash }).eq('id', user.id);
+      return { reused: false as const, error };
+    });
+    if (passwordUpdate.reused) {
+      res.status(409).json({ error: 'Choose a password different from the password used by your other account with this mobile number.' });
+      return;
+    }
+    if (passwordUpdate.error) throw passwordUpdate.error;
     await deleteOtp(otpKey);
     res.json({ success: true, message: 'Password reset successfully. Sign in with your new password.' });
   } catch (err) {
@@ -1229,9 +1320,17 @@ router.post('/barangay/change-password', async (req: Request, res: Response): Pr
       res.status(400).json({ error: 'That verification code is incorrect.' });
       return;
     }
-    const passwordHash = await bcrypt.hash(newPassword, 12);
-    const { error } = await supabaseAdmin.from('barangay_users').update({ password_hash: passwordHash }).eq('id', user.id);
-    if (error) throw error;
+    const passwordUpdate = await withPhoneAccountLock(phone, async () => {
+      if (await hasPasswordReuseForPhone(phone, newPassword, 'barangay_users', { table: 'barangay_users', id: user.id })) return { reused: true as const };
+      const passwordHash = await bcrypt.hash(newPassword, 12);
+      const { error } = await supabaseAdmin.from('barangay_users').update({ password_hash: passwordHash }).eq('id', user.id);
+      return { reused: false as const, error };
+    });
+    if (passwordUpdate.reused) {
+      res.status(409).json({ error: 'Choose a password different from the password used by your other account with this mobile number.' });
+      return;
+    }
+    if (passwordUpdate.error) throw passwordUpdate.error;
     await deleteOtp(otpKey);
     res.json({ success: true, message: 'Password updated successfully.' });
   } catch (err) {
@@ -1249,5 +1348,10 @@ router.post('/responder/forgot-password-otp', (req, res) =>
   startPasswordReset(req, res, 'users', 'responder', 'responder_password_reset', 'responder'));
 router.post('/responder/forgot-password', (req, res) =>
   finishPasswordReset(req, res, 'users', 'responder', 'responder_password_reset', 'responder'));
+
+router.post('/mdrrmo/forgot-password-otp', (req, res) =>
+  startPasswordReset(req, res, 'users', 'MDRRMO', 'mdrrmo_password_reset'));
+router.post('/mdrrmo/forgot-password', (req, res) =>
+  finishPasswordReset(req, res, 'users', 'MDRRMO', 'mdrrmo_password_reset'));
 
 export default router;

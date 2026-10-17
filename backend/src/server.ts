@@ -133,6 +133,7 @@ const loginLimiter = rateLimit({
 
 app.use('/api/auth/login', loginLimiter);
 app.use('/api/auth/resident/login', loginLimiter);
+app.use('/api/barangay/login', loginLimiter);
 
 const residentRegistrationLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -163,6 +164,8 @@ app.use('/api/auth/barangay/forgot-password-otp', passwordResetLimiter);
 app.use('/api/auth/barangay/forgot-password', passwordResetLimiter);
 app.use('/api/auth/responder/forgot-password-otp', passwordResetLimiter);
 app.use('/api/auth/responder/forgot-password', passwordResetLimiter);
+app.use('/api/auth/mdrrmo/forgot-password-otp', passwordResetLimiter);
+app.use('/api/auth/mdrrmo/forgot-password', passwordResetLimiter);
 
 // ============================================
 // API Routes

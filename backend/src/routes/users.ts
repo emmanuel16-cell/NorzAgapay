@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import { supabaseAdmin } from '../config/supabase';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth';
 import { isMobileNumberRegistryConflict, normalizeMobileNumber } from '../services/mobileNumberService';
+import { hasPasswordReuseForPhone, hasPhoneInAccountType, withPhoneAccountLock } from '../services/accountAuthService';
 
 const router = Router();
 const responderSpecializations = [
@@ -127,16 +128,6 @@ router.post('/', authenticate, authorize('admin', 'master_admin'), async (req: A
     return;
   }
   const { role, full_name, password, phone } = parsed.data;
-  const { data: reservation, error: reservationError } = await supabaseAdmin
-    .from('account_mobile_numbers').select('account_id').eq('phone_normalized', phone).maybeSingle();
-  if (reservationError) {
-    res.status(500).json({ error: 'Unable to verify the mobile number.' });
-    return;
-  }
-  if (reservation) {
-    res.status(409).json({ error: 'That mobile number is already linked to an account.' });
-    return;
-  }
   if (req.user!.role !== 'master_admin' && role === 'admin') {
     res.status(403).json({ error: 'Only a master admin can create admin accounts.' });
     return;
@@ -151,20 +142,20 @@ router.post('/', authenticate, authorize('admin', 'master_admin'), async (req: A
   }
   const unitType = specializations.length ? specializations.join(', ') : null;
   try {
-    const password_hash = await bcrypt.hash(password, 12);
-    const { data, error } = await supabaseAdmin
-      .from('users')
-      .insert({
-        full_name,
-        phone,
-        password_hash,
-        role,
-        unit_type: role === 'responder' ? unitType : null,
-        status: 'active',
-        verified: true,
-      })
-      .select('id, full_name, role, phone, unit_type, status, verified, created_at')
-      .single();
+    const creation = await withPhoneAccountLock(phone, async () => {
+      if (await hasPhoneInAccountType(phone, 'users')) return { kind: 'phone_conflict' as const };
+      if (await hasPasswordReuseForPhone(phone, password, 'users')) return { kind: 'password_reuse' as const };
+      const password_hash = await bcrypt.hash(password, 12);
+      const { data, error } = await supabaseAdmin
+        .from('users')
+        .insert({ full_name, phone, password_hash, role, unit_type: role === 'responder' ? unitType : null, status: 'active', verified: true })
+        .select('id, full_name, role, phone, unit_type, status, verified, created_at')
+        .single();
+      return { kind: 'inserted' as const, data, error };
+    });
+    if (creation.kind === 'phone_conflict') { res.status(409).json({ error: 'That mobile number already has an MDRRMO account.' }); return; }
+    if (creation.kind === 'password_reuse') { res.status(409).json({ error: 'Choose a password different from the password used by your other account with this mobile number.' }); return; }
+    const { data, error } = creation;
     if (isMobileNumberRegistryConflict(error)) { res.status(409).json({ error: 'That mobile number is already linked to an account.' }); return; }
     if (error?.code === '23505') {
       res.status(409).json({ error: 'That mobile number is already linked to an account.' });
@@ -314,7 +305,7 @@ router.post('/me/change-password', authenticate, async (req: AuthRequest, res: R
   try {
     const { data: user, error } = await supabaseAdmin
       .from('users')
-      .select('password_hash')
+      .select('phone, password_hash')
       .eq('id', req.user!.userId)
       .single();
     if (error || !user) throw error || new Error('User not found.');
@@ -322,11 +313,16 @@ router.post('/me/change-password', authenticate, async (req: AuthRequest, res: R
       res.status(400).json({ error: 'Current password is incorrect.' });
       return;
     }
-    const password_hash = await bcrypt.hash(parsed.data.new_password, 12);
-    const { error: updateError } = await supabaseAdmin
-      .from('users')
-      .update({ password_hash })
-      .eq('id', req.user!.userId);
+    const phone = normalizeMobileNumber(user.phone);
+    if (!phone) { res.status(400).json({ error: 'A valid mobile number is required to change the password.' }); return; }
+    const passwordUpdate = await withPhoneAccountLock(phone, async () => {
+      if (await hasPasswordReuseForPhone(phone, parsed.data.new_password, 'users', { table: 'users', id: req.user!.userId })) return { reused: true as const };
+      const password_hash = await bcrypt.hash(parsed.data.new_password, 12);
+      const { error } = await supabaseAdmin.from('users').update({ password_hash }).eq('id', req.user!.userId);
+      return { reused: false as const, error };
+    });
+    if (passwordUpdate.reused) { res.status(409).json({ error: 'Choose a password different from the password used by your other account with this mobile number.' }); return; }
+    const updateError = passwordUpdate.error;
     if (updateError) throw updateError;
     res.json({ message: 'Password updated.' });
   } catch (err) {

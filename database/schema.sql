@@ -4904,11 +4904,9 @@ LANGUAGE plpgsql
 IMMUTABLE
 AS $$
 DECLARE
-  v_digits TEXT := regexp_replace(coalesce(p_phone, ''), '\D', '', 'g');
+  v_digits TEXT := coalesce(p_phone, '');
 BEGIN
   IF v_digits ~ '^09[0-9]{9}$' THEN RETURN v_digits; END IF;
-  IF v_digits ~ '^639[0-9]{9}$' THEN RETURN '0' || substr(v_digits, 3); END IF;
-  IF v_digits ~ '^9[0-9]{9}$' THEN RETURN '0' || v_digits; END IF;
   RETURN NULL;
 END;
 $$;
@@ -6450,8 +6448,8 @@ SET response_status = 'responding',
 WHERE dispatched_at IS NOT NULL AND response_status = 'pending';
 
 -- ===== Source section: database/migrations/20261017_mobile_number_registry.sql =====
--- Globally reserve normalized Philippine mobile numbers across all sign-in
--- account tables. Run the preflight and resolve every result first.
+-- Reserve exact Philippine mobile numbers once per sign-in account table.
+-- Cross-role reuse is allowed; run the role-scoped preflight before migration.
 BEGIN;
 
 LOCK TABLE public.users, public.barangay_users, public.resident_user
@@ -6463,11 +6461,9 @@ LANGUAGE plpgsql
 IMMUTABLE
 AS $$
 DECLARE
-  v_digits TEXT := regexp_replace(coalesce(p_phone, ''), '\D', '', 'g');
+  v_digits TEXT := coalesce(p_phone, '');
 BEGIN
   IF v_digits ~ '^09[0-9]{9}$' THEN RETURN v_digits; END IF;
-  IF v_digits ~ '^639[0-9]{9}$' THEN RETURN '0' || substr(v_digits, 3); END IF;
-  IF v_digits ~ '^9[0-9]{9}$' THEN RETURN '0' || v_digits; END IF;
   RETURN NULL;
 END;
 $$;
@@ -6482,24 +6478,23 @@ BEGIN
     ) AS accounts
     WHERE public.normalize_ph_mobile_number(phone) IS NULL
   ) THEN
-    RAISE EXCEPTION 'Mobile-number registry migration stopped: every sign-in account must have a valid Philippine mobile number. Run 20261017_mobile_number_auth_preflight.sql.';
+    RAISE EXCEPTION 'Mobile-number registry migration stopped: every sign-in account must use exact 09XXXXXXXXX format. Run 20261017_mobile_number_auth_preflight.sql.';
   END IF;
 
   IF EXISTS (
-    SELECT phone_normalized FROM (
-      SELECT public.normalize_ph_mobile_number(phone) AS phone_normalized FROM public.users
-      UNION ALL SELECT public.normalize_ph_mobile_number(phone) FROM public.barangay_users
-      UNION ALL SELECT public.normalize_ph_mobile_number(phone) FROM public.resident_user
+    SELECT account_table, phone_normalized FROM (
+      SELECT 'users'::text AS account_table, public.normalize_ph_mobile_number(phone) AS phone_normalized FROM public.users
+      UNION ALL SELECT 'barangay_users', public.normalize_ph_mobile_number(phone) FROM public.barangay_users
+      UNION ALL SELECT 'resident_user', public.normalize_ph_mobile_number(phone) FROM public.resident_user
     ) AS account_phones
-    GROUP BY phone_normalized HAVING count(*) > 1
+    GROUP BY account_table, phone_normalized HAVING count(*) > 1
   ) THEN
-    RAISE EXCEPTION 'Mobile-number registry migration stopped: normalized mobile numbers are shared by multiple accounts. Run 20261017_mobile_number_auth_preflight.sql.';
+    RAISE EXCEPTION 'Mobile-number registry migration stopped: a mobile number is shared by multiple accounts in the same account type. Run 20261017_mobile_number_auth_preflight.sql.';
   END IF;
 END;
 $$;
 
--- Canonicalize all verified existing account numbers before the first lookup
--- or future account write, so +639XXXXXXXXX and 09XXXXXXXXX resolve identically.
+-- Sign-in account numbers are stored and compared in exact 09XXXXXXXXX form.
 UPDATE public.users
 SET phone = public.normalize_ph_mobile_number(phone)
 WHERE phone IS DISTINCT FROM public.normalize_ph_mobile_number(phone);
@@ -6515,10 +6510,11 @@ ALTER TABLE public.barangay_users ALTER COLUMN phone SET NOT NULL;
 ALTER TABLE public.resident_user ALTER COLUMN phone SET NOT NULL;
 
 CREATE TABLE IF NOT EXISTS public.account_mobile_numbers (
-  phone_normalized TEXT PRIMARY KEY CHECK (phone_normalized ~ '^09[0-9]{9}$'),
+  phone_normalized TEXT NOT NULL CHECK (phone_normalized ~ '^09[0-9]{9}$'),
   account_table TEXT NOT NULL CHECK (account_table IN ('users', 'barangay_users', 'resident_user')),
   account_id TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT account_mobile_numbers_pkey PRIMARY KEY (account_table, phone_normalized),
   CONSTRAINT account_mobile_numbers_account_unique UNIQUE (account_table, account_id)
 );
 ALTER TABLE public.account_mobile_numbers ENABLE ROW LEVEL SECURITY;
@@ -6552,7 +6548,7 @@ BEGIN
 
   v_phone := public.normalize_ph_mobile_number(NEW.phone);
   IF v_phone IS NULL THEN
-    RAISE EXCEPTION 'A valid Philippine mobile number is required for every sign-in account.'
+    RAISE EXCEPTION 'A mobile number in exact 09XXXXXXXXX format is required for every sign-in account.'
       USING ERRCODE = '23514', CONSTRAINT = 'account_mobile_numbers_phone_format';
   END IF;
 
@@ -6579,5 +6575,5 @@ CREATE TRIGGER resident_user_sync_mobile_number
 BEFORE INSERT OR UPDATE OF phone OR DELETE ON public.resident_user
 FOR EACH ROW EXECUTE FUNCTION public.sync_account_mobile_number();
 
-COMMENT ON TABLE public.account_mobile_numbers IS 'Global normalized phone reservations for resident, barangay, and MDRRMO sign-in accounts.';
+COMMENT ON TABLE public.account_mobile_numbers IS 'Role-scoped mobile reservations. A number may be reserved once per users, barangay_users, and resident_user table.';
 COMMIT;

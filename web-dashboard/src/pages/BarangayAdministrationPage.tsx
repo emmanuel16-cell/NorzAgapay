@@ -296,7 +296,7 @@ export default function BarangayAdministrationPage({ embedded = false, section =
       numbers: entry.numbers.map((number) => {
         const trimmed = number.trim();
         const digits = trimmed.replace(/\D/g, '');
-        return digits.startsWith('09') || digits.startsWith('639')
+        return digits.startsWith('09')
           ? isValidMobileNumber(trimmed) ? normalizeMobileNumberInput(trimmed) : trimmed
           : trimmed;
       }).filter(Boolean),
@@ -306,7 +306,7 @@ export default function BarangayAdministrationPage({ embedded = false, section =
     }
     if (cleanEntries.some((entry) => entry.numbers.some((number) => {
       const digits = number.replace(/\D/g, '');
-      return (digits.startsWith('09') || digits.startsWith('639')) && !isValidMobileNumber(number);
+      return digits.startsWith('09') && !isValidMobileNumber(number);
     }))) {
       toast.error('Mobile hotline numbers must contain exactly 11 digits and start with 09.'); setSaving(false); return;
     }
@@ -338,7 +338,7 @@ export default function BarangayAdministrationPage({ embedded = false, section =
     ? { ...entry, numbers: entry.numbers.map((number, currentPhoneIndex) => {
       if (currentPhoneIndex !== phoneIndex) return number;
       const digits = value.replace(/\D/g, '');
-      return digits.startsWith('09') || digits.startsWith('639') ? sanitizeMobileNumberInput(value) : value;
+      return digits.startsWith('09') ? sanitizeMobileNumberInput(value) : value;
     }) }
     : entry));
   const removeHotlinePhone = (index: number, phoneIndex: number) => {

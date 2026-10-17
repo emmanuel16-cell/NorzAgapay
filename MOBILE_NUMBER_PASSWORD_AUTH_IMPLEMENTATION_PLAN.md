@@ -4,22 +4,24 @@
 
 Remove email addresses and usernames from NorzAgapay account creation, sign-in, profile management, account recovery, and user-facing contact features. Authenticate every account with a Philippine mobile number and password. Keep verification codes SMS-only for mobile ownership checks, password resets, and password changes.
 
+**Plan update:** The earlier global mobile-number uniqueness and automatic-discovery assumptions below are superseded by [the role-scoped authentication plan](MOBILE_NUMBER_ROLE_SCOPED_AUTH_IMPLEMENTATION_PLAN.md). The same `09XXXXXXXXX` may be used once per account table (`users`, `barangay_users`, and `resident_user`), while passwords must differ between accounts sharing that number.
+
 Historical migrations that introduced retired fields remain immutable; the new forward cleanup migration removes their active schema structures safely.
 
 ## Implementation status
 
 - Backend and web clients now use phone/password authentication, SMS-only verification and recovery, phone-based account matching, and phone-only report contacts.
 - Resident and operations mobile screens, account models, and API wrappers have been updated to the same contract.
-- Added read-only phone and contact-data preflights, a global normalized mobile registry migration, and a forward schema cleanup migration. Apply `20261017_mobile_number_auth_preflight.sql`, resolve all phone gaps/collisions, then apply `20261017_mobile_number_registry.sql`; review/export data reported by `20261017_email_username_cleanup_preflight.sql` before applying `20261017_email_username_cleanup.sql`.
+- Added read-only phone and contact-data preflights, a role-scoped mobile registry migration, and a forward schema cleanup migration. Apply `20261017_mobile_number_auth_preflight.sql`, resolve invalid/missing numbers and duplicates within each account table, then apply `20261017_role_scoped_mobile_auth.sql`. Cross-role reuse is allowed. Do not retry the older global migration `20261017_mobile_number_registry.sql`. Back up and review the data before applying `20261017_email_username_cleanup.sql` after the updated code is deployed.
 - The database migrations have not been applied to a live database.
 - Backend and web production builds pass. Flutter analysis reports no compile errors; existing project-wide lint findings remain.
 
 ## Scope and target behavior
 
 - Apply one sign-in contract to resident, barangay, MDRRMO, and dashboard staff accounts: mobile number plus password.
-- Accept local 09XXXXXXXXX input and pasted +639XXXXXXXXX input, then normalize account numbers to the existing local 09XXXXXXXXX form. Use the existing SMS service to convert the normalized number to international form for delivery.
+- Accept only exact 09XXXXXXXXX mobile numbers for account registration and sign-in. Reject international and unprefixed alternatives. Use the SMS service to convert the accepted local number to international form for delivery.
 - Require a valid mobile number on every new sign-in-capable account. Require a password at signup, or let the account owner set one after SMS verification. Do not send temporary passwords.
-- Reserve each normalized number globally across users, barangay_users, and resident_user so automatic account discovery cannot resolve one number to multiple accounts. Inactive accounts continue to reserve their number until an administrator changes or removes the account.
+- Reserve each normalized number once per table (`users`, `barangay_users`, `resident_user`). Cross-role reuse is allowed; passwords must differ between accounts sharing a number. Inactive accounts continue to reserve their number within that account type.
 - Use SMS OTP for registrations, forgotten-password recovery, and password-change verification. Remove all email delivery choices and email-only recovery paths.
 - Remove email and username fields from account forms, account APIs, JWT identity payloads, profiles, account listings, and auth-related models.
 - Remove email collection and display elsewhere in the product too: incident reporter email, officer email, dispatcher-verification email, email hotline action, email report contact actions, email-only copy, and email-derived account matching. Preserve phone contact behavior.
@@ -30,7 +32,7 @@ Historical migrations that introduced retired fields remain immutable; the new f
 - The web dashboard has auto account discovery, resident registration, barangay administrator registration, master-admin setup, user creation, barangay team management, and profile/password settings in web-dashboard/src.
 - resident_app handles resident signup/login and resident profile recovery. mobile_app handles barangay registration/team management and MDRRMO responder login/profile recovery.
 - Registration routes currently mix SMS and email OTP and may create an account with a generated temporary password delivered by SMS or email. Password reset/change routes also select between SMS and email.
-- Account tables users, barangay_users, and resident_user contain email and username fields. A global username registry is added by the 20261015 migration. Phone numbers are not globally unique or consistently required.
+- The pre-cleanup schema had email and username account fields and a global username registry. The forward cleanup migration removes those structures; the role-scoped phone migration permits cross-role phone reuse.
 - Email is also used to match an officers row to an MDRRMO responder account, in dispatcher verification data, and in reporter contact fields in incident reports. The resident hotline screen includes an email action.
 
 ## Implementation phases
@@ -47,7 +49,7 @@ Historical migrations that introduced retired fields remain immutable; the new f
 
 ### Phase 1 — Phone identity rules and database enforcement
 
-- Add one shared backend mobile-number normalizer/validator using the project’s existing Philippine-number rules: convert +639XXXXXXXXX to 09XXXXXXXXX and reject non-mobile or incomplete values.
+- Add one shared backend mobile-number validator that accepts only the exact 09XXXXXXXXX form and rejects international, unprefixed, or incomplete values.
 - Add a phone reservation registry, or an equivalent transactional database constraint, keyed by normalized number and linked to account table and ID. Synchronize it on account create, phone change, and delete. Keep the database constraint authoritative under concurrent requests.
 - Add a phone uniqueness preflight and migration. Resolve duplicates before enabling the constraint. Require phone for newly created sign-in accounts after all supported clients submit it.
 - Update the consolidated fresh-install schema and add a forward migration for existing Supabase installations. Do not rewrite already-applied migrations.
@@ -58,7 +60,7 @@ Historical migrations that introduced retired fields remain immutable; the new f
 ### Phase 2 — Backend auth and account API contract
 
 - Update backend/src/routes/auth.ts and backend/src/routes/barangay.ts so login schemas accept only mobile number and password. Query account tables by normalized phone and remove email/username fallback branches.
-- Preserve account-kind/role authorization and route behavior. Web auto discovery should try the known account tables by phone and return the correct account kind; the global phone constraint prevents ambiguity.
+- Preserve account-kind/role authorization and route behavior. Web auto discovery tries the known account tables by phone/password; unique passwords across same-number accounts prevent ambiguous account selection.
 - Change master-admin setup, administrator-created responder/staff accounts, barangay team-member creation, resident registration, and barangay-admin registration to require a valid phone and password (or a post-SMS password setup step).
 - Replace generated temporary passwords with a password entered at signup or created after successful SMS verification. Never send credentials in a message.
 - Make all registration OTP routes SMS-only. Bind the pending registration to the normalized phone, role/context, and password hash; retain expiry, resend cooldown, and attempt limits.
@@ -107,7 +109,7 @@ Historical migrations that introduced retired fields remain immutable; the new f
 ## Acceptance criteria
 
 1. Resident, barangay, MDRRMO, and dashboard staff login uses a valid mobile number and password only.
-2. Every new sign-in-capable account requires a verified, globally unique mobile number and a password or an SMS-verified password setup.
+2. Every new sign-in-capable account requires a verified `09XXXXXXXXX` mobile number unique within its account type and a password or SMS-verified password setup; accounts of different types may share the number only with different passwords.
 3. Signup, password reset, and password change verification codes are sent only by SMS; no email address or email OTP is requested or sent.
 4. Profile and admin account-management screens contain no username or email fields.
 5. No username registry, username account column, or email account column is active in the final database schema.

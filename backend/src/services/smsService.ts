@@ -1,11 +1,7 @@
 import { config } from '../config';
 
 function toPhilippineInternationalNumber(phoneNumber: string): string | null {
-  const digits = phoneNumber.replace(/\D/g, '');
-  if (/^09\d{9}$/.test(digits)) return `+63${digits.slice(1)}`;
-  if (/^639\d{9}$/.test(digits)) return `+${digits}`;
-  if (/^9\d{9}$/.test(digits)) return `+63${digits}`;
-  return null;
+  return /^09\d{9}$/.test(phoneNumber) ? `+63${phoneNumber.slice(1)}` : null;
 }
 
 export const smsService = {
@@ -17,7 +13,7 @@ export const smsService = {
     );
   },
 
-  async sendPasswordResetOtp(phoneNumber: string, otp: string, audience: 'resident' | 'barangay' | 'responder'): Promise<boolean> {
+  async sendPasswordResetOtp(phoneNumber: string, otp: string, audience: 'resident' | 'barangay' | 'responder' | 'MDRRMO'): Promise<boolean> {
     const accountType = audience;
     return sendSms(
       phoneNumber,

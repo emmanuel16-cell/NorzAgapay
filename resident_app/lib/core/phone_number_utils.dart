@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 class PhoneNumberUtils {
   static final inputFormatters = <TextInputFormatter>[
     FilteringTextInputFormatter.digitsOnly,
-    LengthLimitingTextInputFormatter(12),
+    LengthLimitingTextInputFormatter(11),
   ];
 
   static bool isValid(String? value) =>
@@ -25,12 +25,6 @@ class PhoneNumberUtils {
       normalize(value ?? '');
 
   static String normalize(String value) {
-    var digits = value.replaceAll(RegExp(r'\D'), '');
-    if (digits.startsWith('639') && digits.length == 12) {
-      digits = '0' + digits.substring(2);
-    } else if (digits.startsWith('9') && digits.length == 10) {
-      digits = '0' + digits;
-    }
-    return digits;
+    return value.replaceAll(RegExp(r'\D'), '');
   }
 }

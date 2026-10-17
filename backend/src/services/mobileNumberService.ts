@@ -1,9 +1,7 @@
-/** Normalize supported Philippine mobile numbers to local 09XXXXXXXXX form. */
+/** Accept only Philippine mobile numbers in exact 09XXXXXXXXX form. */
 export function normalizeMobileNumber(value: unknown): string | null {
-  let digits = String(value ?? '').replace(/\D/g, '');
-  if (digits.startsWith('639') && digits.length === 12) digits = `0${digits.slice(2)}`;
-  else if (digits.startsWith('9') && digits.length === 10) digits = `0${digits}`;
-  return /^09\d{9}$/.test(digits) ? digits : null;
+  const phone = String(value ?? '');
+  return /^09\d{9}$/.test(phone) ? phone : null;
 }
 
 export function isMobileNumberRegistryConflict(error: any): boolean {

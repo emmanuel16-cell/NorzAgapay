@@ -31,6 +31,12 @@ export default function LoginPage() {
   const [phone, setPhone] = useState('');
   const [setupPhone, setSetupPhone] = useState('');
   const [password, setPassword] = useState('');
+  const [showRecovery, setShowRecovery] = useState(false);
+  const [recoveryKind, setRecoveryKind] = useState<'mdrrmo' | 'barangay' | 'resident'>('mdrrmo');
+  const [recoveryPhone, setRecoveryPhone] = useState('');
+  const [recoveryOtp, setRecoveryOtp] = useState('');
+  const [recoveryPassword, setRecoveryPassword] = useState('');
+  const [recoveryOtpSent, setRecoveryOtpSent] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showDebugAccounts, setShowDebugAccounts] = useState(false);
@@ -72,6 +78,37 @@ export default function LoginPage() {
       await login(normalizedPhone, password, 'auto');
     } catch (err: any) {
       setError(err.response?.data?.error || 'Master admin setup failed. Please try again.');
+      setLoading(false);
+    }
+  };
+
+  const handlePasswordRecovery = async (event: FormEvent) => {
+    event.preventDefault();
+    setError('');
+    setLoading(true);
+    try {
+      const normalizedPhone = normalizeMobileNumberInput(recoveryPhone);
+      if (!recoveryOtpSent) {
+        const { data } = await authAPI.sendPasswordResetOtp(recoveryKind, normalizedPhone);
+        setRecoveryOtpSent(true);
+        setError(data.message || 'If an account of this type uses that mobile number, a code will be sent by SMS.');
+      } else {
+        await authAPI.resetPassword(recoveryKind, {
+          phone: normalizedPhone,
+          otp: recoveryOtp.trim(),
+          new_password: recoveryPassword,
+        });
+        setShowRecovery(false);
+        setRecoveryOtpSent(false);
+        setRecoveryOtp('');
+        setRecoveryPassword('');
+        setPassword('');
+        setPhone(normalizedPhone);
+        setError('Password reset. Sign in with your new password.');
+      }
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Password recovery failed. Please try again.');
+    } finally {
       setLoading(false);
     }
   };
@@ -211,7 +248,36 @@ export default function LoginPage() {
               Back to sign in
             </button>
           </form>
-        ) : <form onSubmit={handleSubmit}>
+        ) : showRecovery ? <form onSubmit={handlePasswordRecovery}>
+          <h1 className="login-title">Reset password</h1>
+          <p className="login-subtitle">Choose which account to recover. We’ll send a verification code by SMS.</p>
+          <div className="form-group">
+            <label className="form-label" htmlFor="recovery-account-kind">Account type</label>
+            <select id="recovery-account-kind" className="form-input" value={recoveryKind} onChange={(event) => setRecoveryKind(event.target.value as typeof recoveryKind)} disabled={recoveryOtpSent}>
+              <option value="mdrrmo">MDRRMO</option>
+              <option value="barangay">Barangay</option>
+              <option value="resident">Resident</option>
+            </select>
+          </div>
+          <div className="form-group">
+            <label className="form-label" htmlFor="recovery-phone">Mobile number</label>
+            <MobileNumberInput id="recovery-phone" className="form-input" placeholder="09XXXXXXXXX" value={recoveryPhone} onValueChange={setRecoveryPhone} required />
+          </div>
+          {recoveryOtpSent && <>
+            <div className="form-group">
+              <label className="form-label" htmlFor="recovery-otp">SMS verification code</label>
+              <input id="recovery-otp" className="form-input" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={recoveryOtp} onChange={(event) => setRecoveryOtp(event.target.value.replace(/\D/g, '').slice(0, 6))} required />
+            </div>
+            <div className="form-group">
+              <label className="form-label" htmlFor="recovery-new-password">New password</label>
+              <PasswordInput id="recovery-new-password" className="form-input" autoComplete="new-password" value={recoveryPassword} onChange={(event) => setRecoveryPassword(event.target.value)} minLength={8} required />
+            </div>
+          </>}
+          <button type="submit" className="btn btn-primary btn-lg" style={{ width: '100%', marginTop: '8px' }} disabled={loading || (recoveryOtpSent && recoveryOtp.length !== 6)}>
+            {loading ? 'Please wait…' : recoveryOtpSent ? 'Reset password' : 'Send SMS code'}
+          </button>
+          <button type="button" className="login-setup-toggle" onClick={() => { setShowRecovery(false); setRecoveryOtpSent(false); setRecoveryOtp(''); setError(''); }}>Back to sign in</button>
+        </form> : <form onSubmit={handleSubmit}>
           <div className="form-group">
             <label className="form-label" htmlFor="login-phone">Mobile number</label>
             <MobileNumberInput
@@ -242,6 +308,9 @@ export default function LoginPage() {
             disabled={loading}
           >
             {loading ? 'Signing in...' : 'Sign In'}
+          </button>
+          <button type="button" className="login-setup-toggle" onClick={() => { setRecoveryPhone(phone); setShowRecovery(true); setError(''); }}>
+            Forgot password?
           </button>
         </form>}
 

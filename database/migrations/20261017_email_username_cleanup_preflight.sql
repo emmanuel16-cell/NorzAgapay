@@ -11,11 +11,14 @@ UNION ALL SELECT 'officers.email', count(*) FROM public.officers WHERE email IS 
 UNION ALL SELECT 'barangay_dispatcher_verifications.email', count(*)
   FROM public.barangay_dispatcher_verifications WHERE email IS NOT NULL
 UNION ALL SELECT 'incident_reports.reporter_email', count(*)
-  FROM public.incident_reports WHERE reporter_email IS NOT NULL
+  FROM public.incident_reports
+  WHERE to_jsonb(incident_reports)->>'reporter_email' IS NOT NULL
 UNION ALL SELECT 'barangay_reports.reporter_email', count(*)
-  FROM public.barangay_reports WHERE reporter_email IS NOT NULL
+  FROM public.barangay_reports
+  WHERE to_jsonb(barangay_reports)->>'reporter_email' IS NOT NULL
 UNION ALL SELECT 'mdrrmo_reports.reporter_email', count(*)
-  FROM public.mdrrmo_reports WHERE reporter_email IS NOT NULL;
+  FROM public.mdrrmo_reports
+  WHERE to_jsonb(mdrrmo_reports)->>'reporter_email' IS NOT NULL;
 
 -- These are reporter_phone values that contain email-like data and will be
 -- cleared by the cleanup migration. They cannot be converted into phone numbers.

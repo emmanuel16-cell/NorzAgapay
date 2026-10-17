@@ -109,6 +109,7 @@ export interface ResidentOtpRecord {
   otp: string;
   accountId?: string;
   passwordHash?: string;
+  passwordCiphertext?: string;
   fullName?: string;
   phone?: string;
   contactNumber?: string;
@@ -131,7 +132,8 @@ export interface ResidentOtpRecord {
     | 'resident_web_password_change'
     | 'web_profile_password_change'
     | 'barangay_password_reset'
-    | 'responder_password_reset';
+    | 'responder_password_reset'
+    | 'mdrrmo_password_reset';
 }
 
 /**
