@@ -2,7 +2,6 @@ import { useState, type FormEvent } from 'react';
 import { ArrowLeft, ArrowRight, Phone, ShieldCheck } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import PublicHeader from '../components/PublicHeader';
 import MobileNumberInput from '../components/MobileNumberInput';
 import PasswordInput from '../components/PasswordInput';
 import { authAPI } from '../lib/api';
@@ -60,7 +59,6 @@ export default function ResidentRegistrationPage() {
 
   return (
     <div className="public-login-page resident-registration-page">
-      <PublicHeader />
       <main className="login-page public-login-main resident-register-main">
         <section className="login-card resident-register-card" aria-labelledby="resident-register-title">
           <img className="login-emblem" src="/NA-icon.png" alt="Norz-Agapay" />
