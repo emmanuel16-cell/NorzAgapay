@@ -72,6 +72,7 @@ interface IncidentItem {
   mdrrmo_responded_by?: string | null;
   arrived_at?: string | null;
   resolved_notes?: string | null;
+  map_closed_at?: string | null;
 }
 
 const incidentTimeText = (occurredAt?: string | null, precision?: string | null) => {
@@ -319,6 +320,8 @@ function ResponderAssessmentPanel({
   view,
   onViewChange,
   onPreview,
+  onCloseResolvedMapMarker,
+  closingResolvedMapMarker = false,
   showTitle = true,
 }: {
   incident: IncidentItem;
@@ -329,6 +332,8 @@ function ResponderAssessmentPanel({
   view: 'assessment' | 'assistance';
   onViewChange: (view: 'assessment' | 'assistance') => void;
   onPreview: (url: string) => void;
+  onCloseResolvedMapMarker?: () => void;
+  closingResolvedMapMarker?: boolean;
   showTitle?: boolean;
 }) {
   const navigate = useNavigate();
@@ -365,6 +370,17 @@ function ResponderAssessmentPanel({
               >
                 View Details
               </button>
+              {onCloseResolvedMapMarker && !incident.map_closed_at && (
+                <button
+                  type="button"
+                  className="resolved-close-map-marker"
+                  onClick={onCloseResolvedMapMarker}
+                  disabled={closingResolvedMapMarker}
+                  title="Permanently remove this resolved report from the Command Center map"
+                >
+                  {closingResolvedMapMarker ? 'Closing…' : 'Close'}
+                </button>
+              )}
             </>
           )}
         </div>
@@ -404,6 +420,8 @@ function EscalatedResponsePanel({
   responderView,
   onResponderViewChange,
   onPreview,
+  onCloseResolvedMapMarker,
+  closingResolvedMapMarker = false,
 }: {
   incident: IncidentItem;
   assistanceRequests: AssistanceRequestItem[];
@@ -413,6 +431,8 @@ function EscalatedResponsePanel({
   responderView: 'assessment' | 'assistance';
   onResponderViewChange: (view: 'assessment' | 'assistance') => void;
   onPreview: (url: string) => void;
+  onCloseResolvedMapMarker?: () => void;
+  closingResolvedMapMarker?: boolean;
 }) {
   const coordinationNotes = incident.mdrrmo_coordination_notes;
   return (
@@ -435,6 +455,8 @@ function EscalatedResponsePanel({
           view={responderView}
           onViewChange={onResponderViewChange}
           onPreview={onPreview}
+          onCloseResolvedMapMarker={onCloseResolvedMapMarker}
+          closingResolvedMapMarker={closingResolvedMapMarker}
           showTitle={false}
         />
       ) : (
@@ -445,6 +467,17 @@ function EscalatedResponsePanel({
           </div>
           <AssessmentSections notes={incident.barangay_response_notes} />
           <FieldPhotosGallery incident={incident} source="barangay" onPreview={onPreview} />
+          {incident.status === 'resolved' && onCloseResolvedMapMarker && !incident.map_closed_at && (
+            <button
+              type="button"
+              className="resolved-close-map-marker"
+              onClick={onCloseResolvedMapMarker}
+              disabled={closingResolvedMapMarker}
+              title="Permanently remove this resolved report from the Command Center map"
+            >
+              {closingResolvedMapMarker ? 'Closing…' : 'Close'}
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -815,6 +848,7 @@ export default function CommandCenter() {
   const [invalidReviewStep, setInvalidReviewStep] = useState<'choice' | 'reason' | null>(null);
   const [invalidReason, setInvalidReason] = useState('');
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [closingResolvedMapMarker, setClosingResolvedMapMarker] = useState(false);
   const [dispatching, setDispatching] = useState(false);
   const [mdrrmoNotes, setMdrrmoNotes] = useState('');
   const [escalatedResponseTab, setEscalatedResponseTab] = useState<'barangay' | 'responder'>('barangay');
@@ -952,6 +986,7 @@ export default function CommandCenter() {
             mdrrmo_responded_by: r.mdrrmo_responded_by || null,
             arrived_at: r.arrived_at || null,
             resolved_notes: r.resolved_notes || null,
+            map_closed_at: r.map_closed_at || null,
           });
         });
       }
@@ -1165,6 +1200,7 @@ export default function CommandCenter() {
   }, [reportMetrics, activeDispatchCount]);
 
   const visibleIncidents = useMemo(() => incidents.filter((incident) => {
+    if (incident.map_closed_at) return false;
     if (incident.report_kind === 'resident' && !filters.incidents) return false;
     if (incident.report_kind === 'escalated' && !filters.escalated) return false;
     if (incident.status === 'arrived' && !filters.arrived) return false;
@@ -1301,6 +1337,24 @@ export default function CommandCenter() {
       toast.error(error?.response?.data?.error || 'Could not save the report decision.');
     } finally {
       setReviewSubmitting(false);
+    }
+  };
+
+  const closeResolvedMapMarker = async () => {
+    if (!selectedIncident || selectedIncident.status !== 'resolved' || closingResolvedMapMarker) return;
+    setClosingResolvedMapMarker(true);
+    try {
+      await reportAPI.closeResolvedMapMarker(selectedIncident.id);
+      setIncidents((current) => current.map((incident) => incident.id === selectedIncident.id
+        ? { ...incident, map_closed_at: new Date().toISOString() }
+        : incident));
+      closeModal();
+      toast.success('Resolved report removed from the map permanently.');
+      await fetchData();
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error || 'Could not close this resolved map marker.');
+    } finally {
+      setClosingResolvedMapMarker(false);
     }
   };
 
@@ -1897,6 +1951,8 @@ export default function CommandCenter() {
                   view={responderInfoTab}
                   onViewChange={setResponderInfoTab}
                   onPreview={(url) => { setSelectedVisualUrl(url); setProofPreviewOpen(true); }}
+                  onCloseResolvedMapMarker={!isBarangayDashboard && user?.role === 'dispatcher' ? closeResolvedMapMarker : undefined}
+                  closingResolvedMapMarker={closingResolvedMapMarker}
                 />
               )}
             </div>
@@ -2212,6 +2268,8 @@ export default function CommandCenter() {
                 responderView={responderInfoTab}
                 onResponderViewChange={setResponderInfoTab}
                 onPreview={(url) => { setSelectedVisualUrl(url); setProofPreviewOpen(true); }}
+                onCloseResolvedMapMarker={!isBarangayDashboard && user?.role === 'dispatcher' ? closeResolvedMapMarker : undefined}
+                closingResolvedMapMarker={closingResolvedMapMarker}
               />
             </div>
           </div>

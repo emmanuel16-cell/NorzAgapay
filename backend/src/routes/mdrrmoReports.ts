@@ -1241,6 +1241,29 @@ router.post('/:id/close', authenticate, authorize('responder', 'dispatcher'), as
   }
 });
 
+router.post('/:id/map-close', authenticate, authorize('dispatcher', 'admin'), async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { data: mapClosedAt, error } = await supabaseAdmin.rpc('close_resolved_mdrrmo_map_marker_v1', {
+      p_report_id: req.params.id,
+      p_actor_id: req.user!.userId,
+    });
+    if (error) throw error;
+
+    const report = await reportForAction(req.params.id);
+    if (!report) { res.status(404).json({ error: 'MDRRMO report not found.' }); return; }
+    const assignments = await getAssignments([report.id]);
+    const payload = await emitReportUpdate({ ...report, map_closed_at: mapClosedAt }, assignments);
+    res.json(payload);
+  } catch (error: any) {
+    console.error('Close resolved MDRRMO map marker failed:', error);
+    const code = String(error?.code || '');
+    const status = code === 'P0002' ? 404 : code === 'P0001' ? 409 : 500;
+    res.status(status).json({
+      error: error?.message || 'Could not close this resolved map marker.',
+    });
+  }
+});
+
 router.get('/:id/resolution-pdf', authenticate, authorize('dispatcher', 'admin', 'responder'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const report = await reportForAction(req.params.id);

@@ -317,6 +317,7 @@ export const reportAPI = {
   arriveAtMdrrmoIncident: (id: string) => api.patch(`/mdrrmo/reports/${id}/arrive`, { method: 'manual' }),
   saveMdrrmoFieldAssessment: (id: string, data: { situation: string; affected_people: string; actions_taken: string; risks_resources: string }) => api.patch(`/mdrrmo/reports/${id}/field-assessment`, data),
   closeMdrrmoReport: (id: string, resolved_notes: string) => api.post(`/mdrrmo/reports/${id}/close`, { resolved_notes }),
+  closeResolvedMapMarker: (id: string) => api.post(`/mdrrmo/reports/${id}/map-close`),
   uploadMdrrmoFieldMedia: (id: string, file: File) => {
     const body = new FormData();
     body.append('media', file);

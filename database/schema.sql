@@ -3254,6 +3254,8 @@ CREATE TABLE IF NOT EXISTS public.mdrrmo_reports (
   resolved_at                 TIMESTAMPTZ,
   resolved_by                 UUID REFERENCES public.users(id) ON DELETE SET NULL,
   resolved_notes              TEXT,
+  map_closed_at               TIMESTAMPTZ,
+  map_closed_by               UUID REFERENCES public.users(id) ON DELETE SET NULL,
   resolution_pdf_status       TEXT NOT NULL DEFAULT 'missing',
   resolution_pdf_path         TEXT,
   resolution_pdf_generated_at TIMESTAMPTZ,
@@ -3316,6 +3318,8 @@ ALTER TABLE public.mdrrmo_reports
   ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS resolved_by UUID,
   ADD COLUMN IF NOT EXISTS resolved_notes TEXT,
+  ADD COLUMN IF NOT EXISTS map_closed_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS map_closed_by UUID REFERENCES public.users(id) ON DELETE SET NULL,
   ADD COLUMN IF NOT EXISTS resolution_pdf_status TEXT NOT NULL DEFAULT 'missing',
   ADD COLUMN IF NOT EXISTS resolution_pdf_path TEXT,
   ADD COLUMN IF NOT EXISTS resolution_pdf_generated_at TIMESTAMPTZ,
@@ -6576,4 +6580,73 @@ BEFORE INSERT OR UPDATE OF phone OR DELETE ON public.resident_user
 FOR EACH ROW EXECUTE FUNCTION public.sync_account_mobile_number();
 
 COMMENT ON TABLE public.account_mobile_numbers IS 'Role-scoped mobile reservations. A number may be reserved once per users, barangay_users, and resident_user table.';
+COMMIT;
+
+-- Permanently hide a resolved MDRRMO report pin from the Command Center map.
+BEGIN;
+ALTER TABLE public.mdrrmo_reports
+  ADD COLUMN IF NOT EXISTS map_closed_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS map_closed_by UUID REFERENCES public.users(id) ON DELETE SET NULL;
+
+CREATE OR REPLACE FUNCTION public.close_resolved_mdrrmo_map_marker_v1(
+  p_report_id UUID,
+  p_actor_id UUID
+)
+RETURNS TIMESTAMPTZ
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_source_type TEXT;
+  v_source_barangay_report_id UUID;
+  v_coordination_notes TEXT;
+  v_response_status TEXT;
+  v_map_closed_at TIMESTAMPTZ;
+BEGIN
+  SELECT source_type, source_barangay_report_id, coordination_notes,
+         response_status, map_closed_at
+    INTO v_source_type, v_source_barangay_report_id, v_coordination_notes,
+         v_response_status, v_map_closed_at
+  FROM public.mdrrmo_reports
+  WHERE id = p_report_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'MDRRMO report not found.' USING ERRCODE = 'P0002';
+  END IF;
+  IF v_map_closed_at IS NOT NULL THEN
+    RETURN v_map_closed_at;
+  END IF;
+  IF lower(COALESCE(v_response_status, '')) <> 'resolved' THEN
+    RAISE EXCEPTION 'Only resolved reports can be closed from the map.' USING ERRCODE = 'P0001';
+  END IF;
+
+  IF lower(COALESCE(v_source_type, '')) = 'escalated'
+     OR NULLIF(btrim(COALESCE(v_coordination_notes, '')), '') IS NOT NULL THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM public.mdrrmo_report_barangay_assignments AS assignment
+      WHERE assignment.report_id = p_report_id
+        AND assignment.assignment_status = 'completed'
+        AND assignment.response_status = 'resolved'
+    ) AND NOT EXISTS (
+      SELECT 1 FROM public.barangay_reports AS source_report
+      WHERE source_report.id = v_source_barangay_report_id
+        AND source_report.response_status = 'resolved'
+    ) THEN
+      RAISE EXCEPTION 'The barangay response must also be resolved before closing its map marker.' USING ERRCODE = 'P0001';
+    END IF;
+  END IF;
+
+  UPDATE public.mdrrmo_reports
+  SET map_closed_at = now(), map_closed_by = p_actor_id
+  WHERE id = p_report_id
+  RETURNING map_closed_at INTO v_map_closed_at;
+  RETURN v_map_closed_at;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.close_resolved_mdrrmo_map_marker_v1(UUID, UUID)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.close_resolved_mdrrmo_map_marker_v1(UUID, UUID)
+  TO service_role;
 COMMIT;

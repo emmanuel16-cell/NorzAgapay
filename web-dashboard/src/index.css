@@ -3226,6 +3226,9 @@ tbody tr:last-child td { border-bottom: none; }
 .resolve-notes-card strong { font-size: 16px; }
 .resolve-notes-card p { margin: 3px 0 0; color: #e2e8f0; font-size: 14px; white-space: pre-wrap; }
 .resolved-view-details { align-self: center; width: min(255px, 82%); min-height: 46px; flex: 0 0 auto; margin: 0 0 3px; border: 0; border-radius: 10px; background: #5ce76b; color: #fff; font: inherit; font-size: 16px; font-weight: 800; }
+.resolved-close-map-marker { align-self: stretch; min-height: 44px; flex: 0 0 auto; margin-top: 2px; border: 1px solid rgba(248, 113, 113, 0.8); border-radius: 9px; background: #7f1d1d; color: #fff; font: inherit; font-size: 15px; font-weight: 800; cursor: pointer; }
+.resolved-close-map-marker:hover:not(:disabled) { background: #991b1b; }
+.resolved-close-map-marker:disabled { opacity: 0.65; cursor: wait; }
 .assistance-request-list { display: flex; min-height: 0; flex: 1; flex-direction: column; gap: 10px; overflow: auto; padding: 12px; }
 .assistance-request-card { display: flex; min-height: 190px; flex: 0 0 auto; flex-direction: column; gap: 11px; margin: 0; padding: 17px; border: 1px solid #405782; border-radius: 8px; background: #1d3767; color: #35d2ee; }
 .assistance-request-card > strong { font-size: 17px; }
