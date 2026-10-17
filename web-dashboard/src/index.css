@@ -5463,12 +5463,22 @@ body.responder-map-open { overflow: hidden; }
 /* Barangay account creation uses the same light registration treatment as residents. */
 .barangay-registration-page {
   display: block;
+  position: relative;
+  isolation: isolate;
   height: auto;
   min-height: 100vh;
   min-height: 100svh;
   overflow-x: clip;
   overflow-y: visible;
-  background: #0a1933 url('/login-background.jfif') center 46% / cover fixed no-repeat;
+  background: #0a1933;
+}
+.barangay-registration-page::before {
+  position: fixed;
+  z-index: -1;
+  inset: 0;
+  background: url('/login-background.jfif') center 46% / cover no-repeat;
+  content: '';
+  pointer-events: none;
 }
 .barangay-registration-main {
   display: grid;
