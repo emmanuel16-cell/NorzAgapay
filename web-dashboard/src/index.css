@@ -5477,6 +5477,12 @@ body.responder-map-open { overflow: hidden; }
   flex: none;
   overflow: visible;
 }
+@media (max-width: 600px) {
+  .public-login-screen,
+  .public-login-screen > .public-login-main {
+    min-height: 0;
+  }
+}
 
 /* Barangay account creation uses the same light registration treatment as residents. */
 .barangay-registration-page {
