@@ -1095,7 +1095,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                               ),
                               subtitle: Text(
                                 leader.phone == null || leader.phone!.isEmpty
-                                    ? leader.email
+                                    ? ''
                                     : PhoneNumberUtils.formatForDisplay(
                                         leader.phone,
                                       ),
@@ -2285,9 +2285,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                 // Reporter details can be collapsed to leave more room for the incident.
                 if ((_report.reporterName ?? '').trim().isNotEmpty ||
                     (_report.specifics ?? '').trim().isNotEmpty ||
-                    (_report.reporterEmail ?? '').trim().isNotEmpty ||
-                    (_report.reporterPhone != null &&
-                        !_report.reporterPhone!.contains('@')))
+                    (_report.reporterPhone ?? '').trim().isNotEmpty)
                   Card(
                     margin: EdgeInsets.zero,
                     color: Colors.white,
@@ -2341,13 +2339,10 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                               ),
                             ),
                           ),
-                          if ((_report.reporterEmail ?? '').trim().isNotEmpty ||
-                              (_report.reporterPhone != null &&
-                                  !_report.reporterPhone!.contains('@')))
+                          if ((_report.reporterPhone ?? '').trim().isNotEmpty)
                             const SizedBox(height: 10),
                         ],
-                        if (_report.reporterPhone != null &&
-                            !_report.reporterPhone!.contains('@'))
+                        if ((_report.reporterPhone ?? '').trim().isNotEmpty)
                           _reportContactRow(
                             icon: Icons.phone_in_talk_outlined,
                             label: 'Reporter Phone',
@@ -2360,23 +2355,6 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                               'tel:${PhoneNumberUtils.digitsOnly(_report.reporterPhone)}',
                             ),
                           ),
-                        if ((_report.reporterEmail ?? '')
-                            .trim()
-                            .isNotEmpty) ...[
-                          if (_report.reporterPhone != null &&
-                              !_report.reporterPhone!.contains('@'))
-                            const SizedBox(height: 10),
-                          _reportContactRow(
-                            icon: Icons.email_outlined,
-                            label: 'Reporter Email',
-                            value: _report.reporterEmail!.trim(),
-                            actionLabel: 'Email',
-                            actionIcon: Icons.email_outlined,
-                            uri: Uri.parse(
-                              'mailto:${_report.reporterEmail!.trim()}',
-                            ),
-                          ),
-                        ],
                       ],
                     ),
                   ),

@@ -387,8 +387,7 @@ async function toBuffer(report: any, resident: any, assistance: any[]): Promise<
 
   const reporterName = cleanText(report.reporter_name || resident?.full_name) || 'Not provided';
   const reporterPhone = cleanText(report.reporter_phone || resident?.phone);
-  const reporterEmail = cleanText(report.reporter_email || resident?.email);
-  const contact = [reporterName, reporterPhone, reporterEmail].filter(Boolean).join(' | ');
+  const contact = [reporterName, reporterPhone].filter(Boolean).join(' | ');
 
   section('1. Resident Report');
   row('Report reference & status', `${report.id} | ${String(report.status || 'resolved').toUpperCase()}`);
@@ -593,7 +592,7 @@ export class IncidentResolutionPdfService {
 
     let resident: any = null;
     if (report.reporter_id) {
-      const { data } = await supabaseAdmin.from('resident_user').select('full_name, phone, email').eq('id', report.reporter_id).maybeSingle();
+      const { data } = await supabaseAdmin.from('resident_user').select('full_name, phone').eq('id', report.reporter_id).maybeSingle();
       resident = data;
     }
     const assistance = await assistanceForReport(reportId);

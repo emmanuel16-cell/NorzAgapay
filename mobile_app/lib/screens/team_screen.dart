@@ -62,10 +62,9 @@ class _TeamScreenState extends State<TeamScreen> {
           children: [
             _memberDetail('Role', member.isDispatcher ? 'Dispatcher' : member.isBarangayAdmin ? 'Administrator' : member.isStaff ? 'Staff' : member.isResponder ? 'Responder' : member.role),
             const SizedBox(height: 10),
-            _memberDetail('Email', member.email),
             if ((member.phone ?? '').isNotEmpty) ...[
               const SizedBox(height: 10),
-              _memberDetail('Phone', PhoneNumberUtils.formatForDisplay(member.phone)),
+              _memberDetail('Mobile number', PhoneNumberUtils.formatForDisplay(member.phone)),
             ],
           ],
         ),
@@ -94,7 +93,6 @@ class _TeamScreenState extends State<TeamScreen> {
   Future<void> _editMember(BarangayUser member) async {
     final auth = Provider.of<AuthService>(context, listen: false);
     final name = TextEditingController(text: member.fullName);
-    final email = TextEditingController(text: member.email);
     final phone = TextEditingController(text: PhoneNumberUtils.digitsOnly(member.phone));
     final password = TextEditingController();
     var role = member.role;
@@ -106,9 +104,7 @@ class _TeamScreenState extends State<TeamScreen> {
         content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
           TextField(controller: name, style: const TextStyle(color: Color(0xFF111827)), decoration: _modalInputDecoration('Full Name', Icons.person)),
           const SizedBox(height: 10),
-          TextField(controller: email, keyboardType: TextInputType.emailAddress, style: const TextStyle(color: Color(0xFF111827)), decoration: _modalInputDecoration('Email', Icons.email)),
-          const SizedBox(height: 10),
-          TextField(controller: phone, keyboardType: TextInputType.phone, inputFormatters: PhoneNumberUtils.inputFormatters, style: const TextStyle(color: Color(0xFF111827)), decoration: _modalInputDecoration('Phone', Icons.phone)),
+          TextField(controller: phone, keyboardType: TextInputType.phone, inputFormatters: PhoneNumberUtils.inputFormatters, style: const TextStyle(color: Color(0xFF111827)), decoration: _modalInputDecoration('Mobile number', Icons.phone)),
           const SizedBox(height: 10),
           DropdownButtonFormField<String>(
             value: role,
@@ -129,14 +125,13 @@ class _TeamScreenState extends State<TeamScreen> {
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
           ElevatedButton(onPressed: () async {
             if (name.text.trim().length < 2 ||
-                !email.text.contains('@') ||
-                (phone.text.isNotEmpty && !PhoneNumberUtils.isValid(phone.text)) ||
+                !PhoneNumberUtils.isValid(phone.text) ||
                 (password.text.isNotEmpty && password.text.length < 8)) {
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Check the name, email, phone number, and password fields.')));
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enter a name, valid mobile number, and a password with at least 8 characters if changing it.')));
               return;
             }
             try {
-              await ApiService.updateTeamMember(auth.token!, member.id, fullName: name.text.trim(), email: email.text.trim(), phone: PhoneNumberUtils.digitsOnly(phone.text), role: role, password: password.text);
+              await ApiService.updateTeamMember(auth.token!, member.id, fullName: name.text.trim(), phone: PhoneNumberUtils.digitsOnly(phone.text), role: role, password: password.text);
               if (ctx.mounted) Navigator.pop(ctx, true);
             } catch (e) {
               if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not update member: $e')));
@@ -227,7 +222,6 @@ class _TeamScreenState extends State<TeamScreen> {
     if (user == null || !user.isBarangayAdmin) return;
 
     final nameController = TextEditingController();
-    final emailController = TextEditingController();
     final passwordController = TextEditingController();
     final phoneController = TextEditingController();
     String selectedRole = user.isBarangayAdmin ? 'responder' : 'staff';
@@ -316,18 +310,11 @@ class _TeamScreenState extends State<TeamScreen> {
               ),
               const SizedBox(height: 12),
               TextField(
-                controller: emailController,
-                keyboardType: TextInputType.emailAddress,
-                style: const TextStyle(color: Color(0xFF111827)),
-                decoration: _modalInputDecoration('Email Address', Icons.email),
-              ),
-              const SizedBox(height: 12),
-              TextField(
                 controller: phoneController,
                 keyboardType: TextInputType.phone,
                 inputFormatters: PhoneNumberUtils.inputFormatters,
                 style: const TextStyle(color: Color(0xFF111827)),
-                decoration: _modalInputDecoration('Phone Number (Optional)', Icons.phone),
+                decoration: _modalInputDecoration('Mobile number', Icons.phone),
               ),
               const SizedBox(height: 12),
               TextField(
@@ -344,17 +331,10 @@ class _TeamScreenState extends State<TeamScreen> {
                 child: ElevatedButton(
                   onPressed: () async {
                     final name = nameController.text.trim();
-                    final email = emailController.text.trim();
                     final password = passwordController.text;
-                    if (name.isEmpty || email.isEmpty || password.length < 8) {
+                    if (name.isEmpty || !PhoneNumberUtils.isValid(phoneController.text) || password.length < 8) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Enter a name, valid email, and password with at least 8 characters.')),
-                      );
-                      return;
-                    }
-                    if (phoneController.text.isNotEmpty && !PhoneNumberUtils.isValid(phoneController.text)) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Enter an 11-digit phone number starting with 09.')),
+                        const SnackBar(content: Text('Enter a name, valid mobile number, and password with at least 8 characters.')),
                       );
                       return;
                     }
@@ -362,7 +342,6 @@ class _TeamScreenState extends State<TeamScreen> {
                       await ApiService.addTeamMember(
                         auth.token!,
                         fullName: name,
-                        email: email,
                         password: password,
                         phone: PhoneNumberUtils.digitsOnly(phoneController.text),
                         role: selectedRole,
@@ -553,7 +532,7 @@ class _TeamScreenState extends State<TeamScreen> {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    member.email,
+                    PhoneNumberUtils.formatForDisplay(member.phone),
                     style: const TextStyle(color: Color(0xFF64748B), fontSize: 12),
                   ),
                   if (member.phone != null) ...[

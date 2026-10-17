@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../core/constants.dart';
-import '../models/user.dart';
 import 'my_reports_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -31,7 +30,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             const SizedBox(height: 16),
             Text(user.fullName, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-            Text(user.email, style: const TextStyle(color: Colors.grey)),
+            Text(user.phone ?? 'Mobile number not set', style: const TextStyle(color: Colors.grey)),
             const SizedBox(height: 8),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),

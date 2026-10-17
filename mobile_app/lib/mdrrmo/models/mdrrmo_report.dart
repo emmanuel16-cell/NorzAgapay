@@ -12,7 +12,6 @@ class MdrrmoReport {
   final String? reporterId;
   final String? reporterName;
   final String? reporterPhone;
-  final String? reporterEmail;
   final DateTime? createdAt;
   final DateTime? incidentOccurredAt;
   final String incidentTimePrecision;
@@ -52,7 +51,6 @@ class MdrrmoReport {
     this.reporterId,
     this.reporterName,
     this.reporterPhone,
-    this.reporterEmail,
     this.createdAt,
     this.incidentOccurredAt,
     this.incidentTimePrecision = 'unknown',
@@ -188,7 +186,6 @@ class MdrrmoReport {
       reporterId: json['reporter_id']?.toString(),
       reporterName: json['reporter_name']?.toString(),
       reporterPhone: json['reporter_phone']?.toString(),
-      reporterEmail: json['reporter_email']?.toString(),
       createdAt: _date(json['created_at']),
       incidentOccurredAt: _date(json['incident_occurred_at']),
       incidentTimePrecision: const {'exact', 'approximate'}.contains(

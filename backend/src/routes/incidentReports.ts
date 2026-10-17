@@ -495,7 +495,6 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
       longitude, 
       proof_type,
       reporter_name: submittedReporterName,
-      reporter_email: submittedReporterEmail,
       full_name,
       first_name,
       last_name,
@@ -519,11 +518,11 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
       return;
     }
 
-    let residentProfile: { full_name?: string | null; email?: string | null; phone?: string | null } | null = null;
+    let residentProfile: { full_name?: string | null; phone?: string | null } | null = null;
     if (req.user?.role === 'resident' && req.user.userId) {
       const { data, error } = await supabaseAdmin
         .from('resident_user')
-        .select('full_name, email, phone')
+        .select('full_name, phone')
         .eq('id', req.user.userId)
         .maybeSingle();
       if (error) throw error;
@@ -531,9 +530,7 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
     }
     const reporterName = residentProfile?.full_name || submittedReporterName || full_name ||
       (first_name ? `${first_name} ${last_name || ''}`.trim() : null);
-    const submittedEmail = typeof submittedReporterEmail === 'string' ? submittedReporterEmail.trim() : '';
     const submittedContact = typeof contact_number === 'string' ? contact_number.trim() : '';
-    const reporterEmail = residentProfile?.email || submittedEmail || (submittedContact.includes('@') ? submittedContact : null);
     const profilePhone = typeof residentProfile?.phone === 'string' && !residentProfile.phone.includes('@')
       ? residentProfile.phone.trim()
       : '';
@@ -756,9 +753,6 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
     reportInsertPayload.source_type = 'direct';
     reportInsertPayload.severity = req.body.severity || 'moderate';
     reportInsertPayload.incident_type = req.body.incident_type || 'not_sure';
-    if (reporterEmail) {
-      reportInsertPayload.reporter_email = reporterEmail;
-    }
 
     const { data: insertedReport, error: insertError } = await supabaseAdmin
       .from(targetTable)

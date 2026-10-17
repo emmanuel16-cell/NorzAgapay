@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
+import '../../core/phone_number_utils.dart';
 import '../core/constants.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -13,364 +15,236 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _emailController = TextEditingController();
+  final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
   String? _pendingMessage;
 
   @override
   void dispose() {
-    _emailController.dispose();
+    _phoneController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
 
   Future<void> _login() async {
+    FocusScope.of(context).unfocus();
     setState(() => _pendingMessage = null);
-    final auth = Provider.of<AuthProvider>(context, listen: false);
+    final auth = context.read<AuthProvider>();
     try {
-      await auth.login(_emailController.text.trim(), _passwordController.text);
-      await Provider.of<AuthService>(context, listen: false).logout();
+      await auth.login(
+        PhoneNumberUtils.digitsOnly(_phoneController.text),
+        _passwordController.text,
+      );
+      await context.read<AuthService>().logout();
       if (mounted) Navigator.of(context).popUntil((route) => route.isFirst);
-    } catch (e) {
-      final errorStr = e.toString();
-      if (mounted) {
-        // Check if it's a pending verification error
-        if (errorStr.toLowerCase().contains('pending') || errorStr.toLowerCase().contains('verification')) {
-          setState(() => _pendingMessage = errorStr);
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(errorStr),
-              backgroundColor: const Color(AppColors.danger),
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            ),
-          );
-        }
+    } catch (error) {
+      final message = error.toString().replaceFirst('Exception: ', '');
+      if (!mounted) return;
+      if (message.toLowerCase().contains('pending') ||
+          message.toLowerCase().contains('verification')) {
+        setState(() => _pendingMessage = message);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: const Color(AppColors.danger),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
       }
     }
   }
 
   Future<void> _showForgotPasswordDialog() async {
-    final emailController = TextEditingController(
-      text: _emailController.text.trim(),
+    final phone = TextEditingController(
+      text: PhoneNumberUtils.digitsOnly(_phoneController.text),
     );
-    final otpController = TextEditingController();
-    final newPasswordController = TextEditingController();
-    final confirmPasswordController = TextEditingController();
-    var deliveryMethod = 'email';
+    final otp = TextEditingController();
+    final newPassword = TextEditingController();
+    final confirmPassword = TextEditingController();
     var otpSent = false;
-    var isBusy = false;
-    String? errorMessage;
-    String? infoMessage;
+    var busy = false;
+    String? error;
+    String? info;
 
     try {
-      final reset = await showDialog<bool>(
+      await showDialog<void>(
         context: context,
         builder: (dialogContext) => StatefulBuilder(
           builder: (dialogContext, setDialogState) => AlertDialog(
             backgroundColor: const Color(AppColors.bgSecondary),
-            title: const Text(
-              'Forgot Password',
-              style: TextStyle(color: Colors.white),
-            ),
+            title: const Text('Reset password', style: TextStyle(color: Colors.white)),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'Enter the email on your responder account, then choose where to receive the one-time code.',
+                    'We will send a verification code by SMS to your mobile number.',
                     style: TextStyle(color: Colors.white70),
                   ),
                   const SizedBox(height: 14),
                   TextField(
-                    controller: emailController,
-                    keyboardType: TextInputType.emailAddress,
+                    controller: phone,
                     enabled: !otpSent,
+                    keyboardType: TextInputType.phone,
+                    inputFormatters: PhoneNumberUtils.inputFormatters,
                     style: const TextStyle(color: Colors.white),
                     decoration: const InputDecoration(
-                      labelText: 'Account Email',
+                      labelText: 'Mobile number',
+                      hintText: '09XXXXXXXXX',
                       labelStyle: TextStyle(color: Colors.white70),
-                      prefixIcon: Icon(
-                        Icons.email_outlined,
-                        color: Colors.white70,
-                      ),
+                      prefixIcon: Icon(Icons.phone_outlined, color: Colors.white70),
                     ),
                   ),
-                  if (!otpSent) ...[
-                    const SizedBox(height: 14),
-                    const Text(
-                      'Send code by',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      children: [
-                        ChoiceChip(
-                          label: const Text('Email / Gmail'),
-                          selected: deliveryMethod == 'email',
-                          onSelected: isBusy
-                              ? null
-                              : (_) => setDialogState(
-                                  () => deliveryMethod = 'email',
-                                ),
-                        ),
-                        ChoiceChip(
-                          label: const Text('Mobile SMS'),
-                          selected: deliveryMethod == 'sms',
-                          onSelected: isBusy
-                              ? null
-                              : (_) => setDialogState(
-                                  () => deliveryMethod = 'sms',
-                                ),
-                        ),
-                      ],
-                    ),
-                    if (deliveryMethod == 'sms')
-                      const Padding(
-                        padding: EdgeInsets.only(top: 4),
-                        child: Text(
-                          'The code goes to the mobile number saved on your responder account.',
-                          style: TextStyle(fontSize: 12, color: Colors.white70),
-                        ),
-                      ),
-                  ],
                   if (otpSent) ...[
                     const SizedBox(height: 12),
-                    Text(
-                      infoMessage ??
-                          'Check your selected delivery method for the code.',
-                      style: const TextStyle(color: Color(AppColors.success)),
-                    ),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: TextButton(
-                        onPressed: isBusy
-                            ? null
-                            : () => setDialogState(() {
-                                otpSent = false;
-                                otpController.clear();
-                                infoMessage = null;
-                                errorMessage = null;
-                              }),
-                        child: const Text('Change delivery method / resend'),
-                      ),
-                    ),
+                    Text(info ?? 'Enter the SMS code and choose a new password.',
+                        style: const TextStyle(color: Color(AppColors.success))),
                     TextField(
-                      controller: otpController,
+                      controller: otp,
                       keyboardType: TextInputType.number,
-                      maxLength: 6,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(6)],
                       style: const TextStyle(color: Colors.white),
-                      decoration: const InputDecoration(
-                        labelText: '6-Digit Verification Code',
-                        labelStyle: TextStyle(color: Colors.white70),
-                        prefixIcon: Icon(
-                          Icons.pin_outlined,
-                          color: Colors.white70,
-                        ),
-                      ),
+                      decoration: const InputDecoration(labelText: '6-digit SMS code'),
                     ),
                     TextField(
-                      controller: newPasswordController,
+                      controller: newPassword,
                       obscureText: true,
                       style: const TextStyle(color: Colors.white),
-                      decoration: const InputDecoration(
-                        labelText: 'New Password',
-                        helperText: 'At least 6 characters',
-                        prefixIcon: Icon(
-                          Icons.lock_outline,
-                          color: Colors.white70,
-                        ),
-                      ),
+                      decoration: const InputDecoration(labelText: 'New password (8+ characters)'),
                     ),
-                    const SizedBox(height: 12),
                     TextField(
-                      controller: confirmPasswordController,
+                      controller: confirmPassword,
                       obscureText: true,
                       style: const TextStyle(color: Colors.white),
-                      decoration: const InputDecoration(
-                        labelText: 'Confirm New Password',
-                        labelStyle: TextStyle(color: Colors.white70),
-                        prefixIcon: Icon(
-                          Icons.lock_outline,
-                          color: Colors.white70,
-                        ),
-                      ),
+                      decoration: const InputDecoration(labelText: 'Confirm new password'),
                     ),
                   ],
-                  if (errorMessage != null) ...[
+                  if (error != null) ...[
                     const SizedBox(height: 10),
-                    Text(
-                      errorMessage!,
-                      style: const TextStyle(color: Color(AppColors.danger)),
-                    ),
+                    Text(error!, style: const TextStyle(color: Color(AppColors.danger))),
                   ],
                 ],
               ),
             ),
             actions: [
               TextButton(
-                onPressed: isBusy
-                    ? null
-                    : () => Navigator.pop(dialogContext, false),
+                onPressed: busy ? null : () => Navigator.pop(dialogContext),
                 child: const Text('Cancel'),
               ),
               FilledButton(
-                onPressed: isBusy
-                    ? null
-                    : () async {
-                        final email = emailController.text.trim().toLowerCase();
-                        setDialogState(() {
-                          isBusy = true;
-                          errorMessage = null;
-                        });
-                        try {
-                          if (!otpSent) {
-                            if (!email.contains('@') || !email.contains('.')) {
-                              throw 'Enter a valid email address.';
-                            }
-                            final message =
-                                await ApiService.sendResponderForgotPasswordOtp(
-                                  email: email,
-                                  deliveryMethod: deliveryMethod,
-                                );
-                            if (!dialogContext.mounted) return;
-                            setDialogState(() {
-                              otpSent = true;
-                              infoMessage = message;
-                            });
-                          } else {
-                            final otp = otpController.text.trim();
-                            final password = newPasswordController.text;
-                            if (otp.length != 6)
-                              throw 'Enter the 6-digit verification code.';
-                            if (password.length < 6)
-                              throw 'Password must be at least 6 characters.';
-                            if (password != confirmPasswordController.text)
-                              throw 'The passwords do not match.';
-                            await ApiService.resetResponderPassword(
-                              email: email,
-                              otp: otp,
-                              newPassword: password,
-                            );
-                            if (!dialogContext.mounted) return;
-                            Navigator.pop(dialogContext, true);
-                          }
-                        } catch (error) {
-                          if (dialogContext.mounted) {
-                            setDialogState(
-                              () => errorMessage = error
-                                  .toString()
-                                  .replaceFirst('Exception: ', ''),
-                            );
-                          }
-                        } finally {
-                          if (dialogContext.mounted)
-                            setDialogState(() => isBusy = false);
-                        }
-                      },
-                child: isBusy
-                    ? const SizedBox(
-                        height: 18,
-                        width: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Text(otpSent ? 'Reset Password' : 'Send Code'),
+                onPressed: busy ? null : () async {
+                  setDialogState(() { busy = true; error = null; });
+                  try {
+                    final normalizedPhone = PhoneNumberUtils.digitsOnly(phone.text);
+                    if (!PhoneNumberUtils.isValid(normalizedPhone)) {
+                      throw 'Enter an 11-digit mobile number starting with 09.';
+                    }
+                    if (!otpSent) {
+                      info = await ApiService.sendResponderForgotPasswordOtp(phone: normalizedPhone);
+                      setDialogState(() { otpSent = true; busy = false; });
+                      return;
+                    }
+                    if (otp.text.trim().length != 6) throw 'Enter the 6-digit SMS code.';
+                    if (newPassword.text.length < 8) throw 'Password must be at least 8 characters.';
+                    if (newPassword.text != confirmPassword.text) throw 'Passwords do not match.';
+                    await ApiService.resetResponderPassword(
+                      phone: normalizedPhone,
+                      otp: otp.text.trim(),
+                      newPassword: newPassword.text,
+                    );
+                    if (dialogContext.mounted) Navigator.pop(dialogContext);
+                    if (mounted) {
+                      _phoneController.text = normalizedPhone;
+                      _passwordController.clear();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Password reset. Sign in with your new password.')),
+                      );
+                    }
+                  } catch (e) {
+                    setDialogState(() {
+                      busy = false;
+                      error = e.toString().replaceFirst('Exception: ', '');
+                    });
+                  }
+                },
+                child: busy
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                    : Text(otpSent ? 'Reset password' : 'Send SMS code'),
               ),
             ],
           ),
         ),
       );
-
-      if (reset == true && mounted) {
-        _emailController.text = emailController.text.trim();
-        _passwordController.clear();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Password reset. Sign in with your new password.'),
-          ),
-        );
-      }
     } finally {
-      emailController.dispose();
-      otpController.dispose();
-      newPasswordController.dispose();
-      confirmPasswordController.dispose();
+      phone.dispose();
+      otp.dispose();
+      newPassword.dispose();
+      confirmPassword.dispose();
     }
   }
 
-
   Future<void> _showDebugAccounts() async {
-    final auth = Provider.of<AuthProvider>(context, listen: false);
+    final auth = context.read<AuthProvider>();
     try {
       final accounts = await auth.getDebugAccounts();
       if (!mounted) return;
       await showModalBottomSheet<void>(
         context: context,
         backgroundColor: const Color(AppColors.bgSecondary),
-        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
         showDragHandle: true,
         builder: (sheetContext) => SafeArea(
-          child: SizedBox(
-            height: 420,
-            child: Column(
-              children: [
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                  child: Row(
-                    children: [
-                      Icon(Icons.bug_report_rounded, color: Colors.grey),
-                      SizedBox(width: 8),
-                      Text('Debug Quick Login', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: accounts.isEmpty
-                      ? const Center(child: Text('No active accounts', style: TextStyle(color: Colors.grey)))
-                      : ListView.builder(
-                          itemCount: accounts.length,
-                          itemBuilder: (_, index) {
-                            final account = accounts[index];
-                            return ListTile(
-                              leading: CircleAvatar(
-                                backgroundColor: const Color(AppColors.primary).withOpacity(0.2),
-                                child: Text(
-                                  (account['full_name'] as String? ?? 'U')[0].toUpperCase(),
-                                  style: const TextStyle(color: Color(AppColors.accent), fontWeight: FontWeight.bold),
-                                ),
-                              ),
-                              title: Text(account['full_name'] ?? ''),
-                              subtitle: Text('${account['email']} • ${account['role']}'),
-                              onTap: () async {
-                                Navigator.pop(sheetContext);
-                                try {
-                                  await auth.debugQuickLogin(account['id'] as String);
-                                  await Provider.of<AuthService>(context, listen: false).logout();
-                                  if (mounted) Navigator.of(context).popUntil((route) => route.isFirst);
-                                } catch (error) {
-                                  if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Quick login failed: $error')));
-                                }
-                              },
-                            );
-                          },
-                        ),
-                ),
-              ],
-            ),
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              const ListTile(title: Text('Debug quick login')),
+              if (accounts.isEmpty) const ListTile(title: Text('No active accounts')),
+              ...accounts.map((account) => ListTile(
+                leading: const CircleAvatar(child: Icon(Icons.person_outline)),
+                title: Text(account['full_name']?.toString() ?? 'Responder'),
+                subtitle: Text(account['phone']?.toString() ?? 'No mobile number'),
+                onTap: () async {
+                  try {
+                    await auth.debugQuickLogin(account['id'].toString());
+                    await context.read<AuthService>().logout();
+                    if (sheetContext.mounted) Navigator.pop(sheetContext);
+                    if (mounted) Navigator.of(context).popUntil((route) => route.isFirst);
+                  } catch (e) {
+                    if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Quick login failed: ' + e.toString())),
+                    );
+                  }
+                },
+              )),
+            ],
           ),
         ),
       );
-    } catch (error) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Debug accounts unavailable: $error')));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Debug accounts unavailable: ' + e.toString())),
+      );
     }
   }
+
+  InputDecoration _inputDecoration(String label, IconData icon) => InputDecoration(
+    labelText: label,
+    labelStyle: const TextStyle(color: Colors.grey),
+    prefixIcon: Icon(icon, color: Colors.grey),
+    filled: true,
+    fillColor: const Color(AppColors.bgSecondary),
+    border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+    enabledBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(14),
+      borderSide: const BorderSide(color: Color(AppColors.border)),
+    ),
+    focusedBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(14),
+      borderSide: const BorderSide(color: Color(AppColors.accent), width: 1.5),
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -382,9 +256,7 @@ class _LoginScreenState extends State<LoginScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const SizedBox(height: 32),
-
-              // Logo
+              const SizedBox(height: 28),
               Center(
                 child: GestureDetector(
                   onTap: _showDebugAccounts,
@@ -395,175 +267,77 @@ class _LoginScreenState extends State<LoginScreen> {
                       color: const Color(AppColors.bgSecondary),
                       shape: BoxShape.circle,
                       border: Border.all(color: const Color(AppColors.primary).withOpacity(0.4), width: 2),
-                      boxShadow: [BoxShadow(color: const Color(AppColors.primary).withOpacity(0.2), blurRadius: 20)],
                     ),
-                    child: ClipOval(
-                      child: Image.asset('assets/NA-icon.png', fit: BoxFit.contain),
-                    ),
+                    child: ClipOval(child: Image.asset('assets/NA-icon.png', fit: BoxFit.contain)),
                   ),
                 ),
               ),
-
               const SizedBox(height: 28),
-              const Text(
-                'Welcome Back',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
-              ),
+              const Text('Welcome Back', textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
               const SizedBox(height: 6),
-              const Text(
-                'MDRRMO Responder Portal',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.grey, fontSize: 14),
-              ),
-
-              const SizedBox(height: 40),
-
-              // Pending verification alert (shown after failed login)
+              const Text('MDRRMO Responder Portal', textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.grey, fontSize: 14)),
+              const SizedBox(height: 32),
               if (_pendingMessage != null) ...[
                 Container(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
                     color: const Color(AppColors.warning).withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: const Color(AppColors.warning).withOpacity(0.5)),
                   ),
-                  child: Column(
-                    children: [
-                      const Row(
-                        children: [
-                          Icon(Icons.hourglass_top_rounded, color: Color(AppColors.warning)),
-                          SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              'Account Pending Verification',
-                              style: TextStyle(color: Color(AppColors.warning), fontWeight: FontWeight.bold, fontSize: 15),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      const Text(
-                        'Your MDRRMO Responder account has been submitted and is awaiting review by the MDRRMO Command Center at the Web Dashboard.\n\nYou will be able to log in once your account has been approved.',
-                        style: TextStyle(color: Colors.white60, fontSize: 13, height: 1.5),
-                      ),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          const Icon(Icons.info_outline, size: 14, color: Colors.grey),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              'Contact your MDRRMO administrator if you need urgent assistance.',
-                              style: TextStyle(color: Colors.grey[500], fontSize: 11),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
+                  child: Text(_pendingMessage!, style: const TextStyle(color: Color(AppColors.warning))),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 16),
               ],
-
-              // Email
               TextField(
-                controller: _emailController,
+                controller: _phoneController,
+                keyboardType: TextInputType.phone,
+                inputFormatters: PhoneNumberUtils.inputFormatters,
                 style: const TextStyle(color: Colors.white),
-                decoration: InputDecoration(
-                  labelText: 'Email Address',
-                  labelStyle: const TextStyle(color: Colors.grey),
-                  prefixIcon: const Icon(Icons.email_outlined, color: Colors.grey),
-                  filled: true,
-                  fillColor: const Color(AppColors.bgSecondary),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: const BorderSide(color: Color(AppColors.border)),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: const BorderSide(color: Color(AppColors.border)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: const BorderSide(color: Color(AppColors.accent), width: 1.5),
-                  ),
-                ),
-                keyboardType: TextInputType.emailAddress,
+                decoration: _inputDecoration('Mobile number', Icons.phone_outlined).copyWith(hintText: '09XXXXXXXXX'),
               ),
               const SizedBox(height: 16),
-
-              // Password
               TextField(
                 controller: _passwordController,
+                obscureText: _obscurePassword,
                 style: const TextStyle(color: Colors.white),
-                decoration: InputDecoration(
-                  labelText: 'Password',
-                  labelStyle: const TextStyle(color: Colors.grey),
-                  prefixIcon: const Icon(Icons.lock_outlined, color: Colors.grey),
+                decoration: _inputDecoration('Password', Icons.lock_outlined).copyWith(
                   suffixIcon: IconButton(
-                    icon: Icon(
-                      _obscurePassword ? Icons.visibility_off : Icons.visibility,
-                      color: Colors.grey,
-                    ),
+                    icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility, color: Colors.grey),
                     onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
                   ),
-                  filled: true,
-                  fillColor: const Color(AppColors.bgSecondary),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: const BorderSide(color: Color(AppColors.border)),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: const BorderSide(color: Color(AppColors.border)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: const BorderSide(color: Color(AppColors.accent), width: 1.5),
-                  ),
                 ),
-                obscureText: _obscurePassword,
                 onSubmitted: (_) => _login(),
               ),
-
-              const SizedBox(height: 28),
-
-              // Sign In button
+              const SizedBox(height: 24),
               Consumer<AuthProvider>(
-                builder: (context, auth, _) {
-                  return ElevatedButton(
-                    onPressed: auth.isLoading ? null : _login,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(AppColors.primary),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                      elevation: 4,
-                      shadowColor: const Color(AppColors.primary).withOpacity(0.4),
-                    ),
-                    child: auth.isLoading
-                        ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                        : const Text('Sign In', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                  );
-                },
+                builder: (context, auth, _) => ElevatedButton(
+                  onPressed: auth.isLoading ? null : _login,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(AppColors.primary),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  child: auth.isLoading
+                      ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      : const Text('Sign in', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                ),
               ),
-
               TextButton(
                 onPressed: _showForgotPasswordDialog,
                 child: const Text('Forgot password?', style: TextStyle(color: Color(AppColors.accent))),
               ),
-
-              const SizedBox(height: 24),
-
+              const SizedBox(height: 18),
               OutlinedButton.icon(
                 onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst),
                 icon: const Icon(Icons.arrow_back_rounded),
                 label: const Text('Back to account selection'),
               ),
-
               const Padding(
-                padding: EdgeInsets.only(top: 8),
+                padding: EdgeInsets.only(top: 12),
                 child: Text(
                   'Responder accounts are created by an MDRRMO administrator.',
                   textAlign: TextAlign.center,

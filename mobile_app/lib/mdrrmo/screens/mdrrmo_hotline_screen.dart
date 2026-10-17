@@ -429,15 +429,6 @@ class _MdrrmoHotlineScreenState extends State<MdrrmoHotlineScreen> {
               () =>
                   _launch(Uri.parse('https://www.facebook.com/RescueNgGaray')),
             ),
-            _actionChip(
-              Icons.mail_rounded,
-              'Email MDRRMO',
-              const Color(0xFFE8EEF5),
-              const Color(0xFF1B4F72),
-              () => _launch(
-                Uri(scheme: 'mailto', path: 'norzagarayrescue2015@gmail.com'),
-              ),
-            ),
           ],
         ),
         const SizedBox(height: 8),

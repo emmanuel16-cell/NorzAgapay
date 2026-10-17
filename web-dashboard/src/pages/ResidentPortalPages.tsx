@@ -29,7 +29,7 @@ type EvacuationCenter = {
   id: string; name: string; address?: string | null; latitude: number | string; longitude: number | string;
   barangay_id?: string; barangays?: { name?: string; municipality?: string } | Array<{ name?: string; municipality?: string }> | null;
 };
-type HotlineLine = { label?: string; name?: string; purpose?: string; phone?: string; number?: string; numbers?: string[]; email?: string };
+type HotlineLine = { label?: string; name?: string; purpose?: string; phone?: string; number?: string; numbers?: string[] };
 type HotlinesResponse = { national?: HotlineLine[]; mdrrmo?: HotlineLine[]; barangays?: Array<{ barangay_name: string; entries: HotlineLine[] }> };
 
 const defaultCenter: [number, number] = [14.9133, 121.0436];

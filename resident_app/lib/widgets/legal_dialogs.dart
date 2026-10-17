@@ -50,7 +50,7 @@ Norz-Agapay aims for maximum server availability and offline resiliency. In case
 The Municipality of Norzagaray and MDRRMO are committed to protecting your privacy in full compliance with the Philippine Data Privacy Act of 2012 (Republic Act No. 10173).
 
 1. Information We Collect
-• Contact Information: Your full name, active mobile number, and email address.
+• Contact Information: Your full name and active mobile number.
 • Residential Details: Your registered Barangay within Norzagaray.
 • Location Data: Device GPS coordinates captured when you choose to share your location for an incident report or nearest-station lookup.
 • Multimedia Evidence: Photos and recorded video clips submitted as incident documentation.
@@ -72,7 +72,7 @@ We do not sell, rent, or commercialize your personal information. Incident data 
 Reports saved while offline are securely cached on your device storage and synced only when connection to our secured municipal servers is restored.
 
 5. Your Rights
-Under Republic Act 10173, you have the right to access your personal data, rectify inaccuracies, and request account termination by contacting the Norzagaray MDRRMO Data Protection Officer at norzagarayrescue2015@gmail.com.
+Under Republic Act 10173, you have the right to access your personal data, rectify inaccuracies, and request account termination by contacting the Norzagaray MDRRMO Data Protection Officer through the municipal office.
 ''',
       ),
     );

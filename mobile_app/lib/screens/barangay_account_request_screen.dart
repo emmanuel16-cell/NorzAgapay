@@ -1201,7 +1201,7 @@ class _BarangayAccountRequestScreenState
         children: [
           const Row(
             children: [
-              Icon(Icons.mark_email_read, color: Color(0xFF0087C7), size: 24),
+              Icon(Icons.assignment_turned_in_outlined, color: Color(0xFF0087C7), size: 24),
               SizedBox(width: 10),
               Expanded(
                 child: Column(

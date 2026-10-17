@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { FileText, KeyRound, LogOut, MailCheck, Map as MapIcon, MapPin, Moon, Phone, Save, ScrollText, Settings, ShieldCheck, Sun, UserRound, X } from 'lucide-react';
+import { FileText, KeyRound, LogOut, Map as MapIcon, MapPin, Moon, Phone, Save, ScrollText, Settings, ShieldCheck, Sun, UserRound, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import PasswordInput from './PasswordInput';
@@ -30,22 +30,21 @@ export default function UserSettingsModal({ theme, onThemeChange, onClose, onSig
   const isMdrrmoAdminOrStaff = !isBarangay && (user?.role === 'admin' || user?.role === 'logistics');
   const isResident = user?.account_kind === 'resident' && user.role === 'resident';
   const canViewHotlines = isBarangay && Boolean(user?.barangay_id);
-  const hasEmailContact = Boolean(user?.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(user.email));
   const hasPhoneContact = isValidMobileNumber(user?.phone);
   const [activeSection, setActiveSection] = useState<SettingsSection>('general');
   const [profile, setProfile] = useState({
     full_name: user?.full_name || '',
-    username: user?.username || '',
-    email: user?.email || '',
-    phone: normalizeMobileNumberInput(user?.phone),
   });
+  const [newPhone, setNewPhone] = useState('');
+  const [phoneCurrentPassword, setPhoneCurrentPassword] = useState('');
+  const [phoneOtp, setPhoneOtp] = useState('');
+  const [phoneOtpSent, setPhoneOtpSent] = useState(false);
   const [residentBarangays, setResidentBarangays] = useState<Array<{ id: string; name: string }>>([]);
   const [residentBarangay, setResidentBarangay] = useState(user?.barangay_name || '');
   const [loadingBarangays, setLoadingBarangays] = useState(false);
   const [savingBarangay, setSavingBarangay] = useState(false);
   const [barangayLoadError, setBarangayLoadError] = useState('');
   const [passwordOtpSent, setPasswordOtpSent] = useState(false);
-  const [passwordDeliveryMethod, setPasswordDeliveryMethod] = useState<'email' | 'sms'>(() => user?.email ? 'email' : 'sms');
   const [passwordForm, setPasswordForm] = useState(emptyPasswordForm);
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
@@ -84,17 +83,10 @@ export default function UserSettingsModal({ theme, onThemeChange, onClose, onSig
 
   const saveProfile = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (profile.phone && !isValidMobileNumber(profile.phone)) {
-      toast.error('Enter exactly 11 digits starting with 09.');
-      return;
-    }
     setSavingProfile(true);
     try {
       const updates = {
         full_name: profile.full_name.trim(),
-        username: profile.username.trim(),
-        email: profile.email.trim() ? profile.email.trim().toLowerCase() : null,
-        phone: profile.phone.trim() ? normalizeMobileNumberInput(profile.phone) : null,
       };
       const { data } = isResident
         ? await authAPI.updateResidentProfile(updates)
@@ -102,11 +94,56 @@ export default function UserSettingsModal({ theme, onThemeChange, onClose, onSig
           ? await barangayAPI.updateProfile(updates)
           : await authAPI.updateProfile(updates);
       if (data.token) updateToken(data.token);
-      updateUser({ full_name: data.full_name, username: data.username, email: data.email, phone: data.phone });
-      setProfile({ full_name: data.full_name, username: data.username || '', email: data.email || '', phone: normalizeMobileNumberInput(data.phone) });
+      updateUser({ full_name: data.full_name });
+      setProfile({ full_name: data.full_name });
       toast.success('Profile details saved.');
     } catch (error: any) {
       toast.error(messageOf(error, 'Profile details could not be saved.'));
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  const sendPhoneCode = async () => {
+    const phone = normalizeMobileNumberInput(newPhone);
+    if (!isValidMobileNumber(phone)) { toast.error('Enter exactly 11 digits starting with 09.'); return; }
+    if (!phoneCurrentPassword) { toast.error('Enter your current password before changing your mobile number.'); return; }
+    setSavingProfile(true);
+    try {
+      const request = { phone, current_password: phoneCurrentPassword };
+      const { data } = isBarangay
+        ? await barangayAPI.requestProfilePhoneOtp(request)
+        : await authAPI.requestProfilePhoneOtp(request);
+      setPhoneOtpSent(true);
+      toast.success(data.message || 'SMS verification code sent.');
+    } catch (error: any) {
+      toast.error(messageOf(error, 'Mobile number verification code could not be sent.'));
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  const changePhone = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const phone = normalizeMobileNumberInput(newPhone);
+    if (!isValidMobileNumber(phone) || phoneOtp.trim().length !== 6 || !phoneCurrentPassword) {
+      toast.error('Enter a valid mobile number, current password, and 6-digit SMS code.');
+      return;
+    }
+    setSavingProfile(true);
+    try {
+      const request = { phone, otp: phoneOtp.trim(), current_password: phoneCurrentPassword };
+      const { data } = isBarangay
+        ? await barangayAPI.changeProfilePhone(request)
+        : await authAPI.changeProfilePhone(request);
+      updateUser({ phone: data.phone });
+      setPhoneOtpSent(false);
+      setNewPhone('');
+      setPhoneOtp('');
+      setPhoneCurrentPassword('');
+      toast.success(data.message || 'Mobile number updated.');
+    } catch (error: any) {
+      toast.error(messageOf(error, 'Mobile number could not be updated.'));
     } finally {
       setSavingProfile(false);
     }
@@ -140,7 +177,7 @@ export default function UserSettingsModal({ theme, onThemeChange, onClose, onSig
     }
     setSavingPassword(true);
     try {
-      const request = { current_password: passwordForm.currentPassword, delivery_method: passwordDeliveryMethod } as const;
+      const request = { current_password: passwordForm.currentPassword } as const;
       const { data } = isBarangay
         ? await barangayAPI.requestProfilePasswordOtp(request)
         : await authAPI.requestWebPasswordOtp(request);
@@ -173,7 +210,6 @@ export default function UserSettingsModal({ theme, onThemeChange, onClose, onSig
         otp: passwordForm.otp.trim(),
         current_password: passwordForm.currentPassword,
         new_password: passwordForm.newPassword,
-        delivery_method: passwordDeliveryMethod,
       } as const;
       const { data } = isBarangay
         ? await barangayAPI.changeProfilePassword(request)
@@ -217,7 +253,7 @@ export default function UserSettingsModal({ theme, onThemeChange, onClose, onSig
           {activeSection === 'general' ? <div className="user-settings-content">
           <section className="user-settings-section user-settings-account">
             <div className="user-settings-avatar" aria-hidden="true">{initials}</div>
-            <div className="user-settings-account-copy"><strong>{user?.full_name || 'Dashboard user'}</strong><span>{isResident ? user?.username ? `@${user.username}` : formatMobileNumber(user?.phone) || 'Resident account' : user?.email || 'No email on this account'}</span><small>{user?.role === 'logistics' ? 'Staff' : user?.role?.replace(/_/g, ' ')}{user?.account_kind === 'barangay' && user.barangay_name ? ` · ${user.barangay_name}` : ''}</small></div>
+            <div className="user-settings-account-copy"><strong>{user?.full_name || 'Dashboard user'}</strong><span>{formatMobileNumber(user?.phone) || 'Mobile number not set'}</span><small>{user?.role === 'logistics' ? 'Staff' : user?.role?.replace(/_/g, ' ')}{user?.account_kind === 'barangay' && user.barangay_name ? ` · ${user.barangay_name}` : ''}</small></div>
           </section>
 
           <section className="user-settings-section">
@@ -247,30 +283,33 @@ export default function UserSettingsModal({ theme, onThemeChange, onClose, onSig
               <div className="user-settings-section-heading"><div><h3>Profile</h3><p>Update the personal and contact details used on your account.</p></div><UserRound size={18} /></div>
               <form className="user-settings-form" onSubmit={(event) => void saveProfile(event)}>
                 <label>Full name<input required minLength={2} maxLength={100} autoComplete="name" value={profile.full_name} onChange={(event) => setProfile((value) => ({ ...value, full_name: event.target.value }))} /></label>
-                <label>Username<input required minLength={3} maxLength={32} pattern="[A-Za-z0-9._-]{3,32}" autoComplete="username" value={profile.username} onChange={(event) => setProfile((value) => ({ ...value, username: event.target.value }))} /></label>
-                <label>Gmail / email address<input type="email" maxLength={254} autoComplete="email" value={profile.email} onChange={(event) => setProfile((value) => ({ ...value, email: event.target.value }))} placeholder="name@gmail.com" /></label>
-                <label>Contact number <MobileNumberInput value={profile.phone} onValueChange={(phone) => setProfile((value) => ({ ...value, phone }))} placeholder="09XXXXXXXXX" /></label>
+                <label>Sign-in mobile number<input value={formatMobileNumber(user?.phone) || 'Not set'} readOnly /></label>
                 <label>Role<input value={user?.role === 'logistics' ? 'Staff' : user?.role?.replace(/_/g, ' ') || ''} readOnly /></label>
                 <p className="user-settings-managed-note">Roles are assigned by an administrator and can’t be changed from your profile.</p>
                 <div className="user-settings-form-actions"><button className="btn btn-primary" disabled={savingProfile}><Save size={15} /> {savingProfile ? 'Saving…' : 'Save profile'}</button></div>
               </form>
             </section>
+            <section className="user-settings-section">
+              <div className="user-settings-section-heading"><div><h3>Change mobile number</h3><p>Verify the new number by SMS and confirm your current password.</p></div><Phone size={18} /></div>
+              <form className="user-settings-form" onSubmit={(event) => void changePhone(event)}>
+                <label>New mobile number<MobileNumberInput value={newPhone} onValueChange={setNewPhone} placeholder="09XXXXXXXXX" required /></label>
+                <label>Current password<PasswordInput required autoComplete="current-password" value={phoneCurrentPassword} onChange={(event) => setPhoneCurrentPassword(event.target.value)} /></label>
+                {phoneOtpSent && <label>SMS verification code<input required inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={phoneOtp} onChange={(event) => setPhoneOtp(event.target.value.replace(/\D/g, '').slice(0, 6))} /></label>}
+                <div className="user-settings-form-actions">{phoneOtpSent ? <><button className="btn btn-primary" disabled={savingProfile}><Phone size={15} /> {savingProfile ? 'Updating…' : 'Verify and update number'}</button><button type="button" className="workspace-secondary-action" disabled={savingProfile} onClick={() => void sendPhoneCode()}>Send a new code</button></> : <button type="button" className="btn btn-primary" disabled={savingProfile || !newPhone || !phoneCurrentPassword} onClick={() => void sendPhoneCode()}><Phone size={15} /> {savingProfile ? 'Sending…' : 'Send SMS code'}</button>}</div>
+              </form>
+            </section>
           </div> : activeSection === 'security' ? <div className="user-settings-content">
             <section className="user-settings-section">
-              <div className="user-settings-section-heading"><div><h3>Change password</h3><p>Confirm your current password, then choose where to receive a one-time code.</p></div><KeyRound size={18} /></div>
+              <div className="user-settings-section-heading"><div><h3>Change password</h3><p>Confirm your current password and verify with a code sent by SMS.</p></div><KeyRound size={18} /></div>
               {!passwordOtpSent ? <div className="user-settings-resident-security-start">
                 <label>Current password<PasswordInput required autoComplete="current-password" value={passwordForm.currentPassword} onChange={(event) => setPasswordForm((value) => ({ ...value, currentPassword: event.target.value }))} /></label>
-                <label>Send code to<select value={passwordDeliveryMethod} onChange={(event) => setPasswordDeliveryMethod(event.target.value as 'email' | 'sms')}>
-                  <option value="email" disabled={!hasEmailContact}>Gmail / email{hasEmailContact ? ` · ${user?.email}` : ' · add one in Profile'}</option>
-                  <option value="sms" disabled={!hasPhoneContact}>Mobile number{hasPhoneContact ? ` · ${formatMobileNumber(user?.phone)}` : ' · add one in Profile'}</option>
-                </select></label>
-                {!hasEmailContact && !hasPhoneContact && <p className="user-settings-managed-note">Add a Gmail address or mobile number in Profile to receive a verification code.</p>}
-                <button type="button" className="btn btn-primary" onClick={() => void sendPasswordCode()} disabled={savingPassword || !passwordForm.currentPassword || (passwordDeliveryMethod === 'email' ? !hasEmailContact : !hasPhoneContact)}>
-                  {passwordDeliveryMethod === 'email' ? <MailCheck size={15} /> : <Phone size={15} />}
+                {!hasPhoneContact && <p className="user-settings-managed-note">A valid mobile number is needed for password verification. Contact an administrator if your account is missing one.</p>}
+                <button type="button" className="btn btn-primary" onClick={() => void sendPasswordCode()} disabled={savingPassword || !passwordForm.currentPassword || !hasPhoneContact}>
+                  <Phone size={15} />
                   {savingPassword ? 'Sending code…' : 'Verify and send code'}
                 </button>
               </div> : <form className="user-settings-form" onSubmit={(event) => void changePassword(event)}>
-                <p className="user-settings-sms-note" role="status">A 6-digit code was sent to your {passwordDeliveryMethod === 'email' ? 'email address' : 'mobile number'}.</p>
+                <p className="user-settings-sms-note" role="status">A 6-digit code was sent to your mobile number.</p>
                 <label>Current password<PasswordInput required autoComplete="current-password" value={passwordForm.currentPassword} onChange={(event) => setPasswordForm((value) => ({ ...value, currentPassword: event.target.value }))} /></label>
                 <label>Verification code<input required inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={passwordForm.otp} onChange={(event) => setPasswordForm((value) => ({ ...value, otp: event.target.value.replace(/\D/g, '').slice(0, 6) }))} /></label>
                 <label>New password<PasswordInput required minLength={8} autoComplete="new-password" value={passwordForm.newPassword} onChange={(event) => setPasswordForm((value) => ({ ...value, newPassword: event.target.value }))} /></label>

@@ -10,7 +10,6 @@ type UnitMember = {
   member_role?: string;
   role_label?: string;
   phone?: string | null;
-  email?: string | null;
   is_active?: boolean;
 };
 
@@ -79,7 +78,7 @@ export default function ResponderUnitTeamPage() {
               <div className="barangay-team-card-info">
                 <strong>{name}</strong>
                 <span className="barangay-console-status active">{member.role_label || member.member_role?.replaceAll('_', ' ') || 'Responder'}</span>
-                <small>{member.phone ? formatMobileNumber(member.phone) : member.email || 'MDRRMO response crew'}</small>
+                <small>{member.phone ? formatMobileNumber(member.phone) : 'MDRRMO response crew'}</small>
               </div>
             </article>;
           })}

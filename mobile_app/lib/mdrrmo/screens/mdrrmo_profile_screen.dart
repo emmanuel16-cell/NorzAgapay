@@ -183,7 +183,7 @@ class _MdrrmoProfileScreenState extends State<MdrrmoProfileScreen> {
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(user.fullName, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
               const SizedBox(height: 3),
-              Text(user.email, style: const TextStyle(color: Color(0xFFCBD5E1), fontSize: 12)),
+              Text(user.phone ?? 'Mobile number not set', style: const TextStyle(color: Color(0xFFCBD5E1), fontSize: 12)),
               if ((user.phone ?? '').isNotEmpty) ...[const SizedBox(height: 3), Text(user.phone!, style: const TextStyle(color: Color(0xFFCBD5E1), fontSize: 12))],
               const SizedBox(height: 8),
               const Text('MDRRMO Responder', style: TextStyle(color: Color(0xFF5EEAD4), fontWeight: FontWeight.bold, fontSize: 11)),

@@ -22,7 +22,7 @@ Make unit setup reliable for logistics Staff and master admins, while ensuring d
 4. Keep the create/edit form usable if loading candidate Team Leader accounts fails, and show a clear message that the leader can be assigned later.
 5. Render API load failures as retryable errors instead of an empty roster state.
 6. Build the dashboard and backend to catch integration and type errors.
-7. Match active mobile responder accounts to Officer profiles by normalized email, show unlinked Officer profiles as needing an active mobile account, and allow account creation even when no Team Leader is ready.
+7. Match active mobile responder accounts to Officer profiles by normalized mobile number, show unlinked Officer profiles as needing an active mobile account, and allow account creation even when no Team Leader is ready.
 8. Add a migration for roster tables, constraints, activation and assignment functions, plus the dispatch and crew acceptance RPCs; return an actionable migration error when the roster schema is absent.
 9. Add a guarded unit deletion action for Staff and master admins. Emptying includes deactivating every active roster entry and clearing the Team Leader; server-side checks prevent deletion during dispatch or when crew history must be preserved.
 

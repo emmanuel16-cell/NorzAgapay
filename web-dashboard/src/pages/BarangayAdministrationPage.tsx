@@ -65,7 +65,7 @@ const barangayPolicies = [
     subtitle: 'Barangay dashboard personnel data and incident information',
     paragraphs: [
       'This notice describes how personal information is handled when you use the Norz-Agapay Barangay Web Dashboard. Processing must follow applicable requirements, including the Philippine Data Privacy Act of 2012 (Republic Act No. 10173).',
-      '1. Information Processed. Depending on the feature used, the dashboard may process account and profile details such as your name, email address, phone number, barangay, role, and sign-in status. Incident records may include descriptions, photos or videos, location coordinates, submission details, and response updates.',
+      '1. Information Processed. Depending on the feature used, the dashboard may process account and profile details such as your name, mobile number, barangay, role, and sign-in status. Incident records may include descriptions, photos or videos, location coordinates, submission details, and response updates.',
       '2. Purposes. Information is used to authenticate authorized personnel, display public alerts and reports, coordinate incident response, and maintain the security and operation of the service.',
       '3. Access and Sharing. Information is available to authorized personnel according to their roles. Incident information may be shared with the relevant barangay or MDRRMO responders and other authorized public safety agencies when needed for response or required by law. The dashboard does not authorize unrelated disclosure or commercial use.',
       '4. Storage and Retention. Information is stored on municipal systems. Records should be retained and disposed of according to applicable government records and data protection requirements.',

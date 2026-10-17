@@ -1,8 +1,6 @@
 class BarangayUser {
   final String id;
   final String fullName;
-  final String? username;
-  final String email;
   final String? phone;
   final String role; // 'admin' | 'dispatcher' | 'responder' | 'staff'
   final String barangayId;
@@ -27,8 +25,6 @@ class BarangayUser {
   BarangayUser({
     required this.id,
     required this.fullName,
-    this.username,
-    required this.email,
     this.phone,
     required this.role,
     required this.barangayId,
@@ -101,8 +97,6 @@ class BarangayUser {
     return BarangayUser(
       id: json['id'] ?? '',
       fullName: json['full_name'] ?? '',
-      username: json['username'] as String?,
-      email: json['email'] ?? '',
       phone: json['phone'],
       role: role,
       barangayId: json['barangay_id'] ?? '',
@@ -130,8 +124,6 @@ class BarangayUser {
     return {
       'id': id,
       'full_name': fullName,
-      'username': username,
-      'email': email,
       'phone': phone,
       'role': role,
       'barangay_id': barangayId,
@@ -176,7 +168,6 @@ class BarangayUser {
     return BarangayUser(
       id: id,
       fullName: fullName ?? this.fullName,
-      email: email,
       phone: clearPhone ? null : (phone ?? this.phone),
       role: role,
       barangayId: barangayId,

@@ -4,8 +4,6 @@ import { authAPI, socket, debugAPI } from '../lib/api';
 interface User {
   id: string;
   full_name: string;
-  username?: string | null;
-  email: string | null;
   phone?: string | null;
   role: string;
   unit_type?: string;
@@ -24,7 +22,7 @@ interface AuthContextType {
   user: User | null;
   token: string | null;
   loading: boolean;
-  login: (identifier: string, password: string, accountKind?: 'auto' | 'mdrrmo' | 'barangay' | 'resident') => Promise<void>;
+  login: (phone: string, password: string, accountKind?: 'auto' | 'mdrrmo' | 'barangay' | 'resident') => Promise<void>;
   setSession: (token: string, user: User, accountKind: 'mdrrmo' | 'barangay' | 'resident') => void;
   updateToken: (token: string) => void;
   debugLogin: (accountId: string, audience?: 'standard' | 'barangay' | 'resident') => Promise<void>;
@@ -92,7 +90,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .finally(() => setLoading(false));
   }, [token, accountKind]);
 
-  const login = async (identifier: string, password: string, requestedKind: 'auto' | 'mdrrmo' | 'barangay' | 'resident' = 'auto') => {
+  const login = async (phone: string, password: string, requestedKind: 'auto' | 'mdrrmo' | 'barangay' | 'resident' = 'auto') => {
     const loginKinds: Array<'mdrrmo' | 'barangay' | 'resident'> = requestedKind === 'auto'
       ? ['mdrrmo', 'barangay', 'resident']
       : [requestedKind];
@@ -105,10 +103,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     for (const kind of loginKinds) {
       try {
         response = kind === 'mdrrmo'
-          ? await authAPI.login(identifier, password)
+          ? await authAPI.login(phone, password)
           : kind === 'barangay'
-            ? await authAPI.barangayLogin(identifier, password)
-            : await authAPI.residentLogin(identifier, password);
+            ? await authAPI.barangayLogin(phone, password)
+            : await authAPI.residentLogin(phone, password);
         nextKind = kind;
         break;
       } catch (loginError) {

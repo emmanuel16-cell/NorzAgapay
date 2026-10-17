@@ -260,7 +260,6 @@ class _MdrrmoReportsScreenState extends State<MdrrmoReportsScreen>
         reportType: report.type,
         title: report.title,
         reporterName: report.reporterName,
-        reporterEmail: report.reporterEmail,
         reporterPhone: report.reporterPhone,
         classification: [
           report.incidentType?.replaceAll('_', ' '),

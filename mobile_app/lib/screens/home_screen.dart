@@ -413,7 +413,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     user?.barangayName ?? 'Norzagaray',
                   ),
                   const Divider(color: Color(0xFFE2E8F0), height: 1),
-                  _tile(Icons.email, 'Email Address', user?.email ?? '-'),
+                  _tile(Icons.phone, 'Mobile number', PhoneNumberUtils.formatForDisplay(user?.phone)),
                   const Divider(color: Color(0xFFE2E8F0), height: 1),
                   _tile(
                     Icons.phone,
@@ -489,11 +489,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               iconColor: const Color(0xFFD97706),
               label: 'Change Password',
               subtitle: 'Update your account password securely',
-              onTap: () => _showChangePasswordDialog(
-                user?.username ?? user?.email ?? user?.phone ?? '',
-                hasEmail: user?.email.trim().isNotEmpty == true,
-                hasPhone: user?.phone?.trim().isNotEmpty == true,
-              ),
+              onTap: () => _showChangePasswordDialog(user?.phone ?? ''),
             ),
 
             const SizedBox(height: 12),
@@ -615,8 +611,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final phoneController = TextEditingController(
       text: PhoneNumberUtils.digitsOnly(user.phone),
     );
+    final currentPasswordController = TextEditingController();
+    final otpController = TextEditingController();
+    var otpSent = false;
     var isSaving = false;
     String? errorMessage;
+    String? statusMessage;
 
     await showDialog<void>(
       context: context,
@@ -634,7 +634,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'You can update your name and contact number.',
+                    'Update your name. A new mobile number must be verified by SMS.',
                     style: TextStyle(color: Color(0xFF64748B), fontSize: 13),
                   ),
                   const SizedBox(height: 16),
@@ -657,11 +657,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   const SizedBox(height: 8),
                   TextFormField(
                     controller: phoneController,
+                    enabled: !otpSent,
                     keyboardType: TextInputType.phone,
                     inputFormatters: PhoneNumberUtils.inputFormatters,
-                    maxLength: 11,
                     decoration: const InputDecoration(
-                      labelText: 'Phone Number',
+                      labelText: 'Mobile number',
                       hintText: '09XXXXXXXXX',
                       prefixIcon: Icon(Icons.phone_outlined),
                       border: OutlineInputBorder(),
@@ -673,6 +673,35 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       return PhoneNumberUtils.validationMessage(value);
                     },
                   ),
+                  if (phoneController.text.trim() != PhoneNumberUtils.digitsOnly(user.phone)) ...[
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: currentPasswordController,
+                      obscureText: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Current password',
+                        prefixIcon: Icon(Icons.lock_outline),
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    if (otpSent) ...[
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: otpController,
+                        keyboardType: TextInputType.number,
+                        maxLength: 6,
+                        decoration: const InputDecoration(
+                          labelText: '6-digit SMS code',
+                          prefixIcon: Icon(Icons.sms_outlined),
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ],
+                  ],
+                  if (statusMessage != null) ...[
+                    const SizedBox(height: 8),
+                    Text(statusMessage!, style: const TextStyle(color: Color(0xFF15803D))),
+                  ],
                   if (errorMessage != null) ...[
                     const SizedBox(height: 4),
                     Text(
@@ -702,17 +731,34 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         errorMessage = null;
                       });
                       try {
-                        final phone = phoneController.text.trim();
-                        await auth.updateOwnProfile(
-                          fullName: nameController.text.trim(),
-                          phone: phone,
-                        );
+                        final phone = PhoneNumberUtils.digitsOnly(phoneController.text);
+                        final phoneChanged = phone != PhoneNumberUtils.digitsOnly(user.phone);
+                        if (phoneChanged && !otpSent) {
+                          if (currentPasswordController.text.isEmpty) {
+                            throw 'Enter your current password to verify a new mobile number.';
+                          }
+                          statusMessage = await auth.requestOwnPhoneChangeOtp(
+                            phone: phone,
+                            currentPassword: currentPasswordController.text,
+                          );
+                          setDialogState(() { otpSent = true; isSaving = false; });
+                          return;
+                        }
+                        if (phoneChanged) {
+                          if (otpController.text.trim().length != 6) throw 'Enter the 6-digit SMS code.';
+                          await auth.confirmOwnPhoneChange(
+                            phone: phone,
+                            otp: otpController.text.trim(),
+                            currentPassword: currentPasswordController.text,
+                          );
+                        }
+                        await auth.updateOwnProfile(fullName: nameController.text.trim());
                         if (!dialogContext.mounted) return;
                         Navigator.pop(dialogContext);
                         if (mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
-                              content: Text('Information updated.'),
+                              content: Text('Profile information updated.'),
                               backgroundColor: Color(0xFF16A34A),
                             ),
                           );
@@ -738,7 +784,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       height: 18,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Text('Save Changes'),
+                  : Text(otpSent ? 'Verify and save' : 'Save Changes'),
             ),
           ],
         ),
@@ -747,9 +793,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     nameController.dispose();
     phoneController.dispose();
+    currentPasswordController.dispose();
+    otpController.dispose();
   }
 
-  Future<void> _showChangePasswordDialog(String identifier, {required bool hasEmail, required bool hasPhone}) async {
+  Future<void> _showChangePasswordDialog(String phone) async {
     final otp = TextEditingController();
     final currentPassword = TextEditingController();
     final newPassword = TextEditingController();
@@ -757,7 +805,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     var otpSent = false;
     var sendingOtp = false;
     var updating = false;
-    var deliveryMethod = hasEmail ? 'email' : 'sms';
     String? error;
     String? success;
 
@@ -772,7 +819,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Account: $identifier',
+                  'Account: ${PhoneNumberUtils.formatForDisplay(phone)}',
                   style: const TextStyle(
                     color: Color(0xFF1B4F72),
                     fontWeight: FontWeight.w600,
@@ -780,18 +827,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Verify your ${deliveryMethod == 'sms' ? 'mobile number' : 'email'} and current password to set a new password.',
+                  'We will send a verification code by SMS to your mobile number. Enter it with your current password to set a new password.',
                 ),
                 const SizedBox(height: 14),
-                if (!otpSent && hasEmail && hasPhone) ...[
-                  const Text('Send verification code by', style: TextStyle(fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 8),
-                  Wrap(spacing: 8, children: [
-                    ChoiceChip(label: const Text('Email'), selected: deliveryMethod == 'email', onSelected: sendingOtp ? null : (_) => setDialogState(() => deliveryMethod = 'email')),
-                    ChoiceChip(label: const Text('Mobile SMS'), selected: deliveryMethod == 'sms', onSelected: sendingOtp ? null : (_) => setDialogState(() => deliveryMethod = 'sms')),
-                  ]),
-                  const SizedBox(height: 12),
-                ],
                 if (!otpSent)
                   SizedBox(
                     width: double.infinity,
@@ -804,7 +842,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                 error = null;
                               });
                               try {
-                                success = await ApiService.sendBarangayPasswordOtp(identifier: identifier, deliveryMethod: deliveryMethod);
+                                success = await ApiService.sendBarangayPasswordOtp(phone: phone);
                                 setDialogState(() {
                                   otpSent = true;
                                 });
@@ -820,11 +858,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                               height: 16,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : Icon(deliveryMethod == 'sms' ? Icons.sms_outlined : Icons.mark_email_read_outlined),
+                          : const Icon(Icons.sms_outlined),
                       label: Text(
-                        sendingOtp
-                            ? 'Sending code…'
-                            : 'Send ${deliveryMethod == 'sms' ? 'SMS' : 'Email'} Verification Code',
+                        sendingOtp ? 'Sending code…' : 'Send SMS Verification Code',
                       ),
                     ),
                   ),
@@ -860,7 +896,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     controller: newPassword,
                     obscureText: true,
                     decoration: const InputDecoration(
-                      labelText: 'New password (6+ characters)',
+                        labelText: 'New password (8+ characters)',
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -899,10 +935,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           setDialogState(() => error = 'Enter the 6-digit verification code.');
                           return;
                         }
-                        if (newPassword.text.length < 6) {
+                        if (newPassword.text.length < 8) {
                           setDialogState(
                             () => error =
-                                'New password must be at least 6 characters.',
+                                'New password must be at least 8 characters.',
                           );
                           return;
                         }
@@ -924,8 +960,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         });
                         try {
                           await ApiService.changeBarangayPassword(
-                            identifier: identifier,
-                            deliveryMethod: deliveryMethod,
+                            phone: phone,
                             otp: otp.text.trim(),
                             currentPassword: currentPassword.text,
                             newPassword: newPassword.text,

@@ -8,7 +8,7 @@ import MobileNumberInput from '../components/MobileNumberInput';
 import { formatMobileNumber, isValidMobileNumber, normalizeMobileNumberInput } from '../lib/mobileNumber';
 
 interface User {
-  id: string; full_name: string; username?: string | null; email: string | null; phone?: string | null;
+  id: string; full_name: string; phone: string;
   role: string; status: string;
   last_seen?: string; created_at: string;
 }
@@ -25,7 +25,7 @@ export default function UsersPage() {
   const [editUser, setEditUser] = useState<User|null>(null);
   const [editForm, setEditForm] = useState({ status:'', role:'' });
   const [showCreate, setShowCreate] = useState(false);
-  const [createForm, setCreateForm] = useState({ full_name:'', username:'', password:'', phone:'', unit_type:'', role:'logistics' });
+  const [createForm, setCreateForm] = useState({ full_name:'', password:'', phone:'', unit_type:'', role:'logistics' });
   const [creating, setCreating] = useState(false);
 
   const fetchUsers = () => {
@@ -58,17 +58,17 @@ export default function UsersPage() {
 
   const handleCreate = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (createForm.phone && !isValidMobileNumber(createForm.phone)) { toast.error('Enter exactly 11 digits starting with 09.'); return; }
+    if (!isValidMobileNumber(createForm.phone)) { toast.error('Enter exactly 11 digits starting with 09.'); return; }
     setCreating(true);
     try {
       await userAPI.create({
         ...createForm,
-        phone: createForm.phone.trim() ? normalizeMobileNumberInput(createForm.phone) : undefined,
+        phone: normalizeMobileNumberInput(createForm.phone),
         unit_type: createForm.role === 'responder' ? createForm.unit_type || undefined : undefined,
       });
       toast.success(`${roleLabel(createForm.role)} account created`);
       setShowCreate(false);
-      setCreateForm({ full_name:'', username:'', password:'', phone:'', unit_type:'', role:'logistics' });
+      setCreateForm({ full_name:'', password:'', phone:'', unit_type:'', role:'logistics' });
       fetchUsers();
     } catch (error: any) {
       toast.error(error.response?.data?.error || 'Account creation failed');
@@ -87,7 +87,7 @@ export default function UsersPage() {
         <strong>{entry.full_name}</strong>
         <span className="barangay-console-status">{roleLabel(entry.role)}</span>
         <span className={`barangay-console-status ${entry.status === 'active' ? 'active' : entry.status === 'inactive' ? 'inactive' : 'pending'}`}>{entry.status.replaceAll('_', ' ')}</span>
-        <small>{entry.username ? `@${entry.username}` : 'Username not set'}{entry.phone ? ` · ${formatMobileNumber(entry.phone)}` : ''}</small>
+        <small>{formatMobileNumber(entry.phone)}</small>
       </div>
       <div className="barangay-team-card-actions">
         <button type="button" title="Edit account" aria-label={`Edit ${entry.full_name}`} onClick={() => openEdit(entry)}><Edit3 size={16} /></button>
@@ -181,12 +181,8 @@ export default function UsersPage() {
               <input className="form-input" required minLength={2} value={createForm.full_name} onChange={event => setCreateForm({...createForm,full_name:event.target.value})} />
             </div>
             <div className="form-group">
-              <label className="form-label">Username</label>
-              <input className="form-input" autoComplete="username" required minLength={3} maxLength={32} pattern="[A-Za-z0-9_.-]+" title="Use 3–32 letters, numbers, dots, underscores, or hyphens." value={createForm.username} onChange={event => setCreateForm({...createForm,username:event.target.value})} />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Contact Number (optional)</label>
-              <MobileNumberInput className="form-input" value={createForm.phone} onValueChange={(phone) => setCreateForm({...createForm, phone})} placeholder="09XXXXXXXXX" />
+              <label className="form-label">Mobile number</label>
+              <MobileNumberInput className="form-input" value={createForm.phone} onValueChange={(phone) => setCreateForm({...createForm, phone})} placeholder="09XXXXXXXXX" required />
             </div>
             <div className="form-group">
               <label className="form-label">Role</label>
@@ -198,7 +194,7 @@ export default function UsersPage() {
               </select>
             </div>
             <div className="form-group">
-              <label className="form-label">Temporary Password (minimum 8 characters)</label>
+              <label className="form-label">Password (minimum 8 characters)</label>
               <PasswordInput className="form-input" autoComplete="new-password" required minLength={8} value={createForm.password} onChange={event => setCreateForm({...createForm,password:event.target.value})} />
             </div>
             {createForm.role === 'responder' && (

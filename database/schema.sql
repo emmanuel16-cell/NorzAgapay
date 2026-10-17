@@ -54,8 +54,6 @@ END $$;
 CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   full_name TEXT NOT NULL,
-  username TEXT,
-  email TEXT UNIQUE,
   phone VARCHAR(15),
   password_hash TEXT NOT NULL,
   role user_role NOT NULL DEFAULT 'responder',
@@ -67,10 +65,6 @@ CREATE TABLE IF NOT EXISTS users (
   last_seen TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
-CREATE UNIQUE INDEX IF NOT EXISTS users_username_lower_unique_idx
-  ON users (lower(username))
-  WHERE username IS NOT NULL;
 
 -- Certifications table
 CREATE TABLE IF NOT EXISTS certifications (
@@ -155,7 +149,6 @@ CREATE TABLE IF NOT EXISTS resource_requests (
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
 CREATE INDEX IF NOT EXISTS idx_users_status ON users(status);
 CREATE INDEX IF NOT EXISTS idx_users_location ON users(latitude, longitude);
-CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 
 CREATE INDEX IF NOT EXISTS idx_certifications_user_id ON certifications(user_id);
 CREATE INDEX IF NOT EXISTS idx_certifications_verified ON certifications(verified);
@@ -326,7 +319,6 @@ CREATE TABLE IF NOT EXISTS officers (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
   phone TEXT,
-  email TEXT,
   specialization TEXT NOT NULL,
   rank TEXT,
   status TEXT NOT NULL DEFAULT 'active',
@@ -1225,8 +1217,6 @@ CREATE TABLE IF NOT EXISTS barangay_users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   barangay_id UUID REFERENCES barangays(id) ON DELETE CASCADE,
   full_name TEXT NOT NULL DEFAULT '',
-  email TEXT UNIQUE,
-  username TEXT,
   phone VARCHAR(15),
   password_hash TEXT NOT NULL DEFAULT '',
   role barangay_role NOT NULL DEFAULT 'staff',
@@ -1238,8 +1228,6 @@ CREATE TABLE IF NOT EXISTS barangay_users (
 -- Ensure all columns exist
 ALTER TABLE barangay_users ADD COLUMN IF NOT EXISTS barangay_id UUID REFERENCES barangays(id) ON DELETE CASCADE;
 ALTER TABLE barangay_users ADD COLUMN IF NOT EXISTS full_name TEXT NOT NULL DEFAULT '';
-ALTER TABLE barangay_users ADD COLUMN IF NOT EXISTS email TEXT;
-ALTER TABLE barangay_users ADD COLUMN IF NOT EXISTS username TEXT;
 ALTER TABLE barangay_users ADD COLUMN IF NOT EXISTS phone VARCHAR(15);
 ALTER TABLE barangay_users ADD COLUMN IF NOT EXISTS password_hash TEXT NOT NULL DEFAULT '';
 ALTER TABLE barangay_users ADD COLUMN IF NOT EXISTS role barangay_role NOT NULL DEFAULT 'staff';
@@ -1247,12 +1235,7 @@ ALTER TABLE barangay_users ADD COLUMN IF NOT EXISTS added_by UUID REFERENCES bar
 ALTER TABLE barangay_users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true;
 ALTER TABLE barangay_users ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now();
 
-ALTER TABLE barangay_users ALTER COLUMN email DROP NOT NULL;
-ALTER TABLE barangay_users ALTER COLUMN email DROP DEFAULT;
-
 CREATE INDEX IF NOT EXISTS idx_barangay_users_barangay_id ON barangay_users(barangay_id);
-CREATE INDEX IF NOT EXISTS idx_barangay_users_email ON barangay_users(email);
-CREATE UNIQUE INDEX IF NOT EXISTS barangay_users_username_lower_unique_idx ON barangay_users (lower(username)) WHERE username IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_barangay_users_role ON barangay_users(role);
 
 -- ============================================
@@ -1372,7 +1355,6 @@ CREATE TABLE IF NOT EXISTS barangay_dispatcher_verifications (
   user_id UUID, -- References the existing barangay administrator's barangay_users(id)
   barangay_id UUID NOT NULL REFERENCES barangays(id) ON DELETE CASCADE,
   full_name TEXT NOT NULL DEFAULT '',
-  email TEXT NOT NULL DEFAULT '',
   password_hash TEXT,
   phone VARCHAR(20),
   position_designation TEXT NOT NULL DEFAULT 'Barangay Dispatcher',
@@ -1545,8 +1527,6 @@ ALTER TABLE public.users
 CREATE TABLE IF NOT EXISTS public.resident_user (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   full_name TEXT NOT NULL,
-  username TEXT,
-  email TEXT UNIQUE,
   phone VARCHAR(15),
   password_hash TEXT NOT NULL,
   barangay_name TEXT NOT NULL DEFAULT 'Poblacion',
@@ -1558,36 +1538,12 @@ CREATE TABLE IF NOT EXISTS public.resident_user (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS resident_user_username_lower_unique_idx
-  ON public.resident_user (lower(username))
-  WHERE username IS NOT NULL;
-
 ALTER TABLE public.resident_user ENABLE ROW LEVEL SECURITY;
 
 -- incident_reports.reporter_id is polymorphic: it may identify a staff user
 -- or a resident_user. reporter_type distinguishes the account table.
 ALTER TABLE public.incident_reports
   DROP CONSTRAINT IF EXISTS incident_reports_reporter_id_fkey;
-
--- ===== Source section: database/migrations/incident_reporter_email_migration.sql =====
--- Store the resident's email separately from their phone number on incident reports.
-ALTER TABLE public.incident_reports
-  ADD COLUMN IF NOT EXISTS reporter_email TEXT;
-
--- Repair legacy resident reports where an email was mistakenly saved as a phone.
-UPDATE public.incident_reports
-SET reporter_email = COALESCE(NULLIF(reporter_email, ''), reporter_phone),
-    reporter_phone = NULL
-WHERE reporter_phone LIKE '%@%';
-
--- Fill known reporter details from resident accounts when a report has a linked account.
-UPDATE public.incident_reports AS report
-SET reporter_name = COALESCE(NULLIF(report.reporter_name, ''), resident.full_name),
-    reporter_email = COALESCE(NULLIF(report.reporter_email, ''), resident.email),
-    reporter_phone = COALESCE(NULLIF(report.reporter_phone, ''), NULLIF(resident.phone, ''))
-FROM public.resident_user AS resident
-WHERE (report.reporter_type = 'resident' AND report.reporter_id = resident.id)
-   OR lower(COALESCE(report.reporter_email, '')) = lower(resident.email);
 
 -- ===== Source section: database/migrations/dashboard_roles_add.sql =====
 -- The user_role enum is created with its final labels in the base schema.
@@ -3015,7 +2971,6 @@ CREATE TABLE IF NOT EXISTS public.barangay_reports (
   reporter_type             TEXT DEFAULT 'resident',
   reporter_name             TEXT,
   reporter_phone            TEXT,
-  reporter_email            TEXT,
 
   -- Barangay routing
   barangay_id               UUID,
@@ -3107,7 +3062,6 @@ ALTER TABLE public.barangay_reports
   ADD COLUMN IF NOT EXISTS reporter_type TEXT DEFAULT 'resident',
   ADD COLUMN IF NOT EXISTS reporter_name TEXT,
   ADD COLUMN IF NOT EXISTS reporter_phone TEXT,
-  ADD COLUMN IF NOT EXISTS reporter_email TEXT,
   ADD COLUMN IF NOT EXISTS barangay_id UUID,
   ADD COLUMN IF NOT EXISTS response_status TEXT NOT NULL DEFAULT 'pending',
   ADD COLUMN IF NOT EXISTS response_notes TEXT,
@@ -3270,7 +3224,6 @@ CREATE TABLE IF NOT EXISTS public.mdrrmo_reports (
   reporter_type               TEXT DEFAULT 'resident',
   reporter_name               TEXT,
   reporter_phone              TEXT,
-  reporter_email              TEXT,
 
   -- Barangay context
   barangay_id                 UUID,
@@ -3344,7 +3297,6 @@ ALTER TABLE public.mdrrmo_reports
   ADD COLUMN IF NOT EXISTS reporter_type TEXT DEFAULT 'resident',
   ADD COLUMN IF NOT EXISTS reporter_name TEXT,
   ADD COLUMN IF NOT EXISTS reporter_phone TEXT,
-  ADD COLUMN IF NOT EXISTS reporter_email TEXT,
   ADD COLUMN IF NOT EXISTS barangay_id UUID,
   ADD COLUMN IF NOT EXISTS barangay_name TEXT,
   ADD COLUMN IF NOT EXISTS response_status TEXT NOT NULL DEFAULT 'pending',
@@ -4126,7 +4078,7 @@ BEGIN
       latitude, longitude, address,
       incident_occurred_at, incident_time_precision, incident_type, severity,
       proof_url, proof_urls, proof_type, proof_types, evidence_status, responder_media,
-      reporter_id, reporter_type, reporter_name, reporter_phone, reporter_email,
+      reporter_id, reporter_type, reporter_name, reporter_phone,
       barangay_id,
       response_status, response_notes, responder_name, responded_by,
       dispatcher_reviewed_at, dispatched_at, accepted_at, arrived_at,
@@ -4164,7 +4116,6 @@ BEGIN
       || pg_temp.col_text('reporter_type', '''resident''') || ', '
       || pg_temp.col_text('reporter_name', 'NULL::TEXT') || ', '
       || pg_temp.col_text('reporter_phone', 'NULL::TEXT') || ', '
-      || pg_temp.col_text('reporter_email', 'NULL::TEXT') || ', '
       || pg_temp.col_raw('barangay_id', 'NULL::UUID') || ', '
       || 'CASE
         -- Escalated + received by barangay responder (accepted/responded) OR MDRRMO accepted/responding → barangay resolution complete
@@ -4257,7 +4208,7 @@ BEGIN
       latitude, longitude, address,
       incident_occurred_at, incident_time_precision, incident_type, severity,
       proof_url, proof_urls, proof_type, proof_types, evidence_status, responder_media,
-      reporter_id, reporter_type, reporter_name, reporter_phone, reporter_email,
+      reporter_id, reporter_type, reporter_name, reporter_phone,
       barangay_id,
       response_status, response_notes, coordination_notes,
       responder_name, responded_by,
@@ -4300,7 +4251,6 @@ BEGIN
       || pg_temp.col_text('reporter_type', '''resident''') || ', '
       || pg_temp.col_text('reporter_name', 'NULL::TEXT') || ', '
       || pg_temp.col_text('reporter_phone', 'NULL::TEXT') || ', '
-      || pg_temp.col_text('reporter_email', 'NULL::TEXT') || ', '
       || pg_temp.col_raw('barangay_id', 'NULL::UUID') || ', '
       || 'CASE
         WHEN lower(COALESCE(' || pg_temp.col_text('mdrrmo_response_status', '''pending''') || ', ''pending'')) IN (''responding'', ''in_progress'') THEN ''responding''
@@ -4948,6 +4898,21 @@ BEFORE INSERT OR UPDATE OF unit_id, responder_user_id, member_role, is_active
 ON public.respond_unit_members
 FOR EACH ROW EXECUTE FUNCTION public.enforce_respond_unit_member_role();
 
+CREATE OR REPLACE FUNCTION public.normalize_ph_mobile_number(p_phone TEXT)
+RETURNS TEXT
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+DECLARE
+  v_digits TEXT := regexp_replace(coalesce(p_phone, ''), '\D', '', 'g');
+BEGIN
+  IF v_digits ~ '^09[0-9]{9}$' THEN RETURN v_digits; END IF;
+  IF v_digits ~ '^639[0-9]{9}$' THEN RETURN '0' || substr(v_digits, 3); END IF;
+  IF v_digits ~ '^9[0-9]{9}$' THEN RETURN '0' || v_digits; END IF;
+  RETURN NULL;
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION public.assign_respond_unit_team_leader_v1(
   p_unit_id UUID,
   p_officer_id UUID,
@@ -4973,7 +4938,8 @@ BEGIN
   END IF;
   IF NOT EXISTS (
     SELECT 1 FROM public.officers
-    WHERE id = p_officer_id AND lower(email) = lower(v_user.email)
+    WHERE id = p_officer_id
+      AND public.normalize_ph_mobile_number(phone) = public.normalize_ph_mobile_number(v_user.phone)
   ) THEN
     RAISE EXCEPTION 'Team Leader profile must match the responder account' USING ERRCODE = '23514';
   END IF;
@@ -5987,7 +5953,7 @@ INSERT INTO public.mdrrmo_reports (
   latitude, longitude, address, incident_occurred_at, incident_time_precision,
   incident_type, severity, proof_url, proof_urls, proof_type, proof_types,
   evidence_status, responder_media, reporter_id, reporter_type, reporter_name,
-  reporter_phone, reporter_email, barangay_id, barangay_name, response_status,
+  reporter_phone, barangay_id, barangay_name, response_status,
   coordination_notes, client_request_id, client_submitted_at, created_at, updated_at
 )
 SELECT
@@ -6002,7 +5968,7 @@ SELECT
   COALESCE(report.proof_type, 'image'), COALESCE(report.proof_types, '{}'),
   COALESCE(report.evidence_status, 'ready'), COALESCE(report.responder_media, '[]'::jsonb),
   report.reporter_id, report.reporter_type, report.reporter_name, report.reporter_phone,
-  report.reporter_email, report.barangay_id, barangay.name, 'pending',
+  report.barangay_id, barangay.name, 'pending',
   CASE WHEN report.escalated_to_mdrrmo THEN report.mdrrmo_coordination_notes ELSE NULL END,
   report.client_request_id, report.client_submitted_at, report.created_at, now()
 FROM public.barangay_reports AS report
@@ -6483,127 +6449,135 @@ SET response_status = 'responding',
     accepted_at = COALESCE(accepted_at, dispatched_at)
 WHERE dispatched_at IS NOT NULL AND response_status = 'pending';
 
--- ===== Source section: database/migrations/20261015_global_account_username_registry.sql =====
--- Global, case-insensitive username uniqueness across all sign-in account types.
+-- ===== Source section: database/migrations/20261017_mobile_number_registry.sql =====
+-- Globally reserve normalized Philippine mobile numbers across all sign-in
+-- account tables. Run the preflight and resolve every result first.
+BEGIN;
+
 LOCK TABLE public.users, public.barangay_users, public.resident_user
   IN SHARE ROW EXCLUSIVE MODE;
+
+CREATE OR REPLACE FUNCTION public.normalize_ph_mobile_number(p_phone TEXT)
+RETURNS TEXT
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+DECLARE
+  v_digits TEXT := regexp_replace(coalesce(p_phone, ''), '\D', '', 'g');
+BEGIN
+  IF v_digits ~ '^09[0-9]{9}$' THEN RETURN v_digits; END IF;
+  IF v_digits ~ '^639[0-9]{9}$' THEN RETURN '0' || substr(v_digits, 3); END IF;
+  IF v_digits ~ '^9[0-9]{9}$' THEN RETURN '0' || v_digits; END IF;
+  RETURN NULL;
+END;
+$$;
 
 DO $$
 BEGIN
   IF EXISTS (
-    WITH usernames AS (
-      SELECT lower(btrim(username)) AS username_normalized FROM public.users WHERE nullif(btrim(username), '') IS NOT NULL
-      UNION ALL
-      SELECT lower(btrim(username)) FROM public.barangay_users WHERE nullif(btrim(username), '') IS NOT NULL
-      UNION ALL
-      SELECT lower(btrim(username)) FROM public.resident_user WHERE nullif(btrim(username), '') IS NOT NULL
-    )
-    SELECT 1 FROM usernames GROUP BY username_normalized HAVING count(*) > 1
+    SELECT 1 FROM (
+      SELECT id, phone FROM public.users
+      UNION ALL SELECT id, phone FROM public.barangay_users
+      UNION ALL SELECT id, phone FROM public.resident_user
+    ) AS accounts
+    WHERE public.normalize_ph_mobile_number(phone) IS NULL
   ) THEN
-    RAISE EXCEPTION 'Global username registry setup stopped: resolve cross-account username collisions first.';
+    RAISE EXCEPTION 'Mobile-number registry migration stopped: every sign-in account must have a valid Philippine mobile number. Run 20261017_mobile_number_auth_preflight.sql.';
   END IF;
 
   IF EXISTS (
-    SELECT 1 FROM public.users
-    WHERE nullif(btrim(username), '') IS NOT NULL AND lower(btrim(username)) !~ '^[a-z0-9_.-]{3,32}$'
-    UNION ALL
-    SELECT 1 FROM public.barangay_users
-    WHERE nullif(btrim(username), '') IS NOT NULL AND lower(btrim(username)) !~ '^[a-z0-9_.-]{3,32}$'
-    UNION ALL
-    SELECT 1 FROM public.resident_user
-    WHERE nullif(btrim(username), '') IS NOT NULL AND lower(btrim(username)) !~ '^[a-z0-9_.-]{3,32}$'
+    SELECT phone_normalized FROM (
+      SELECT public.normalize_ph_mobile_number(phone) AS phone_normalized FROM public.users
+      UNION ALL SELECT public.normalize_ph_mobile_number(phone) FROM public.barangay_users
+      UNION ALL SELECT public.normalize_ph_mobile_number(phone) FROM public.resident_user
+    ) AS account_phones
+    GROUP BY phone_normalized HAVING count(*) > 1
   ) THEN
-    RAISE EXCEPTION 'Global username registry setup stopped: resolve usernames outside the supported 3–32 character format first.';
+    RAISE EXCEPTION 'Mobile-number registry migration stopped: normalized mobile numbers are shared by multiple accounts. Run 20261017_mobile_number_auth_preflight.sql.';
   END IF;
 END;
 $$;
 
+-- Canonicalize all verified existing account numbers before the first lookup
+-- or future account write, so +639XXXXXXXXX and 09XXXXXXXXX resolve identically.
 UPDATE public.users
-SET username = lower(nullif(btrim(username), ''))
-WHERE username IS DISTINCT FROM lower(nullif(btrim(username), ''));
+SET phone = public.normalize_ph_mobile_number(phone)
+WHERE phone IS DISTINCT FROM public.normalize_ph_mobile_number(phone);
 UPDATE public.barangay_users
-SET username = lower(nullif(btrim(username), ''))
-WHERE username IS DISTINCT FROM lower(nullif(btrim(username), ''));
+SET phone = public.normalize_ph_mobile_number(phone)
+WHERE phone IS DISTINCT FROM public.normalize_ph_mobile_number(phone);
 UPDATE public.resident_user
-SET username = lower(nullif(btrim(username), ''))
-WHERE username IS DISTINCT FROM lower(nullif(btrim(username), ''));
+SET phone = public.normalize_ph_mobile_number(phone)
+WHERE phone IS DISTINCT FROM public.normalize_ph_mobile_number(phone);
 
-CREATE TABLE IF NOT EXISTS public.account_usernames (
-  username_normalized TEXT PRIMARY KEY,
+ALTER TABLE public.users ALTER COLUMN phone SET NOT NULL;
+ALTER TABLE public.barangay_users ALTER COLUMN phone SET NOT NULL;
+ALTER TABLE public.resident_user ALTER COLUMN phone SET NOT NULL;
+
+CREATE TABLE IF NOT EXISTS public.account_mobile_numbers (
+  phone_normalized TEXT PRIMARY KEY CHECK (phone_normalized ~ '^09[0-9]{9}$'),
   account_table TEXT NOT NULL CHECK (account_table IN ('users', 'barangay_users', 'resident_user')),
   account_id TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  CONSTRAINT account_usernames_account_unique UNIQUE (account_table, account_id)
+  CONSTRAINT account_mobile_numbers_account_unique UNIQUE (account_table, account_id)
 );
-ALTER TABLE public.account_usernames ENABLE ROW LEVEL SECURITY;
-GRANT SELECT ON public.account_usernames TO service_role;
+ALTER TABLE public.account_mobile_numbers ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.account_mobile_numbers FROM PUBLIC, anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.account_mobile_numbers TO service_role;
 
-INSERT INTO public.account_usernames (username_normalized, account_table, account_id)
-SELECT lower(btrim(username)), account_table, account_id
+INSERT INTO public.account_mobile_numbers (phone_normalized, account_table, account_id)
+SELECT public.normalize_ph_mobile_number(phone), account_table, account_id
 FROM (
-  SELECT username, 'users'::text AS account_table, id::text AS account_id FROM public.users
+  SELECT phone, 'users'::text AS account_table, id::text AS account_id FROM public.users
   UNION ALL
-  SELECT username, 'barangay_users', id::text FROM public.barangay_users
+  SELECT phone, 'barangay_users', id::text FROM public.barangay_users
   UNION ALL
-  SELECT username, 'resident_user', id::text FROM public.resident_user
-) AS all_accounts
-WHERE nullif(btrim(username), '') IS NOT NULL
-ON CONFLICT (username_normalized) DO NOTHING;
+  SELECT phone, 'resident_user', id::text FROM public.resident_user
+) AS accounts;
 
-CREATE OR REPLACE FUNCTION public.sync_account_username_registry()
+CREATE OR REPLACE FUNCTION public.sync_account_mobile_number()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
 DECLARE
-  normalized_username TEXT;
+  v_phone TEXT;
 BEGIN
   IF TG_OP = 'DELETE' THEN
-    DELETE FROM public.account_usernames
+    DELETE FROM public.account_mobile_numbers
     WHERE account_table = TG_TABLE_NAME AND account_id = OLD.id::text;
     RETURN OLD;
   END IF;
 
-  normalized_username := lower(nullif(btrim(NEW.username), ''));
-  IF normalized_username IS NULL THEN
-    IF TG_OP = 'INSERT' THEN
-      RAISE EXCEPTION 'A username is required for new sign-in accounts.'
-        USING ERRCODE = '23502', CONSTRAINT = 'account_username_required';
-    ELSIF nullif(btrim(OLD.username), '') IS NOT NULL THEN
-      RAISE EXCEPTION 'A username is required for new sign-in accounts.'
-        USING ERRCODE = '23502', CONSTRAINT = 'account_username_required';
-    END IF;
-    RETURN NEW;
+  v_phone := public.normalize_ph_mobile_number(NEW.phone);
+  IF v_phone IS NULL THEN
+    RAISE EXCEPTION 'A valid Philippine mobile number is required for every sign-in account.'
+      USING ERRCODE = '23514', CONSTRAINT = 'account_mobile_numbers_phone_format';
   END IF;
 
-  IF normalized_username !~ '^[a-z0-9_.-]{3,32}$' THEN
-    RAISE EXCEPTION 'Username must be 3–32 characters using letters, numbers, dots, underscores, or hyphens.'
-      USING ERRCODE = '23514', CONSTRAINT = 'account_username_format_check';
-  END IF;
-
-  NEW.username := normalized_username;
-  INSERT INTO public.account_usernames (username_normalized, account_table, account_id)
-  VALUES (normalized_username, TG_TABLE_NAME, NEW.id::text)
+  NEW.phone := v_phone;
+  INSERT INTO public.account_mobile_numbers (phone_normalized, account_table, account_id)
+  VALUES (v_phone, TG_TABLE_NAME, NEW.id::text)
   ON CONFLICT (account_table, account_id)
-  DO UPDATE SET username_normalized = EXCLUDED.username_normalized;
+  DO UPDATE SET phone_normalized = EXCLUDED.phone_normalized;
   RETURN NEW;
 END;
 $$;
+REVOKE ALL ON FUNCTION public.sync_account_mobile_number() FROM PUBLIC, anon, authenticated;
 
-DROP TRIGGER IF EXISTS users_sync_username_registry ON public.users;
-CREATE TRIGGER users_sync_username_registry
-BEFORE INSERT OR UPDATE OF username OR DELETE ON public.users
-FOR EACH ROW EXECUTE FUNCTION public.sync_account_username_registry();
-DROP TRIGGER IF EXISTS barangay_users_sync_username_registry ON public.barangay_users;
-CREATE TRIGGER barangay_users_sync_username_registry
-BEFORE INSERT OR UPDATE OF username OR DELETE ON public.barangay_users
-FOR EACH ROW EXECUTE FUNCTION public.sync_account_username_registry();
-DROP TRIGGER IF EXISTS resident_user_sync_username_registry ON public.resident_user;
-CREATE TRIGGER resident_user_sync_username_registry
-BEFORE INSERT OR UPDATE OF username OR DELETE ON public.resident_user
-FOR EACH ROW EXECUTE FUNCTION public.sync_account_username_registry();
+DROP TRIGGER IF EXISTS users_sync_mobile_number ON public.users;
+CREATE TRIGGER users_sync_mobile_number
+BEFORE INSERT OR UPDATE OF phone OR DELETE ON public.users
+FOR EACH ROW EXECUTE FUNCTION public.sync_account_mobile_number();
+DROP TRIGGER IF EXISTS barangay_users_sync_mobile_number ON public.barangay_users;
+CREATE TRIGGER barangay_users_sync_mobile_number
+BEFORE INSERT OR UPDATE OF phone OR DELETE ON public.barangay_users
+FOR EACH ROW EXECUTE FUNCTION public.sync_account_mobile_number();
+DROP TRIGGER IF EXISTS resident_user_sync_mobile_number ON public.resident_user;
+CREATE TRIGGER resident_user_sync_mobile_number
+BEFORE INSERT OR UPDATE OF phone OR DELETE ON public.resident_user
+FOR EACH ROW EXECUTE FUNCTION public.sync_account_mobile_number();
 
-COMMENT ON TABLE public.account_usernames IS 'Internal global username reservations synchronized transactionally from sign-in account tables.';
-
+COMMENT ON TABLE public.account_mobile_numbers IS 'Global normalized phone reservations for resident, barangay, and MDRRMO sign-in accounts.';
 COMMIT;

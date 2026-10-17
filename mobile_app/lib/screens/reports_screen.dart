@@ -575,7 +575,6 @@ class _ReportsScreenState extends State<ReportsScreen>
         reportType: report.type,
         title: report.title,
         reporterName: report.reporterName,
-        reporterEmail: report.reporterEmail,
         reporterPhone: report.reporterPhone,
         classification: [specifics, report.severity]
             .whereType<String>()
@@ -748,26 +747,6 @@ class _ReportsScreenState extends State<ReportsScreen>
                   const SizedBox(height: 10),
                   Row(
                     children: [
-                      if ((report.reporterEmail ?? '').isNotEmpty) ...[
-                        const Icon(
-                          Icons.email_outlined,
-                          size: 14,
-                          color: Color(0xFF1B4F72),
-                        ),
-                        const SizedBox(width: 4),
-                        Expanded(
-                          child: Text(
-                            report.reporterEmail!,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: Color(0xFF1B4F72),
-                              fontSize: 12,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                      ],
                       if (report.createdAt != null) ...[
                         const Icon(
                           Icons.access_time,

@@ -17,7 +17,6 @@ interface UnitMember {
   member_role: MemberRole;
   role_label?: string;
   name: string;
-  email?: string | null;
   phone?: string | null;
   specialization?: string;
   status?: string;
@@ -27,7 +26,6 @@ interface UnitMember {
 interface ResponderAccount {
   id: string;
   full_name: string;
-  email: string;
   phone?: string | null;
   officer_id?: string | null;
   officer_name?: string | null;
@@ -37,7 +35,6 @@ interface ResponderAccount {
 interface OfficerProfile {
   id: string;
   name: string;
-  email?: string | null;
   phone?: string | null;
   specialization?: string | null;
   status?: string;
@@ -50,7 +47,7 @@ interface RespondUnit {
   status: string;
   created_at: string;
   team_leader_user_id?: string | null;
-  team_leader?: { id: string; full_name: string; email: string; is_active_account?: boolean } | null;
+  team_leader?: { id: string; full_name: string; phone?: string | null; is_active_account?: boolean } | null;
   members: UnitMember[];
   roster_ready: boolean;
   is_active_today: boolean;
@@ -420,7 +417,7 @@ export default function RespondUnitsPage() {
                 <div className="ru-member-info">
                   <small>TEAM LEADER · RESPONDER ACCOUNT</small>
                   <strong>{selectedUnit.team_leader?.full_name || 'No Team Leader assigned'}</strong>
-                  {selectedUnit.team_leader?.email && <span>{selectedUnit.team_leader.email}</span>}
+                  {selectedUnit.team_leader?.phone && <span>{formatMobileNumber(selectedUnit.team_leader.phone)}</span>}
                 </div>
                 <span className={`ru-member-status ${selectedUnit.team_leader && !selectedUnit.team_leader.is_active_account ? 'inactive' : ''}`}>{selectedUnit.team_leader ? selectedUnit.team_leader.is_active_account ? 'Assigned' : 'Account inactive' : 'Required'}</span>
               </div>
@@ -483,8 +480,8 @@ export default function RespondUnitsPage() {
             <div className="form-group"><label className="form-label">Unit name *</label><input className="form-input" required minLength={2} maxLength={100} placeholder="e.g. Alpha Rescue Team" value={unitForm.unit_name} onChange={(event) => setUnitForm({ ...unitForm, unit_name: event.target.value })} /></div>
             <div className="form-group"><label className="form-label">Specialization *</label><input className="form-input" required maxLength={120} value={unitForm.specialization} onChange={(event) => setUnitForm({ ...unitForm, specialization: event.target.value })} /></div>
             {editingUnit && <div className="form-group"><label className="form-label">Status</label><select className="form-select" value={unitForm.status} onChange={(event) => setUnitForm({ ...unitForm, status: event.target.value })}><option value="available">Available</option><option value="unavailable">Unavailable</option><option value="maintenance">Maintenance</option></select></div>}
-            <div className="form-group"><label className="form-label">Team Leader · MDRRMO mobile responder</label><select className="form-select" value={unitForm.team_leader_user_id} onChange={(event) => setUnitForm({ ...unitForm, team_leader_user_id: event.target.value })}><option value="">Assign a Team Leader later</option>{editingUnit?.team_leader_user_id && !leaderAccounts.some((account) => account.id === editingUnit.team_leader_user_id) && <option value={editingUnit.team_leader_user_id}>{editingUnit.team_leader?.full_name || 'Current Team Leader'}</option>}{leaderAccounts.length > 0 && <optgroup label="Active MDRRMO mobile responder accounts">{leaderAccounts.map((account) => <option key={account.id} value={account.id}>{account.officer_name || account.full_name} · {account.email}</option>)}</optgroup>}{officerProfiles.length > 0 && <optgroup label="MDRRMO Officers without an active mobile account">{officerProfiles.map((officer) => <option key={officer.id} value={`officer-${officer.id}`} disabled>{officer.name}{officer.email ? ` · ${officer.email}` : ''} · account needed</option>)}</optgroup>}</select>
-              {leaderAccountsError ? <small className="ru-form-warning" role="status">{leaderAccountsError} {officerProfiles.length > 0 ? 'Officer profiles are shown below, but they need an active mobile responder account to be assigned as Team Leader.' : ''} You can still create the unit and assign the Team Leader later.</small> : leaderAccounts.length === 0 ? <small className="ru-form-warning" role="status">{officerProfiles.length > 0 ? `Found ${officerProfiles.length} active MDRRMO Officer profile(s), but none has a matching active mobile responder account. Create or activate a responder account with the same email, then retry.` : noLeaderAccountsMessage}</small> : <small className="ru-form-hint">Officer profiles are matched to MDRRMO mobile responder accounts by email. Assign one now or later; the unit also needs a Driver Responder, a First Aider Responder, and today’s activation before dispatch.</small>}
+            <div className="form-group"><label className="form-label">Team Leader · MDRRMO mobile responder</label><select className="form-select" value={unitForm.team_leader_user_id} onChange={(event) => setUnitForm({ ...unitForm, team_leader_user_id: event.target.value })}><option value="">Assign a Team Leader later</option>{editingUnit?.team_leader_user_id && !leaderAccounts.some((account) => account.id === editingUnit.team_leader_user_id) && <option value={editingUnit.team_leader_user_id}>{editingUnit.team_leader?.full_name || 'Current Team Leader'}</option>}{leaderAccounts.length > 0 && <optgroup label="Active MDRRMO mobile responder accounts">{leaderAccounts.map((account) => <option key={account.id} value={account.id}>{account.officer_name || account.full_name}{account.phone ? ` · ${formatMobileNumber(account.phone)}` : ''}</option>)}</optgroup>}{officerProfiles.length > 0 && <optgroup label="MDRRMO Officers without an active mobile account">{officerProfiles.map((officer) => <option key={officer.id} value={`officer-${officer.id}`} disabled>{officer.name}{officer.phone ? ` · ${formatMobileNumber(officer.phone)}` : ''} · account needed</option>)}</optgroup>}</select>
+              {leaderAccountsError ? <small className="ru-form-warning" role="status">{leaderAccountsError} {officerProfiles.length > 0 ? 'Officer profiles are shown below, but they need an active mobile responder account to be assigned as Team Leader.' : ''} You can still create the unit and assign the Team Leader later.</small> : leaderAccounts.length === 0 ? <small className="ru-form-warning" role="status">{officerProfiles.length > 0 ? `Found ${officerProfiles.length} active MDRRMO Officer profile(s), but none has a matching active mobile responder account. Create or activate a responder account with the same mobile number, then retry.` : noLeaderAccountsMessage}</small> : <small className="ru-form-hint">Officer profiles are matched to MDRRMO mobile responder accounts by mobile number. Assign one now or later; the unit also needs a Driver Responder, a First Aider Responder, and today’s activation before dispatch.</small>}
             </div>
             <div className="modal-footer">
               {editingUnit && <button type="button" className="btn btn-danger ru-delete-unit" onClick={() => void deleteUnit()} disabled={saving || deletingUnit || editingUnit.members.length > 0}><Trash2 size={15} /> {deletingUnit ? 'Deleting…' : 'Delete Unit'}</button>}

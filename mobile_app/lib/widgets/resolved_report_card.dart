@@ -8,7 +8,6 @@ class ResolvedReportCard extends StatelessWidget {
   final String reportType;
   final String title;
   final String? reporterName;
-  final String? reporterEmail;
   final String? reporterPhone;
   final String? classification;
   final DateTime? receivedAt;
@@ -27,7 +26,6 @@ class ResolvedReportCard extends StatelessWidget {
     required this.onTap,
     required this.loadPdf,
     this.reporterName,
-    this.reporterEmail,
     this.reporterPhone,
     this.classification,
     this.receivedAt,
@@ -42,9 +40,7 @@ class ResolvedReportCard extends StatelessWidget {
     final typeColor = reportType.toLowerCase().contains('emergency')
         ? const Color(0xFFEF4444)
         : const Color(0xFFF59E0B);
-    final emailOrPhone = (reporterEmail ?? '').trim().isNotEmpty
-        ? reporterEmail!.trim()
-        : (reporterPhone ?? '').trim();
+    final phone = (reporterPhone ?? '').trim();
     final details = (classification ?? '').trim();
 
     return Card(
@@ -106,9 +102,9 @@ class ResolvedReportCard extends StatelessWidget {
                       ),
                     ),
                   ],
-                  if (emailOrPhone.isNotEmpty) ...[
+                  if (phone.isNotEmpty) ...[
                     const SizedBox(height: 8),
-                    _detailLine(Icons.email_outlined, emailOrPhone),
+                    _detailLine(Icons.phone_outlined, phone),
                   ],
                   if (receivedAt != null) ...[
                     const SizedBox(height: 4),

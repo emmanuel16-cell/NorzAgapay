@@ -34,19 +34,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _isSubmitting = false;
   int _registrationCooldownSeconds = 0;
   Timer? _registrationCooldownTimer;
-  String _registrationOtpChannel = 'email';
 
   // Form Controllers
   final _signInFormKey = GlobalKey<FormState>();
   final _regFormKey = GlobalKey<FormState>();
 
-  final _signInContactController = TextEditingController();
+  final _signInPhoneController = TextEditingController();
   final _signInPasswordController = TextEditingController();
 
   final _regNameController = TextEditingController();
-  final _regUsernameController = TextEditingController();
   final _regContactController = TextEditingController();
-  final _regEmailController = TextEditingController();
+  final _regPasswordController = TextEditingController();
 
   String? _selectedBarangayId;
   String? _selectedBarangayName;
@@ -210,7 +208,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _handleSignIn() async {
     if (!_signInFormKey.currentState!.validate()) return;
 
-    final email = _signInContactController.text.trim().toLowerCase();
+    final phone = PhoneNumberUtils.digitsOnly(_signInPhoneController.text);
     final password = _signInPasswordController.text;
 
     setState(() => _isSubmitting = true);
@@ -222,7 +220,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           'ngrok-skip-browser-warning': 'true',
         },
         body: jsonEncode({
-          'email': email,
+          'phone': phone,
           'password': password,
         }),
       ).timeout(const Duration(seconds: 30));
@@ -236,7 +234,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
           'user_id': user['id'],
           'contact_number': user['phone'] ?? '',
           'full_name': user['full_name'] ?? 'Resident Citizen',
-          'email': user['email'] ?? email,
           'barangay_name': user['barangay_name'] ?? 'Poblacion',
           'token': token,
           'is_logged_in': true,
@@ -247,7 +244,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(data['error'] ?? 'Invalid email or password.'),
+              content: Text(data['error'] ?? 'Invalid mobile number or password.'),
               backgroundColor: const Color(0xFFEF4444),
             ),
           );
@@ -270,13 +267,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _showForgotPasswordDialog() async {
-    final emailController = TextEditingController(
-      text: _signInContactController.text.trim(),
-    );
+    final phoneController = TextEditingController(text: _signInPhoneController.text.trim());
     final otpController = TextEditingController();
     final passwordController = TextEditingController();
     final confirmPasswordController = TextEditingController();
-    var deliveryMethod = 'email';
     var otpSent = false;
     var isSubmitting = false;
     String? errorMessage;
@@ -292,621 +286,211 @@ class _ProfileScreenState extends State<ProfileScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text(
-                    'Choose email or mobile. We will send a one-time code to the contact saved on your resident account.',
-                    style: TextStyle(color: Color(0xFF64748B)),
-                  ),
+                  const Text('We will send a verification code by SMS to your mobile number.'),
                   const SizedBox(height: 14),
                   TextField(
-                    controller: emailController,
-                    keyboardType: TextInputType.emailAddress,
+                    controller: phoneController,
+                    keyboardType: TextInputType.phone,
+                    inputFormatters: PhoneNumberUtils.inputFormatters,
                     enabled: !otpSent,
-                    decoration: const InputDecoration(
-                      labelText: 'Email Address',
-                      prefixIcon: Icon(Icons.email_outlined),
-                    ),
+                    decoration: const InputDecoration(labelText: 'Mobile number', hintText: '09XXXXXXXXX', prefixIcon: Icon(Icons.phone_outlined)),
                   ),
-                  if (!otpSent) ...[
-                    const SizedBox(height: 12),
-                    const Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'Send the code to',
-                        style: TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Wrap(
-                      spacing: 8,
-                      children: [
-                        ChoiceChip(
-                          label: const Text('Email / Gmail'),
-                          selected: deliveryMethod == 'email',
-                          onSelected: isSubmitting
-                              ? null
-                              : (_) => setDialogState(
-                                  () => deliveryMethod = 'email',
-                                ),
-                        ),
-                        ChoiceChip(
-                          label: const Text('Mobile SMS'),
-                          selected: deliveryMethod == 'sms',
-                          onSelected: isSubmitting
-                              ? null
-                              : (_) => setDialogState(
-                                  () => deliveryMethod = 'sms',
-                                ),
-                        ),
-                      ],
-                    ),
-                    if (deliveryMethod == 'sms')
-                      const Padding(
-                        padding: EdgeInsets.only(top: 4),
-                        child: Text(
-                          'The code goes to the mobile number saved on your resident account.',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Color(0xFF64748B),
-                          ),
-                        ),
-                      ),
-                  ],
                   if (otpSent) ...[
                     const SizedBox(height: 12),
-                    Text(
-                      deliveryMessage ??
-                          'Check your selected delivery method for the code.',
-                      style: const TextStyle(color: Color(0xFF15803D)),
-                    ),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: TextButton(
-                        onPressed: isSubmitting
-                            ? null
-                            : () => setDialogState(() {
-                                otpSent = false;
-                                otpController.clear();
-                                deliveryMessage = null;
-                                errorMessage = null;
-                              }),
-                        child: const Text('Change delivery method / resend'),
-                      ),
-                    ),
-                    TextField(
-                      controller: otpController,
-                      keyboardType: TextInputType.number,
-                      maxLength: 6,
-                      decoration: const InputDecoration(
-                        labelText: '6-Digit Verification Code',
-                        prefixIcon: Icon(Icons.pin_outlined),
-                      ),
-                    ),
-                    TextField(
-                      controller: passwordController,
-                      obscureText: true,
-                      decoration: const InputDecoration(
-                        labelText: 'New Password',
-                        helperText: 'At least 6 characters',
-                        prefixIcon: Icon(Icons.lock_outline),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: confirmPasswordController,
-                      obscureText: true,
-                      decoration: const InputDecoration(
-                        labelText: 'Confirm New Password',
-                        prefixIcon: Icon(Icons.lock_outline),
-                      ),
-                    ),
+                    Text(deliveryMessage ?? 'Enter the verification code sent by SMS.'),
+                    TextField(controller: otpController, keyboardType: TextInputType.number, maxLength: 6, decoration: const InputDecoration(labelText: '6-digit SMS code')),
+                    TextField(controller: passwordController, obscureText: true, decoration: const InputDecoration(labelText: 'New password', helperText: 'At least 8 characters')),
+                    TextField(controller: confirmPasswordController, obscureText: true, decoration: const InputDecoration(labelText: 'Confirm new password')),
                   ],
                   if (errorMessage != null) ...[
                     const SizedBox(height: 10),
-                    Text(
-                      errorMessage!,
-                      style: const TextStyle(color: Color(0xFFDC2626)),
-                    ),
+                    Text(errorMessage!, style: const TextStyle(color: Color(0xFFDC2626))),
                   ],
                 ],
               ),
             ),
             actions: [
-              TextButton(
-                onPressed: isSubmitting
-                    ? null
-                    : () => Navigator.pop(dialogContext, false),
-                child: const Text('Cancel'),
-              ),
+              TextButton(onPressed: isSubmitting ? null : () => Navigator.pop(dialogContext, false), child: const Text('Cancel')),
               FilledButton(
-                onPressed: isSubmitting
-                    ? null
-                    : () async {
-                        final email = emailController.text.trim().toLowerCase();
-                        setDialogState(() {
-                          isSubmitting = true;
-                          errorMessage = null;
-                        });
-                        var completed = false;
-                        try {
-                          if (!otpSent) {
-                            if (!email.contains('@') || !email.contains('.')) {
-                              throw 'Enter a valid email address.';
-                            }
-                            final response = await http
-                                .post(
-                                  Uri.parse(
-                                    '${AppConstants.apiBaseUrl}/auth/resident/forgot-password-otp',
-                                  ),
-                                  headers: {
-                                    'Content-Type': 'application/json',
-                                    'ngrok-skip-browser-warning': 'true',
-                                  },
-                                  body: jsonEncode({
-                                    'email': email,
-                                    'delivery_method': deliveryMethod,
-                                  }),
-                                )
-                                .timeout(const Duration(seconds: 30));
-                            final data = Map<String, dynamic>.from(
-                              jsonDecode(response.body) as Map,
-                            );
-                            if (response.statusCode != 200) {
-                              throw data['error'] ?? 'Could not send the code.';
-                            }
-                            setDialogState(() {
-                              otpSent = true;
-                              deliveryMessage =
-                                  data['message']?.toString() ??
-                                  'Check your selected delivery method for the code.';
-                            });
-                          } else {
-                            final otp = otpController.text.trim();
-                            final password = passwordController.text;
-                            if (otp.length != 6) {
-                              throw 'Enter the 6-digit verification code.';
-                            }
-                            if (password.length < 6) {
-                              throw 'Password must be at least 6 characters.';
-                            }
-                            if (password != confirmPasswordController.text) {
-                              throw 'The passwords do not match.';
-                            }
-                            final response = await http
-                                .post(
-                                  Uri.parse(
-                                    '${AppConstants.apiBaseUrl}/auth/resident/forgot-password',
-                                  ),
-                                  headers: {
-                                    'Content-Type': 'application/json',
-                                    'ngrok-skip-browser-warning': 'true',
-                                  },
-                                  body: jsonEncode({
-                                    'email': email,
-                                    'otp': otp,
-                                    'new_password': password,
-                                  }),
-                                )
-                                .timeout(const Duration(seconds: 30));
-                            final data = Map<String, dynamic>.from(
-                              jsonDecode(response.body) as Map,
-                            );
-                            if (response.statusCode != 200) {
-                              throw data['error'] ??
-                                  'Could not reset password.';
-                            }
-                            completed = true;
-                          }
-                        } catch (error) {
-                          errorMessage = error.toString();
-                        } finally {
-                          if (dialogContext.mounted) {
-                            setDialogState(() => isSubmitting = false);
-                          }
-                        }
-                        if (completed && dialogContext.mounted) {
-                          Navigator.pop(dialogContext, true);
-                        }
-                      },
-                child: isSubmitting
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Text(otpSent ? 'Reset Password' : 'Send Code'),
+                onPressed: isSubmitting ? null : () async {
+                  final phone = PhoneNumberUtils.digitsOnly(phoneController.text);
+                  setDialogState(() { isSubmitting = true; errorMessage = null; });
+                  var completed = false;
+                  try {
+                    if (!otpSent) {
+                      if (!PhoneNumberUtils.isValid(phone)) throw 'Enter a valid 11-digit mobile number starting with 09.';
+                      final response = await http.post(
+                        Uri.parse('${AppConstants.apiBaseUrl}/auth/resident/forgot-password-otp'),
+                        headers: {'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true'},
+                        body: jsonEncode({'phone': phone}),
+                      ).timeout(const Duration(seconds: 30));
+                      final data = Map<String, dynamic>.from(jsonDecode(response.body) as Map);
+                      if (response.statusCode != 200) throw data['error'] ?? 'Could not send the code.';
+                      setDialogState(() { otpSent = true; deliveryMessage = data['message']?.toString() ?? 'A verification code was sent by SMS.'; });
+                    } else {
+                      final otp = otpController.text.trim();
+                      final password = passwordController.text;
+                      if (otp.length != 6) throw 'Enter the 6-digit verification code.';
+                      if (password.length < 8) throw 'Password must be at least 8 characters.';
+                      if (password != confirmPasswordController.text) throw 'The passwords do not match.';
+                      final response = await http.post(
+                        Uri.parse('${AppConstants.apiBaseUrl}/auth/resident/forgot-password'),
+                        headers: {'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true'},
+                        body: jsonEncode({'phone': phone, 'otp': otp, 'new_password': password}),
+                      ).timeout(const Duration(seconds: 30));
+                      final data = Map<String, dynamic>.from(jsonDecode(response.body) as Map);
+                      if (response.statusCode != 200) throw data['error'] ?? 'Could not reset password.';
+                      completed = true;
+                    }
+                  } catch (error) {
+                    errorMessage = error.toString();
+                  } finally {
+                    if (dialogContext.mounted) setDialogState(() => isSubmitting = false);
+                  }
+                  if (completed && dialogContext.mounted) Navigator.pop(dialogContext, true);
+                },
+                child: isSubmitting ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : Text(otpSent ? 'Reset Password' : 'Send SMS Code'),
               ),
             ],
           ),
         ),
       );
-
       if (reset == true && mounted) {
-        _signInContactController.text = emailController.text.trim();
+        _signInPhoneController.text = PhoneNumberUtils.digitsOnly(phoneController.text);
         _signInPasswordController.clear();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Password reset. Sign in with your new password.'),
-            backgroundColor: Color(0xFF16A34A),
-          ),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Password reset. Sign in with your new password.'), backgroundColor: Color(0xFF16A34A)));
       }
     } finally {
-      emailController.dispose();
+      phoneController.dispose();
       otpController.dispose();
       passwordController.dispose();
       confirmPasswordController.dispose();
     }
   }
-
   Future<void> _handleRegister() async {
-    if (_registrationCooldownSeconds > 0) return;
-    if (!_regFormKey.currentState!.validate()) return;
-
+    if (_registrationCooldownSeconds > 0 || !_regFormKey.currentState!.validate()) return;
     final fullName = _regNameController.text.trim();
-    final username = _regUsernameController.text.trim();
-    final contact = _regContactController.text.trim();
-    final email = _regEmailController.text.trim().toLowerCase();
+    final phone = PhoneNumberUtils.digitsOnly(_regContactController.text);
+    final password = _regPasswordController.text;
     final barangayName = _selectedBarangayName ?? 'Poblacion';
-
     setState(() => _isSubmitting = true);
-
     try {
       final response = await http.post(
         Uri.parse('${AppConstants.apiBaseUrl}/auth/resident/register-otp'),
-        headers: {
-          'Content-Type': 'application/json',
-          'ngrok-skip-browser-warning': 'true',
-        },
-        body: jsonEncode({
-          'full_name': fullName,
-          'username': username,
-          'contact_number': contact,
-          'email': email,
-          'barangay_name': barangayName,
-          'barangay_id': _selectedBarangayId,
-          'delivery_method': _registrationOtpChannel,
-        }),
+        headers: {'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true'},
+        body: jsonEncode({'full_name': fullName, 'phone': phone, 'password': password, 'barangay_name': barangayName}),
       ).timeout(const Duration(seconds: 30));
-
-      final data = jsonDecode(response.body);
-      if (response.statusCode != 200) {
-        throw data['error'] ?? 'Failed to send verification code';
-      }
-
+      final data = Map<String, dynamic>.from(jsonDecode(response.body) as Map);
+      if (response.statusCode != 200) throw data['error'] ?? 'Failed to send verification code';
       if (!mounted) return;
-      _showRegistrationOtpDialog(
-        email: email,
-        fullName: fullName,
-        username: username,
-        contact: contact,
-        barangayName: barangayName,
-        deliveryMethod: _registrationOtpChannel,
-      );
-    } catch (e) {
+      await _showRegistrationOtpDialog(phone: phone, fullName: fullName, barangayName: barangayName);
+    } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Could not send the verification code: $e'),
-          backgroundColor: const Color(0xFFDC2626),
-        ),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not send the verification code: $error'), backgroundColor: const Color(0xFFDC2626)));
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
   }
 
   Future<void> _showRegistrationOtpDialog({
-    required String email,
+    required String phone,
     required String fullName,
-    required String username,
-    required String contact,
     required String barangayName,
-    required String deliveryMethod,
   }) async {
-    final isSms = deliveryMethod == 'sms';
-    final destination = isSms ? contact : email;
     final otpController = TextEditingController();
     bool isVerifying = false;
     bool isResending = false;
-    bool resendTimerStarted = false;
-    int resendCooldownSeconds = 60;
+    bool timerStarted = false;
+    int cooldown = 60;
     Timer? resendTimer;
     String? errorMessage;
 
-    await showDialog(
+    await showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (dialogCtx) => StatefulBuilder(
+      builder: (dialogContext) => StatefulBuilder(
         builder: (ctx, setDialogState) {
-          if (!resendTimerStarted) {
-            resendTimerStarted = true;
+          if (!timerStarted) {
+            timerStarted = true;
             resendTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-              if (!ctx.mounted) {
-                timer.cancel();
-                return;
-              }
-              if (resendCooldownSeconds <= 1) {
-                timer.cancel();
-                setDialogState(() => resendCooldownSeconds = 0);
-              } else {
-                setDialogState(() => resendCooldownSeconds--);
-              }
+              if (!ctx.mounted) { timer.cancel(); return; }
+              if (cooldown <= 1) { timer.cancel(); setDialogState(() => cooldown = 0); }
+              else { setDialogState(() => cooldown--); }
             });
           }
           return AlertDialog(
-            backgroundColor: const Color(0xFFE7EAF1),
-            surfaceTintColor: Colors.transparent,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-            titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
-            contentPadding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
-            title: Row(
+            title: const Text('SMS Verification'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF5F8FC),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Icon(
-                    isSms ? Icons.sms_rounded : Icons.mark_email_read_rounded,
-                    color: const Color(0xFF1B4F72),
-                    size: 27,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    isSms ? 'SMS Verification' : 'Email Verification',
-                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 21, color: Color(0xFF171B20)),
+                Text('Enter the 6-digit verification code sent to ${PhoneNumberUtils.formatForDisplay(phone)}.'),
+                const SizedBox(height: 12),
+                TextField(controller: otpController, keyboardType: TextInputType.number, maxLength: 6, textAlign: TextAlign.center, decoration: const InputDecoration(labelText: 'Verification code')),
+                if (errorMessage != null) Text(errorMessage!, style: const TextStyle(color: Color(0xFFDC2626))),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: isVerifying || isResending || cooldown > 0 ? null : () async {
+                      setDialogState(() { isResending = true; errorMessage = null; });
+                      try {
+                        final response = await http.post(
+                          Uri.parse('${AppConstants.apiBaseUrl}/auth/resident/register-otp'),
+                          headers: {'Content-Type': 'application/json'},
+                          body: jsonEncode({'full_name': fullName, 'phone': phone, 'password': _regPasswordController.text, 'barangay_name': barangayName}),
+                        ).timeout(const Duration(seconds: 30));
+                        final data = Map<String, dynamic>.from(jsonDecode(response.body) as Map);
+                        if (response.statusCode != 200) throw data['error'] ?? 'Failed to resend verification code';
+                        setDialogState(() { isResending = false; cooldown = 60; errorMessage = 'A new SMS code was sent.'; });
+                        resendTimer?.cancel();
+                        resendTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+                          if (!ctx.mounted) { timer.cancel(); return; }
+                          if (cooldown <= 1) { timer.cancel(); setDialogState(() => cooldown = 0); }
+                          else { setDialogState(() => cooldown--); }
+                        });
+                      } catch (error) { setDialogState(() { isResending = false; errorMessage = 'Could not resend code: $error'; }); }
+                    },
+                    child: Text(cooldown > 0 ? 'Resend code (${cooldown}s)' : 'Resend code'),
                   ),
                 ),
               ],
             ),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'We sent a 6-digit verification code to your ${isSms ? 'mobile number' : 'email address'}:',
-                    style: TextStyle(fontSize: 15, color: Color(0xFF70757C)),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    destination,
-                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF1B4F72)),
-                  ),
-                  const SizedBox(height: 18),
-                  TextFormField(
-                    controller: otpController,
-                    keyboardType: TextInputType.number,
-                    maxLength: 6,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 9,
-                      color: Color(0xFF0F172A),
-                    ),
-                    decoration: InputDecoration(
-                      hintText: '••••••',
-                      counterText: '',
-                      filled: true,
-                      fillColor: const Color(0xFFF8FAFC),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(16),
-                        borderSide: const BorderSide(color: Color(0xFF555B63), width: 1.4),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(16),
-                        borderSide: const BorderSide(color: Color(0xFF1B4F72), width: 2),
-                      ),
-                    ),
-                  ),
-                  if (errorMessage != null) ...[
-                    const SizedBox(height: 10),
-                    Text(
-                      errorMessage!,
-                      style: const TextStyle(color: Color(0xFFDC2626), fontSize: 12.5, fontWeight: FontWeight.w600),
-                    ),
-                  ],
-                  const SizedBox(height: 16),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Code expires in 10 mins',
-                        style: const TextStyle(fontSize: 12, color: Color(0xFF92979E)),
-                      ),
-                      TextButton(
-                        onPressed: isVerifying || isResending || resendCooldownSeconds > 0
-                            ? null
-                            : () async {
-                                setDialogState(() {
-                                  errorMessage = null;
-                                  isResending = true;
-                                });
-                                try {
-                                  final response = await http.post(
-                                    Uri.parse('${AppConstants.apiBaseUrl}/auth/resident/register-otp'),
-                                    headers: {'Content-Type': 'application/json'},
-                                    body: jsonEncode({
-                                      'full_name': fullName,
-                                      'username': username,
-                                      'contact_number': contact,
-                                      'email': email,
-                                      'barangay_name': barangayName,
-                                      'barangay_id': _selectedBarangayId,
-                                      'delivery_method': deliveryMethod,
-                                    }),
-                                  ).timeout(const Duration(seconds: 30));
-                                  final data = jsonDecode(response.body);
-                                  if (response.statusCode != 200) {
-                                    throw data['error'] ?? 'Failed to resend verification code';
-                                  }
-                                  setDialogState(() {
-                                    isResending = false;
-                                    resendCooldownSeconds = 60;
-                                    errorMessage = 'A new code has been sent to your ${isSms ? 'mobile number' : 'email'}.';
-                                  });
-                                  resendTimer?.cancel();
-                                  resendTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-                                    if (!ctx.mounted) {
-                                      timer.cancel();
-                                      return;
-                                    }
-                                    if (resendCooldownSeconds <= 1) {
-                                      timer.cancel();
-                                      setDialogState(() => resendCooldownSeconds = 0);
-                                    } else {
-                                      setDialogState(() => resendCooldownSeconds--);
-                                    }
-                                  });
-                                } catch (e) {
-                                  setDialogState(() {
-                                    isResending = false;
-                                    errorMessage = 'Could not resend code: $e';
-                                  });
-                                }
-                              },
-                        child: Text(
-                          resendCooldownSeconds > 0
-                              ? 'Resend Code (${resendCooldownSeconds}s)'
-                              : 'Resend Code',
-                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 18),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: isVerifying || isResending
-                              ? null
-                              : () async {
-                                  final shouldCancel = await showDialog<bool>(
-                                    context: dialogCtx,
-                                    builder: (confirmCtx) => AlertDialog(
-                                      title: const Text('Cancel account creation?'),
-                                      content: const Text(
-                                        'If you close verification, you’ll need to wait 60 seconds before requesting another code.',
-                                      ),
-                                      actions: [
-                                        TextButton(
-                                          onPressed: () => Navigator.pop(confirmCtx, false),
-                                          child: const Text('Keep verifying'),
-                                        ),
-                                        FilledButton(
-                                          onPressed: () => Navigator.pop(confirmCtx, true),
-                                          child: const Text('Cancel registration'),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                  if (shouldCancel == true && dialogCtx.mounted) {
-                                    _startRegistrationCooldown();
-                                    Navigator.pop(dialogCtx);
-                                  }
-                                },
-                          style: OutlinedButton.styleFrom(
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                          ),
-                          child: const Text('Cancel'),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: isVerifying || isResending
-                              ? null
-                              : () async {
-                                  final code = otpController.text.trim();
-                                  if (code.length != 6) {
-                                    setDialogState(() => errorMessage = 'Please enter the complete 6-digit code.');
-                                    return;
-                                  }
-
-                                  setDialogState(() {
-                                    isVerifying = true;
-                                    errorMessage = null;
-                                  });
-
-                                  try {
-                                    final response = await http.post(
-                                      Uri.parse('${AppConstants.apiBaseUrl}/auth/resident/verify-register-otp'),
-                                      headers: {
-                                        'Content-Type': 'application/json',
-                                        'ngrok-skip-browser-warning': 'true',
-                                      },
-                                      body: jsonEncode({'email': email, 'otp': code}),
-                                    ).timeout(const Duration(seconds: 30));
-
-                                    final data = jsonDecode(response.body);
-
-                                    if (response.statusCode != 200 && response.statusCode != 201) {
-                                      setDialogState(() {
-                                        isVerifying = false;
-                                        errorMessage = data['error'] ?? 'Verification failed';
-                                      });
-                                      return;
-                                    }
-
-                                    final token = data['token'] as String?;
-                                    final tempPass = data['temporaryPassword'] as String?;
-                                    final u = data['user'] ?? {};
-
-                                    await OfflineService.saveProfile({
-                                      'user_id': u['id'],
-                                      'full_name': fullName,
-                                      'username': u['username'] ?? username,
-                                      'contact_number': contact,
-                                      'email': email,
-                                      'barangay_name': barangayName,
-                                      'token': token,
-                                      'is_logged_in': true,
-                                    });
-
-                                    if (!dialogCtx.mounted) return;
-                                    Navigator.pop(dialogCtx);
-
-                                    _showTemporaryPasswordNoticeDialog(
-                                      email: email,
-                                      contact: contact,
-                                      deliveryMethod: data['temporaryPasswordDeliveryMethod']?.toString() ?? deliveryMethod,
-                                      passwordSent: data['temporaryPasswordSent'] == true,
-                                      tempPassword: tempPass,
-                                    );
-                                  } catch (err) {
-                                    if (!dialogCtx.mounted) return;
-                                    setDialogState(() {
-                                      isVerifying = false;
-                                      errorMessage = 'Could not verify the code. Check your connection and try again.';
-                                    });
-                                  }
-                                },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF1B4F72),
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                          ),
-                          child: isVerifying
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                                )
-                              : const Text('Confirm OTP', style: TextStyle(fontWeight: FontWeight.bold)),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+            actions: [
+              TextButton(onPressed: isVerifying || isResending ? null : () { _startRegistrationCooldown(); Navigator.pop(dialogContext); }, child: const Text('Cancel')),
+              FilledButton(
+                onPressed: isVerifying || isResending ? null : () async {
+                  final otp = otpController.text.trim();
+                  if (otp.length != 6) { setDialogState(() => errorMessage = 'Enter the complete 6-digit code.'); return; }
+                  setDialogState(() { isVerifying = true; errorMessage = null; });
+                  try {
+                    final response = await http.post(
+                      Uri.parse('${AppConstants.apiBaseUrl}/auth/resident/verify-register-otp'),
+                      headers: {'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true'},
+                      body: jsonEncode({'phone': phone, 'otp': otp}),
+                    ).timeout(const Duration(seconds: 30));
+                    final data = Map<String, dynamic>.from(jsonDecode(response.body) as Map);
+                    if (response.statusCode != 200 && response.statusCode != 201) throw data['error'] ?? 'Verification failed';
+                    final token = data['token']?.toString();
+                    final user = Map<String, dynamic>.from(data['user'] ?? {});
+                    await OfflineService.saveProfile({
+                      'user_id': user['id'],
+                      'full_name': user['full_name'] ?? fullName,
+                      'contact_number': user['phone'] ?? phone,
+                      'barangay_name': user['barangay_name'] ?? barangayName,
+                      'token': token,
+                      'is_logged_in': true,
+                    });
+                    if (!dialogContext.mounted) return;
+                    Navigator.pop(dialogContext);
+                    _onLoginSuccess('Resident account created.');
+                  } catch (error) {
+                    if (!dialogContext.mounted) return;
+                    setDialogState(() { isVerifying = false; errorMessage = error.toString(); });
+                  }
+                },
+                child: isVerifying ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Verify and create account'),
               ),
-            ),
+            ],
           );
         },
       ),
@@ -914,7 +498,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     resendTimer?.cancel();
     otpController.dispose();
   }
-
   void _startRegistrationCooldown() {
     _registrationCooldownTimer?.cancel();
     if (!mounted) return;
@@ -929,420 +512,99 @@ class _ProfileScreenState extends State<ProfileScreen> {
     });
   }
 
-  void _showTemporaryPasswordNoticeDialog({
-    required String email,
-    required String contact,
-    required String deliveryMethod,
-    required bool passwordSent,
-    String? tempPassword,
-  }) {
-    final isSms = deliveryMethod == 'sms';
-    final deliveryChannel = isSms ? 'SMS' : 'email';
-    final deliveryDestination = isSms ? contact : email;
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
-        contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF0FDF4),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Icon(Icons.check_circle_rounded, color: Color(0xFF16A34A), size: 26),
-            ),
-            const SizedBox(width: 12),
-            const Expanded(
-              child: Text(
-                'Registration Verified',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-              ),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(12),
-                border: const Border(
-                  left: BorderSide(color: Color(0xFF1B4F72), width: 4),
-                ),
-              ),
-              child: Text(
-                passwordSent
-                    ? 'Norz-Agapay sent your temporary password by $deliveryChannel. Don\'t share it with anyone.'
-                    : 'We could not send the temporary password by $deliveryChannel. It is shown below; save it securely.',
-                style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: Color(0xFF0F172A), height: 1.45),
-              ),
-            ),
-            if (tempPassword != null && tempPassword.isNotEmpty) ...[
-              const SizedBox(height: 14),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEFF6FF),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFF93C5FD)),
-                ),
-                child: Column(
-                  children: [
-                    const Text('Your Temporary Login Password:', style: TextStyle(fontSize: 12, color: Color(0xFF1E40AF), fontWeight: FontWeight.w600)),
-                    const SizedBox(height: 4),
-                    SelectableText(
-                      tempPassword,
-                      style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, letterSpacing: 2, color: Color(0xFF1D4ED8)),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-            const SizedBox(height: 14),
-            Text(
-              passwordSent
-                  ? 'The temporary password was sent to $deliveryDestination by $deliveryChannel.'
-                  : 'The temporary password could not be sent to $deliveryDestination. Use the password shown above.',
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade700, height: 1.4),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'You can use this temporary password to log in. You can also update your password anytime in Profile Settings.',
-              style: TextStyle(fontSize: 12.5, color: Colors.grey.shade600, height: 1.4),
-            ),
-            const SizedBox(height: 22),
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(ctx);
-                  _onLoginSuccess('Welcome to Norz-Agapay!');
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF1B4F72),
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  elevation: 1,
-                ),
-                child: const Text('Proceed to Profile', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Future<void> _showChangePasswordDialog() async {
-    final email = _userProfile?['email'] ?? '';
     final otpController = TextEditingController();
     final currentPasswordController = TextEditingController();
     final newPasswordController = TextEditingController();
     final confirmPasswordController = TextEditingController();
-
-    bool isOtpSent = false;
-    bool isSendingOtp = false;
-    bool isUpdating = false;
+    var otpSent = false;
+    var isSubmitting = false;
     String? errorMessage;
     String? successMessage;
+    final token = _userProfile?['token']?.toString() ?? '';
 
-    await showDialog(
+    await showDialog<void>(
       context: context,
-      builder: (dialogCtx) => StatefulBuilder(
-        builder: (ctx, setDialogState) {
-          return AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
-            contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
-            title: Row(
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Change Password'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFFBEB),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Icon(Icons.lock_reset_rounded, color: Color(0xFFD97706), size: 24),
-                ),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Text(
-                    'Change Password',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-                  ),
-                ),
+                const Text('Verify your current password with a code sent by SMS.'),
+                const SizedBox(height: 12),
+                if (!otpSent) TextField(controller: currentPasswordController, obscureText: true, decoration: const InputDecoration(labelText: 'Current password')),
+                if (otpSent) ...[
+                  if (successMessage != null) Text(successMessage!, style: const TextStyle(color: Color(0xFF15803D))),
+                  TextField(controller: currentPasswordController, obscureText: true, decoration: const InputDecoration(labelText: 'Current password')),
+                  TextField(controller: otpController, keyboardType: TextInputType.number, maxLength: 6, decoration: const InputDecoration(labelText: '6-digit SMS code')),
+                  TextField(controller: newPasswordController, obscureText: true, decoration: const InputDecoration(labelText: 'New password', helperText: 'At least 8 characters')),
+                  TextField(controller: confirmPasswordController, obscureText: true, decoration: const InputDecoration(labelText: 'Confirm new password')),
+                ],
+                if (errorMessage != null) ...[
+                  const SizedBox(height: 10),
+                  Text(errorMessage!, style: const TextStyle(color: Color(0xFFDC2626))),
+                ],
               ],
             ),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'An email OTP verification code is required to update your password.',
-                    style: TextStyle(fontSize: 12.5, color: Colors.grey.shade600, height: 1.4),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Account: $email',
-                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF1B4F72)),
-                  ),
-                  const SizedBox(height: 14),
-
-                  if (!isOtpSent)
-                    SizedBox(
-                      width: double.infinity,
-                      height: 44,
-                      child: ElevatedButton.icon(
-                        onPressed: isSendingOtp
-                            ? null
-                            : () async {
-                                setDialogState(() {
-                                  isSendingOtp = true;
-                                  errorMessage = null;
-                                });
-                                try {
-                                  final response = await http.post(
-                                    Uri.parse('${AppConstants.apiBaseUrl}/auth/resident/password-otp'),
-                                    headers: {'Content-Type': 'application/json'},
-                                    body: jsonEncode({'email': email}),
-                                  ).timeout(const Duration(seconds: 30));
-
-                                  final data = jsonDecode(response.body);
-                                  if (response.statusCode != 200) {
-                                    throw data['error'] ?? 'Failed to send OTP';
-                                  }
-
-                                  setDialogState(() {
-                                    isOtpSent = true;
-                                    isSendingOtp = false;
-                                    successMessage = 'Verification code sent to $email!';
-                                  });
-                                } catch (e) {
-                                  setDialogState(() {
-                                    isSendingOtp = false;
-                                    errorMessage = 'Could not send verification code: $e';
-                                  });
-                                }
-                              },
-                        icon: isSendingOtp
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                              )
-                            : const Icon(Icons.send_rounded, size: 16),
-                        label: Text(isSendingOtp ? 'Sending Code...' : 'Send OTP to Email'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF1B4F72),
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        ),
-                      ),
-                    ),
-
-                  if (isOtpSent) ...[
-                    if (successMessage != null) ...[
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF0FDF4),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: const Color(0xFFBBF7D0)),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.check_circle_outline, size: 16, color: Color(0xFF16A34A)),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                successMessage!,
-                                style: const TextStyle(fontSize: 12, color: Color(0xFF15803D), fontWeight: FontWeight.w600),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                    ],
-
-                    TextFormField(
-                      controller: otpController,
-                      keyboardType: TextInputType.number,
-                      maxLength: 6,
-                      decoration: InputDecoration(
-                        labelText: '6-Digit Email OTP',
-                        prefixIcon: const Icon(Icons.pin_rounded, color: Color(0xFF1B4F72)),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                        filled: true,
-                        fillColor: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    TextFormField(
-                      controller: currentPasswordController,
-                      obscureText: true,
-                      decoration: InputDecoration(
-                        labelText: 'Current or Temporary Password',
-                        prefixIcon: const Icon(Icons.lock_clock_outlined, color: Color(0xFF1B4F72)),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                        filled: true,
-                        fillColor: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    TextFormField(
-                      controller: newPasswordController,
-                      obscureText: true,
-                      decoration: InputDecoration(
-                        labelText: 'New Password',
-                        hintText: 'Minimum 6 characters',
-                        prefixIcon: const Icon(Icons.lock_outline, color: Color(0xFF1B4F72)),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                        filled: true,
-                        fillColor: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    TextFormField(
-                      controller: confirmPasswordController,
-                      obscureText: true,
-                      decoration: InputDecoration(
-                        labelText: 'Confirm New Password',
-                        prefixIcon: const Icon(Icons.lock_outline, color: Color(0xFF1B4F72)),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                        filled: true,
-                        fillColor: Colors.white,
-                      ),
-                    ),
-                  ],
-
-                  if (errorMessage != null) ...[
-                    const SizedBox(height: 10),
-                    Text(
-                      errorMessage!,
-                      style: const TextStyle(color: Color(0xFFDC2626), fontSize: 12, fontWeight: FontWeight.w600),
-                    ),
-                  ],
-
-                  const SizedBox(height: 18),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: isUpdating ? null : () => Navigator.pop(dialogCtx),
-                          style: OutlinedButton.styleFrom(
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                          ),
-                          child: const Text('Cancel'),
-                        ),
-                      ),
-                      if (isOtpSent) ...[
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: ElevatedButton(
-                            onPressed: isUpdating
-                                ? null
-                                : () async {
-                                    final otp = otpController.text.trim();
-                                    final currentPass = currentPasswordController.text;
-                                    final newPass = newPasswordController.text;
-                                    final confirmPass = confirmPasswordController.text;
-
-                                    if (otp.length != 6) {
-                                      setDialogState(() => errorMessage = 'Please enter the 6-digit OTP code.');
-                                      return;
-                                    }
-                                    if (newPass.length < 6) {
-                                      setDialogState(() => errorMessage = 'New password must be at least 6 characters.');
-                                      return;
-                                    }
-                                    if (newPass != confirmPass) {
-                                      setDialogState(() => errorMessage = 'New passwords do not match.');
-                                      return;
-                                    }
-
-                                    setDialogState(() {
-                                      isUpdating = true;
-                                      errorMessage = null;
-                                    });
-
-                                    try {
-                                      final response = await http.post(
-                                        Uri.parse('${AppConstants.apiBaseUrl}/auth/resident/change-password'),
-                                        headers: {
-                                          'Content-Type': 'application/json',
-                                          'ngrok-skip-browser-warning': 'true',
-                                        },
-                                        body: jsonEncode({
-                                          'email': email,
-                                          'otp': otp,
-                                          'current_password': currentPass,
-                                          'new_password': newPass,
-                                        }),
-                                      ).timeout(const Duration(seconds: 30));
-
-                                      final data = jsonDecode(response.body);
-                                      if (response.statusCode != 200) {
-                                        throw data['error'] ?? 'Failed to update password';
-                                      }
-
-                                      if (!dialogCtx.mounted) return;
-                                      Navigator.pop(dialogCtx);
-
-                                      if (mounted) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(
-                                            content: Text('Password updated successfully! Please keep it secure.'),
-                                            backgroundColor: Color(0xFF16A34A),
-                                          ),
-                                        );
-                                      }
-                                    } catch (err) {
-                                      setDialogState(() {
-                                        isUpdating = false;
-                                        errorMessage = err.toString();
-                                      });
-                                    }
-                                  },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF1B4F72),
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                            ),
-                            child: isUpdating
-                                ? const SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                                  )
-                                : const Text('Update Password', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ],
+          ),
+          actions: [
+            TextButton(onPressed: isSubmitting ? null : () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+            if (!otpSent)
+              FilledButton(
+                onPressed: isSubmitting ? null : () async {
+                  final currentPassword = currentPasswordController.text;
+                  if (currentPassword.isEmpty || token.isEmpty) { setDialogState(() => errorMessage = 'Sign in again and enter your current password.'); return; }
+                  setDialogState(() { isSubmitting = true; errorMessage = null; });
+                  try {
+                    final response = await http.post(
+                      Uri.parse('${AppConstants.apiBaseUrl}/auth/profile/password-otp'),
+                      headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $token'},
+                      body: jsonEncode({'current_password': currentPassword}),
+                    ).timeout(const Duration(seconds: 30));
+                    final data = Map<String, dynamic>.from(jsonDecode(response.body) as Map);
+                    if (response.statusCode != 200) throw data['error'] ?? 'Could not send the verification code.';
+                    setDialogState(() { otpSent = true; isSubmitting = false; successMessage = data['message']?.toString() ?? 'SMS verification code sent.'; });
+                  } catch (error) { setDialogState(() { isSubmitting = false; errorMessage = error.toString(); }); }
+                },
+                child: isSubmitting ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Send SMS code'),
+              )
+            else
+              FilledButton(
+                onPressed: isSubmitting ? null : () async {
+                  final currentPassword = currentPasswordController.text;
+                  final otp = otpController.text.trim();
+                  final newPassword = newPasswordController.text;
+                  if (otp.length != 6) { setDialogState(() => errorMessage = 'Enter the 6-digit verification code.'); return; }
+                  if (newPassword.length < 8) { setDialogState(() => errorMessage = 'New password must be at least 8 characters.'); return; }
+                  if (newPassword != confirmPasswordController.text) { setDialogState(() => errorMessage = 'New passwords do not match.'); return; }
+                  setDialogState(() { isSubmitting = true; errorMessage = null; });
+                  try {
+                    final response = await http.post(
+                      Uri.parse('${AppConstants.apiBaseUrl}/auth/profile/change-password'),
+                      headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $token'},
+                      body: jsonEncode({'otp': otp, 'current_password': currentPassword, 'new_password': newPassword}),
+                    ).timeout(const Duration(seconds: 30));
+                    final data = Map<String, dynamic>.from(jsonDecode(response.body) as Map);
+                    if (response.statusCode != 200) throw data['error'] ?? 'Failed to update password.';
+                    if (!dialogContext.mounted) return;
+                    Navigator.pop(dialogContext);
+                    if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Password updated successfully.'), backgroundColor: Color(0xFF16A34A)));
+                  } catch (error) { setDialogState(() { isSubmitting = false; errorMessage = error.toString(); }); }
+                },
+                child: isSubmitting ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Update password'),
               ),
-            ),
-          );
-        },
+          ],
+        ),
       ),
     );
+    otpController.dispose();
+    currentPasswordController.dispose();
+    newPasswordController.dispose();
+    confirmPasswordController.dispose();
   }
-
   void _onLoginSuccess(String message) {
     _loadProfileState();
     widget.onAuthStateChanged?.call();
@@ -1437,7 +699,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           child: Icon(Icons.person, color: Colors.white),
                         ),
                         title: Text(acc['full_name'] ?? 'Resident'),
-                        subtitle: Text('${acc['email']} • ${acc['phone'] ?? "No phone"}'),
+                        subtitle: Text(acc['phone'] ?? 'No mobile number'),
                         onTap: () async {
                           try {
                             final loginResponse = await http.post(
@@ -1461,7 +723,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               'user_id': user['id'] ?? acc['id'],
                               'full_name': user['full_name'] ?? 'Resident',
                               'contact_number': user['phone'] ?? '',
-                              'email': user['email'] ?? acc['email'] ?? '',
                               'barangay_name': user['barangay_name'] ?? 'Poblacion',
                               'token': loginData['token'],
                               'is_logged_in': true,
@@ -1509,7 +770,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   // ── 1. Logged In Profile View ──────────────────────────────────────────────
-  // User personal details: Name, Contact, Email, Barangay
+  // User personal details: Name, Mobile number, Barangay
   // Below is My Reports
   // Below is Settings with 2 buttons (Terms and Conditions & Privacy Policy)
   // Below is Log Out
@@ -1519,7 +780,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final contact = storedContact.isEmpty
         ? 'Not specified'
         : PhoneNumberUtils.formatForDisplay(storedContact);
-    final email = _userProfile?['email'] ?? 'Not specified';
 
     final initials = name.isNotEmpty
         ? name.trim().split(' ').map((s) => s.isNotEmpty ? s[0] : '').take(2).join()
@@ -1622,8 +882,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 _DetailRow(icon: Icons.person_rounded, label: 'Full Name', value: name),
                 const Divider(height: 1),
                 _DetailRow(icon: Icons.phone_rounded, label: 'Contact Number', value: contact),
-                const Divider(height: 1),
-                _DetailRow(icon: Icons.email_rounded, label: 'Email Address', value: email),
                 const Divider(height: 1),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
@@ -1916,7 +1174,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
               ),
 
-              // Button 3: Change Password with Email OTP (visible only when logged in)
+              // Password changes require SMS verification.
               if (isLoggedIn) ...[
                 const SizedBox(height: 10),
                 SizedBox(
@@ -1950,22 +1208,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
       child: Column(
         children: [
           TextFormField(
-            controller: _signInContactController,
-            keyboardType: TextInputType.emailAddress,
+            controller: _signInPhoneController,
+            keyboardType: TextInputType.phone,
+            inputFormatters: PhoneNumberUtils.inputFormatters,
             decoration: InputDecoration(
-              labelText: 'Email Address',
-              hintText: 'citizen@example.com',
-              prefixIcon: const Icon(Icons.person_outline_rounded, color: Color(0xFF1B4F72)),
+              labelText: 'Mobile number',
+              hintText: '09XXXXXXXXX',
+              prefixIcon: const Icon(Icons.phone_rounded, color: Color(0xFF1B4F72)),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               filled: true,
               fillColor: Colors.white,
             ),
             validator: (v) {
-              final identifier = v?.trim() ?? '';
-              if (identifier.isEmpty || !identifier.contains('@') || !identifier.contains('.')) {
-                return 'Please enter a valid email address';
-              }
-              return null;
+              return PhoneNumberUtils.validationMessage(v);
             },
           ),
           const SizedBox(height: 14),
@@ -1974,7 +1229,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             obscureText: true,
             decoration: InputDecoration(
               labelText: 'Password',
-              hintText: 'Enter temporary or updated password',
+              hintText: 'Enter your password',
               prefixIcon: const Icon(Icons.lock_rounded, color: Color(0xFF1B4F72)),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               filled: true,
@@ -2015,7 +1270,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // ── Create Account Form (No Password required) ───────────────────────────
+  // ── Create Account Form ──────────────────────────────────────────────────
   Widget _buildRegisterForm() {
     return Form(
       key: _regFormKey,
@@ -2031,23 +1286,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               filled: true,
               fillColor: Colors.white,
             ),
-            validator: (v) => v == null || v.trim().isEmpty ? 'Full name is required' : null,
-          ),
-          const SizedBox(height: 12),
-          TextFormField(
-            controller: _regUsernameController,
-            textCapitalization: TextCapitalization.none,
-            decoration: InputDecoration(
-              labelText: 'Username',
-              hintText: 'Choose a username',
-              prefixIcon: const Icon(Icons.alternate_email, color: Color(0xFF1B4F72)),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              filled: true,
-              fillColor: Colors.white,
-            ),
-            validator: (value) => RegExp(r'^[A-Za-z0-9_.-]{3,32}$').hasMatch(value?.trim() ?? '')
-                ? null
-                : 'Use 3–32 letters, numbers, dots, underscores, or hyphens.',
+            validator: (value) => value == null || value.trim().length < 2 ? 'Enter your full name' : null,
           ),
           const SizedBox(height: 12),
           TextFormField(
@@ -2055,7 +1294,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             keyboardType: TextInputType.phone,
             inputFormatters: PhoneNumberUtils.inputFormatters,
             decoration: InputDecoration(
-              labelText: 'Active Contact Number',
+              labelText: 'Mobile number',
               hintText: '09XXXXXXXXX',
               prefixIcon: const Icon(Icons.phone_rounded, color: Color(0xFF1B4F72)),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
@@ -2066,53 +1305,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           const SizedBox(height: 12),
           TextFormField(
-            controller: _regEmailController,
-            keyboardType: TextInputType.emailAddress,
+            controller: _regPasswordController,
+            obscureText: true,
             decoration: InputDecoration(
-              labelText: 'Email Address',
-              hintText: 'citizen@example.com',
-              prefixIcon: const Icon(Icons.email_outlined, color: Color(0xFF1B4F72)),
+              labelText: 'Password',
+              helperText: 'At least 8 characters',
+              prefixIcon: const Icon(Icons.lock_rounded, color: Color(0xFF1B4F72)),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               filled: true,
               fillColor: Colors.white,
             ),
-            validator: (v) => v == null || !v.contains('@') ? 'Valid email address is required' : null,
+            validator: (value) => value == null || value.length < 8 ? 'Password must be at least 8 characters' : null,
           ),
           const SizedBox(height: 16),
           Align(
             alignment: Alignment.centerLeft,
-            child: Text(
-              'Send verification code by',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.grey.shade700),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: _buildOtpChannelOption(
-                  channel: 'email',
-                  label: 'Email',
-                  icon: Icons.email_outlined,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _buildOtpChannelOption(
-                  channel: 'sms',
-                  label: 'SMS',
-                  icon: Icons.sms_outlined,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 7),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              'Email is required for your account. The code and temporary password use this selection.',
-              style: TextStyle(fontSize: 11.5, color: Colors.grey.shade600),
-            ),
+            child: Text('We will send a one-time verification code by SMS.', style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
           ),
           const SizedBox(height: 20),
           SizedBox(
@@ -2127,70 +1335,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 elevation: 1,
               ),
               child: _isSubmitting
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                    )
-                  : Text(
-                      _registrationCooldownSeconds > 0
-                          ? 'Create Account (${_registrationCooldownSeconds}s)'
-                          : 'Create Account',
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                    ),
+                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : Text(_registrationCooldownSeconds > 0 ? 'Create Account (${_registrationCooldownSeconds}s)' : 'Create Account', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             ),
           ),
         ],
       ),
     );
   }
-
-  Widget _buildOtpChannelOption({
-    required String channel,
-    required String label,
-    required IconData icon,
-  }) {
-    final selected = _registrationOtpChannel == channel;
-    return InkWell(
-      onTap: _isSubmitting ? null : () => setState(() => _registrationOtpChannel = channel),
-      borderRadius: BorderRadius.circular(12),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
-        decoration: BoxDecoration(
-          color: selected ? const Color(0xFFEAF3F8) : Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: selected ? const Color(0xFF1B4F72) : const Color(0xFFD1D5DB),
-            width: selected ? 1.6 : 1,
-          ),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 18, color: const Color(0xFF1B4F72)),
-            const SizedBox(width: 8),
-            Text(label, style: const TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF1B4F72))),
-            const SizedBox(width: 7),
-            Icon(
-              selected ? Icons.radio_button_checked_rounded : Icons.radio_button_unchecked_rounded,
-              size: 17,
-              color: selected ? const Color(0xFF1B4F72) : Colors.grey,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   @override
   void dispose() {
-    _signInContactController.dispose();
+    _signInPhoneController.dispose();
     _signInPasswordController.dispose();
     _regNameController.dispose();
-    _regUsernameController.dispose();
     _regContactController.dispose();
-    _regEmailController.dispose();
+    _regPasswordController.dispose();
     _registrationCooldownTimer?.cancel();
     super.dispose();
   }

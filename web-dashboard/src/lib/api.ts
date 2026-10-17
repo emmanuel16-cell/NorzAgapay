@@ -46,25 +46,27 @@ export default api;
 
 // Auth
 export const authAPI = {
-  login: (identifier: string, password: string) => api.post('/auth/login', { identifier, password }),
-  residentLogin: (identifier: string, password: string) => api.post('/auth/resident/login', { identifier, password }),
-  requestResidentWebRegistrationOtp: (data: { username: string; phone: string }) => api.post('/auth/resident/web-register-otp', data),
+  login: (phone: string, password: string) => api.post('/auth/login', { phone, password }),
+  residentLogin: (phone: string, password: string) => api.post('/auth/resident/login', { phone, password }),
+  requestResidentWebRegistrationOtp: (data: { full_name: string; phone: string; password: string; barangay_name?: string }) => api.post('/auth/resident/web-register-otp', data),
   verifyResidentWebRegistrationOtp: (data: { phone: string; otp: string }) => api.post('/auth/resident/web-verify-register-otp', data),
-  updateProfile: (data: { full_name: string; username: string; email: string | null; phone: string | null }) => api.patch('/auth/profile', data),
-  updateResidentProfile: (data: { full_name?: string; username?: string; email?: string | null; phone?: string | null; barangay_name?: string }) => api.patch('/auth/resident/profile', data),
-  requestWebPasswordOtp: (data: { current_password: string; delivery_method: 'email' | 'sms' }) => api.post('/auth/profile/password-otp', data),
-  changeWebPassword: (data: { current_password: string; otp: string; new_password: string; delivery_method: 'email' | 'sms' }) => api.post('/auth/profile/change-password', data),
+  updateProfile: (data: { full_name: string }) => api.patch('/auth/profile', data),
+  updateResidentProfile: (data: { full_name?: string; barangay_name?: string }) => api.patch('/auth/resident/profile', data),
+  requestProfilePhoneOtp: (data: { phone: string; current_password: string }) => api.post('/auth/profile/phone-otp', data),
+  changeProfilePhone: (data: { phone: string; otp: string; current_password: string }) => api.post('/auth/profile/change-phone', data),
+  requestWebPasswordOtp: (data: { current_password: string }) => api.post('/auth/profile/password-otp', data),
+  changeWebPassword: (data: { current_password: string; otp: string; new_password: string }) => api.post('/auth/profile/change-password', data),
   sendResidentWebPasswordOtp: (current_password: string) => api.post('/auth/resident/web-password-change-otp', { current_password }),
   changeResidentWebPassword: (data: { current_password: string; otp: string; new_password: string }) => api.post('/auth/resident/web-change-password', data),
-  barangayLogin: (identifier: string, password: string) => api.post('/barangay/login', { identifier, password }),
-  sendBarangayPasswordOtp: (identifier: string, delivery_method: 'email' | 'sms') => api.post('/auth/barangay/password-otp', { identifier, delivery_method }),
-  changeBarangayPassword: (data: { identifier: string; delivery_method: 'email' | 'sms'; otp: string; current_password: string; new_password: string }) => api.post('/auth/barangay/change-password', data),
-  sendBarangayRegistrationOtp: (data: { full_name: string; username: string; email?: string; phone?: string; delivery_method: 'email' | 'sms'; barangay_id: string; position_designation: string }) => api.post('/barangay/register-otp', data),
-  verifyBarangayRegistrationOtp: (data: { delivery_method: 'email' | 'sms'; destination: string; otp: string }) => api.post('/barangay/verify-register-otp', data),
+  barangayLogin: (phone: string, password: string) => api.post('/barangay/login', { phone, password }),
+  sendBarangayPasswordOtp: (phone: string) => api.post('/auth/barangay/password-otp', { phone }),
+  changeBarangayPassword: (data: { phone: string; otp: string; current_password: string; new_password: string }) => api.post('/auth/barangay/change-password', data),
+  sendBarangayRegistrationOtp: (data: { full_name: string; phone: string; password: string; barangay_id: string; position_designation: string }) => api.post('/barangay/register-otp', data),
+  verifyBarangayRegistrationOtp: (data: { phone: string; otp: string }) => api.post('/barangay/verify-register-otp', data),
   barangaysForAdminSignup: () => api.get('/barangay/list', { params: { admin_signup: true } }),
   barangayMe: () => api.get('/barangay/me'),
   masterAdminSetupStatus: () => api.get('/auth/master-admin-setup/status'),
-  createMasterAdmin: (data: { full_name: string; username: string; email: string; password: string }) => api.post('/auth/master-admin-setup', data),
+  createMasterAdmin: (data: { full_name: string; phone: string; password: string }) => api.post('/auth/master-admin-setup', data),
   register: (data: any) => api.post('/auth/register', data),
   me: () => api.get('/auth/me'),
 };
@@ -102,10 +104,9 @@ export const userAPI = {
   list: (params?: any) => api.get('/users', { params }),
   create: (data: {
     full_name: string;
-    username: string;
     password: string;
     role: string;
-    phone?: string | null;
+    phone: string;
     unit_type?: string | null;
   }) => api.post('/users', data),
   get: (id: string) => api.get(`/users/${id}`),
@@ -136,9 +137,11 @@ export const verificationAPI = {
 // Barangay-specific administration and community operations. Every endpoint
 // below is scoped from the authenticated barangay session on the server.
 export const barangayAPI = {
-  updateProfile: (data: { full_name: string; username: string; email: string | null; phone: string | null }) => api.patch('/barangay/profile', data),
-  requestProfilePasswordOtp: (data: { current_password: string; delivery_method: 'email' | 'sms' }) => api.post('/barangay/profile/password-otp', data),
-  changeProfilePassword: (data: { current_password: string; otp: string; new_password: string; delivery_method: 'email' | 'sms' }) => api.post('/barangay/profile/change-password', data),
+  updateProfile: (data: { full_name: string }) => api.patch('/barangay/profile', data),
+  requestProfilePhoneOtp: (data: { phone: string; current_password: string }) => api.post('/barangay/profile/phone-otp', data),
+  changeProfilePhone: (data: { phone: string; otp: string; current_password: string }) => api.post('/barangay/profile/change-phone', data),
+  requestProfilePasswordOtp: (data: { current_password: string }) => api.post('/barangay/profile/password-otp', data),
+  changeProfilePassword: (data: { current_password: string; otp: string; new_password: string }) => api.post('/barangay/profile/change-password', data),
   accountRequest: () => api.get('/barangay/account-request'),
   accountStatus: () => api.get('/barangay/account-request/status'),
   saveAccountRequest: (data: { official_name: string; official_position: string; position_designation?: string }) => api.put('/barangay/account-request', data),
@@ -154,8 +157,8 @@ export const barangayAPI = {
     return api.post('/barangay/account-request/certificate', body, { headers: { 'Content-Type': 'multipart/form-data' } });
   },
   team: () => api.get('/barangay/team'),
-  createTeamMember: (data: { full_name: string; username: string; password: string; phone?: string; role: 'dispatcher' | 'responder' | 'staff' }) => api.post('/barangay/team', data),
-  updateTeamMember: (id: string, data: { full_name: string; username: string; password?: string; phone?: string | null; role: 'dispatcher' | 'responder' | 'staff' }) => api.patch(`/barangay/team/${id}`, data),
+  createTeamMember: (data: { full_name: string; phone: string; password: string; role: 'dispatcher' | 'responder' | 'staff' }) => api.post('/barangay/team', data),
+  updateTeamMember: (id: string, data: { full_name: string; password?: string; role: 'dispatcher' | 'responder' | 'staff' }) => api.patch(`/barangay/team/${id}`, data),
   setTeamMemberActive: (id: string, is_active: boolean) => api.patch(`/barangay/team/${id}/active`, { is_active }),
   statistics: (type?: 'community' | 'emergency') => api.get('/barangay/reports/statistics', { params: type ? { type } : undefined }),
   hotlineSettings: () => api.get('/barangay/settings/hotlines'),

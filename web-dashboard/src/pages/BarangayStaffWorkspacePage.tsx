@@ -18,7 +18,6 @@ type ResolvedReport = {
   barangay_resolved_at?: string | null;
   barangay_name?: string | null;
   reporter_name?: string | null;
-  reporter_email?: string | null;
   reporter_phone?: string | null;
 };
 

@@ -29,11 +29,12 @@ const memoryResponderGpsStore = new Map<string, { data: ResponderGpsLocation; ex
 export const redis = redisClient;
 
 // ── OTP Helpers ───────────────────────────────────────────────────────────────
-// Key pattern: otp:<email>
+// Key pattern: otp:<identity>
 // TTL: 10 minutes (600 seconds)
 
 export const OTP_KEY_PREFIX = 'otp:';
 export const OTP_TTL_SECONDS = 600; // 10 minutes
+export const OTP_RESEND_COOLDOWN_SECONDS = 60;
 
 // Responder locations are short-lived operational telemetry, never persisted to users.
 export const RESPONDER_GPS_KEY_PREFIX = 'responder-live:';
@@ -107,19 +108,22 @@ export const deleteBarangayResponderGpsLocation = (userId: string) =>
 export interface ResidentOtpRecord {
   otp: string;
   accountId?: string;
+  passwordHash?: string;
   fullName?: string;
-  username?: string;
-  email?: string;
+  phone?: string;
   contactNumber?: string;
   destination?: string;
   failedAttempts?: number;
+  createdAt?: number;
   barangayName?: string;
   barangayId?: string;
-  deliveryMethod?: 'email' | 'sms';
   positionDesignation?: string;
   purpose:
     | 'registration'
+    | 'resident_registration'
     | 'password_change'
+    | 'account_phone_change'
+    | 'barangay_phone_change'
     | 'barangay_password_change'
     | 'barangay_registration'
     | 'resident_password_reset'
@@ -133,12 +137,16 @@ export interface ResidentOtpRecord {
 /**
  * Store an OTP record. Tries Redis first; automatically falls back to in-memory store.
  */
-export async function setOtp(email: string, record: ResidentOtpRecord): Promise<void> {
-  const key = `${OTP_KEY_PREFIX}${email.toLowerCase().trim()}`;
+export async function setOtp(identity: string, record: ResidentOtpRecord): Promise<void> {
+  const key = `${OTP_KEY_PREFIX}${identity.trim()}`;
+  const storedRecord: ResidentOtpRecord = {
+    ...record,
+    createdAt: record.createdAt ?? Date.now(),
+  };
 
   if (redisClient) {
     try {
-      await redisClient.set(key, JSON.stringify(record), { ex: OTP_TTL_SECONDS });
+      await redisClient.set(key, JSON.stringify(storedRecord), { ex: OTP_TTL_SECONDS });
       return;
     } catch (err: any) {
       disableRedis(err.message);
@@ -146,16 +154,23 @@ export async function setOtp(email: string, record: ResidentOtpRecord): Promise<
   }
 
   memoryOtpStore.set(key, {
-    data: record,
+    data: storedRecord,
     expiresAt: Date.now() + OTP_TTL_SECONDS * 1000,
   });
+}
+
+export async function getOtpResendCooldownSeconds(identity: string): Promise<number> {
+  const record = await getOtp(identity);
+  if (!record?.createdAt) return 0;
+  const remainingMs = record.createdAt + OTP_RESEND_COOLDOWN_SECONDS * 1000 - Date.now();
+  return Math.max(0, Math.ceil(remainingMs / 1000));
 }
 
 /**
  * Retrieve an OTP record. Tries Redis first; falls back to in-memory store.
  */
-export async function getOtp(email: string): Promise<ResidentOtpRecord | null> {
-  const key = `${OTP_KEY_PREFIX}${email.toLowerCase().trim()}`;
+export async function getOtp(identity: string): Promise<ResidentOtpRecord | null> {
+  const key = `${OTP_KEY_PREFIX}${identity.trim()}`;
 
   if (redisClient) {
     try {
@@ -180,8 +195,8 @@ export async function getOtp(email: string): Promise<ResidentOtpRecord | null> {
 /**
  * Delete an OTP record after verification.
  */
-export async function deleteOtp(email: string): Promise<void> {
-  const key = `${OTP_KEY_PREFIX}${email.toLowerCase().trim()}`;
+export async function deleteOtp(identity: string): Promise<void> {
+  const key = `${OTP_KEY_PREFIX}${identity.trim()}`;
 
   if (redisClient) {
     try {

@@ -804,14 +804,17 @@ class _ReportingScreenState extends State<ReportingScreen> {
     setState(() => _isUploading = true);
 
     try {
-      final reporterName = (isSignedIn ? profile?['full_name'] : null)?.toString().trim() ?? '';
+      final reporterName = (isSignedIn && profile != null
+          ? profile['full_name']
+          : null)?.toString().trim() ?? '';
       final nameParts = reporterName
           .split(RegExp(r'\s+'))
           .where((part) => part.isNotEmpty)
           .toList();
-      final email = (isSignedIn ? profile?['email'] : null)?.toString().trim() ?? '';
       final rawPhone = isSignedIn
-          ? (profile?['contact_number'] ?? profile?['phone'] ?? '').toString().trim()
+          ? ((profile == null ? null : profile['contact_number']) ??
+              (profile == null ? null : profile['phone']) ??
+              '').toString().trim()
           : guestPhone;
       final isFirstSubmitAttempt = _clientSubmittedAt == null;
       _clientSubmittedAt ??= DateTime.now().toUtc();
@@ -837,10 +840,9 @@ class _ReportingScreenState extends State<ReportingScreen> {
         'proof_types': jsonEncode(_proofs.map((p) => p.type).toList()),
         'reporter_type': isSignedIn ? 'resident' : 'guest',
         'reporter_name': reporterName.isNotEmpty ? reporterName : 'Guest Reporter',
-        'reporter_email': email,
         'first_name': nameParts.isNotEmpty ? nameParts.first : '',
         'last_name': nameParts.length > 1 ? nameParts.skip(1).join(' ') : '',
-        'contact_number': rawPhone.contains('@') ? '' : PhoneNumberUtils.digitsOnly(rawPhone),
+        'contact_number': PhoneNumberUtils.digitsOnly(rawPhone),
         'send_to': 'mdrrmo',
       };
 

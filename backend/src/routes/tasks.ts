@@ -653,15 +653,15 @@ router.post('/:id/members', authenticate, async (req: AuthRequest, res: Response
       // If officer ID is passed, resolve to user ID
       const { data: off } = await supabaseAdmin
         .from('officers')
-        .select('email')
+        .select('phone')
         .eq('id', memberId)
         .maybeSingle();
 
-      if (off && off.email) {
+      if (off && off.phone) {
         const { data: matchedUser } = await supabaseAdmin
           .from('users')
           .select('id')
-          .eq('email', off.email)
+          .eq('phone', off.phone)
           .maybeSingle();
         if (matchedUser) {
           resolvedUserId = matchedUser.id;

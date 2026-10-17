@@ -226,7 +226,7 @@ router.get('/queue', authenticate, authorize('dispatcher', 'admin', 'responder')
     if (residentIds.length) {
       const { data: residents, error: residentsError } = await supabaseAdmin
         .from('resident_user')
-        .select('id, full_name, phone, email')
+        .select('id, full_name, phone')
         .in('id', residentIds);
       if (residentsError) throw residentsError;
       for (const resident of residents || []) residentsById.set(resident.id, resident);
@@ -242,7 +242,6 @@ router.get('/queue', authenticate, authorize('dispatcher', 'admin', 'responder')
         ...report,
         reporter_name: report.reporter_name || resident?.full_name || null,
         reporter_phone: report.reporter_phone || resident?.phone || null,
-        reporter_email: report.reporter_email || resident?.email || null,
         mdrrmo_assignments: assignments,
         barangay_assignments: reportBarangayAssignments,
         active_barangay_assignment: reportBarangayAssignments.find((assignment: any) => assignment.assignment_status === 'active') || null,
@@ -1143,7 +1142,7 @@ router.post('/:id/field-media', authenticate, authorize('responder', 'dispatcher
     const { error: uploadError } = await supabaseAdmin.storage.from(config.supabaseBucketName).upload(storagePath, file.buffer, { contentType: file.mimetype, upsert: true });
     if (uploadError) throw uploadError;
     const { data: urlData } = supabaseAdmin.storage.from(config.supabaseBucketName).getPublicUrl(storagePath);
-    const mediaItem = { id: `mdrrmo_${timestamp}`, url: urlData.publicUrl, type: isVideo ? 'video' : 'image', uploader_id: req.user!.userId, uploader_name: req.user!.email, role: req.user!.role, created_at: new Date().toISOString() };
+    const mediaItem = { id: `mdrrmo_${timestamp}`, url: urlData.publicUrl, type: isVideo ? 'video' : 'image', uploader_id: req.user!.userId, uploader_name: req.user!.userId, role: req.user!.role, created_at: new Date().toISOString() };
     // Write to new mdrrmo_reports (V2 RPC)
     const { error: mediaV2Error } = await supabaseAdmin.rpc('append_mdrrmo_field_media_v2', {
       p_report_id: report.id,

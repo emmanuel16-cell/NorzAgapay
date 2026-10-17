@@ -34,13 +34,6 @@ export const smsService = {
     );
   },
 
-  async sendTemporaryPasswordSms(phoneNumber: string, temporaryPassword: string): Promise<boolean> {
-    return sendSms(
-      phoneNumber,
-      `Your Norz-Agapay temporary password is ${temporaryPassword}. Sign in and change it after logging in. Do not share it.`,
-      'temporary password',
-    );
-  },
 };
 
 async function sendSms(phoneNumber: string, message: string, purpose: string): Promise<boolean> {

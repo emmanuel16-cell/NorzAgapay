@@ -6,7 +6,7 @@ Keep the Officers directory focused on operational details and make the dispatch
 
 ## Findings
 
-- The Officers table showed Phone and Email columns even though these fields remain editable in the officer form.
+- The Officers table showed mobile number columns even though this field remains editable in the officer form.
 - Dispatch assigns responder login accounts that are active Team Leaders of available units with a complete roster and activation for the current Manila date.
 - The dispatch API and database RPC validate unit readiness and assign the report to the Team Leader’s mobile responder account.
 - The mobile app already showed a crew checklist and the server already validated the selected member IDs and required roles. However, the app used its login-time roster cache when opening that checklist.
@@ -14,7 +14,7 @@ Keep the Officers directory focused on operational details and make the dispatch
 
 ## Implementation plan
 
-1. Remove Phone and Email from the Officers table while keeping those fields available in create/edit forms.
+1. Remove the mobile number column from the Officers table while keeping the field available in create/edit forms.
 2. Enrich dispatchable Team Leader records with their Officer profile name and response unit name, but retain responder account IDs for assignment and authentication.
 3. Keep dispatch limited to active Team Leaders whose units are available, complete, and activated today. Return an actionable error if the required roster schema is missing.
 4. Refresh the mobile responder’s unit and roster after they tap Accept and before building the checklist. Stop acceptance if the roster cannot be refreshed or the account is no longer the active Team Leader.
@@ -23,7 +23,7 @@ Keep the Officers directory focused on operational details and make the dispatch
 
 ## Acceptance criteria
 
-- The Officers table has no Phone or Email columns.
+- The Officers table has no mobile number column.
 - Dispatchers see ready mobile responders with their Officer profile and unit labels and can dispatch to their responder account.
 - Only responders assigned as the selected unit’s active Team Leader can accept its dispatch.
 - The acceptance checklist uses the latest roster, excludes the Team Leader from the selectable crew, and cannot submit without a driver and a first aider.

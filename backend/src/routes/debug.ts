@@ -26,7 +26,7 @@ router.get('/accounts', debugOnly, async (req: Request, res: Response) => {
     if (audience === 'resident') {
       const { data, error } = await supabaseAdmin
         .from('resident_user')
-        .select('id, full_name, username, email, phone, barangay_name, role, status, verified')
+        .select('id, full_name, phone, barangay_name, role, status, verified')
         .eq('status', 'active')
         .order('full_name');
       if (error) throw error;
@@ -41,7 +41,7 @@ router.get('/accounts', debugOnly, async (req: Request, res: Response) => {
       }
       const { data, error } = await supabaseAdmin
         .from('barangay_users')
-        .select('id, full_name, username, email, phone, role, barangay_id, is_active, barangays!barangay_id(name)')
+        .select('id, full_name, phone, role, barangay_id, is_active, barangays!barangay_id(name)')
         .eq('is_active', true)
         .in('role', ['admin', 'dispatcher', 'responder', 'staff'])
         .in('barangay_id', verifiedBarangayIds)
@@ -61,7 +61,7 @@ router.get('/accounts', debugOnly, async (req: Request, res: Response) => {
     }
     const { data, error } = await supabaseAdmin
       .from('users')
-      .select('id, full_name, username, email, phone, role, unit_type, status, verified')
+      .select('id, full_name, phone, role, unit_type, status, verified')
       .eq('status', 'active')
       .order('full_name');
     if (error) throw error;
@@ -77,11 +77,11 @@ router.get('/accounts', debugOnly, async (req: Request, res: Response) => {
           .eq('cert_number', 'SPECIALIZATION');
         if (specCerts && specCerts.length > 0) {
           u.unit_type = specCerts.map((c: any) => c.cert_type).join(', ');
-        } else if (u.email) {
+        } else if (u.phone) {
           const { data: off } = await supabaseAdmin
             .from('officers')
             .select('specialization')
-            .eq('email', u.email)
+            .eq('phone', u.phone)
             .maybeSingle();
           if (off?.specialization) {
             u.unit_type = off.specialization;
@@ -107,7 +107,7 @@ router.post('/quick-login', debugOnly, async (req: Request, res: Response) => {
     if (audience === 'resident') {
       const { data: user, error } = await supabaseAdmin
         .from('resident_user')
-        .select('id, full_name, username, email, phone, barangay_name, role, status, verified')
+        .select('id, full_name, phone, barangay_name, role, status, verified')
         .eq('id', accountId)
         .eq('status', 'active')
         .single();
@@ -117,7 +117,7 @@ router.post('/quick-login', debugOnly, async (req: Request, res: Response) => {
       }
 
       const token = jwt.sign(
-        { userId: user.id, email: user.email || '', role: 'resident', debug: true },
+        { userId: user.id, role: 'resident', debug: true },
         config.jwtSecret,
         { expiresIn: '1h' },
       );
@@ -132,7 +132,7 @@ router.post('/quick-login', debugOnly, async (req: Request, res: Response) => {
       const verifiedBarangayIds = await getVerifiedBarangayIds();
       const { data: user, error } = await supabaseAdmin
         .from('barangay_users')
-        .select('id, full_name, username, email, phone, role, barangay_id, is_active')
+        .select('id, full_name, phone, role, barangay_id, is_active')
         .eq('id', accountId).eq('is_active', true).in('role', ['admin', 'dispatcher', 'responder', 'staff']).single();
       if (error || !user) {
         res.status(404).json({ error: 'Active account not found' });
@@ -153,7 +153,7 @@ router.post('/quick-login', debugOnly, async (req: Request, res: Response) => {
     }
     const { data: user, error } = await supabaseAdmin
       .from('users')
-      .select('id, full_name, username, email, phone, role, unit_type, status, verified')
+      .select('id, full_name, phone, role, unit_type, status, verified')
       .eq('id', accountId).eq('status', 'active').single();
     if (error || !user) {
       res.status(404).json({ error: 'Active account not found' });
@@ -168,11 +168,11 @@ router.post('/quick-login', debugOnly, async (req: Request, res: Response) => {
         .eq('cert_number', 'SPECIALIZATION');
       if (specCerts && specCerts.length > 0) {
         user.unit_type = specCerts.map((c: any) => c.cert_type).join(', ');
-      } else if (user.email) {
+      } else if (user.phone) {
         const { data: off } = await supabaseAdmin
           .from('officers')
           .select('specialization')
-          .eq('email', user.email)
+          .eq('phone', user.phone)
           .maybeSingle();
         if (off?.specialization) {
           user.unit_type = off.specialization;
@@ -181,7 +181,7 @@ router.post('/quick-login', debugOnly, async (req: Request, res: Response) => {
     }
 
     const token = jwt.sign(
-      { userId: user.id, email: user.email || '', role: user.role, unitType: user.unit_type, debug: true },
+      { userId: user.id, role: user.role, unitType: user.unit_type, debug: true },
       config.jwtSecret, { expiresIn: '1h' },
     );
     res.json({ token, user });

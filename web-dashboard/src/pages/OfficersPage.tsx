@@ -10,7 +10,6 @@ interface Officer {
   id: string;
   name: string;
   phone: string | null;
-  email: string | null;
   specialization: string;
   rank?: string | null;
   status: string;
@@ -35,7 +34,7 @@ const SPECIALIZATIONS = [
 ];
 
 const emptyForm = () => ({
-  name: '', phone: '', email: '', specialization: 'Rescue Officer', rank: '', status: 'active',
+  name: '', phone: '', specialization: 'Rescue Officer', rank: '', status: 'active',
 });
 
 const getErrorMessage = (error: any, fallback: string) =>
@@ -81,7 +80,6 @@ export default function OfficersPage() {
       await officerAPI.create({
         ...form,
         phone: form.phone.trim() ? normalizeMobileNumberInput(form.phone) : null,
-        email: form.email.trim() || null,
         rank: form.rank.trim() || null,
       });
       toast.success('Officer added successfully');
@@ -99,7 +97,6 @@ export default function OfficersPage() {
     setForm({
       name: officer.name || '',
       phone: officer.phone || '',
-      email: officer.email || '',
       specialization: officer.specialization || 'Rescue Officer',
       rank: officer.rank || '',
       status: officer.status || 'active',
@@ -115,7 +112,6 @@ export default function OfficersPage() {
       await officerAPI.update(editOfficer.id, {
         ...form,
         phone: form.phone.trim() ? normalizeMobileNumberInput(form.phone) : null,
-        email: form.email.trim() || null,
         rank: form.rank.trim() || null,
       });
       toast.success('Officer updated successfully');
@@ -152,14 +148,10 @@ export default function OfficersPage() {
       <label className="form-label" htmlFor={isEdit ? 'edit-officer-name' : 'new-officer-name'}>Name *</label>
       <input id={isEdit ? 'edit-officer-name' : 'new-officer-name'} className="form-input" required maxLength={120} placeholder="e.g. Juan dela Cruz" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
     </div>
-    <div className="officers-form-grid">
+      <div className="officers-form-grid">
       <div className="form-group">
-        <label className="form-label" htmlFor={isEdit ? 'edit-officer-phone' : 'new-officer-phone'}>Phone</label>
+        <label className="form-label" htmlFor={isEdit ? 'edit-officer-phone' : 'new-officer-phone'}>Mobile number</label>
         <MobileNumberInput id={isEdit ? 'edit-officer-phone' : 'new-officer-phone'} className="form-input" placeholder="09XXXXXXXXX" value={form.phone} onValueChange={(phone) => setForm({ ...form, phone })} />
-      </div>
-      <div className="form-group">
-        <label className="form-label" htmlFor={isEdit ? 'edit-officer-email' : 'new-officer-email'}>Email</label>
-        <input id={isEdit ? 'edit-officer-email' : 'new-officer-email'} className="form-input" type="email" maxLength={254} placeholder="e.g. juan.delacruz@mdrrmo.gov.ph" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
       </div>
     </div>
     <div className="form-group">

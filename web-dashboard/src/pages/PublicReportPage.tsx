@@ -24,7 +24,7 @@ type HotlineGroup = {
 };
 type PublicHotlines = {
   national: Array<{ label: string; phone: string }>;
-  mdrrmo: Array<{ label: string; phone: string; email?: string }>;
+  mdrrmo: Array<{ label: string; phone: string }>;
   barangays: HotlineGroup[];
 };
 type PublicHotlineRow = {

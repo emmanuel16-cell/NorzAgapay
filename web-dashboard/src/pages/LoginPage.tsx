@@ -4,9 +4,10 @@ import { useAuth } from '../context/AuthContext';
 import { authAPI, debugAPI } from '../lib/api';
 import PublicHeader from '../components/PublicHeader';
 import PasswordInput from '../components/PasswordInput';
-import { formatMobileNumber } from '../lib/mobileNumber';
+import MobileNumberInput from '../components/MobileNumberInput';
+import { formatMobileNumber, normalizeMobileNumberInput } from '../lib/mobileNumber';
 
-type DebugAccount = { id: string; full_name: string; username?: string | null; email?: string | null; phone?: string | null; role: string; audience: 'standard' | 'barangay' | 'resident'; barangay_id?: string; barangay_name?: string };
+type DebugAccount = { id: string; full_name: string; phone?: string | null; role: string; audience: 'standard' | 'barangay' | 'resident'; barangay_id?: string; barangay_name?: string };
 
 function groupDebugAccounts(accounts: DebugAccount[]) {
   const mdrrmo = accounts.filter((account) => account.audience === 'standard');
@@ -27,9 +28,8 @@ function groupDebugAccounts(accounts: DebugAccount[]) {
 }
 
 export default function LoginPage() {
-  const [identifier, setIdentifier] = useState('');
-  const [setupUsername, setSetupUsername] = useState('');
-  const [setupEmail, setSetupEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [setupPhone, setSetupPhone] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -53,7 +53,7 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      await login(identifier, password, 'auto');
+      await login(normalizeMobileNumberInput(phone), password, 'auto');
       // The login call in AuthContext updates state, we check it here
     } catch (err: any) {
       setError(err.response?.data?.error || 'Login failed. Please try again.');
@@ -66,9 +66,10 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      await authAPI.createMasterAdmin({ full_name: setupName, username: setupUsername, email: setupEmail, password });
+      const normalizedPhone = normalizeMobileNumberInput(setupPhone);
+      await authAPI.createMasterAdmin({ full_name: setupName, phone: normalizedPhone, password });
       setSetupRequired(false);
-      await login(setupUsername, password, 'auto');
+      await login(normalizedPhone, password, 'auto');
     } catch (err: any) {
       setError(err.response?.data?.error || 'Master admin setup failed. Please try again.');
       setLoading(false);
@@ -125,7 +126,7 @@ export default function LoginPage() {
       disabled={debugLoading}
     >
       <div className="debug-account-name">{account.full_name}</div>
-      <div className="debug-account-meta">{account.username || account.email || formatMobileNumber(account.phone) || 'No username'} · {account.role.replaceAll('_', ' ')}</div>
+      <div className="debug-account-meta">{formatMobileNumber(account.phone) || 'No mobile number'} · {account.role.replaceAll('_', ' ')}</div>
     </button>
   );
 
@@ -196,12 +197,8 @@ export default function LoginPage() {
               <input className="form-input" autoComplete="name" value={setupName} onChange={event => setSetupName(event.target.value)} required minLength={2} />
             </div>
             <div className="form-group">
-              <label className="form-label">Username</label>
-              <input className="form-input" autoComplete="username" value={setupUsername} onChange={event => setSetupUsername(event.target.value)} required minLength={3} maxLength={32} pattern="[A-Za-z0-9_.-]+" title="Use 3–32 letters, numbers, dots, underscores, or hyphens." />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Email Address</label>
-              <input className="form-input" type="email" autoComplete="email" value={setupEmail} onChange={event => setSetupEmail(event.target.value)} required />
+              <label className="form-label">Mobile number</label>
+              <MobileNumberInput className="form-input" value={setupPhone} onValueChange={setSetupPhone} placeholder="09XXXXXXXXX" required />
             </div>
             <div className="form-group">
               <label className="form-label">Password (at least 12 characters)</label>
@@ -216,15 +213,13 @@ export default function LoginPage() {
           </form>
         ) : <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label className="form-label" htmlFor="login-username">Username</label>
-            <input
-              id="login-username"
-              type="text"
-              autoComplete="username"
+            <label className="form-label" htmlFor="login-phone">Mobile number</label>
+            <MobileNumberInput
+              id="login-phone"
               className="form-input"
-              placeholder="Enter your username"
-              value={identifier}
-              onChange={(e) => setIdentifier(e.target.value)}
+              placeholder="09XXXXXXXXX"
+              value={phone}
+              onValueChange={setPhone}
               required
             />
           </div>

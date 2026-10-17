@@ -12,7 +12,7 @@ const router = Router();
 async function approveUserById(userId: string, adminUserId: string) {
   const { data: user, error: fetchError } = await supabaseAdmin
     .from('users')
-    .select('full_name, phone, email, role, unit_type')
+    .select('full_name, phone, role, unit_type')
     .eq('id', userId)
     .single();
 
@@ -46,7 +46,7 @@ async function approveUserById(userId: string, adminUserId: string) {
     const { data: existingOfficer } = await supabaseAdmin
       .from('officers')
       .select('id')
-      .eq('email', user.email)
+      .eq('phone', user.phone)
       .maybeSingle();
 
     if (existingOfficer) {
@@ -65,7 +65,6 @@ async function approveUserById(userId: string, adminUserId: string) {
         .insert([{
           name: user.full_name,
           phone: user.phone,
-          email: user.email,
           specialization: officerSpecialization,
           status: 'active',
         }]);
@@ -137,7 +136,7 @@ router.get(
     try {
       const { data: pendingUsers, error: usersError } = await supabaseAdmin
         .from('users')
-        .select('id, full_name, email, phone, role, unit_type, status, created_at')
+        .select('id, full_name, phone, role, unit_type, status, created_at')
         .eq('status', 'pending_verification')
         .order('created_at', { ascending: false });
 
@@ -189,7 +188,7 @@ router.get(
     try {
       const { data: archivedUsers, error: usersError } = await supabaseAdmin
         .from('users')
-        .select('id, full_name, email, phone, role, unit_type, status, created_at')
+        .select('id, full_name, phone, role, unit_type, status, created_at')
         .eq('status', 'rejected')
         .order('created_at', { ascending: false });
 

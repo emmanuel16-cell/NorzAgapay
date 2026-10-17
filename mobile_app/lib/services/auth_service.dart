@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:open_file/open_file.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
+import '../core/phone_number_utils.dart';
 import '../models/barangay_user.dart';
 
 class AuthService extends ChangeNotifier {
@@ -52,7 +53,7 @@ class AuthService extends ChangeNotifier {
     }
   }
 
-  Future<bool> login(String email, String password) async {
+  Future<bool> login(String phone, String password) async {
     _isLoading = true;
     notifyListeners();
 
@@ -63,7 +64,7 @@ class AuthService extends ChangeNotifier {
           'Content-Type': 'application/json',
           'ngrok-skip-browser-warning': 'true',
         },
-        body: jsonEncode({'email': email, 'password': password}),
+        body: jsonEncode({'phone': PhoneNumberUtils.digitsOnly(phone), 'password': password}),
       );
 
       if (res.statusCode == 200) {
@@ -130,12 +131,10 @@ class AuthService extends ChangeNotifier {
 
   Future<void> sendBarangayRegistrationOtp({
     required String fullName,
-    required String username,
+    required String phone,
+    required String password,
     required String barangayId,
     required String positionDesignation,
-    required String deliveryMethod,
-    String? email,
-    String? phone,
   }) async {
     _isLoading = true;
     notifyListeners();
@@ -145,10 +144,8 @@ class AuthService extends ChangeNotifier {
         headers: {'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true'},
         body: jsonEncode({
           'full_name': fullName,
-          'username': username,
-          if (email != null && email.trim().isNotEmpty) 'email': email.trim(),
-          if (phone != null && phone.trim().isNotEmpty) 'phone': phone.trim(),
-          'delivery_method': deliveryMethod,
+          'phone': PhoneNumberUtils.digitsOnly(phone),
+          'password': password,
           'barangay_id': barangayId,
           'position_designation': positionDesignation,
         }),
@@ -161,14 +158,14 @@ class AuthService extends ChangeNotifier {
     }
   }
 
-  Future<Map<String, dynamic>> verifyBarangayRegistrationOtp({required String deliveryMethod, required String destination, required String otp}) async {
+  Future<Map<String, dynamic>> verifyBarangayRegistrationOtp({required String phone, required String otp}) async {
     _isLoading = true;
     notifyListeners();
     try {
       final response = await http.post(
         Uri.parse('$_apiBaseUrl/barangay/verify-register-otp'),
         headers: {'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true'},
-        body: jsonEncode({'delivery_method': deliveryMethod, 'destination': destination, 'otp': otp}),
+        body: jsonEncode({'phone': PhoneNumberUtils.digitsOnly(phone), 'otp': otp}),
       );
       final data = Map<String, dynamic>.from(jsonDecode(response.body));
       if (response.statusCode != 201) throw Exception(data['error'] ?? 'Could not verify account');
@@ -353,7 +350,6 @@ class AuthService extends ChangeNotifier {
 
   Future<void> updateOwnProfile({
     required String fullName,
-    required String phone,
   }) async {
     if (_token == null || _currentUser == null) {
       throw Exception('Sign in again to update your information.');
@@ -366,18 +362,42 @@ class AuthService extends ChangeNotifier {
         'Content-Type': 'application/json',
         'ngrok-skip-browser-warning': 'true',
       },
-      body: jsonEncode({'full_name': fullName, 'phone': phone}),
+      body: jsonEncode({'full_name': fullName}),
     );
     final data = Map<String, dynamic>.from(jsonDecode(response.body));
     if (response.statusCode != 200) {
       throw Exception(data['error'] ?? 'Could not update your information.');
     }
 
-    final savedPhone = data['phone'] as String?;
     _currentUser = _currentUser!.copyWith(
       fullName: data['full_name'] as String? ?? fullName,
-      phone: savedPhone,
     );
+    await Hive.box(_authBoxName).put('user', _currentUser!.toJson());
+    notifyListeners();
+  }
+
+  Future<String> requestOwnPhoneChangeOtp({required String phone, required String currentPassword}) async {
+    if (_token == null) throw Exception('Sign in again to update your mobile number.');
+    final response = await http.post(
+      Uri.parse('$_apiBaseUrl/barangay/profile/phone-otp'),
+      headers: {'Authorization': 'Bearer $_token', 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true'},
+      body: jsonEncode({'phone': PhoneNumberUtils.digitsOnly(phone), 'current_password': currentPassword}),
+    );
+    final data = Map<String, dynamic>.from(jsonDecode(response.body));
+    if (response.statusCode != 200) throw Exception(data['error'] ?? 'Could not send SMS verification code.');
+    return data['message']?.toString() ?? 'SMS verification code sent.';
+  }
+
+  Future<void> confirmOwnPhoneChange({required String phone, required String otp, required String currentPassword}) async {
+    if (_token == null || _currentUser == null) throw Exception('Sign in again to update your mobile number.');
+    final response = await http.post(
+      Uri.parse('$_apiBaseUrl/barangay/profile/change-phone'),
+      headers: {'Authorization': 'Bearer $_token', 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true'},
+      body: jsonEncode({'phone': PhoneNumberUtils.digitsOnly(phone), 'otp': otp, 'current_password': currentPassword}),
+    );
+    final data = Map<String, dynamic>.from(jsonDecode(response.body));
+    if (response.statusCode != 200) throw Exception(data['error'] ?? 'Could not update your mobile number.');
+    _currentUser = _currentUser!.copyWith(phone: data['phone'] as String?);
     await Hive.box(_authBoxName).put('user', _currentUser!.toJson());
     notifyListeners();
   }

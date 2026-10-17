@@ -39,7 +39,6 @@ async function runTest() {
     barangayId: 'barangay-poblacion-001',
     barangayName: 'Poblacion',
     fullName: 'Juan Dela Cruz',
-    email: `juan_${Date.now()}@example.com`,
     phone: '09123456789',
     positionDesignation: 'Barangay Dispatcher',
     punongBarangayName: 'Hon. Maria Santos',

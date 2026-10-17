@@ -3,7 +3,7 @@ import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import { supabaseAdmin } from '../config/supabase';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth';
-import { isGlobalUsernameConflict, isUsernameTaken, normalizeUsername } from '../services/accountUsernameService';
+import { isMobileNumberRegistryConflict, normalizeMobileNumber } from '../services/mobileNumberService';
 
 const router = Router();
 const responderSpecializations = [
@@ -41,7 +41,7 @@ router.get(
 
       let query = supabaseAdmin
         .from('users')
-        .select('id, full_name, username, email, phone, role, unit_type, status, verified, latitude, longitude, last_seen, created_at')
+        .select('id, full_name, phone, role, unit_type, status, verified, latitude, longitude, last_seen, created_at')
         .order('created_at', { ascending: false });
 
       if (user.role === 'admin' || user.role === 'logistics') query = query.in('role', ['logistics', 'dispatcher', 'responder']);
@@ -76,19 +76,20 @@ router.get(
 
         const { data: officersList } = await supabaseAdmin
           .from('officers')
-          .select('email, specialization');
+          .select('phone, specialization');
         const officerSpecMap = new Map<string, string>();
         for (const off of officersList || []) {
-          if (off.email?.trim() && off.specialization) {
-            officerSpecMap.set(off.email.trim().toLowerCase(), off.specialization);
+          const phone = normalizeMobileNumber(off.phone);
+          if (phone && off.specialization) {
+            officerSpecMap.set(phone, off.specialization);
           }
         }
 
         for (const u of userList) {
           if (specMap.has(u.id)) {
             u.unit_type = specMap.get(u.id)!.join(', ');
-          } else if (u.email && officerSpecMap.has(u.email.trim().toLowerCase())) {
-            u.unit_type = officerSpecMap.get(u.email.trim().toLowerCase());
+          } else if (normalizeMobileNumber(u.phone) && officerSpecMap.has(normalizeMobileNumber(u.phone)!)) {
+            u.unit_type = officerSpecMap.get(normalizeMobileNumber(u.phone)!);
           }
         }
       }
@@ -101,15 +102,19 @@ router.get(
   }
 );
 
-// Create dashboard accounts. Responder accounts are provisioned by administrators;
-// contact details and starting specialization are intentionally optional.
+// Create dashboard accounts with a mobile number and password.
 router.post('/', authenticate, authorize('admin', 'master_admin'), async (req: AuthRequest, res: Response): Promise<void> => {
   const schema = z.object({
     full_name: z.string().trim().min(2).max(120),
-    username: z.string().trim().min(3).max(32).regex(/^[a-zA-Z0-9_.-]+$/, 'Use only letters, numbers, dots, underscores, or hyphens.').transform(normalizeUsername),
-    email: z.string().trim().email().transform((value) => value.toLowerCase()).optional(),
     password: z.string().min(8).max(128),
-    phone: z.string().trim().max(30).nullable().optional(),
+    phone: z.string().trim().transform((value, ctx) => {
+      const normalized = normalizeMobileNumber(value);
+      if (!normalized) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Enter a valid Philippine mobile number.' });
+        return z.NEVER;
+      }
+      return normalized;
+    }),
     unit_type: z.union([
       z.string().trim().max(800),
       z.array(z.enum(responderSpecializations)).max(responderSpecializations.length),
@@ -121,9 +126,15 @@ router.post('/', authenticate, authorize('admin', 'master_admin'), async (req: A
     res.status(400).json({ error: 'Validation failed', details: parsed.error.flatten() });
     return;
   }
-  const { role, full_name, username, email, password, phone } = parsed.data;
-  if (await isUsernameTaken(username)) {
-    res.status(409).json({ error: 'That username is already in use.' });
+  const { role, full_name, password, phone } = parsed.data;
+  const { data: reservation, error: reservationError } = await supabaseAdmin
+    .from('account_mobile_numbers').select('account_id').eq('phone_normalized', phone).maybeSingle();
+  if (reservationError) {
+    res.status(500).json({ error: 'Unable to verify the mobile number.' });
+    return;
+  }
+  if (reservation) {
+    res.status(409).json({ error: 'That mobile number is already linked to an account.' });
     return;
   }
   if (req.user!.role !== 'master_admin' && role === 'admin') {
@@ -145,23 +156,18 @@ router.post('/', authenticate, authorize('admin', 'master_admin'), async (req: A
       .from('users')
       .insert({
         full_name,
-        username,
-        email: email || null,
-        phone: phone?.trim() || null,
+        phone,
         password_hash,
         role,
         unit_type: role === 'responder' ? unitType : null,
         status: 'active',
         verified: true,
       })
-      .select('id, full_name, username, email, role, phone, unit_type, status, verified, created_at')
+      .select('id, full_name, role, phone, unit_type, status, verified, created_at')
       .single();
-    if (isGlobalUsernameConflict(error)) {
-      res.status(409).json({ error: 'That username is already in use.' });
-      return;
-    }
+    if (isMobileNumberRegistryConflict(error)) { res.status(409).json({ error: 'That mobile number is already linked to an account.' }); return; }
     if (error?.code === '23505') {
-      res.status(409).json({ error: 'An account with this email already exists.' });
+      res.status(409).json({ error: 'That mobile number is already linked to an account.' });
       return;
     }
     if (error || !data) {
@@ -170,19 +176,17 @@ router.post('/', authenticate, authorize('admin', 'master_admin'), async (req: A
       return;
     }
     if (role === 'responder') {
-      const { data: existingOfficer, error: officerLookupError } = email
-        ? await supabaseAdmin
+      const { data: existingOfficer, error: officerLookupError } = await supabaseAdmin
           .from('officers')
           .select('id')
-          .ilike('email', email)
+          .eq('phone', phone)
           .limit(1)
           .maybeSingle()
-        : { data: null, error: null };
+      ;
       if (officerLookupError) throw officerLookupError;
       const officerValues = {
         name: full_name,
-        email: email || null,
-        phone: phone?.trim() || null,
+        phone,
         specialization: unitType || '',
         status: 'active',
       };
@@ -221,7 +225,6 @@ router.post('/', authenticate, authorize('admin', 'master_admin'), async (req: A
 
 const responderProfileSchema = z.object({
   full_name: z.string().trim().min(2).max(120).optional(),
-  phone: z.string().trim().max(30).nullable().optional(),
   specializations: z.array(z.enum(responderSpecializations)).max(responderSpecializations.length).optional(),
 }).refine((value) => Object.keys(value).length > 0, 'Provide at least one profile field to update.');
 
@@ -239,7 +242,6 @@ router.patch('/me/profile', authenticate, async (req: AuthRequest, res: Response
   try {
     const updates: Record<string, unknown> = {};
     if (parsed.data.full_name !== undefined) updates.full_name = parsed.data.full_name;
-    if (parsed.data.phone !== undefined) updates.phone = parsed.data.phone?.trim() || null;
     if (parsed.data.specializations !== undefined) {
       updates.unit_type = [...new Set(parsed.data.specializations)].join(', ') || null;
     }
@@ -248,7 +250,7 @@ router.patch('/me/profile', authenticate, async (req: AuthRequest, res: Response
       .from('users')
       .update(updates)
       .eq('id', req.user!.userId)
-      .select('id, full_name, email, phone, role, unit_type, status, verified, latitude, longitude')
+      .select('id, full_name, phone, role, unit_type, status, verified, latitude, longitude')
       .single();
     if (error || !user) throw error || new Error('User not found.');
 
@@ -270,25 +272,22 @@ router.patch('/me/profile', authenticate, async (req: AuthRequest, res: Response
         );
         if (insertError) throw insertError;
       }
-      if (user.email) {
+      if (user.phone) {
         await supabaseAdmin
           .from('officers')
           .update({
             ...(parsed.data.full_name !== undefined ? { name: user.full_name } : {}),
-            ...(parsed.data.phone !== undefined ? { phone: user.phone } : {}),
+            ...(parsed.data.full_name !== undefined ? { phone: user.phone } : {}),
             specialization: user.unit_type || '',
           })
-          .ilike('email', user.email);
+          .eq('phone', user.phone);
       }
-    } else if (parsed.data.full_name !== undefined || parsed.data.phone !== undefined) {
-      if (user.email) {
+    } else if (parsed.data.full_name !== undefined) {
+      if (user.phone) {
         await supabaseAdmin
           .from('officers')
-          .update({
-            ...(parsed.data.full_name !== undefined ? { name: user.full_name } : {}),
-            ...(parsed.data.phone !== undefined ? { phone: user.phone } : {}),
-          })
-          .ilike('email', user.email);
+          .update({ name: user.full_name })
+          .eq('phone', user.phone);
       }
     }
 
@@ -352,7 +351,7 @@ router.get('/:id', authenticate, async (req: AuthRequest, res: Response): Promis
 
     const { data, error } = await supabaseAdmin
       .from('users')
-      .select('id, full_name, email, phone, role, unit_type, status, verified, latitude, longitude, last_seen, created_at')
+      .select('id, full_name, phone, role, unit_type, status, verified, latitude, longitude, last_seen, created_at')
       .eq('id', req.params.id)
       .single();
 
@@ -379,11 +378,11 @@ router.get('/:id', authenticate, async (req: AuthRequest, res: Response): Promis
     if (data.role === 'responder') {
       if (specCerts.length > 0) {
         data.unit_type = specCerts.map((c: any) => c.cert_type).join(', ');
-      } else if (data.email) {
+      } else if (data.phone) {
         const { data: off } = await supabaseAdmin
           .from('officers')
           .select('specialization')
-          .ilike('email', data.email)
+          .eq('phone', data.phone)
           .limit(1)
           .maybeSingle();
         if (off?.specialization) {
@@ -413,8 +412,6 @@ router.get('/:id', authenticate, async (req: AuthRequest, res: Response): Promis
 
 const updateUserSchema = z.object({
   full_name: z.string().optional(),
-  username: z.string().trim().min(3).max(32).regex(/^[a-zA-Z0-9_.-]+$/).transform(normalizeUsername).optional(),
-  phone: z.string().max(15).optional(),
   role: z.enum(['master_admin', 'admin', 'logistics', 'dispatcher', 'responder']).optional(),
   unit_type: z.enum([
     'police', 
@@ -464,10 +461,6 @@ router.patch(
         res.status(404).json({ error: 'User not found.' });
         return;
       }
-      if (parsed.data.username && await isUsernameTaken(parsed.data.username, { table: 'users', id: req.params.id })) {
-        res.status(409).json({ error: 'That username is already in use.' });
-        return;
-      }
       if (req.user!.role !== 'master_admin') {
         if (!['logistics', 'dispatcher', 'responder'].includes(target.role)) {
           res.status(403).json({ error: 'MDRRMO admin and staff accounts may only manage logistics, dispatcher, and responder accounts.' });
@@ -489,12 +482,12 @@ router.patch(
         .from('users')
         .update(updateData)
         .eq('id', req.params.id)
-        .select('id, full_name, username, email, role, status, verified')
+        .select('id, full_name, phone, role, status, verified')
         .single();
 
       if (error) {
-        if (isGlobalUsernameConflict(error)) {
-          res.status(409).json({ error: 'That username is already in use.' });
+        if (isMobileNumberRegistryConflict(error)) {
+          res.status(409).json({ error: 'That mobile number is already linked to another account.' });
           return;
         }
         res.status(500).json({ error: 'Failed to update user.' });

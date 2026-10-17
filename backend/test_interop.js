@@ -100,19 +100,19 @@ async function runTests() {
   try {
     const { data: officer } = await supabase
       .from('officers')
-      .select('id, name, email, specialization')
-      .eq('email', 'officer@test.com')
+      .select('id, name, phone, specialization')
+      .eq('phone', '09123456789')
       .maybeSingle();
 
-    assert(officer !== null, 'Found officer@test.com in officers table');
+    assert(officer !== null, 'Found officer with the expected mobile number in officers table');
     const specs = (officer?.specialization || '').split(',').map((s) => s.trim()).filter(Boolean);
     assert(specs.length === 3, `Officer has all 3 specializations: ${officer?.specialization}`);
 
     // Verify multi-specialization fallback logic implemented in backend:
     const { data: user } = await supabase
       .from('users')
-      .select('id, full_name, email, role, unit_type')
-      .eq('email', 'officer@test.com')
+      .select('id, full_name, phone, role, unit_type')
+      .eq('phone', '09123456789')
       .single();
 
     let resolvedUnitType = user.unit_type;
@@ -120,7 +120,7 @@ async function runTests() {
       const { data: off } = await supabase
         .from('officers')
         .select('specialization')
-        .eq('email', user.email)
+        .eq('phone', user.phone)
         .maybeSingle();
       if (off?.specialization) {
         resolvedUnitType = off.specialization;

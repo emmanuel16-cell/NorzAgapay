@@ -34,7 +34,6 @@ class IncidentReport {
   final String? address;
   final String? reporterName;
   final String? reporterPhone;
-  final String? reporterEmail;
   final String? barangayId;
   final String barangayResponseStatus; // 'pending' | 'responding' | 'resolved'
   final String? barangayResponseNotes;
@@ -92,7 +91,6 @@ class IncidentReport {
     this.address,
     this.reporterName,
     this.reporterPhone,
-    this.reporterEmail,
     this.barangayId,
     this.barangayResponseStatus = 'pending',
     this.barangayResponseNotes,
@@ -249,7 +247,6 @@ class IncidentReport {
       address: json['address'],
       reporterName: json['reporter_name'],
       reporterPhone: json['reporter_phone'],
-      reporterEmail: json['reporter_email'],
       barangayId: json['barangay_id'],
       barangayResponseStatus: json['barangay_response_status'] ??
           json['response_status'] ??
@@ -316,7 +313,6 @@ class IncidentReport {
       'address': address,
       'reporter_name': reporterName,
       'reporter_phone': reporterPhone,
-      'reporter_email': reporterEmail,
       'barangay_id': barangayId,
       'barangay_response_status': barangayResponseStatus,
       'barangay_response_notes': barangayResponseNotes,

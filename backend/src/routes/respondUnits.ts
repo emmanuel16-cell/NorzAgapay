@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth';
 import { supabaseAdmin } from '../config/supabase';
 import { currentManilaDate } from '../services/respondUnitAvailability';
+import { normalizeMobileNumber } from '../services/mobileNumberService';
 
 const router = Router();
 
@@ -74,10 +75,10 @@ async function getUnitDetails(unitIds?: string[]) {
   const responderIds = [...new Set(memberships.map((member: any) => member.responder_user_id).filter(Boolean))];
   const [officersResult, respondersResult] = await Promise.all([
     officerIds.length
-      ? supabaseAdmin.from('officers').select('id, name, email, phone, specialization, rank, status').in('id', officerIds)
+      ? supabaseAdmin.from('officers').select('id, name, phone, specialization, rank, status').in('id', officerIds)
       : Promise.resolve({ data: [], error: null } as any),
     responderIds.length
-      ? supabaseAdmin.from('users').select('id, full_name, email, phone, role, status').in('id', responderIds)
+      ? supabaseAdmin.from('users').select('id, full_name, phone, role, status').in('id', responderIds)
       : Promise.resolve({ data: [], error: null } as any),
   ]);
   if (officersResult.error) throw officersResult.error;
@@ -99,7 +100,6 @@ async function getUnitDetails(unitIds?: string[]) {
           member_role: member.member_role,
           role_label: memberRoleLabels[member.member_role] || member.member_role,
           name: officer.name || responder.full_name || 'Unnamed member',
-          email: responder.email || officer.email || null,
           phone: officer.phone || responder.phone || null,
           specialization: officer.specialization || '',
           rank: officer.rank || null,
@@ -123,7 +123,7 @@ async function getUnitDetails(unitIds?: string[]) {
       team_leader: leader ? {
         id: leader.responder_user_id,
         full_name: leaderAccount?.full_name || leader.name,
-        email: leaderAccount?.email || leader.email,
+        phone: leaderAccount?.phone || leader.phone || null,
         is_active_account: leaderAccount?.role === 'responder' && leaderAccount?.status === 'active',
       } : null,
       members,
@@ -138,11 +138,12 @@ async function getUnitDetails(unitIds?: string[]) {
 }
 
 async function ensureOfficerForResponder(user: any, specialization: string) {
-  const { data: existing, error: lookupError } = user.email
+  const normalizedPhone = normalizeMobileNumber(user.phone);
+  const { data: existing, error: lookupError } = normalizedPhone
     ? await supabaseAdmin
       .from('officers')
       .select('id')
-      .ilike('email', user.email.trim())
+      .eq('phone', normalizedPhone)
       .limit(1)
       .maybeSingle()
     : { data: null, error: null };
@@ -153,8 +154,7 @@ async function ensureOfficerForResponder(user: any, specialization: string) {
     .from('officers')
     .insert({
       name: user.full_name,
-      phone: user.phone || null,
-      email: user.email || null,
+      phone: normalizedPhone,
       specialization: specialization || 'mixed',
       rank: memberRoleLabels.team_leader,
       status: 'active',
@@ -171,7 +171,6 @@ async function createRosterOfficer(unitId: string, unitSpecialization: string, m
     .insert({
       name: member.name,
       phone: member.phone?.trim() || null,
-      email: null,
       specialization: unitSpecialization || 'mixed',
       rank: memberRoleLabels[member.member_role],
       status: 'active',
@@ -248,7 +247,7 @@ router.get('/leader-accounts', authenticate, authorize('admin', 'logistics', 'ma
     const currentUnitId = typeof req.query.unit_id === 'string' ? req.query.unit_id : '';
     const [{ data: users, error: usersError }, { data: leaders, error: leadersError }, { data: officers, error: officersError }] = await Promise.all([
       supabaseAdmin.from('users')
-        .select('id, full_name, email, phone, status')
+        .select('id, full_name, phone, status')
         .eq('role', 'responder')
         .eq('status', 'active')
         .order('full_name', { ascending: true }),
@@ -257,7 +256,7 @@ router.get('/leader-accounts', authenticate, authorize('admin', 'logistics', 'ma
         .eq('member_role', 'team_leader')
         .eq('is_active', true),
       supabaseAdmin.from('officers')
-        .select('id, name, email, phone, specialization, status')
+        .select('id, name, phone, specialization, status')
         .eq('status', 'active')
         .order('name', { ascending: true }),
     ]);
@@ -266,16 +265,20 @@ router.get('/leader-accounts', authenticate, authorize('admin', 'logistics', 'ma
     if (officersError) throw officersError;
 
     const leaderUnit = new Map((leaders || []).map((row: any) => [row.responder_user_id, row.unit_id]));
-    const officerByEmail = new Map<string, any>();
+    const officerByPhone = new Map<string, any>();
     for (const officer of officers || []) {
-      if (officer.email?.trim()) officerByEmail.set(officer.email.trim().toLowerCase(), officer);
+      const phone = normalizeMobileNumber(officer.phone);
+      if (phone) officerByPhone.set(phone, officer);
     }
-    const activeResponderEmails = new Set((users || []).map((user: any) => user.email?.trim().toLowerCase()).filter(Boolean));
+    const activeResponderPhones = new Set<string>(
+      (users || []).map((user: any) => normalizeMobileNumber(user.phone)).filter((phone): phone is string => Boolean(phone)),
+    );
     const available = (users || []).filter((user: any) => {
       const assignedUnit = leaderUnit.get(user.id);
       return !assignedUnit || assignedUnit === currentUnitId;
     }).map((user: any) => {
-      const officer = officerByEmail.get(user.email?.trim().toLowerCase());
+      const phone = normalizeMobileNumber(user.phone);
+      const officer = phone ? officerByPhone.get(phone) : undefined;
       return {
         ...user,
         officer_id: officer?.id || null,
@@ -283,9 +286,10 @@ router.get('/leader-accounts', authenticate, authorize('admin', 'logistics', 'ma
         officer_specialization: officer?.specialization || null,
       };
     });
-    const officersWithoutResponderAccount = (officers || []).filter((officer: any) =>
-      !officer.email?.trim() || !activeResponderEmails.has(officer.email.trim().toLowerCase()),
-    );
+    const officersWithoutResponderAccount = (officers || []).filter((officer: any) => {
+      const phone = normalizeMobileNumber(officer.phone);
+      return !phone || !activeResponderPhones.has(phone);
+    });
     res.json({ responders: available, officers_without_responder_account: officersWithoutResponderAccount });
   } catch (error: any) {
     if (['42P01', '42703', 'PGRST204', 'PGRST205', 'PGRST200'].includes(error?.code)) {
@@ -359,7 +363,7 @@ router.post('/', authenticate, authorize('admin', 'logistics', 'master_admin'), 
     if (parsed.data.team_leader_user_id) {
       const { data, error: userError } = await supabaseAdmin
         .from('users')
-        .select('id, full_name, email, phone, role, status')
+        .select('id, full_name, phone, role, status')
         .eq('id', parsed.data.team_leader_user_id)
         .maybeSingle();
       if (userError) throw userError;
@@ -441,7 +445,7 @@ router.put('/:id/team-leader', authenticate, authorize('admin', 'logistics', 'ma
     if (!unit) { res.status(404).json({ error: 'Respond unit not found.' }); return; }
 
     const { data: account, error: accountError } = await supabaseAdmin
-      .from('users').select('id, full_name, email, phone, role, status')
+      .from('users').select('id, full_name, phone, role, status')
       .eq('id', parsed.data.responder_user_id).maybeSingle();
     if (accountError) throw accountError;
     if (!account || account.role !== 'responder' || account.status !== 'active') {

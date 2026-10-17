@@ -268,7 +268,7 @@
   <g>
     <rect x="1284" y="651" width="382" height="112" rx="12" class="card" />
     <use href="#message" x="1302" y="671" width="42" height="42" class="icon" />
-    <text x="1356" y="685" class="cardTitleSmall">Email &amp; SMS</text>
+    <text x="1356" y="685" class="cardTitleSmall">SMS</text>
     <text x="1356" y="706" class="body">SendGrid · TextBee</text>
     <text x="1302" y="741" class="tiny">REQUIRES PROVIDER CONFIGURATION</text>
   </g>

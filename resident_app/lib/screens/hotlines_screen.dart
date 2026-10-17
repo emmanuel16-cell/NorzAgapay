@@ -370,14 +370,6 @@ class _HotlinesScreenState extends State<HotlinesScreen> {
                           onTap: () => _launch('https://www.facebook.com/RescueNgGaray'),
                         ),
 
-                        // Button 3: Email MDRRMO (light slate/blue bg)
-                        _Image3Button(
-                          icon: Icons.mail_rounded,
-                          label: 'Email MDRRMO',
-                          backgroundColor: const Color(0xFFE8EEF5), // soft grayish slate blue from img 3
-                          foregroundColor: const Color(0xFF1B4F72), // deep navy/blue from img 3
-                          onTap: () => _launch('mailto:norzagarayrescue2015@gmail.com'),
-                        ),
                       ],
                     ),
                   ),

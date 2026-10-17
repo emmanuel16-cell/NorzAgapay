@@ -28,7 +28,6 @@ export interface DispatcherVerification {
   barangay_id: string;
   barangay_name?: string;
   full_name: string;
-  email: string;
   phone?: string | null;
   position_designation: string;
   punong_barangay_name: string;
@@ -123,8 +122,7 @@ export class DispatcherVerificationService {
     barangayId: string;
     barangayName?: string;
     fullName: string;
-    email: string;
-    phone?: string | null;
+    phone: string;
     positionDesignation?: string;
     punongBarangayName?: string;
     punongBarangayPosition?: string;
@@ -141,7 +139,6 @@ export class DispatcherVerificationService {
       barangay_id: params.barangayId,
       barangay_name: params.barangayName || 'Barangay',
       full_name: params.fullName,
-      email: params.email,
       phone: params.phone || null,
       position_designation: normalizePositionDesignation(params.positionDesignation) || '',
       punong_barangay_name: params.punongBarangayName || 'Punong Barangay / Authorized Official',
@@ -173,7 +170,6 @@ export class DispatcherVerificationService {
         user_id: record.user_id,
         barangay_id: record.barangay_id,
         full_name: record.full_name,
-        email: record.email,
         phone: record.phone,
         position_designation: record.position_designation,
         punong_barangay_name: record.punong_barangay_name,
@@ -224,7 +220,7 @@ export class DispatcherVerificationService {
 
     // Always persist to local JSON store
     const items = ensureStorage();
-    const idx = items.findIndex((i) => i.user_id === userId || i.email === params.email);
+    const idx = items.findIndex((i) => i.user_id === userId || i.phone === params.phone);
     if (idx >= 0) {
       items[idx] = record;
     } else {
@@ -236,16 +232,16 @@ export class DispatcherVerificationService {
   }
 
   /**
-   * Find a pending dispatcher verification record by email (for login).
+   * Find a pending dispatcher verification record by mobile number (for login).
    * Checks Supabase first, then falls back to local storage.
    */
-  static async findByEmail(email: string): Promise<DispatcherVerification | null> {
-    const cleanEmail = email.trim().toLowerCase();
+  static async findByPhone(phone: string): Promise<DispatcherVerification | null> {
+    const cleanPhone = phone.trim();
     try {
       const { data, error } = await supabaseAdmin
         .from('barangay_dispatcher_verifications')
         .select('*, barangays(name)')
-        .ilike('email', cleanEmail)
+        .eq('phone', cleanPhone)
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -258,7 +254,7 @@ export class DispatcherVerificationService {
         };
 
         const items = ensureStorage();
-        const idx = items.findIndex((i) => i.email?.toLowerCase() === cleanEmail);
+        const idx = items.findIndex((i) => i.phone === cleanPhone);
         if (idx >= 0) {
           if (!item._password_hash && items[idx]._password_hash) {
             item._password_hash = items[idx]._password_hash;
@@ -273,7 +269,7 @@ export class DispatcherVerificationService {
     } catch (_) {}
 
     const items = ensureStorage();
-    return items.find((i) => i.email?.toLowerCase() === cleanEmail) || null;
+    return items.find((i) => i.phone === cleanPhone) || null;
   }
 
   /**

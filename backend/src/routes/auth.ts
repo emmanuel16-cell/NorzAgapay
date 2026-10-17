@@ -5,11 +5,11 @@ import { z } from 'zod';
 import { config } from '../config';
 import { supabaseAdmin } from '../config/supabase';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth';
-import { emailService } from '../services/emailService';
 import { smsService } from '../services/smsService';
-import { setOtp, getOtp, deleteOtp } from '../config/redis';
-import { randomBytes, randomInt } from 'crypto';
-import { isGlobalUsernameConflict, isUsernameTaken, normalizeUsername } from '../services/accountUsernameService';
+import { setOtp, getOtp, deleteOtp, getOtpResendCooldownSeconds } from '../config/redis';
+import type { ResidentOtpRecord } from '../config/redis';
+import { randomInt } from 'crypto';
+import { isMobileNumberRegistryConflict, normalizeMobileNumber } from '../services/mobileNumberService';
 
 const router = Router();
 
@@ -17,49 +17,43 @@ const router = Router();
 // Validation Schemas
 // ============================================
 
+const mobileNumberSchema = z.string().trim().transform((value, ctx) => {
+  const normalized = normalizeMobileNumber(value);
+  if (!normalized) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Enter a valid Philippine mobile number.' });
+    return z.NEVER;
+  }
+  return normalized;
+});
+
 const registerSchema = z.object({
   full_name: z.string().min(2, 'Full name is required'),
-  username: z.string().trim().min(3).max(32).regex(/^[a-zA-Z0-9_.-]+$/, 'Use only letters, numbers, dots, underscores, or hyphens.').transform(normalizeUsername),
-  email: z.string().trim().email('Invalid email address').transform((value) => value.toLowerCase()),
-  phone: z.string().max(30).optional().nullable(),
+  phone: mobileNumberSchema,
   password: z.string().min(8, 'Password must be at least 8 characters'),
   role: z.enum(['responder']),
   unit_type: z.string().nullable().optional(),
 });
 
 const loginSchema = z.object({
-  identifier: z.string().trim().min(1).max(254).optional(),
-  // Keep accepting older clients that still submit the email property.
-  email: z.string().trim().email('A valid email address is required').transform((value) => value.toLowerCase()).optional(),
+  phone: mobileNumberSchema,
   password: z.string().min(1, 'Password is required'),
-}).refine((value) => Boolean(value.identifier || value.email), {
-  message: 'Enter your username or email address.',
-  path: ['identifier'],
-}).transform((value) => ({ identifier: (value.identifier || value.email || '').trim().toLowerCase(), password: value.password }));
+});
 
 const masterAdminSetupSchema = z.object({
   full_name: z.string().trim().min(2).max(120),
-  username: z.string().trim().min(3).max(32).regex(/^[a-zA-Z0-9_.-]+$/).transform(normalizeUsername),
-  email: z.string().trim().email().transform((value) => value.toLowerCase()),
+  phone: mobileNumberSchema,
   password: z.string().min(12).max(128),
 });
 
 const passwordResetOtpSchema = z.object({
-  email: z.string().trim().email('A valid account email address is required.').transform((value) => value.toLowerCase()),
-  delivery_method: z.enum(['email', 'sms']).default('email'),
+  phone: mobileNumberSchema,
 });
 
 const passwordResetSchema = z.object({
-  email: z.string().trim().email('A valid account email address is required.').transform((value) => value.toLowerCase()),
+  phone: mobileNumberSchema,
   otp: z.string().trim().regex(/^\d{6}$/, 'Enter the 6-digit verification code.'),
   new_password: z.string().min(6, 'New password must be at least 6 characters long.').max(128),
 });
-
-function maskEmailAddress(email: string): string {
-  const [localPart, domain] = email.split('@');
-  if (!localPart || !domain) return 'your registered email';
-  return `${localPart.slice(0, 1)}***@${domain}`;
-}
 
 function maskMobileNumber(phone: string): string {
   const digits = phone.replace(/\D/g, '');
@@ -99,23 +93,19 @@ router.post('/master-admin-setup', async (req: Request, res: Response): Promise<
       res.status(409).json({ error: 'Master admin setup is already complete.' });
       return;
     }
-    const { full_name, username, email, password } = parsed.data;
-    if (await isUsernameTaken(username)) {
-      res.status(409).json({ error: 'That username is already in use.' });
-      return;
-    }
+    const { full_name, phone, password } = parsed.data;
     const password_hash = await bcrypt.hash(password, 12);
     const { data, error } = await supabaseAdmin
       .from('users')
-      .insert({ full_name, username, email, password_hash, role: 'master_admin', status: 'active', verified: true })
-      .select('id, full_name, username, email, role, status, verified')
+      .insert({ full_name, phone, password_hash, role: 'master_admin', status: 'active', verified: true })
+      .select('id, full_name, phone, role, status, verified')
       .single();
-    if (isGlobalUsernameConflict(error)) {
-      res.status(409).json({ error: 'That username is already in use.' });
+    if (isMobileNumberRegistryConflict(error)) {
+      res.status(409).json({ error: 'That mobile number is already linked to an account.' });
       return;
     }
     if (error?.code === '23505') {
-      res.status(409).json({ error: 'Setup was completed already, or this email is already registered.' });
+      res.status(409).json({ error: 'Setup was completed already.' });
       return;
     }
     if (error || !data) {
@@ -142,24 +132,7 @@ router.post('/register', authenticate, authorize('admin', 'master_admin'), async
       return;
     }
 
-    const { full_name, username, email, phone, password, role, unit_type } = parsed.data;
-
-    if (await isUsernameTaken(username)) {
-      res.status(409).json({ error: 'That username is already in use.' });
-      return;
-    }
-
-    // Check if user already exists
-    const { data: existingUser } = await supabaseAdmin
-      .from('users')
-      .select('id')
-      .eq('email', email)
-      .maybeSingle();
-
-    if (existingUser) {
-      res.status(409).json({ error: 'Email already registered.' });
-      return;
-    }
+    const { full_name, phone, password, role, unit_type } = parsed.data;
 
     // Hash password
     const password_hash = await bcrypt.hash(password, 12);
@@ -180,23 +153,22 @@ router.post('/register', authenticate, authorize('admin', 'master_admin'), async
       .from('users')
       .insert({
         full_name,
-        username,
-        email,
-        phone: phone || null,
+        phone,
         password_hash,
         role,
         unit_type: primaryUnitType,
         status: initialStatus,
         verified: isAutoActive,
       })
-      .select('id, full_name, username, email, role, unit_type, status, verified')
+      .select('id, full_name, phone, role, unit_type, status, verified')
       .single();
 
     if (insertError) {
-      if (isGlobalUsernameConflict(insertError)) {
-        res.status(409).json({ error: 'That username is already in use.' });
+      if (isMobileNumberRegistryConflict(insertError)) {
+        res.status(409).json({ error: 'That mobile number is already linked to an account.' });
         return;
       }
+      if (insertError.code === '23505') { res.status(409).json({ error: 'That mobile number is already linked to an account.' }); return; }
       console.error('Registration error:', insertError);
       res.status(500).json({ error: 'Failed to create user account.' });
       return;
@@ -241,14 +213,8 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const { identifier, password } = parsed.data;
-
-    // Dashboard / MDRRMO accounts authenticate by email (legacy accounts) or username.
-    let userLookup = supabaseAdmin.from('users').select('*');
-    userLookup = identifier.includes('@')
-      ? userLookup.eq('email', identifier)
-      : userLookup.eq('username', identifier);
-    const { data: user, error } = await userLookup.maybeSingle();
+    const { phone, password } = parsed.data;
+    const { data: user, error } = await supabaseAdmin.from('users').select('*').eq('phone', phone).maybeSingle();
     if (error) {
       console.error('Login lookup error:', error);
       res.status(500).json({ error: 'Unable to look up account.' });
@@ -256,14 +222,14 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
     }
 
     if (!user) {
-      res.status(401).json({ error: 'Invalid username, email, or password.' });
+      res.status(401).json({ error: 'Invalid mobile number or password.' });
       return;
     }
 
     // Verify password
     const passwordMatch = await bcrypt.compare(password, user.password_hash);
     if (!passwordMatch) {
-      res.status(401).json({ error: 'Invalid username, email, or password.' });
+      res.status(401).json({ error: 'Invalid mobile number or password.' });
       return;
     }
 
@@ -294,11 +260,11 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
 
       if (specCerts && specCerts.length > 0) {
         unitType = specCerts.map((c: any) => c.cert_type).join(', ');
-      } else if (user.email) {
+      } else if (user.phone) {
         const { data: off } = await supabaseAdmin
           .from('officers')
           .select('specialization')
-          .ilike('email', user.email)
+          .eq('phone', user.phone)
           .limit(1)
           .maybeSingle();
         if (off?.specialization) {
@@ -311,7 +277,6 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
     const token = jwt.sign(
       {
         userId: user.id,
-        email: user.email || '',
         role: user.role,
         unitType,
       },
@@ -330,8 +295,6 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       user: {
         id: user.id,
         full_name: user.full_name,
-        username: user.username || null,
-        email: user.email,
         phone: user.phone || null,
         role: user.role,
         unit_type: unitType,
@@ -347,32 +310,24 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
   }
 });
 
-// POST /api/auth/resident/login — resident-only email/password authentication
+// POST /api/auth/resident/login — resident-only mobile/password authentication
 router.post('/resident/login', async (req: Request, res: Response): Promise<void> => {
   try {
-    const identifier = typeof req.body?.identifier === 'string'
-      ? req.body.identifier.trim()
-      : typeof req.body?.email === 'string' ? req.body.email.trim() : '';
+    const phone = normalizeMobileNumber(req.body?.phone);
     const password = typeof req.body?.password === 'string' ? req.body.password : '';
-    if (!identifier || identifier.length > 254 || !password) {
-      res.status(400).json({ error: 'Enter your username, mobile number, or email and password.' });
+    if (!phone || !password) {
+      res.status(400).json({ error: 'Enter a valid mobile number and password.' });
       return;
     }
 
-    const digits = identifier.replace(/\D/g, '');
-    const phone = /^09\d{9}$/.test(digits) ? digits : /^639\d{9}$/.test(digits) ? `0${digits.slice(2)}` : null;
-    let lookup = supabaseAdmin.from('resident_user').select('*');
-    if (identifier.includes('@')) lookup = lookup.eq('email', identifier.toLowerCase());
-    else if (phone) lookup = lookup.eq('phone', phone);
-    else lookup = lookup.eq('username', identifier.toLowerCase());
-    const { data: user, error } = await lookup.maybeSingle();
+    const { data: user, error } = await supabaseAdmin.from('resident_user').select('*').eq('phone', phone).maybeSingle();
     if (error) {
       console.error('Resident login lookup error:', error);
       res.status(500).json({ error: 'Unable to look up resident account.' });
       return;
     }
     if (!user || !(await bcrypt.compare(password, user.password_hash))) {
-      res.status(401).json({ error: 'Invalid username, mobile number, or password.' });
+      res.status(401).json({ error: 'Invalid mobile number or password.' });
       return;
     }
     if (user.status === 'inactive' || user.status === 'rejected' || user.status === 'pending_verification') {
@@ -381,7 +336,7 @@ router.post('/resident/login', async (req: Request, res: Response): Promise<void
     }
 
     const token = jwt.sign(
-      { userId: user.id, email: user.email || '', role: 'resident', unitType: user.unit_type || null },
+      { userId: user.id, role: 'resident', unitType: user.unit_type || null },
       config.jwtSecret,
       { expiresIn: config.jwtExpiresIn as any }
     );
@@ -392,8 +347,6 @@ router.post('/resident/login', async (req: Request, res: Response): Promise<void
       user: {
         id: user.id,
         full_name: user.full_name,
-        username: user.username || null,
-        email: user.email || null,
         phone: user.phone || null,
         role: 'resident',
         barangay_name: user.barangay_name || null,
@@ -449,7 +402,7 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response): Promise
     if (req.user!.role === 'resident') {
       const { data: resident, error: residentError } = await supabaseAdmin
         .from('resident_user')
-        .select('id, full_name, username, email, phone, barangay_name, status, verified, last_seen, created_at')
+        .select('id, full_name, phone, barangay_name, status, verified, last_seen, created_at')
         .eq('id', req.user!.userId)
         .maybeSingle();
       if (residentError) throw residentError;
@@ -463,7 +416,7 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response): Promise
 
     const { data: user, error } = await supabaseAdmin
       .from('users')
-      .select('id, full_name, username, email, phone, role, unit_type, status, verified, latitude, longitude, last_seen, created_at')
+      .select('id, full_name, phone, role, unit_type, status, verified, latitude, longitude, last_seen, created_at')
       .eq('id', req.user!.userId)
       .single();
 
@@ -481,11 +434,11 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response): Promise
 
       if (specCerts && specCerts.length > 0) {
         user.unit_type = specCerts.map((c: any) => c.cert_type).join(', ');
-      } else if (user.email) {
+      } else if (user.phone) {
         const { data: off } = await supabaseAdmin
           .from('officers')
           .select('specialization')
-          .ilike('email', user.email)
+          .eq('phone', user.phone)
           .limit(1)
           .maybeSingle();
         if (off?.specialization) {
@@ -509,53 +462,25 @@ router.patch('/profile', authenticate, async (req: AuthRequest, res: Response): 
       res.status(403).json({ error: 'Use the resident profile endpoint for this account.' });
       return;
     }
+    if (req.body?.phone !== undefined) {
+      res.status(400).json({ error: 'Sign-in mobile number changes require SMS verification.' });
+      return;
+    }
     const fullName = typeof req.body?.full_name === 'string' ? req.body.full_name.trim() : '';
-    const username = typeof req.body?.username === 'string' ? req.body.username.trim().toLowerCase() : '';
-    const emailInput = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
-    const phone = typeof req.body?.phone === 'string' ? req.body.phone.replace(/\D/g, '') : '';
     if (fullName.length < 2 || fullName.length > 100) {
       res.status(400).json({ error: 'Enter a name between 2 and 100 characters.' });
       return;
     }
-    if (!/^[a-z0-9._-]{3,32}$/.test(username)) {
-      res.status(400).json({ error: 'Username must be 3–32 characters and use letters, numbers, dots, underscores, or hyphens.' });
-      return;
-    }
-    const parsedEmail = emailInput ? z.string().email().max(254).safeParse(emailInput) : null;
-    if (emailInput && !parsedEmail?.success) {
-      res.status(400).json({ error: 'Enter a valid email address.' });
-      return;
-    }
-    if (phone && !/^09\d{9}$/.test(phone)) {
-      res.status(400).json({ error: 'Enter an 11-digit mobile number starting with 09, or leave it blank.' });
-      return;
-    }
-
-    const userId = req.user!.userId;
-    const [{ data: existingEmail, error: emailError }, usernameTaken] = await Promise.all([
-      emailInput
-        ? supabaseAdmin.from('users').select('id').eq('email', emailInput).neq('id', userId).limit(1).maybeSingle()
-        : Promise.resolve({ data: null, error: null } as any),
-      isUsernameTaken(username, { table: 'users', id: userId }),
-    ]);
-    if (emailError) throw emailError;
-    if (usernameTaken) { res.status(409).json({ error: 'That username is already in use.' }); return; }
-    if (existingEmail) { res.status(409).json({ error: 'That email address is already linked to another account.' }); return; }
-
     const { data, error } = await supabaseAdmin
       .from('users')
-      .update({ full_name: fullName, username, email: emailInput || null, phone: phone || null, updated_at: new Date().toISOString() })
-      .eq('id', userId)
-      .select('id, full_name, username, email, phone, role')
+      .update({ full_name: fullName, updated_at: new Date().toISOString() })
+      .eq('id', req.user!.userId)
+      .select('id, full_name, phone, role')
       .maybeSingle();
-    if (error) {
-      if (isGlobalUsernameConflict(error)) { res.status(409).json({ error: 'That username is already in use.' }); return; }
-      if (error.code === '23505') { res.status(409).json({ error: 'That username or email is already in use.' }); return; }
-      throw error;
-    }
+    if (error) throw error;
     if (!data) { res.status(404).json({ error: 'Account not found.' }); return; }
     const token = jwt.sign(
-      { userId: data.id, email: data.email || '', role: data.role, unitType: req.user?.unitType || null },
+      { userId: data.id, role: data.role, unitType: req.user?.unitType || null },
       config.jwtSecret,
       { expiresIn: config.jwtExpiresIn as any },
     );
@@ -566,11 +491,14 @@ router.patch('/profile', authenticate, async (req: AuthRequest, res: Response): 
   }
 });
 
-// PATCH /api/auth/resident/profile — update the signed-in resident's profile
 router.patch('/resident/profile', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     if (req.user?.role !== 'resident') {
       res.status(403).json({ error: 'This endpoint is only for resident accounts.' });
+      return;
+    }
+    if (req.body?.phone !== undefined) {
+      res.status(400).json({ error: 'Sign-in mobile number changes require SMS verification.' });
       return;
     }
 
@@ -582,46 +510,6 @@ router.patch('/resident/profile', authenticate, async (req: AuthRequest, res: Re
         return;
       }
       updates.full_name = fullName;
-    }
-    if (req.body?.username !== undefined) {
-      const username = typeof req.body.username === 'string' ? req.body.username.trim().toLowerCase() : '';
-      if (!/^[a-z0-9._-]{3,32}$/.test(username)) {
-        res.status(400).json({ error: 'Username must be 3–32 characters and use letters, numbers, dots, underscores, or hyphens.' });
-        return;
-      }
-      if (await isUsernameTaken(username, { table: 'resident_user', id: req.user.userId })) { res.status(409).json({ error: 'That username is already in use.' }); return; }
-      updates.username = username;
-    }
-    if (req.body?.email !== undefined) {
-      const email = typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : '';
-      if (email && !z.string().email().max(254).safeParse(email).success) {
-        res.status(400).json({ error: 'Enter a valid email address or leave it blank.' });
-        return;
-      }
-      if (email) {
-        const { data: existingEmail, error: emailError } = await supabaseAdmin
-          .from('resident_user').select('id').eq('email', email).neq('id', req.user.userId).limit(1).maybeSingle();
-        if (emailError) throw emailError;
-        if (existingEmail) { res.status(409).json({ error: 'That email address is already linked to another resident account.' }); return; }
-      }
-      updates.email = email || null;
-    }
-    if (req.body?.phone !== undefined) {
-      const phone = typeof req.body.phone === 'string' ? req.body.phone.replace(/\D/g, '') : '';
-      if (phone && !/^09\d{9}$/.test(phone)) {
-        res.status(400).json({ error: 'Enter a valid 11-digit Philippine mobile number starting with 09, or leave it blank.' });
-        return;
-      }
-      if (phone) {
-        const { data: existingPhone, error: phoneLookupError } = await supabaseAdmin
-          .from('resident_user').select('id').eq('phone', phone).neq('id', req.user.userId).limit(1).maybeSingle();
-        if (phoneLookupError) throw phoneLookupError;
-        if (existingPhone) {
-          res.status(409).json({ error: 'That mobile number is already linked to another resident account.' });
-          return;
-        }
-      }
-      updates.phone = phone || null;
     }
     if (req.body?.barangay_name !== undefined) {
       const barangayName = typeof req.body.barangay_name === 'string' ? req.body.barangay_name.trim() : '';
@@ -640,78 +528,156 @@ router.patch('/resident/profile', authenticate, async (req: AuthRequest, res: Re
       .from('resident_user')
       .update(updates)
       .eq('id', req.user.userId)
-      .select('id, full_name, username, email, phone, barangay_name, role')
+      .select('id, full_name, phone, barangay_name, role')
       .single();
-
-    if (isGlobalUsernameConflict(error)) {
-      res.status(409).json({ error: 'That username is already in use.' });
-      return;
-    }
-    if (error || !data) {
-      console.error('Resident profile update error:', error);
-      res.status(500).json({ error: 'Failed to update resident profile.' });
-      return;
-    }
-
+    if (error || !data) throw error || new Error('Resident account not found.');
     const token = jwt.sign(
-      { userId: data.id, email: data.email || '', role: 'resident', unitType: req.user?.unitType || null },
+      { userId: data.id, role: 'resident', unitType: req.user?.unitType || null },
       config.jwtSecret,
       { expiresIn: config.jwtExpiresIn as any },
     );
     res.json({ success: true, ...data, token });
   } catch (err) {
     console.error('Resident profile update error:', err);
-    res.status(500).json({ error: 'Internal server error.' });
+    res.status(500).json({ error: 'Failed to update resident profile.' });
   }
 });
 
-router.post('/profile/password-otp', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/profile/phone-otp', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const deliveryMethod = req.body?.delivery_method === 'sms' ? 'sms' : req.body?.delivery_method === 'email' ? 'email' : null;
+    const phone = normalizeMobileNumber(req.body?.phone);
     const currentPassword = typeof req.body?.current_password === 'string' ? req.body.current_password : '';
-    if (!deliveryMethod || !currentPassword) {
-      res.status(400).json({ error: 'Choose email or mobile and enter your current password.' });
+    if (!phone || !currentPassword) {
+      res.status(400).json({ error: 'Enter a valid new mobile number and your current password.' });
       return;
     }
     const accountTable = req.user?.role === 'resident' ? 'resident_user' : 'users';
     const { data: account, error } = await supabaseAdmin
-      .from(accountTable)
-      .select('id, full_name, email, phone, password_hash')
-      .eq('id', req.user!.userId)
-      .maybeSingle();
+      .from(accountTable).select('id, phone, password_hash').eq('id', req.user!.userId).maybeSingle();
     if (error) throw error;
     if (!account) { res.status(404).json({ error: 'Account not found.' }); return; }
     if (!(await bcrypt.compare(currentPassword, account.password_hash))) {
       res.status(400).json({ error: 'The current password is incorrect.' });
       return;
     }
-
-    const destination = deliveryMethod === 'email' ? String(account.email || '').trim().toLowerCase() : String(account.phone || '').replace(/\D/g, '');
-    if (deliveryMethod === 'email' && !z.string().email().safeParse(destination).success) {
-      res.status(400).json({ error: 'Add a valid email address to your profile before choosing email verification.' });
+    if (normalizeMobileNumber(account.phone) === phone) {
+      res.status(400).json({ error: 'That mobile number is already linked to your account.' });
       return;
     }
-    if (deliveryMethod === 'sms' && !/^09\d{9}$/.test(destination)) {
-      res.status(400).json({ error: 'Add a valid mobile number to your profile before choosing SMS verification.' });
+    const { data: reservation, error: reservationError } = await supabaseAdmin
+      .from('account_mobile_numbers').select('account_table, account_id')
+      .eq('phone_normalized', phone).maybeSingle();
+    if (reservationError) throw reservationError;
+    if (reservation && !(reservation.account_table === accountTable && reservation.account_id === account.id)) {
+      res.status(409).json({ error: 'That mobile number is already linked to another account.' });
       return;
     }
-    if (deliveryMethod === 'sms' && !config.textBeeApiKey) {
-      res.status(503).json({ error: 'SMS verification is not configured. Choose email or contact the administrator.' });
+    if (!config.textBeeApiKey) {
+      res.status(503).json({ error: 'SMS verification is not configured. Contact an administrator.' });
       return;
     }
-
     const otp = randomInt(100000, 1000000).toString();
-    const otpKey = `web-profile-password-change:${accountTable}:${account.id}`;
-    await setOtp(otpKey, { otp, fullName: account.full_name, contactNumber: destination, deliveryMethod, purpose: 'web_profile_password_change' });
-    const sent = deliveryMethod === 'email'
-      ? await emailService.sendOtpEmail(destination, otp, 'web_profile_password_change')
-      : await smsService.sendPasswordChangeOtp(destination, otp, req.user?.role === 'resident' ? 'resident' : 'MDRRMO');
-    if (!sent) {
+    const otpKey = 'account-phone-change:' + accountTable + ':' + account.id;
+    const cooldown = await getOtpResendCooldownSeconds(otpKey);
+    if (cooldown > 0) { res.status(429).json({ error: 'A code was sent recently. Try again in ' + cooldown + ' seconds.' }); return; }
+    await setOtp(otpKey, { otp, phone, purpose: 'account_phone_change' });
+    if (!(await smsService.sendRegistrationOtp(phone, otp))) {
       await deleteOtp(otpKey);
-      res.status(503).json({ error: `We could not send the verification ${deliveryMethod === 'email' ? 'email' : 'SMS'}. Check the saved contact and try again.` });
+      res.status(503).json({ error: 'We could not send the verification SMS. Check the mobile number and try again.' });
       return;
     }
-    res.json({ success: true, message: `Verification code sent to ${deliveryMethod === 'email' ? maskEmailAddress(destination) : maskMobileNumber(destination)}.`, expiresInMinutes: 10 });
+    res.json({ success: true, message: 'Verification code sent to ' + maskMobileNumber(phone) + '.', expiresInMinutes: 10 });
+  } catch (err) {
+    console.error('Account phone change OTP error:', err);
+    res.status(500).json({ error: 'Could not send the mobile number verification code.' });
+  }
+});
+
+router.post('/profile/change-phone', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const phone = normalizeMobileNumber(req.body?.phone);
+    const otp = typeof req.body?.otp === 'string' ? req.body.otp.trim() : '';
+    const currentPassword = typeof req.body?.current_password === 'string' ? req.body.current_password : '';
+    if (!phone || !/^\d{6}$/.test(otp) || !currentPassword) {
+      res.status(400).json({ error: 'Enter the new mobile number, 6-digit SMS code, and current password.' });
+      return;
+    }
+    const accountTable = req.user?.role === 'resident' ? 'resident_user' : 'users';
+    const { data: account, error } = await supabaseAdmin
+      .from(accountTable).select('id, full_name, phone, password_hash, role').eq('id', req.user!.userId).maybeSingle();
+    if (error) throw error;
+    if (!account) { res.status(404).json({ error: 'Account not found.' }); return; }
+    if (!(await bcrypt.compare(currentPassword, account.password_hash))) {
+      res.status(400).json({ error: 'The current password is incorrect.' });
+      return;
+    }
+    const otpKey = 'account-phone-change:' + accountTable + ':' + account.id;
+    const record = await getOtp(otpKey);
+    if (!record || record.purpose !== 'account_phone_change' || record.phone !== phone) {
+      res.status(400).json({ error: 'No matching mobile number verification was found or the code expired. Request a new code.' });
+      return;
+    }
+    if (record.otp !== otp) {
+      const failedAttempts = (record.failedAttempts || 0) + 1;
+      if (failedAttempts >= 5) await deleteOtp(otpKey);
+      else await setOtp(otpKey, { ...record, failedAttempts });
+      res.status(400).json({ error: failedAttempts >= 5 ? 'Too many incorrect codes. Request a new verification code.' : 'That verification code is incorrect.' });
+      return;
+    }
+    const { error: updateError } = await supabaseAdmin.from(accountTable)
+      .update({ phone, updated_at: new Date().toISOString() }).eq('id', account.id);
+    if (isMobileNumberRegistryConflict(updateError)) {
+      res.status(409).json({ error: 'That mobile number is already linked to another account.' });
+      return;
+    }
+    if (updateError) throw updateError;
+    if (accountTable === 'users' && account.phone) {
+      await supabaseAdmin.from('officers').update({ phone }).eq('phone', account.phone);
+    }
+    await deleteOtp(otpKey);
+    res.json({ success: true, phone, message: 'Mobile number updated successfully.' });
+  } catch (err) {
+    console.error('Account phone change error:', err);
+    res.status(500).json({ error: 'Could not update your mobile number.' });
+  }
+});
+
+router.post('/profile/password-otp', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const currentPassword = typeof req.body?.current_password === 'string' ? req.body.current_password : '';
+    if (!currentPassword) {
+      res.status(400).json({ error: 'Enter your current password.' });
+      return;
+    }
+    const accountTable = req.user?.role === 'resident' ? 'resident_user' : 'users';
+    const { data: account, error } = await supabaseAdmin
+      .from(accountTable).select('id, full_name, phone, password_hash').eq('id', req.user!.userId).maybeSingle();
+    if (error) throw error;
+    if (!account) { res.status(404).json({ error: 'Account not found.' }); return; }
+    if (!(await bcrypt.compare(currentPassword, account.password_hash))) {
+      res.status(400).json({ error: 'The current password is incorrect.' });
+      return;
+    }
+    const phone = normalizeMobileNumber(account.phone);
+    if (!phone) {
+      res.status(400).json({ error: 'Add a valid mobile number to your profile before changing your password.' });
+      return;
+    }
+    if (!config.textBeeApiKey) {
+      res.status(503).json({ error: 'SMS verification is not configured. Contact an administrator.' });
+      return;
+    }
+    const otp = randomInt(100000, 1000000).toString();
+    const otpKey = 'web-profile-password-change:' + accountTable + ':' + account.id;
+    const cooldown = await getOtpResendCooldownSeconds(otpKey);
+    if (cooldown > 0) { res.status(429).json({ error: 'A code was sent recently. Try again in ' + cooldown + ' seconds.' }); return; }
+    await setOtp(otpKey, { otp, fullName: account.full_name, purpose: 'web_profile_password_change' });
+    if (!(await smsService.sendPasswordChangeOtp(phone, otp, req.user?.role === 'resident' ? 'resident' : 'MDRRMO'))) {
+      await deleteOtp(otpKey);
+      res.status(503).json({ error: 'We could not send the verification SMS. Check the saved mobile number and try again.' });
+      return;
+    }
+    res.json({ success: true, message: 'Verification code sent to ' + maskMobileNumber(phone) + '.', expiresInMinutes: 10 });
   } catch (err) {
     console.error('Web profile password OTP error:', err);
     res.status(500).json({ error: 'Could not send the password verification code.' });
@@ -723,9 +689,8 @@ router.post('/profile/change-password', authenticate, async (req: AuthRequest, r
     const currentPassword = typeof req.body?.current_password === 'string' ? req.body.current_password : '';
     const otp = typeof req.body?.otp === 'string' || typeof req.body?.otp === 'number' ? String(req.body.otp).trim() : '';
     const newPassword = typeof req.body?.new_password === 'string' ? req.body.new_password : '';
-    const deliveryMethod = req.body?.delivery_method === 'sms' ? 'sms' : req.body?.delivery_method === 'email' ? 'email' : null;
-    if (!currentPassword || !/^\d{6}$/.test(otp) || !deliveryMethod || newPassword.length < 8 || newPassword.length > 128) {
-      res.status(400).json({ error: 'Enter your current password, the 6-digit code, and a new password with at least 8 characters.' });
+    if (!currentPassword || !/^\d{6}$/.test(otp) || newPassword.length < 8 || newPassword.length > 128) {
+      res.status(400).json({ error: 'Enter your current password, the 6-digit SMS code, and a new password with at least 8 characters.' });
       return;
     }
     const accountTable = req.user?.role === 'resident' ? 'resident_user' : 'users';
@@ -741,11 +706,10 @@ router.post('/profile/change-password', authenticate, async (req: AuthRequest, r
       res.status(400).json({ error: 'Choose a new password that differs from your current password.' });
       return;
     }
-
-    const otpKey = `web-profile-password-change:${accountTable}:${account.id}`;
+    const otpKey = 'web-profile-password-change:' + accountTable + ':' + account.id;
     const record = await getOtp(otpKey);
-    if (!record || record.purpose !== 'web_profile_password_change' || record.deliveryMethod !== deliveryMethod) {
-      res.status(400).json({ error: 'No matching password-change request was found or the code expired. Request a new code.' });
+    if (!record || record.purpose !== 'web_profile_password_change') {
+      res.status(400).json({ error: 'No password-change request was found or the code expired. Request a new code.' });
       return;
     }
     if (record.otp !== otp) {
@@ -755,11 +719,9 @@ router.post('/profile/change-password', authenticate, async (req: AuthRequest, r
       res.status(400).json({ error: failedAttempts >= 5 ? 'Too many incorrect codes. Request a new verification code.' : 'That verification code is incorrect.' });
       return;
     }
-
     const passwordHash = await bcrypt.hash(newPassword, 12);
     const { error: updateError } = await supabaseAdmin.from(accountTable)
-      .update({ password_hash: passwordHash, updated_at: new Date().toISOString() })
-      .eq('id', account.id);
+      .update({ password_hash: passwordHash, updated_at: new Date().toISOString() }).eq('id', account.id);
     if (updateError) throw updateError;
     await deleteOtp(otpKey);
     res.json({ success: true, message: 'Password changed successfully.' });
@@ -839,8 +801,7 @@ router.post(
     try {
       const schema = z.object({
         full_name: z.string().min(2),
-        username: z.string().trim().min(3).max(32).regex(/^[a-zA-Z0-9_.-]+$/).transform(normalizeUsername),
-        email: z.string().email(),
+        phone: mobileNumberSchema,
         password: z.string().min(6),
         role: z.enum(['admin']),
       });
@@ -851,30 +812,25 @@ router.post(
         return;
       }
 
-      const { full_name, username, email, password, role } = parsed.data;
-      if (await isUsernameTaken(username)) {
-        res.status(409).json({ error: 'That username is already in use.' });
-        return;
-      }
+      const { full_name, phone, password, role } = parsed.data;
       const password_hash = await bcrypt.hash(password, 12);
 
       const { data: newUser, error } = await supabaseAdmin
         .from('users')
         .insert({
           full_name,
-          username,
-          email,
+          phone,
           password_hash,
           role,
           status: 'active',
           verified: true,
         })
-        .select('id, full_name, username, email, role, status')
+        .select('id, full_name, phone, role, status')
         .single();
 
       if (error) {
-        if (isGlobalUsernameConflict(error)) {
-          res.status(409).json({ error: 'That username is already in use.' });
+        if (isMobileNumberRegistryConflict(error) || error.code === '23505') {
+          res.status(409).json({ error: 'That mobile number is already linked to an account.' });
           return;
         }
         res.status(500).json({ error: 'Failed to create admin user.' });
@@ -890,81 +846,64 @@ router.post(
 );
 
 // ============================================
-// RESIDENT OTP & REGISTRATION / PASSWORD FLOW
-// OTPs stored in Upstash Redis (survive restarts, auto-expire after 10 min)
-// ============================================
-
-// Web self-registration is phone-first: keep it separate from the email-based
-// registration contract used by the resident mobile app.
-router.post('/resident/web-register-otp', async (req: Request, res: Response): Promise<void> => {
+// Resident registration uses an SMS verification code and the password chosen by the applicant.
+async function sendResidentRegistrationOtp(req: Request, res: Response): Promise<void> {
   try {
-    const username = typeof req.body?.username === 'string' ? req.body.username.trim() : '';
-    const phone = typeof req.body?.phone === 'string' ? req.body.phone.replace(/\D/g, '') : '';
-    if (!/^[a-zA-Z0-9_.-]{3,32}$/.test(username)) {
-      res.status(400).json({ error: 'Username must be 3–32 characters and use only letters, numbers, dots, underscores, or hyphens.' });
-      return;
-    }
-    if (!/^09\d{9}$/.test(phone)) {
-      res.status(400).json({ error: 'Enter a valid 11-digit Philippine mobile number starting with 09.' });
+    const fullName = typeof req.body?.full_name === 'string' ? req.body.full_name.trim() : '';
+    const phone = normalizeMobileNumber(req.body?.phone);
+    const password = typeof req.body?.password === 'string' ? req.body.password : '';
+    const barangayName = typeof req.body?.barangay_name === 'string' ? req.body.barangay_name.trim() : 'Poblacion';
+    if (fullName.length < 2 || fullName.length > 100 || !phone || password.length < 8 || password.length > 128) {
+      res.status(400).json({ error: 'Enter your name, a valid mobile number, and a password with at least 8 characters.' });
       return;
     }
     if (!config.textBeeApiKey) {
-      res.status(503).json({ error: 'SMS verification is not configured yet. Please contact the administrator.' });
+      res.status(503).json({ error: 'SMS verification is not configured. Contact an administrator.' });
       return;
     }
-
-    const normalizedUsername = normalizeUsername(username);
-    const [usernameTaken, { data: existingPhone, error: phoneError }] = await Promise.all([
-      isUsernameTaken(normalizedUsername),
-      supabaseAdmin.from('resident_user').select('id').eq('phone', phone).limit(1).maybeSingle(),
-    ]);
-    if (phoneError) throw phoneError;
-    if (usernameTaken) {
-      res.status(409).json({ error: 'That username is already taken. Choose another one.' });
+    const { data: reservation, error: reservationError } = await supabaseAdmin
+      .from('account_mobile_numbers').select('account_id').eq('phone_normalized', phone).maybeSingle();
+    if (reservationError) throw reservationError;
+    if (reservation) {
+      res.status(409).json({ error: 'That mobile number is already linked to an account. Sign in instead.' });
       return;
     }
-    if (existingPhone) {
-      res.status(409).json({ error: 'That mobile number is already linked to a resident account. Sign in instead.' });
-      return;
-    }
-
     const otp = randomInt(100000, 1000000).toString();
-    const otpKey = `resident-web-registration:${phone}`;
+    const passwordHash = await bcrypt.hash(password, 12);
+    const otpKey = 'resident-registration:' + phone;
+    const cooldown = await getOtpResendCooldownSeconds(otpKey);
+    if (cooldown > 0) { res.status(429).json({ error: 'A code was sent recently. Try again in ' + cooldown + ' seconds.' }); return; }
     await setOtp(otpKey, {
       otp,
-      username: normalizedUsername,
-      fullName: username,
-      contactNumber: phone,
-      barangayName: 'Poblacion',
-      deliveryMethod: 'sms',
-      purpose: 'resident_web_registration',
+      fullName,
+      phone,
+      passwordHash,
+      barangayName: barangayName || 'Poblacion',
+      purpose: 'resident_registration',
     });
-
-    const sent = await smsService.sendRegistrationOtp(phone, otp);
-    if (!sent) {
+    if (!(await smsService.sendRegistrationOtp(phone, otp))) {
       await deleteOtp(otpKey);
       res.status(503).json({ error: 'We could not send the verification SMS. Check the mobile number and try again.' });
       return;
     }
-    res.json({ success: true, message: `Verification code sent to ${maskMobileNumber(phone)}.`, expiresInMinutes: 10 });
-  } catch (err: any) {
-    console.error('Resident web registration OTP error:', err);
+    res.json({ success: true, message: 'Verification code sent to ' + maskMobileNumber(phone) + '.', expiresInMinutes: 10 });
+  } catch (err) {
+    console.error('Resident registration OTP error:', err);
     res.status(500).json({ error: 'Could not start resident registration.' });
   }
-});
+}
 
-router.post('/resident/web-verify-register-otp', async (req: Request, res: Response): Promise<void> => {
+async function verifyResidentRegistrationOtp(req: Request, res: Response): Promise<void> {
   try {
-    const phone = typeof req.body?.phone === 'string' ? req.body.phone.replace(/\D/g, '') : '';
+    const phone = normalizeMobileNumber(req.body?.phone);
     const otp = typeof req.body?.otp === 'string' || typeof req.body?.otp === 'number' ? String(req.body.otp).trim() : '';
-    if (!/^09\d{9}$/.test(phone) || !/^\d{6}$/.test(otp)) {
-      res.status(400).json({ error: 'Enter your mobile number and the 6-digit verification code.' });
+    if (!phone || !/^\d{6}$/.test(otp)) {
+      res.status(400).json({ error: 'Enter a valid mobile number and the 6-digit verification code.' });
       return;
     }
-
-    const otpKey = `resident-web-registration:${phone}`;
+    const otpKey = 'resident-registration:' + phone;
     const record = await getOtp(otpKey);
-    if (!record || record.purpose !== 'resident_web_registration' || !record.username) {
+    if (!record || record.purpose !== 'resident_registration' || record.phone !== phone || !record.passwordHash) {
       res.status(400).json({ error: 'No pending registration was found or the code expired. Request a new code.' });
       return;
     }
@@ -975,488 +914,50 @@ router.post('/resident/web-verify-register-otp', async (req: Request, res: Respo
       res.status(400).json({ error: failedAttempts >= 5 ? 'Too many incorrect codes. Request a new verification code.' : 'That verification code is incorrect.' });
       return;
     }
-
-    const [usernameTaken, { data: existingPhone, error: phoneError }] = await Promise.all([
-      isUsernameTaken(record.username),
-      supabaseAdmin.from('resident_user').select('id').eq('phone', phone).limit(1).maybeSingle(),
-    ]);
-    if (phoneError) throw phoneError;
-    if (usernameTaken || existingPhone) {
+    const { data: reservation, error: reservationError } = await supabaseAdmin
+      .from('account_mobile_numbers').select('account_id').eq('phone_normalized', phone).maybeSingle();
+    if (reservationError) throw reservationError;
+    if (reservation) {
       await deleteOtp(otpKey);
-      res.status(409).json({ error: usernameTaken ? 'That username was just claimed. Request a new code with another username.' : 'That mobile number already has a resident account.' });
+      res.status(409).json({ error: 'That mobile number is already linked to an account. Sign in instead.' });
       return;
     }
-
-    const temporaryPassword = randomBytes(9).toString('base64url');
-    const passwordHash = await bcrypt.hash(temporaryPassword, 12);
     const { data: resident, error: insertError } = await supabaseAdmin
       .from('resident_user')
       .insert({
-        username: record.username,
-        full_name: record.fullName || record.username,
-        email: null,
+        full_name: record.fullName,
         phone,
-        password_hash: passwordHash,
+        password_hash: record.passwordHash,
         barangay_name: record.barangayName || 'Poblacion',
         status: 'active',
         verified: true,
       })
-      .select('id, username, full_name, email, phone, barangay_name, role, status, verified')
+      .select('id, full_name, phone, barangay_name, role, status, verified')
       .single();
-
-    if (insertError || !resident) {
-      if (insertError?.code === '23505') {
-        res.status(409).json({ error: 'That username is already in use. Please start again with another username.' });
-        return;
-      }
-      console.error('Resident web account insert error:', insertError);
-      res.status(500).json({ error: 'The resident account could not be created.' });
+    if (isMobileNumberRegistryConflict(insertError) || insertError?.code === '23505') {
+      res.status(409).json({ error: 'That mobile number is already linked to an account. Sign in instead.' });
       return;
     }
-
+    if (insertError || !resident) throw insertError || new Error('Resident account insert failed.');
     await deleteOtp(otpKey);
-    const token = jwt.sign(
-      { userId: resident.id, email: '', role: 'resident' },
-      config.jwtSecret,
-      { expiresIn: config.jwtExpiresIn as any },
-    );
-    res.status(201).json({
-      success: true,
-      temporaryPassword,
-      user: { ...resident, role: 'resident' },
-      token,
-    });
-  } catch (err: any) {
-    console.error('Resident web registration verification error:', err);
+    const token = jwt.sign({ userId: resident.id, role: 'resident' }, config.jwtSecret, { expiresIn: config.jwtExpiresIn as any });
+    res.status(201).json({ success: true, user: { ...resident, role: 'resident' }, token });
+  } catch (err) {
+    console.error('Resident registration verification error:', err);
     res.status(500).json({ error: 'Could not verify the code and create the resident account.' });
   }
-});
+}
 
-// Friendly GET handler for browser checks
+router.post('/resident/web-register-otp', sendResidentRegistrationOtp);
+router.post('/resident/web-verify-register-otp', verifyResidentRegistrationOtp);
 router.get('/resident/register-otp', (_req: Request, res: Response): void => {
-  res.status(200).json({
-    status: 'online',
-    endpoint: '/api/auth/resident/register-otp',
-    method: 'POST',
-    description: 'Generates and delivers a 6-digit resident registration OTP by email or SMS.',
-    expectedBody: {
-      full_name: 'Juan Dela Cruz',
-      email: 'user@example.com',
-      contact_number: '09123456789',
-      barangay_name: 'Poblacion',
-      delivery_method: 'email or sms (defaults to email)',
-    },
-  });
+  res.json({ status: 'online', method: 'POST', description: 'Sends a 6-digit resident registration code by SMS.' });
 });
-
-// 1. Request OTP for Citizen Account Registration
-router.post('/resident/register-otp', async (req: Request, res: Response): Promise<void> => {
-  try {
-    const { full_name, username, email, contact_number, barangay_name, barangay_id } = req.body;
-    const deliveryMethod = String(req.body.delivery_method || 'email').toLowerCase();
-    const normalizedUsername = typeof username === 'string' ? normalizeUsername(username) : '';
-
-    if (!/^[a-z0-9_.-]{3,32}$/.test(normalizedUsername)) {
-      res.status(400).json({ error: 'Username must be 3–32 characters and use only letters, numbers, dots, underscores, or hyphens.' });
-      return;
-    }
-    if (await isUsernameTaken(normalizedUsername)) {
-      res.status(409).json({ error: 'That username is already in use. Choose another one.' });
-      return;
-    }
-
-    if (deliveryMethod !== 'email' && deliveryMethod !== 'sms') {
-      res.status(400).json({ error: 'Choose email or SMS for verification.' });
-      return;
-    }
-
-    if (!email || !email.includes('@')) {
-      res.status(400).json({ error: 'Valid email address is required.' });
-      return;
-    }
-
-    if (!full_name || full_name.trim().length < 2) {
-      res.status(400).json({ error: 'Full name is required.' });
-      return;
-    }
-
-    if (deliveryMethod === 'sms' && !/^09\d{9}$/.test(String(contact_number || '').replace(/\D/g, ''))) {
-      res.status(400).json({ error: 'Enter a valid 11-digit Philippine mobile number to receive an SMS code.' });
-      return;
-    }
-
-    if (deliveryMethod === 'sms' && !config.textBeeApiKey) {
-      res.status(503).json({ error: 'TextBee SMS is not configured yet. Please choose email or contact the administrator.' });
-      return;
-    }
-
-    const key = String(email).toLowerCase().trim();
-    const { data: existingResident, error: residentLookupError } = await supabaseAdmin
-      .from('resident_user')
-      .select('id')
-      .eq('email', key)
-      .maybeSingle();
-    if (residentLookupError) throw residentLookupError;
-    if (existingResident) {
-      res.status(409).json({ error: 'This email already has a resident account. Sign in instead.' });
-      return;
-    }
-
-    // Generate 6-digit OTP
-    const otp = randomInt(100000, 1000000).toString();
-
-    // Store in Redis with 10-minute TTL (survives restarts)
-    await setOtp(key, {
-      otp,
-      username: normalizedUsername,
-      fullName: full_name.trim(),
-      contactNumber: contact_number?.trim() || '',
-      barangayName: barangay_name?.trim() || 'Poblacion',
-      barangayId: barangay_id || undefined,
-      deliveryMethod,
-      purpose: 'registration',
-    });
-
-    const sent = deliveryMethod === 'sms'
-      ? await smsService.sendRegistrationOtp(contact_number, otp)
-      : await emailService.sendOtpEmail(key, otp, 'registration');
-    if (!sent) {
-      await deleteOtp(key);
-      res.status(503).json({
-        error: deliveryMethod === 'sms'
-          ? 'We could not send the verification SMS. Check the mobile number or try email instead.'
-          : 'We could not send the verification email. Please try again later.',
-      });
-      return;
-    }
-
-    res.json({
-      success: true,
-      message: deliveryMethod === 'sms'
-        ? `Verification code sent to ${contact_number}.`
-        : `Verification code sent to ${key}.`,
-      deliveryMethod,
-      expiresInMinutes: 10,
-    });
-  } catch (err: any) {
-    console.error('Resident register-otp error:', err);
-    res.status(500).json({ error: 'Internal server error.', details: err.message });
-  }
-});
-
-// Friendly GET handler for browser checks
+router.post('/resident/register-otp', sendResidentRegistrationOtp);
 router.get('/resident/verify-register-otp', (_req: Request, res: Response): void => {
-  res.status(200).json({
-    status: 'online',
-    endpoint: '/api/auth/resident/verify-register-otp',
-    method: 'POST',
-    description: 'Verifies the 6-digit OTP and sends the temporary password through the selected email or SMS channel.',
-    expectedBody: {
-      email: 'user@example.com',
-      otp: '123456',
-    },
-  });
+  res.json({ status: 'online', method: 'POST', description: 'Verifies the resident mobile number and creates the account.' });
 });
-
-// 2. Verify OTP & Issue Temporary Password
-router.post('/resident/verify-register-otp', async (req: Request, res: Response): Promise<void> => {
-  try {
-    const { email, otp } = req.body;
-    if (!email || !otp) {
-      res.status(400).json({ error: 'Email and verification code are required.' });
-      return;
-    }
-
-    const key = email.toLowerCase().trim();
-    const record = await getOtp(key);
-
-    if (!record || record.purpose !== 'registration' || !record.username) {
-      res.status(400).json({ error: 'No pending registration found for this email, or code has expired. Please request a new code.' });
-      return;
-    }
-
-    // Expiry is enforced by Redis TTL — no manual Date.now() check needed
-    if (record.otp !== otp.toString().trim()) {
-      res.status(400).json({ error: 'Invalid verification code. Check the message you received and enter the correct 6-digit code.' });
-      return;
-    }
-
-    // Generate readable temporary password: e.g. Norz#7392
-    const randomSuffix = Math.floor(1000 + Math.random() * 9000);
-    const tempPassword = `Norz#${randomSuffix}`;
-    const password_hash = await bcrypt.hash(tempPassword, 10);
-
-    const fullName = record.fullName || 'Resident Citizen';
-    const contactNumber = record.contactNumber || null;
-    const barangayName = record.barangayName || 'Poblacion';
-
-    // Prevent duplicate resident accounts while allowing the same email in other apps.
-    if (await isUsernameTaken(record.username)) {
-      res.status(409).json({ error: 'That username was just claimed. Request a new code with another username.' });
-      return;
-    }
-
-    const { data: existingUser } = await supabaseAdmin
-      .from('resident_user')
-      .select('id, email')
-      .eq('email', key)
-      .maybeSingle();
-    if (existingUser) {
-      res.status(409).json({ error: 'This email already has a resident account. Sign in instead.' });
-      return;
-    }
-
-    const { data: finalUser, error: insertError } = await supabaseAdmin
-      .from('resident_user')
-      .insert({
-        username: record.username,
-        full_name: fullName,
-        email: key,
-        phone: contactNumber,
-        password_hash,
-        barangay_name: barangayName,
-        status: 'active',
-        verified: true,
-      })
-      .select('*')
-      .single();
-
-    if (insertError || !finalUser) {
-      if (isGlobalUsernameConflict(insertError)) {
-        res.status(409).json({ error: 'That username was just claimed. Request a new code with another username.' });
-        return;
-      }
-      if (insertError?.code === '23505') {
-        res.status(409).json({ error: 'This email already has a resident account. Sign in instead.' });
-        return;
-      }
-      console.error('Failed to insert resident:', insertError);
-      res.status(500).json({ error: 'Failed to create resident account.' });
-      return;
-    }
-
-    // Clean up OTP from Redis
-    await deleteOtp(key);
-
-    // Send the temporary password through the same channel used for the OTP.
-    const deliveryMethod = record.deliveryMethod === 'sms' ? 'sms' : 'email';
-    let temporaryPasswordSent = false;
-    try {
-      temporaryPasswordSent = deliveryMethod === 'sms'
-        ? await smsService.sendTemporaryPasswordSms(contactNumber || '', tempPassword)
-        : await emailService.sendTemporaryPasswordEmail(key, tempPassword, fullName);
-    } catch (err: any) {
-      console.warn(`[ResidentAuth] Failed to send temporary password by ${deliveryMethod}:`, err.message);
-    }
-
-    // Generate JWT token for immediate access
-    const token = jwt.sign(
-      {
-        userId: finalUser.id,
-        email: finalUser.email,
-        role: 'resident',
-        unitType: finalUser.unit_type,
-      },
-      config.jwtSecret,
-      { expiresIn: config.jwtExpiresIn as any }
-    );
-
-    res.status(201).json({
-      success: true,
-      message: temporaryPasswordSent
-        ? `Account verified. Temporary password sent by ${deliveryMethod}.`
-        : `Account verified, but the temporary password could not be sent by ${deliveryMethod}. It is shown in the app.`,
-      temporaryPassword: tempPassword,
-      temporaryPasswordSent,
-      temporaryPasswordDeliveryMethod: deliveryMethod,
-      user: {
-        id: finalUser.id,
-        full_name: finalUser.full_name,
-        email: finalUser.email,
-        contact_number: finalUser.phone,
-        barangay_name: finalUser.barangay_name || barangayName,
-        role: 'resident',
-      },
-      token,
-    });
-  } catch (err: any) {
-    console.error('Resident verify-register-otp error:', err);
-    res.status(500).json({ error: 'Internal server error.', details: err.message });
-  }
-});
-
-// Friendly GET handler for browser checks
-router.get('/resident/password-otp', (_req: Request, res: Response): void => {
-  res.status(200).json({
-    status: 'online',
-    endpoint: '/api/auth/resident/password-otp',
-    method: 'POST',
-    description: 'Generates and emails a 6-digit verification code to reset or change password.',
-    expectedBody: {
-      email: 'user@example.com',
-    },
-  });
-});
-
-// 3. Request OTP for Password Change
-router.post('/resident/password-otp', async (req: Request, res: Response): Promise<void> => {
-  try {
-    const { email } = req.body;
-    if (!email || !email.includes('@')) {
-      res.status(400).json({ error: 'Valid email address is required.' });
-      return;
-    }
-
-    const key = email.toLowerCase().trim();
-
-    // Prefer the resident account table; keep password recovery working for legacy users.
-    let { data: user } = await supabaseAdmin
-      .from('resident_user')
-      .select('id, full_name, email')
-      .eq('email', key)
-      .maybeSingle();
-    if (!user) {
-      const legacyResult = await supabaseAdmin
-        .from('users')
-        .select('id, full_name, email')
-        .eq('email', key)
-        .maybeSingle();
-      user = legacyResult.data;
-    }
-
-    if (!user) {
-      res.status(404).json({ error: 'No account found with this email address.' });
-      return;
-    }
-
-    // Generate 6-digit OTP
-    const otp = randomInt(100000, 1000000).toString();
-
-    // Store in Redis with 10-minute TTL
-    await setOtp(key, {
-      otp,
-      fullName: user.full_name,
-      purpose: 'password_change',
-    });
-
-    const sent = await emailService.sendOtpEmail(key, otp, 'password_change');
-    if (!sent) {
-      await deleteOtp(key);
-      res.status(503).json({ error: 'We could not send the verification email. Please try again later.' });
-      return;
-    }
-
-    res.json({
-      success: true,
-      message: `Password change verification code sent to ${email}.`,
-      expiresInMinutes: 10,
-    });
-  } catch (err: any) {
-    console.error('Resident password-otp error:', err);
-    res.status(500).json({ error: 'Internal server error.', details: err.message });
-  }
-});
-
-// Friendly GET handler for browser checks
-router.get('/resident/change-password', (_req: Request, res: Response): void => {
-  res.status(200).json({
-    status: 'online',
-    endpoint: '/api/auth/resident/change-password',
-    method: 'POST',
-    description: 'Verifies the OTP and updates the resident password in the database.',
-    expectedBody: {
-      email: 'user@example.com',
-      otp: '123456',
-      new_password: 'newSecretPassword123',
-    },
-  });
-});
-
-// 4. Update Password with OTP
-router.post('/resident/change-password', async (req: Request, res: Response): Promise<void> => {
-  try {
-    const { email, otp, new_password, current_password } = req.body;
-
-    if (!email || !otp || !new_password) {
-      res.status(400).json({ error: 'Email, verification code, and new password are required.' });
-      return;
-    }
-
-    if (new_password.length < 6) {
-      res.status(400).json({ error: 'New password must be at least 6 characters long.' });
-      return;
-    }
-
-    const key = email.toLowerCase().trim();
-    const record = await getOtp(key);
-
-    if (!record || record.purpose !== 'password_change') {
-      res.status(400).json({ error: 'No password change request found or code has expired. Please request a new code.' });
-      return;
-    }
-
-    // Expiry enforced by Redis TTL — no manual Date.now() check needed
-    if (record.otp !== otp.toString().trim()) {
-      res.status(400).json({ error: 'Invalid verification code.' });
-      return;
-    }
-
-    // Verify current password if provided
-    let accountTable = 'resident_user';
-    let { data: user, error: fetchErr } = await supabaseAdmin
-      .from('resident_user')
-      .select('id, password_hash')
-      .eq('email', key)
-      .maybeSingle();
-
-    if (!user) {
-      accountTable = 'users';
-      const legacyResult = await supabaseAdmin
-        .from('users')
-        .select('id, password_hash')
-        .eq('email', key)
-        .maybeSingle();
-      user = legacyResult.data;
-      fetchErr = legacyResult.error;
-    }
-
-    if (fetchErr || !user) {
-      res.status(404).json({ error: 'User not found.' });
-      return;
-    }
-
-    if (current_password) {
-      const match = await bcrypt.compare(current_password, user.password_hash);
-      if (!match) {
-        res.status(400).json({ error: 'Current / temporary password is incorrect.' });
-        return;
-      }
-    }
-
-    // Hash new password and update
-    const password_hash = await bcrypt.hash(new_password, 12);
-    const { error: updateErr } = await supabaseAdmin
-      .from(accountTable)
-      .update({ password_hash, updated_at: new Date().toISOString() })
-      .eq('id', user.id);
-
-    if (updateErr) {
-      res.status(500).json({ error: 'Failed to update password.' });
-      return;
-    }
-
-    // Clean up OTP from Redis
-    await deleteOtp(key);
-
-    res.json({
-      success: true,
-      message: 'Password updated successfully! You can now use your new password.',
-    });
-  } catch (err: any) {
-    console.error('Resident change-password error:', err);
-    res.status(500).json({ error: 'Internal server error.', details: err.message });
-  }
-});
+router.post('/resident/verify-register-otp', verifyResidentRegistrationOtp);
 
 // Signed-in web residents must prove their current password before an SMS OTP
 // is sent, then prove it again when submitting a new password.
@@ -1495,6 +996,8 @@ router.post('/resident/web-password-change-otp', authenticate, async (req: AuthR
     const phone = String(resident.phone).replace(/\D/g, '');
     const otp = randomInt(100000, 1000000).toString();
     const otpKey = `resident-web-password-change:${resident.id}`;
+    const cooldown = await getOtpResendCooldownSeconds(otpKey);
+    if (cooldown > 0) { res.status(429).json({ error: 'A code was sent recently. Try again in ' + cooldown + ' seconds.' }); return; }
     await setOtp(otpKey, { otp, fullName: resident.full_name, contactNumber: phone, purpose: 'resident_web_password_change' });
     const sent = await smsService.sendPasswordChangeOtp(phone, otp, 'resident');
     if (!sent) {
@@ -1569,490 +1072,182 @@ router.post('/resident/web-change-password', authenticate, async (req: AuthReque
 });
 
 // Forgot-password OTP flow, kept separate from the signed-in password-change flow.
-router.post('/resident/forgot-password-otp', async (req: Request, res: Response): Promise<void> => {
+type PasswordAccountTable = 'users' | 'resident_user' | 'barangay_users';
+
+async function findPasswordAccount(table: PasswordAccountTable, phone: string, role?: string): Promise<any> {
+  let query = supabaseAdmin.from(table).select('id, full_name, phone, password_hash, role').eq('phone', phone);
+  if (role) query = query.eq('role', role);
+  const { data, error } = await query.maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+async function startPasswordReset(
+  req: Request,
+  res: Response,
+  table: PasswordAccountTable,
+  audience: 'resident' | 'barangay' | 'responder',
+  purpose: ResidentOtpRecord['purpose'],
+  role?: string,
+): Promise<void> {
   try {
     const parsed = passwordResetOtpSchema.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: parsed.error.issues[0]?.message || 'Enter a valid email and delivery method.' });
+      res.status(400).json({ error: parsed.error.issues[0]?.message || 'Enter a valid mobile number.' });
       return;
     }
-
-    const { email, delivery_method: deliveryMethod } = parsed.data;
-    if (deliveryMethod === 'sms' && !config.textBeeApiKey) {
-      res.status(503).json({ error: 'SMS verification is not configured. Choose email or contact the administrator.' });
+    if (!config.textBeeApiKey) {
+      res.status(503).json({ error: 'SMS verification is not configured. Contact an administrator.' });
       return;
     }
-
-    const { data: user, error: lookupError } = await supabaseAdmin
-      .from('resident_user')
-      .select('id, full_name, email, phone')
-      .eq('email', email)
-      .maybeSingle();
-    if (lookupError) throw lookupError;
+    const phone = parsed.data.phone;
+    const user = await findPasswordAccount(table, phone, role);
     if (!user) {
-      res.status(404).json({ error: 'No resident account found with this email address.' });
+      res.json({ success: true, message: 'If an active account uses this mobile number, a verification code will be sent.' });
       return;
     }
-
-    const mobile = typeof user.phone === 'string' ? user.phone.trim() : '';
-    if (deliveryMethod === 'sms' && !mobile) {
-      res.status(400).json({ error: 'No mobile number is linked to this resident account. Choose email instead.' });
-      return;
-    }
-
     const otp = randomInt(100000, 1000000).toString();
-    const otpKey = `resident-password-reset:${email}`;
-    await setOtp(otpKey, {
-      otp,
-      fullName: user.full_name,
-      deliveryMethod,
-      purpose: 'resident_password_reset',
-    });
-
-    const sent = deliveryMethod === 'sms'
-      ? await smsService.sendPasswordResetOtp(mobile, otp, 'resident')
-      : await emailService.sendOtpEmail(email, otp, 'resident_password_reset');
-    if (!sent) {
-      await deleteOtp(otpKey);
-      res.status(503).json({
-        error: deliveryMethod === 'sms'
-          ? 'We could not send the verification SMS. Check the saved mobile number or choose email.'
-          : 'We could not send the verification email. Please try again later.',
-      });
+    const otpKey = audience + '-password-reset:' + phone;
+    const cooldown = await getOtpResendCooldownSeconds(otpKey);
+    if (cooldown > 0) {
+      res.json({ success: true, message: 'If an active account uses this mobile number, a verification code will be sent.' });
       return;
     }
-
-    const destination = deliveryMethod === 'sms' ? maskMobileNumber(mobile) : maskEmailAddress(email);
+    await setOtp(otpKey, { otp, accountId: user.id, purpose });
+    if (!(await smsService.sendPasswordResetOtp(phone, otp, audience))) {
+      await deleteOtp(otpKey);
+      res.status(503).json({ error: 'We could not send the verification SMS. Check the mobile number and try again.' });
+      return;
+    }
     res.json({
       success: true,
-      deliveryMethod,
-      message: `Password reset code sent to ${destination}. The code expires in 10 minutes.`,
+      message: 'Password reset code sent to ' + maskMobileNumber(phone) + '. The code expires in 10 minutes.',
       expiresInMinutes: 10,
     });
-  } catch (err: any) {
-    console.error('Resident forgot-password OTP error:', err);
+  } catch (err) {
+    console.error(audience + ' password reset OTP error:', err);
     res.status(500).json({ error: 'Could not start password recovery. Please try again later.' });
   }
-});
+}
 
-router.post('/resident/forgot-password', async (req: Request, res: Response): Promise<void> => {
+async function finishPasswordReset(
+  req: Request,
+  res: Response,
+  table: PasswordAccountTable,
+  audience: 'resident' | 'barangay' | 'responder',
+  purpose: ResidentOtpRecord['purpose'],
+  role?: string,
+): Promise<void> {
   try {
     const parsed = passwordResetSchema.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: parsed.error.issues[0]?.message || 'Enter the email, code, and a valid new password.' });
+      res.status(400).json({ error: parsed.error.issues[0]?.message || 'Enter your mobile number, code, and a valid new password.' });
       return;
     }
-
-    const { email, otp, new_password: newPassword } = parsed.data;
-    const otpKey = `resident-password-reset:${email}`;
+    const { phone, otp, new_password: newPassword } = parsed.data;
+    const otpKey = audience + '-password-reset:' + phone;
     const record = await getOtp(otpKey);
-    if (!record || record.purpose !== 'resident_password_reset') {
-      res.status(400).json({ error: 'No password reset request was found or the code has expired. Request a new code.' });
+    if (!record || record.purpose !== purpose) {
+      res.status(400).json({ error: 'No password reset request was found or the code expired. Request a new code.' });
       return;
     }
     if (record.otp !== otp) {
-      res.status(400).json({ error: 'Invalid verification code.' });
+      const failedAttempts = (record.failedAttempts || 0) + 1;
+      if (failedAttempts >= 5) await deleteOtp(otpKey);
+      else await setOtp(otpKey, { ...record, failedAttempts });
+      res.status(400).json({ error: failedAttempts >= 5 ? 'Too many incorrect codes. Request a new verification code.' : 'That verification code is incorrect.' });
       return;
     }
-
-    const { data: user, error: lookupError } = await supabaseAdmin
-      .from('resident_user')
-      .select('id')
-      .eq('email', email)
-      .maybeSingle();
-    if (lookupError) throw lookupError;
-    if (!user) {
+    const user = await findPasswordAccount(table, phone, role);
+    if (!user || user.id !== record.accountId) {
       await deleteOtp(otpKey);
       res.status(400).json({ error: 'The account for this reset request is no longer available.' });
       return;
     }
-
-    const password_hash = await bcrypt.hash(newPassword, 12);
-    const { error: updateError } = await supabaseAdmin
-      .from('resident_user')
-      .update({ password_hash, updated_at: new Date().toISOString() })
-      .eq('id', user.id);
-    if (updateError) throw updateError;
-
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    const { error } = await supabaseAdmin.from(table).update({ password_hash: passwordHash }).eq('id', user.id);
+    if (error) throw error;
     await deleteOtp(otpKey);
     res.json({ success: true, message: 'Password reset successfully. Sign in with your new password.' });
-  } catch (err: any) {
-    console.error('Resident forgot-password completion error:', err);
+  } catch (err) {
+    console.error(audience + ' password reset completion error:', err);
     res.status(500).json({ error: 'Could not reset the password. Please try again later.' });
   }
-});
+}
+
+router.post('/resident/forgot-password-otp', (req, res) =>
+  startPasswordReset(req, res, 'resident_user', 'resident', 'resident_password_reset'));
+router.post('/resident/forgot-password', (req, res) =>
+  finishPasswordReset(req, res, 'resident_user', 'resident', 'resident_password_reset'));
 
 router.post('/barangay/password-otp', async (req: Request, res: Response): Promise<void> => {
   try {
-    const identifier = typeof req.body?.identifier === 'string'
-      ? req.body.identifier.trim().toLowerCase()
-      : typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
-    const deliveryMethod = req.body?.delivery_method === 'sms' ? 'sms' : req.body?.delivery_method === 'email' ? 'email' : 'email';
-    if (!identifier) {
-      res.status(400).json({ error: 'Enter your username, email, or mobile number.' });
-      return;
-    }
-    if (deliveryMethod === 'sms' && !config.textBeeApiKey) {
-      res.status(503).json({ error: 'SMS verification is not configured. Choose email or contact the administrator.' });
-      return;
-    }
-    const isEmail = z.string().email().safeParse(identifier).success;
-    const mobile = identifier.replace(/\D/g, '');
-    const isMobile = /^09\d{9}$/.test(mobile);
-    let userLookup = supabaseAdmin.from('barangay_users').select('id, full_name, email, phone');
-    userLookup = isEmail ? userLookup.eq('email', identifier) : isMobile ? userLookup.eq('phone', mobile) : userLookup.eq('username', identifier);
-    const { data: user, error } = await userLookup.maybeSingle();
-    if (error) throw error;
-    if (!user) {
-      res.status(404).json({ error: 'No Barangay account was found for that username, email, or mobile number.' });
-      return;
-    }
-    const accountEmail = typeof user.email === 'string' ? user.email.trim().toLowerCase() : '';
-    const accountPhone = typeof user.phone === 'string' ? user.phone.replace(/\D/g, '') : '';
-    if (deliveryMethod === 'email' && !z.string().email().safeParse(accountEmail).success) {
-      res.status(400).json({ error: 'No email address is linked to this account. Choose mobile SMS instead.' });
-      return;
-    }
-    if (deliveryMethod === 'sms' && !/^09\d{9}$/.test(accountPhone)) {
-      res.status(400).json({ error: 'No valid mobile number is linked to this account.' });
-      return;
-    }
+    const phone = normalizeMobileNumber(req.body?.phone);
+    if (!phone) { res.status(400).json({ error: 'Enter a valid mobile number.' }); return; }
+    if (!config.textBeeApiKey) { res.status(503).json({ error: 'SMS verification is not configured. Contact an administrator.' }); return; }
+    const user = await findPasswordAccount('barangay_users', phone);
+    if (!user) { res.status(400).json({ error: 'No Barangay account was found for that mobile number.' }); return; }
     const otp = randomInt(100000, 1000000).toString();
-    const otpKey = `barangay-password-change:${user.id}`;
-    await setOtp(otpKey, { otp, accountId: user.id, fullName: user.full_name, deliveryMethod, purpose: 'barangay_password_change' });
-    const sent = deliveryMethod === 'sms'
-      ? await smsService.sendPasswordChangeOtp(accountPhone, otp, 'barangay')
-      : await emailService.sendOtpEmail(accountEmail, otp, 'barangay_password_change');
-    if (!sent) {
+    const otpKey = 'barangay-password-change:' + user.id;
+    const cooldown = await getOtpResendCooldownSeconds(otpKey);
+    if (cooldown > 0) { res.status(429).json({ error: 'A code was sent recently. Try again in ' + cooldown + ' seconds.' }); return; }
+    await setOtp(otpKey, { otp, accountId: user.id, purpose: 'barangay_password_change' });
+    if (!(await smsService.sendPasswordChangeOtp(phone, otp, 'barangay'))) {
       await deleteOtp(otpKey);
-      res.status(503).json({ error: `We could not send the verification ${deliveryMethod === 'sms' ? 'SMS' : 'email'}. Please try again later.` });
+      res.status(503).json({ error: 'We could not send the verification SMS. Check the saved mobile number and try again.' });
       return;
     }
-    const destination = deliveryMethod === 'sms' ? maskMobileNumber(accountPhone) : maskEmailAddress(accountEmail);
-    res.json({ success: true, message: `Password change verification code sent to ${destination}.`, expiresInMinutes: 10, deliveryMethod });
-  } catch (err: any) {
-    console.error('Barangay password-otp error:', err);
-    res.status(500).json({ error: 'Internal server error.' });
+    res.json({ success: true, message: 'Verification code sent to ' + maskMobileNumber(phone) + '.', expiresInMinutes: 10 });
+  } catch (err) {
+    console.error('Barangay password OTP error:', err);
+    res.status(500).json({ error: 'Could not send the password verification code.' });
   }
 });
 
 router.post('/barangay/change-password', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { otp, current_password, new_password } = req.body;
-    const identifier = typeof req.body?.identifier === 'string'
-      ? req.body.identifier.trim().toLowerCase()
-      : typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
-    const deliveryMethod = req.body?.delivery_method === 'sms' ? 'sms' : req.body?.delivery_method === 'email' ? 'email' : 'email';
-    if (!identifier || !otp || !current_password || !new_password) {
-      res.status(400).json({ error: 'Account identifier, verification code, current password, and new password are required.' });
+    const phone = normalizeMobileNumber(req.body?.phone);
+    const otp = typeof req.body?.otp === 'string' ? req.body.otp.trim() : '';
+    const currentPassword = typeof req.body?.current_password === 'string' ? req.body.current_password : '';
+    const newPassword = typeof req.body?.new_password === 'string' ? req.body.new_password : '';
+    if (!phone || !/^\d{6}$/.test(otp) || !currentPassword || newPassword.length < 8 || newPassword.length > 128) {
+      res.status(400).json({ error: 'Enter your mobile number, current password, 6-digit SMS code, and a valid new password.' });
       return;
     }
-    if (typeof new_password !== 'string' || new_password.length < 6) {
-      res.status(400).json({ error: 'New password must be at least 6 characters long.' });
+    const user = await findPasswordAccount('barangay_users', phone);
+    if (!user || !(await bcrypt.compare(currentPassword, user.password_hash))) {
+      res.status(400).json({ error: 'Invalid mobile number or password.' });
       return;
     }
-    const isEmail = z.string().email().safeParse(identifier).success;
-    const mobile = identifier.replace(/\D/g, '');
-    const isMobile = /^09\d{9}$/.test(mobile);
-    let userLookup = supabaseAdmin.from('barangay_users').select('id, password_hash');
-    userLookup = isEmail ? userLookup.eq('email', identifier) : isMobile ? userLookup.eq('phone', mobile) : userLookup.eq('username', identifier);
-    const { data: user, error: fetchError } = await userLookup.maybeSingle();
-    if (fetchError) throw fetchError;
-    if (!user) {
-      res.status(404).json({ error: 'Barangay account not found.' });
-      return;
-    }
-    const otpKey = `barangay-password-change:${user.id}`;
-    let activeOtpKey = otpKey;
-    let record = await getOtp(otpKey);
-    if (!record && isEmail) {
-      activeOtpKey = identifier;
-      record = await getOtp(activeOtpKey);
-    }
-    if (!record || record.purpose !== 'barangay_password_change' || (record.deliveryMethod && record.deliveryMethod !== deliveryMethod) || (record.accountId && record.accountId !== user.id)) {
-      res.status(400).json({ error: 'No matching password change request found or code has expired. Please request a new code.' });
-      return;
-    }
-    if (record.otp !== otp.toString().trim()) {
-      res.status(400).json({ error: 'Invalid verification code.' });
-      return;
-    }
-    if (!await bcrypt.compare(current_password, user.password_hash)) {
-      res.status(400).json({ error: 'Current password is incorrect.' });
-      return;
-    }
-    const password_hash = await bcrypt.hash(new_password, 12);
-    const { error: updateError } = await supabaseAdmin
-      .from('barangay_users')
-      .update({ password_hash, updated_at: new Date().toISOString() })
-      .eq('id', user.id);
-    if (updateError) throw updateError;
-    await deleteOtp(activeOtpKey);
-    res.json({ success: true, message: 'Password updated successfully.' });
-  } catch (err: any) {
-    console.error('Barangay change-password error:', err);
-    res.status(500).json({ error: 'Internal server error.' });
-  }
-});
-
-// Barangay login forgot-password flow. Existing signed-in password changes above
-// continue to require the current password as an additional check.
-router.post('/barangay/forgot-password-otp', async (req: Request, res: Response): Promise<void> => {
-  try {
-    const parsed = z.object({
-      identifier: z.string().trim().min(1).max(254).optional(),
-      email: z.string().trim().max(254).optional(),
-      delivery_method: z.enum(['email', 'sms']).default('email'),
-    }).safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({ error: parsed.error.issues[0]?.message || 'Enter your username, email, or mobile number and a delivery method.' });
-      return;
-    }
-
-    const identifier = (parsed.data.identifier || parsed.data.email || '').trim().toLowerCase();
-    const deliveryMethod = parsed.data.delivery_method;
-    if (!identifier) {
-      res.status(400).json({ error: 'Enter your username, email, or mobile number.' });
-      return;
-    }
-    if (deliveryMethod === 'sms' && !config.textBeeApiKey) {
-      res.status(503).json({ error: 'SMS verification is not configured. Choose email or contact the administrator.' });
-      return;
-    }
-
-    const isEmail = z.string().email().safeParse(identifier).success;
-    const mobile = identifier.replace(/\D/g, '');
-    const isMobile = /^09\d{9}$/.test(mobile);
-    let userLookup = supabaseAdmin.from('barangay_users').select('id, full_name, username, email, phone');
-    userLookup = isEmail ? userLookup.eq('email', identifier) : isMobile ? userLookup.eq('phone', mobile) : userLookup.eq('username', identifier);
-    const { data: user, error: lookupError } = await userLookup.maybeSingle();
-    if (lookupError) throw lookupError;
-    if (!user) {
-      res.status(404).json({ error: 'No Barangay account was found for that username, email, or mobile number.' });
-      return;
-    }
-
-    const accountPhone = typeof user.phone === 'string' ? user.phone.trim() : '';
-    const accountEmail = typeof user.email === 'string' ? user.email.trim().toLowerCase() : '';
-    if (deliveryMethod === 'sms' && !accountPhone) {
-      res.status(400).json({ error: 'No mobile number is linked to this Barangay account.' });
-      return;
-    }
-    if (deliveryMethod === 'email' && !accountEmail) {
-      res.status(400).json({ error: 'No email address is linked to this Barangay account. Choose mobile SMS instead.' });
-      return;
-    }
-
-    const otp = randomInt(100000, 1000000).toString();
-    const otpKey = `barangay-password-reset:${user.id}`;
-    await setOtp(otpKey, {
-      otp,
-      accountId: user.id,
-      fullName: user.full_name,
-      deliveryMethod,
-      purpose: 'barangay_password_reset',
-    });
-
-    const sent = deliveryMethod === 'sms'
-      ? await smsService.sendPasswordResetOtp(accountPhone, otp, 'barangay')
-      : await emailService.sendOtpEmail(accountEmail, otp, 'barangay_password_reset');
-    if (!sent) {
-      await deleteOtp(otpKey);
-      res.status(503).json({
-        error: deliveryMethod === 'sms'
-          ? 'We could not send the verification SMS. Check the saved mobile number or choose email.'
-          : 'We could not send the verification email. Please try again later.',
-      });
-      return;
-    }
-
-    const destination = deliveryMethod === 'sms' ? maskMobileNumber(accountPhone) : maskEmailAddress(accountEmail);
-    res.json({
-      success: true,
-      deliveryMethod,
-      message: `Password reset code sent to ${destination}. The code expires in 10 minutes.`,
-      expiresInMinutes: 10,
-    });
-  } catch (err: any) {
-    console.error('Barangay forgot-password OTP error:', err);
-    res.status(500).json({ error: 'Could not start password recovery. Please try again later.' });
-  }
-});
-
-router.post('/barangay/forgot-password', async (req: Request, res: Response): Promise<void> => {
-  try {
-    const parsed = z.object({
-      identifier: z.string().trim().min(1).max(254).optional(),
-      email: z.string().trim().max(254).optional(),
-      otp: z.string().trim().regex(/^\d{6}$/),
-      new_password: z.string().min(6).max(128),
-    }).safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({ error: parsed.error.issues[0]?.message || 'Enter your account identifier, code, and a valid new password.' });
-      return;
-    }
-
-    const identifier = (parsed.data.identifier || parsed.data.email || '').trim().toLowerCase();
-    if (!identifier) {
-      res.status(400).json({ error: 'Enter your username, email, or mobile number.' });
-      return;
-    }
-    const isEmail = z.string().email().safeParse(identifier).success;
-    const mobile = identifier.replace(/\D/g, '');
-    const isMobile = /^09\d{9}$/.test(mobile);
-    let userLookup = supabaseAdmin.from('barangay_users').select('id');
-    userLookup = isEmail ? userLookup.eq('email', identifier) : isMobile ? userLookup.eq('phone', mobile) : userLookup.eq('username', identifier);
-    const { data: user, error: lookupError } = await userLookup.maybeSingle();
-    if (lookupError) throw lookupError;
-    if (!user) {
-      res.status(404).json({ error: 'The account for this reset request is no longer available.' });
-      return;
-    }
-
-    const { otp, new_password: newPassword } = parsed.data;
-    const otpKey = `barangay-password-reset:${user.id}`;
+    const otpKey = 'barangay-password-change:' + user.id;
     const record = await getOtp(otpKey);
-    const legacyOtpKey = isEmail ? `barangay-password-reset:${identifier}` : '';
-    const legacyRecord = !record && legacyOtpKey ? await getOtp(legacyOtpKey) : null;
-    const activeOtpKey = record ? otpKey : legacyOtpKey;
-    const activeRecord = record || legacyRecord;
-    if (!activeRecord || activeRecord.purpose !== 'barangay_password_reset' || (activeRecord.accountId && activeRecord.accountId !== user.id)) {
-      res.status(400).json({ error: 'No password reset request was found or the code has expired. Request a new code.' });
-      return;
-    }
-    if (activeRecord.otp !== otp) {
-      res.status(400).json({ error: 'Invalid verification code.' });
-      return;
-    }
-
-    const password_hash = await bcrypt.hash(newPassword, 12);
-    const { error: updateError } = await supabaseAdmin
-      .from('barangay_users')
-      .update({ password_hash })
-      .eq('id', user.id);
-    if (updateError) throw updateError;
-
-    await deleteOtp(activeOtpKey);
-    res.json({ success: true, message: 'Password reset successfully. Sign in with your new password.' });
-  } catch (err: any) {
-    console.error('Barangay forgot-password completion error:', err);
-    res.status(500).json({ error: 'Could not reset the password. Please try again later.' });
-  }
-});
-
-router.post('/responder/forgot-password-otp', async (req: Request, res: Response): Promise<void> => {
-  try {
-    const parsed = passwordResetOtpSchema.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({ error: parsed.error.issues[0]?.message || 'Enter a valid email and delivery method.' });
-      return;
-    }
-
-    const { email, delivery_method: deliveryMethod } = parsed.data;
-    if (deliveryMethod === 'sms' && !config.textBeeApiKey) {
-      res.status(503).json({ error: 'SMS verification is not configured. Choose email or contact the administrator.' });
-      return;
-    }
-
-    const { data: user, error: lookupError } = await supabaseAdmin
-      .from('users')
-      .select('id, full_name, email, phone, role')
-      .eq('email', email)
-      .eq('role', 'responder')
-      .maybeSingle();
-    if (lookupError) throw lookupError;
-    if (!user) {
-      res.status(404).json({ error: 'No MDRRMO responder account found with this email address.' });
-      return;
-    }
-
-    const mobile = typeof user.phone === 'string' ? user.phone.trim() : '';
-    if (deliveryMethod === 'sms' && !mobile) {
-      res.status(400).json({ error: 'No mobile number is linked to this responder account. Choose email instead.' });
-      return;
-    }
-
-    const otp = randomInt(100000, 1000000).toString();
-    const otpKey = `responder-password-reset:${email}`;
-    await setOtp(otpKey, {
-      otp,
-      fullName: user.full_name,
-      deliveryMethod,
-      purpose: 'responder_password_reset',
-    });
-
-    const sent = deliveryMethod === 'sms'
-      ? await smsService.sendPasswordResetOtp(mobile, otp, 'responder')
-      : await emailService.sendOtpEmail(email, otp, 'responder_password_reset');
-    if (!sent) {
-      await deleteOtp(otpKey);
-      res.status(503).json({
-        error: deliveryMethod === 'sms'
-          ? 'We could not send the verification SMS. Check the saved mobile number or choose email.'
-          : 'We could not send the verification email. Please try again later.',
-      });
-      return;
-    }
-
-    const destination = deliveryMethod === 'sms' ? maskMobileNumber(mobile) : maskEmailAddress(email);
-    res.json({
-      success: true,
-      deliveryMethod,
-      message: `Password reset code sent to ${destination}. The code expires in 10 minutes.`,
-      expiresInMinutes: 10,
-    });
-  } catch (err: any) {
-    console.error('Responder forgot-password OTP error:', err);
-    res.status(500).json({ error: 'Could not start password recovery. Please try again later.' });
-  }
-});
-
-router.post('/responder/forgot-password', async (req: Request, res: Response): Promise<void> => {
-  try {
-    const parsed = passwordResetSchema.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({ error: parsed.error.issues[0]?.message || 'Enter the email, code, and a valid new password.' });
-      return;
-    }
-
-    const { email, otp, new_password: newPassword } = parsed.data;
-    const otpKey = `responder-password-reset:${email}`;
-    const record = await getOtp(otpKey);
-    if (!record || record.purpose !== 'responder_password_reset') {
-      res.status(400).json({ error: 'No password reset request was found or the code has expired. Request a new code.' });
+    if (!record || record.purpose !== 'barangay_password_change' || record.accountId !== user.id) {
+      res.status(400).json({ error: 'No matching password change request was found or the code expired.' });
       return;
     }
     if (record.otp !== otp) {
-      res.status(400).json({ error: 'Invalid verification code.' });
+      res.status(400).json({ error: 'That verification code is incorrect.' });
       return;
     }
-
-    const { data: user, error: lookupError } = await supabaseAdmin
-      .from('users')
-      .select('id')
-      .eq('email', email)
-      .eq('role', 'responder')
-      .maybeSingle();
-    if (lookupError) throw lookupError;
-    if (!user) {
-      await deleteOtp(otpKey);
-      res.status(400).json({ error: 'The responder account for this reset request is no longer available.' });
-      return;
-    }
-
-    const password_hash = await bcrypt.hash(newPassword, 12);
-    const { error: updateError } = await supabaseAdmin
-      .from('users')
-      .update({ password_hash, updated_at: new Date().toISOString() })
-      .eq('id', user.id);
-    if (updateError) throw updateError;
-
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    const { error } = await supabaseAdmin.from('barangay_users').update({ password_hash: passwordHash }).eq('id', user.id);
+    if (error) throw error;
     await deleteOtp(otpKey);
-    res.json({ success: true, message: 'Password reset successfully. Sign in with your new password.' });
-  } catch (err: any) {
-    console.error('Responder forgot-password completion error:', err);
-    res.status(500).json({ error: 'Could not reset the password. Please try again later.' });
+    res.json({ success: true, message: 'Password updated successfully.' });
+  } catch (err) {
+    console.error('Barangay password change error:', err);
+    res.status(500).json({ error: 'Could not update the password.' });
   }
 });
+
+router.post('/barangay/forgot-password-otp', (req, res) =>
+  startPasswordReset(req, res, 'barangay_users', 'barangay', 'barangay_password_reset'));
+router.post('/barangay/forgot-password', (req, res) =>
+  finishPasswordReset(req, res, 'barangay_users', 'barangay', 'barangay_password_reset'));
+
+router.post('/responder/forgot-password-otp', (req, res) =>
+  startPasswordReset(req, res, 'users', 'responder', 'responder_password_reset', 'responder'));
+router.post('/responder/forgot-password', (req, res) =>
+  finishPasswordReset(req, res, 'users', 'responder', 'responder_password_reset', 'responder'));
 
 export default router;

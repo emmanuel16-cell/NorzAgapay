@@ -8,9 +8,9 @@ import PasswordInput from '../components/PasswordInput';
 import MobileNumberInput from '../components/MobileNumberInput';
 import { formatMobileNumber, isValidMobileNumber, normalizeMobileNumberInput } from '../lib/mobileNumber';
 
-type Member = { id: string; full_name: string; username?: string | null; email?: string | null; phone?: string | null; role: 'admin' | 'dispatcher' | 'responder' | 'staff'; is_active: boolean; created_at?: string };
-type MemberForm = { full_name: string; username: string; phone: string; password: string; role: 'dispatcher' | 'responder' | 'staff' };
-const emptyForm: MemberForm = { full_name: '', username: '', phone: '', password: '', role: 'responder' };
+type Member = { id: string; full_name: string; phone: string; role: 'admin' | 'dispatcher' | 'responder' | 'staff'; is_active: boolean; created_at?: string };
+type MemberForm = { full_name: string; phone: string; password: string; role: 'dispatcher' | 'responder' | 'staff' };
+const emptyForm: MemberForm = { full_name: '', phone: '', password: '', role: 'responder' };
 
 export default function BarangayTeamPage({ embedded = false }: { embedded?: boolean }) {
   const { user } = useAuth();
@@ -57,27 +57,28 @@ export default function BarangayTeamPage({ embedded = false }: { embedded?: bool
   }, [isFormOpen]);
   const beginEdit = (member: Member) => {
     setEditingId(member.id);
-    setForm({ full_name: member.full_name || '', username: member.username || '', phone: member.phone || '', password: '', role: member.role === 'admin' ? 'staff' : member.role });
+    setForm({ full_name: member.full_name || '', phone: member.phone || '', password: '', role: member.role === 'admin' ? 'staff' : member.role });
     setIsFormOpen(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (form.phone && !isValidMobileNumber(form.phone)) { toast.error('Enter exactly 11 digits starting with 09.'); return; }
+    if (!editingId && !isValidMobileNumber(form.phone)) { toast.error('Enter exactly 11 digits starting with 09.'); return; }
+    if (editingId && form.phone && !isValidMobileNumber(form.phone)) { toast.error('Enter exactly 11 digits starting with 09.'); return; }
     setSaving(true);
     try {
       if (editingId) {
         await barangayAPI.updateTeamMember(editingId, {
-          full_name: form.full_name.trim(), username: form.username.trim().toLowerCase(), phone: form.phone.trim() ? normalizeMobileNumberInput(form.phone) : null,
+          full_name: form.full_name.trim(),
           role: form.role, ...(form.password ? { password: form.password } : {}),
         });
         toast.success('Barangay team member updated.');
       } else {
         if (form.password.length < 8) { toast.error('Set a password with at least eight characters.'); setSaving(false); return; }
         await barangayAPI.createTeamMember({
-          full_name: form.full_name.trim(), username: form.username.trim().toLowerCase(), password: form.password,
-          phone: form.phone.trim() ? normalizeMobileNumberInput(form.phone) : undefined, role: form.role,
+          full_name: form.full_name.trim(), password: form.password,
+          phone: normalizeMobileNumberInput(form.phone), role: form.role,
         });
         toast.success('Barangay account added to the team.');
       }
@@ -133,10 +134,9 @@ export default function BarangayTeamPage({ embedded = false }: { embedded?: bool
         <header><div><h2 id="barangay-team-account-title">{editingId ? 'Edit team account' : 'Add Barangay Account'}</h2><p>Barangay administrators cannot be added from this form. Dispatcher accounts require an active Barangay Account Request.</p></div><button autoFocus className="workspace-secondary-action" type="button" onClick={resetForm} disabled={saving}><X size={15} /> Cancel</button></header>
         <form className="barangay-console-form-grid" onSubmit={(event) => void submit(event)}>
           <label>Full name<input required minLength={2} maxLength={120} value={form.full_name} onChange={(event) => setForm((value) => ({ ...value, full_name: event.target.value }))} /></label>
-          <label>Username<input required minLength={3} maxLength={32} pattern="[A-Za-z0-9._-]+" autoComplete="username" autoCapitalize="none" value={form.username} onChange={(event) => setForm((value) => ({ ...value, username: event.target.value }))} placeholder="e.g. juan.delacruz" title="Use 3–32 letters, numbers, periods, underscores, or hyphens." /></label>
-          <label><span>Contact number {!editingId && <span className="barangay-console-muted">(optional)</span>}</span><MobileNumberInput value={form.phone} onValueChange={(phone) => setForm((value) => ({ ...value, phone }))} placeholder="09XXXXXXXXX" /></label>
+          <label><span>Mobile number {!editingId && <span className="barangay-console-muted">(required)</span>}</span><MobileNumberInput value={form.phone} onValueChange={(phone) => setForm((value) => ({ ...value, phone }))} placeholder="09XXXXXXXXX" required={!editingId} readOnly={Boolean(editingId)} /></label>
           <label>Role<select value={form.role} onChange={(event) => setForm((value) => ({ ...value, role: event.target.value as MemberForm['role'] }))}><option value="responder">Responder</option><option value="dispatcher">Dispatcher</option><option value="staff">Staff</option></select></label>
-          <label className="barangay-console-form-wide">{editingId ? 'Temporary password (optional)' : 'Temporary password'}<PasswordInput required={!editingId} minLength={editingId ? undefined : 8} autoComplete="new-password" value={form.password} onChange={(event) => setForm((value) => ({ ...value, password: event.target.value }))} placeholder={editingId ? 'Leave blank to keep the current password' : 'At least 8 characters'} /></label>
+          <label className="barangay-console-form-wide">{editingId ? 'New password (optional)' : 'Password'}<PasswordInput required={!editingId} minLength={editingId ? undefined : 8} autoComplete="new-password" value={form.password} onChange={(event) => setForm((value) => ({ ...value, password: event.target.value }))} placeholder={editingId ? 'Leave blank to keep the current password' : 'At least 8 characters'} /></label>
           <div className="barangay-console-form-actions"><button className="btn btn-primary" type="submit" disabled={saving}>{saving ? 'Saving…' : editingId ? <><Check size={16} /> Save account</> : <><Plus size={16} /> Add account</>}</button></div>
         </form>
         </section>
@@ -145,10 +145,10 @@ export default function BarangayTeamPage({ embedded = false }: { embedded?: bool
       {error && <div className="workspace-message workspace-message-error" role="alert">{error}<button type="button" onClick={() => void load()}>Try again</button></div>}
       {loading ? <p className="barangay-console-muted">Loading the barangay roster…</p> : <>
         <section className="barangay-console-panel"><header><div><h2>Active team</h2><p>Responders and staff here can be used for barangay operations as allowed by their role.</p></div></header><div className="barangay-team-grid">
-          {activeMembers.map((member) => <article className="barangay-team-card" key={member.id}><div className="barangay-team-card-avatar">{member.full_name.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase()}</div><div className="barangay-team-card-info"><strong>{member.full_name}</strong><span className="barangay-console-status active">{member.role.replaceAll('_', ' ')}</span><small>{member.username ? `@${member.username}` : 'Username not set'}{member.phone ? ` · ${formatMobileNumber(member.phone)}` : ''}</small></div>{canManageTeam && member.role !== 'admin' && <div className="barangay-team-card-actions"><button type="button" title="Edit account" aria-label={`Edit ${member.full_name}`} onClick={() => beginEdit(member)}><Edit3 size={16} /></button><button type="button" title="Deactivate account" aria-label={`Deactivate ${member.full_name}`} onClick={() => void toggleActive(member)}><UserRoundX size={16} /></button></div>}</article>)}
+          {activeMembers.map((member) => <article className="barangay-team-card" key={member.id}><div className="barangay-team-card-avatar">{member.full_name.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase()}</div><div className="barangay-team-card-info"><strong>{member.full_name}</strong><span className="barangay-console-status active">{member.role.replaceAll('_', ' ')}</span><small>{formatMobileNumber(member.phone)}</small></div>{canManageTeam && member.role !== 'admin' && <div className="barangay-team-card-actions"><button type="button" title="Edit account" aria-label={`Edit ${member.full_name}`} onClick={() => beginEdit(member)}><Edit3 size={16} /></button><button type="button" title="Deactivate account" aria-label={`Deactivate ${member.full_name}`} onClick={() => void toggleActive(member)}><UserRoundX size={16} /></button></div>}</article>)}
           {activeMembers.length === 0 && <p className="barangay-console-muted">No active team accounts were found.</p>}
         </div></section>
-        {inactiveMembers.length > 0 && <section className="barangay-console-panel"><header><div><h2>{canManageTeam ? 'Inactive accounts' : 'Inactive team accounts'}</h2><p>{canManageTeam ? 'Historical assignments remain available. Reactivation restores sign-in access.' : 'These accounts are currently inactive.'}</p></div></header><div className="barangay-team-grid">{inactiveMembers.map((member) => <article className="barangay-team-card is-inactive" key={member.id}><div className="barangay-team-card-avatar">{member.full_name.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase()}</div><div className="barangay-team-card-info"><strong>{member.full_name}</strong><span className="barangay-console-status inactive">Inactive · {member.role}</span><small>{member.username ? `@${member.username}` : 'Username not set'}{member.phone ? ` · ${formatMobileNumber(member.phone)}` : ''}</small></div>{canManageTeam && <button className="workspace-secondary-action" type="button" onClick={() => void toggleActive(member)}><Check size={15} /> Reactivate</button>}</article>)}</div></section>}
+        {inactiveMembers.length > 0 && <section className="barangay-console-panel"><header><div><h2>{canManageTeam ? 'Inactive accounts' : 'Inactive team accounts'}</h2><p>{canManageTeam ? 'Historical assignments remain available. Reactivation restores sign-in access.' : 'These accounts are currently inactive.'}</p></div></header><div className="barangay-team-grid">{inactiveMembers.map((member) => <article className="barangay-team-card is-inactive" key={member.id}><div className="barangay-team-card-avatar">{member.full_name.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase()}</div><div className="barangay-team-card-info"><strong>{member.full_name}</strong><span className="barangay-console-status inactive">Inactive · {member.role}</span><small>{formatMobileNumber(member.phone)}</small></div>{canManageTeam && <button className="workspace-secondary-action" type="button" onClick={() => void toggleActive(member)}><Check size={15} /> Reactivate</button>}</article>)}</div></section>}
       </>}
     </div>
   );

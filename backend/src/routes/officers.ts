@@ -23,7 +23,6 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
 const officerSchema = z.object({
   name: z.string().trim().min(1).max(120),
   phone: z.string().trim().max(30).nullable().optional(),
-  email: z.string().trim().email().max(254).nullable().optional(),
   specialization: z.string().trim().min(1).max(120),
   rank: z.string().trim().max(80).nullable().optional(),
   status: z.enum(['active', 'inactive']).optional(),

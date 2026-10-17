@@ -8,11 +8,10 @@ import { z } from 'zod';
 import { randomInt } from 'crypto';
 import { config } from '../config';
 import { supabaseAdmin } from '../config/supabase';
-import { setOtp, getOtp, deleteOtp, getBarangayResponderGpsLocation, RESPONDER_GPS_TTL_SECONDS } from '../config/redis';
+import { setOtp, getOtp, deleteOtp, getOtpResendCooldownSeconds, getBarangayResponderGpsLocation, RESPONDER_GPS_TTL_SECONDS } from '../config/redis';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { io } from '../server';
 import { DispatcherVerificationService, normalizePositionDesignation } from '../services/dispatcherVerificationService';
-import { emailService } from '../services/emailService';
 import { smsService } from '../services/smsService';
 import {
   ARRIVAL_RADIUS_METERS,
@@ -30,7 +29,7 @@ import { isValidLocationIcon, removeStoredLocationIcon, storeLocationIcon } from
 import { formatIncidentReport } from './incidentReports';
 import { isReportResolved, reportStageDurations, summarizeReportTimings } from '../services/reportTiming';
 import { isDirectMdrrmoReport } from '../services/mdrrmoReportVisibility';
-import { isGlobalUsernameConflict, isUsernameTaken, normalizeUsername } from '../services/accountUsernameService';
+import { isMobileNumberRegistryConflict, normalizeMobileNumber } from '../services/mobileNumberService';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -85,7 +84,6 @@ async function upsertEscalatedMdrrmoReport(report: any, escalationNotes: string,
       reporter_type: report.reporter_type,
       reporter_name: report.reporter_name,
       reporter_phone: report.reporter_phone,
-      reporter_email: report.reporter_email,
       barangay_id: report.barangay_id,
       coordination_notes: escalationNotes,
       response_status: 'pending',
@@ -551,7 +549,7 @@ router.get('/public-hotlines', async (_req: Request, res: Response) => {
     });
     res.json({
       national: [{ label: 'National Emergency Hotline', phone: '911' }],
-      mdrrmo: [{ label: 'MDRRMO Norzagaray', phone: '09052470355', email: 'norzagarayrescue2015@gmail.com', facebook: 'https://www.facebook.com/RescueNgGaray' }],
+      mdrrmo: [{ label: 'MDRRMO Norzagaray', phone: '09052470355', facebook: 'https://www.facebook.com/RescueNgGaray' }],
       barangays: barangayHotlines,
     });
   } catch (error) {
@@ -603,12 +601,17 @@ router.put('/hotlines', authenticateBarangay, requireRole(['admin', 'staff']), a
 
 const barangayRegistrationOtpSchema = z.object({
   full_name: z.string().trim().min(2).max(120),
-  username: z.string().trim().min(3).max(32).regex(/^[a-zA-Z0-9_.-]+$/).transform(normalizeUsername),
-  email: z.string().trim().email().transform((value) => value.toLowerCase()).optional().or(z.literal('')),
-  phone: z.string().trim().max(30).optional().nullable(),
+  phone: z.string().trim().transform((value, ctx) => {
+    const normalized = normalizeMobileNumber(value);
+    if (!normalized) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Enter a valid Philippine mobile number.' });
+      return z.NEVER;
+    }
+    return normalized;
+  }),
+  password: z.string().min(8).max(128),
   barangay_id: z.string().uuid(),
   position_designation: z.string().trim().min(2).max(120),
-  delivery_method: z.enum(['email', 'sms']).optional(),
 });
 
 const approvedAdminExistsMessage = 'This barangay already has an MDRRMO-approved administrator. Choose another barangay.';
@@ -617,35 +620,19 @@ router.post('/register-otp', async (req: Request, res: Response): Promise<void> 
   try {
     const parsed = barangayRegistrationOtpSchema.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: 'Enter your name, username, barangay, position, and valid contact details.' });
+      res.status(400).json({ error: 'Enter your name, mobile number, password, barangay, and position.' });
+      return;
+    }
+    if (!config.textBeeApiKey) {
+      res.status(503).json({ error: 'SMS verification is not configured. Contact an administrator.' });
       return;
     }
     const body = parsed.data;
-    const email = body.email || '';
-    const phone = body.phone?.replace(/\D/g, '') || '';
-    const deliveryMethod = body.delivery_method || (email ? 'email' : 'sms');
-    if (!email && !phone) {
-      res.status(400).json({ error: 'Provide an email address or mobile number for verification.' });
-      return;
-    }
-    if (phone && !/^09\d{9}$/.test(phone)) {
-      res.status(400).json({ error: 'Enter a valid 11-digit mobile number starting with 09.' });
-      return;
-    }
-    if (deliveryMethod === 'email' && !email) {
-      res.status(400).json({ error: 'Enter an email address to receive an email verification code.' });
-      return;
-    }
-    if (deliveryMethod === 'sms' && !phone) {
-      res.status(400).json({ error: 'Enter a mobile number to receive an SMS verification code.' });
-      return;
-    }
-    if (deliveryMethod === 'sms' && !config.textBeeApiKey) {
-      res.status(503).json({ error: email ? 'SMS verification is not configured yet. Please choose email or contact the administrator.' : 'SMS verification is not configured yet. Contact the administrator to finish registration.' });
-      return;
-    }
-    if (await isUsernameTaken(body.username)) {
-      res.status(409).json({ error: 'That username is already in use. Choose another one.' });
+    const { data: reservation, error: reservationError } = await supabaseAdmin
+      .from('account_mobile_numbers').select('account_id').eq('phone_normalized', body.phone).maybeSingle();
+    if (reservationError) throw reservationError;
+    if (reservation) {
+      res.status(409).json({ error: 'That mobile number is already linked to an account.' });
       return;
     }
     const barangayIdsWithApprovedAdmins = await getBarangayIdsWithApprovedAdmins();
@@ -653,45 +640,32 @@ router.post('/register-otp', async (req: Request, res: Response): Promise<void> 
       res.status(409).json({ error: approvedAdminExistsMessage });
       return;
     }
-
-    if (email) {
-      const { data: barangayUser, error: barangayLookupError } = await supabaseAdmin
-        .from('barangay_users')
-        .select('id')
-        .eq('email', email)
-        .maybeSingle();
-      if (barangayLookupError) throw barangayLookupError;
-      const pending = await DispatcherVerificationService.findByEmail(email);
-      if (barangayUser || (pending && pending.status !== 'rejected')) {
-        res.status(409).json({ error: 'This email already has a Barangay App account. Sign in or use another email.' });
-        return;
-      }
-    }
     const otp = randomInt(100000, 1000000).toString();
-    const destination = deliveryMethod === 'sms' ? phone : email;
-    const otpKey = `barangay-registration:${deliveryMethod}:${destination}`;
+    const passwordHash = await bcrypt.hash(body.password, 12);
+    const otpKey = 'barangay-registration:' + body.phone;
+    const cooldown = await getOtpResendCooldownSeconds(otpKey);
+    if (cooldown > 0) { res.status(429).json({ error: 'A code was sent recently. Try again in ' + cooldown + ' seconds.' }); return; }
     await setOtp(otpKey, {
       otp,
-      username: body.username,
       fullName: body.full_name,
-      email,
-      contactNumber: phone,
+      phone: body.phone,
+      passwordHash,
       barangayId: body.barangay_id,
       positionDesignation: body.position_designation,
-      deliveryMethod,
-      destination,
       purpose: 'barangay_registration',
     });
-    const sent = deliveryMethod === 'sms'
-      ? await smsService.sendRegistrationOtp(phone, otp)
-      : await emailService.sendOtpEmail(email, otp, 'barangay_registration');
-    if (!sent) {
+    if (!(await smsService.sendRegistrationOtp(body.phone, otp))) {
       await deleteOtp(otpKey);
-      res.status(503).json({ error: deliveryMethod === 'sms' ? (email ? 'We could not send the verification SMS. Check the mobile number or choose email.' : 'We could not send the verification SMS. Check the mobile number or contact the administrator.') : 'We could not send the verification email. Please try again later.' });
+      res.status(503).json({ error: 'We could not send the verification SMS. Check the mobile number and try again.' });
       return;
     }
-    res.json({ success: true, delivery_method: deliveryMethod, destination, message: `Verification code sent to ${destination}.`, expiresInMinutes: 10 });
-  } catch (err: any) {
+    res.json({
+      success: true,
+      destination: body.phone,
+      message: 'Verification code sent to ' + body.phone + '.',
+      expiresInMinutes: 10,
+    });
+  } catch (err) {
     console.error('Barangay registration OTP error:', err);
     res.status(500).json({ error: 'Could not start registration.' });
   }
@@ -699,30 +673,23 @@ router.post('/register-otp', async (req: Request, res: Response): Promise<void> 
 
 router.post('/verify-register-otp', async (req: Request, res: Response): Promise<void> => {
   try {
-    const deliveryMethod = req.body?.delivery_method === 'sms' ? 'sms' : req.body?.delivery_method === 'email' ? 'email' : req.body?.email ? 'email' : null;
-    const destination = typeof req.body?.destination === 'string'
-      ? (deliveryMethod === 'email' ? req.body.destination.trim().toLowerCase() : req.body.destination.replace(/\D/g, ''))
-      : typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
-    const otp = typeof req.body.otp === 'string' || typeof req.body.otp === 'number' ? String(req.body.otp).trim() : '';
-    if (!deliveryMethod || !destination || !otp) {
-      res.status(400).json({ error: 'Choose the contact used for verification and enter the verification code.' });
+    const phone = normalizeMobileNumber(req.body?.phone);
+    const otp = typeof req.body?.otp === 'string' || typeof req.body?.otp === 'number' ? String(req.body.otp).trim() : '';
+    if (!phone || !/^\d{6}$/.test(otp)) {
+      res.status(400).json({ error: 'Enter a valid mobile number and the 6-digit SMS code.' });
       return;
     }
-    const otpKey = `barangay-registration:${deliveryMethod}:${destination}`;
+    const otpKey = 'barangay-registration:' + phone;
     const record = await getOtp(otpKey);
-    if (!record || record.purpose !== 'barangay_registration') {
-      res.status(400).json({ error: 'No pending registration found or the code expired. Request a new code.' });
+    if (!record || record.purpose !== 'barangay_registration' || record.phone !== phone || !record.passwordHash || !record.barangayId) {
+      res.status(400).json({ error: 'No pending registration was found or the code expired. Request a new code.' });
       return;
     }
     if (record.otp !== otp) {
       const failedAttempts = (record.failedAttempts || 0) + 1;
       if (failedAttempts >= 5) await deleteOtp(otpKey);
       else await setOtp(otpKey, { ...record, failedAttempts });
-      res.status(400).json({ error: failedAttempts >= 5 ? 'Too many incorrect codes. Request a new verification code.' : 'Invalid verification code.' });
-      return;
-    }
-    if (!record.fullName || !record.username || !record.barangayId || !record.positionDesignation) {
-      res.status(400).json({ error: 'Registration details are incomplete. Please register again.' });
+      res.status(400).json({ error: failedAttempts >= 5 ? 'Too many incorrect codes. Request a new verification code.' : 'That verification code is incorrect.' });
       return;
     }
     const barangayIdsWithApprovedAdmins = await getBarangayIdsWithApprovedAdmins();
@@ -731,33 +698,12 @@ router.post('/verify-register-otp', async (req: Request, res: Response): Promise
       res.status(409).json({ error: approvedAdminExistsMessage });
       return;
     }
-    const email = typeof record.email === 'string' ? record.email : '';
-    const recordDeliveryMethod = record.deliveryMethod;
-    if (recordDeliveryMethod !== 'sms' && recordDeliveryMethod !== 'email') {
-      res.status(400).json({ error: 'Registration verification details are incomplete. Please register again.' });
-      return;
-    }
-    if (recordDeliveryMethod !== deliveryMethod) {
-      res.status(400).json({ error: 'The verification channel does not match this registration. Request a new code.' });
-      return;
-    }
-    const deliveryAddress = recordDeliveryMethod === 'sms' ? record.contactNumber : email;
-    if (!deliveryAddress) {
-      res.status(400).json({ error: `The ${recordDeliveryMethod === 'sms' ? 'mobile number' : 'email address'} for this registration is missing. Please register again.` });
-      return;
-    }
-    if (await isUsernameTaken(record.username)) {
+    const { data: reservation, error: reservationError } = await supabaseAdmin
+      .from('account_mobile_numbers').select('account_id').eq('phone_normalized', phone).maybeSingle();
+    if (reservationError) throw reservationError;
+    if (reservation) {
       await deleteOtp(otpKey);
-      res.status(409).json({ error: 'That username was just claimed. Request a new code with another username.' });
-      return;
-    }
-    const { data: existing, error: existingError } = email
-      ? await supabaseAdmin.from('barangay_users').select('id').eq('email', email).maybeSingle()
-      : { data: null, error: null };
-    if (existingError) throw existingError;
-    if (existing) {
-      await deleteOtp(otpKey);
-      res.status(409).json({ error: 'This email is already registered. Sign in instead.' });
+      res.status(409).json({ error: 'That mobile number is already linked to an account.' });
       return;
     }
     const { data: barangay, error: barangayError } = await supabaseAdmin
@@ -766,328 +712,149 @@ router.post('/verify-register-otp', async (req: Request, res: Response): Promise
       res.status(400).json({ error: 'Selected barangay was not found.' });
       return;
     }
-
-    const temporaryPassword = `Norz#${randomInt(1000, 10000)}`;
-    const passwordHash = await bcrypt.hash(temporaryPassword, 12);
     const { data: user, error: insertError } = await supabaseAdmin.from('barangay_users').insert({
       full_name: record.fullName,
-      username: record.username,
-      email: email || null,
-      phone: record.contactNumber || null,
-      password_hash: passwordHash,
+      phone,
+      password_hash: record.passwordHash,
       barangay_id: record.barangayId,
       role: 'admin',
       position_designation: record.positionDesignation,
       is_active: true,
-    }).select('id, full_name, username, email, phone, role, barangay_id, position_designation, is_active').single();
-    if (insertError || !user) {
-      if (isGlobalUsernameConflict(insertError)) {
-        await deleteOtp(otpKey);
-        res.status(409).json({ error: 'That username was just claimed. Request a new code with another username.' });
-        return;
-      }
-      console.error('Barangay account creation failed:', insertError?.message);
-      res.status(500).json({ error: 'Could not create the account. Please try again.' });
-      return;
-    }
-
-    const passwordSent = recordDeliveryMethod === 'sms'
-      ? await smsService.sendTemporaryPasswordSms(deliveryAddress, temporaryPassword)
-      : await emailService.sendTemporaryPasswordEmail(deliveryAddress, temporaryPassword, record.fullName, 'barangay');
-    if (!passwordSent) {
-      await supabaseAdmin.from('barangay_users').delete().eq('id', user.id);
+    }).select('id, full_name, phone, role, barangay_id, position_designation, is_active').single();
+    if (isMobileNumberRegistryConflict(insertError) || insertError?.code === '23505') {
       await deleteOtp(otpKey);
-      res.status(503).json({ error: `The temporary password could not be sent by ${recordDeliveryMethod}. Request a new verification code to try again.` });
+      res.status(409).json({ error: 'That mobile number is already linked to an account.' });
       return;
     }
+    if (insertError || !user) throw insertError || new Error('Barangay account insert failed.');
     await deleteOtp(otpKey);
     const token = jwt.sign(
-      { userId: user.id, barangayId: user.barangay_id, role: 'admin', email: user.email || '' },
+      { userId: user.id, barangayId: user.barangay_id, role: 'admin' },
       config.jwtSecret,
       { expiresIn: '30d' },
     );
     res.status(201).json({
       success: true,
-      message: `${recordDeliveryMethod === 'sms' ? 'Mobile number' : 'Email'} verified. Your temporary password was sent by ${recordDeliveryMethod}.`,
-      temporaryPassword,
+      message: 'Mobile number verified. Create the Barangay Account Request to complete activation.',
       user: { ...user, barangay_name: barangay.name, municipality: barangay.municipality, coordination_verified: false, verification_status: 'pending_document', coordination_prompt_pending: false },
       token,
     });
-  } catch (err: any) {
-    console.error('Barangay OTP verification error:', err);
+  } catch (err) {
+    console.error('Barangay registration verification error:', err);
     res.status(500).json({ error: 'Could not finish registration.' });
   }
 });
 
 router.post('/register', (_req: Request, res: Response): void => {
-  res.status(410).json({ error: 'Passwordless OTP registration is required. Use the registration form in the current Barangay App.' });
+  res.status(410).json({ error: 'SMS-verified mobile registration is required. Use the current registration form.' });
 });
-
-// ─── POST /api/barangay/login ────────────────────────────────────────────────
 
 router.post('/login', async (req: Request, res: Response): Promise<void> => {
   try {
-    const identifier = typeof req.body.identifier === 'string'
-      ? req.body.identifier.trim().toLowerCase()
-      : typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : '';
-    const isEmail = z.string().email().safeParse(identifier).success;
-    const isUsername = /^[a-z0-9._-]{3,32}$/.test(identifier);
-    const { password } = req.body;
-    if ((!isEmail && !isUsername) || !password) {
-      res.status(400).json({ error: 'A valid username or email and password are required.' });
+    const phone = normalizeMobileNumber(req.body?.phone);
+    const password = typeof req.body?.password === 'string' ? req.body.password : '';
+    if (!phone || !password) {
+      res.status(400).json({ error: 'A valid mobile number and password are required.' });
       return;
     }
-
-    // ── Path A: Check active barangay accounts ──
-    let accountLookup = supabaseAdmin
-      .from('barangay_users')
-      .select('id, full_name, username, email, phone, role, barangay_id, password_hash, is_active, position_designation');
-    accountLookup = isEmail ? accountLookup.eq('email', identifier) : accountLookup.eq('username', identifier);
-    const { data: user } = await accountLookup.maybeSingle();
-
-    if (user) {
-      const role = normalizeBarangayRole(user.role);
-      const valid = await bcrypt.compare(password, user.password_hash);
-      if (!valid) {
-        res.status(401).json({ error: 'Invalid username, email, or password.' });
-        return;
-      }
-
-      // Fetch barangay details
-      const { data: barangay } = await supabaseAdmin
-        .from('barangays')
-        .select('name, municipality')
-        .eq('id', user.barangay_id)
-        .maybeSingle();
-
-      if (!user.is_active) {
-        res.status(403).json({ error: 'This barangay account is inactive. Contact your barangay administrator.' });
-        return;
-      }
-
-      const coordinationVerified = await DispatcherVerificationService.isBarangayActive(user.barangay_id);
-      // Keep the barangay administrator able to sign in while access is
-      // pending or deactivated so they can submit or request activation.
-      // All other barangay roles are refused until MDRRMO activates the request.
-      if (role !== 'admin' && !coordinationVerified) {
-        res.status(403).json({ error: 'This barangay is not active. Ask the barangay administrator to submit a Barangay Account Request.' });
-        return;
-      }
-
-      const verification = role === 'admin'
-        ? await DispatcherVerificationService.getPersistedByUserId(user.id)
-        : null;
-
-      const token = jwt.sign(
-        { userId: user.id, barangayId: user.barangay_id, role, email: user.email },
-        config.jwtSecret,
-        { expiresIn: '30d' }
-      );
-      res.json({
-        token,
-        user: {
-          id: user.id,
-          full_name: user.full_name,
-          username: user.username,
-          email: user.email,
-          phone: user.phone,
-          role,
-          barangay_id: user.barangay_id,
-          position_designation: user.position_designation,
-          barangay_name: barangay?.name || '',
-          municipality: barangay?.municipality || 'Norzagaray',
-            is_active: user.is_active,
-            coordination_verified: coordinationVerified,
-            verification_status: verification?.status || (coordinationVerified ? 'verified' : 'pending_document'),
-            verification,
-        },
-      });
+    const { data: user, error } = await supabaseAdmin.from('barangay_users')
+      .select('id, full_name, phone, role, barangay_id, password_hash, is_active, position_designation')
+      .eq('phone', phone).maybeSingle();
+    if (error) throw error;
+    if (!user || !(await bcrypt.compare(password, user.password_hash))) {
+      res.status(401).json({ error: 'Invalid mobile number or password.' });
       return;
     }
-
-    // ── Path B: Legacy pending dispatcher accounts ──
-    const pendingRecord = isEmail ? await DispatcherVerificationService.findByEmail(identifier) : null;
-
-    if (pendingRecord && pendingRecord._password_hash) {
-      const valid = await bcrypt.compare(password, pendingRecord._password_hash);
-      if (!valid) {
-        res.status(401).json({ error: 'Invalid username, email, or password.' });
-        return;
-      }
-
-      // Fetch barangay details
-      const { data: barangay } = await supabaseAdmin
-        .from('barangays')
-        .select('name, municipality')
-        .eq('id', pendingRecord.barangay_id)
-        .maybeSingle();
-
-      // Issue a limited token — userId maps to verification's user_id
-      const token = jwt.sign(
-        {
-          userId: pendingRecord.user_id,
-          barangayId: pendingRecord.barangay_id,
-          role: 'dispatcher',
-          email: pendingRecord.email,
-          isPendingDispatcher: true,
-        },
-        config.jwtSecret,
-        { expiresIn: '30d' }
-      );
-
-      res.json({
-        token,
-        user: {
-          id: pendingRecord.user_id,
-          full_name: pendingRecord.full_name,
-          email: pendingRecord.email,
-          phone: pendingRecord.phone,
-          role: 'dispatcher',
-          barangay_id: pendingRecord.barangay_id,
-          barangay_name: barangay?.name || pendingRecord.barangay_name || '',
-          municipality: barangay?.municipality || 'Norzagaray',
-          is_active: false,
-          coordination_verified: false,
-          verification_status: pendingRecord.status,
-          verification: pendingRecord,
-        },
-      });
+    const role = normalizeBarangayRole(user.role);
+    const { data: barangay } = await supabaseAdmin.from('barangays')
+      .select('name, municipality').eq('id', user.barangay_id).maybeSingle();
+    if (!user.is_active) {
+      res.status(403).json({ error: 'This barangay account is inactive. Contact your barangay administrator.' });
       return;
     }
-
-    res.status(401).json({ error: 'Invalid username, email, or password.' });
+    const coordinationVerified = await DispatcherVerificationService.isBarangayActive(user.barangay_id);
+    if (role !== 'admin' && !coordinationVerified) {
+      res.status(403).json({ error: 'This barangay is not active. Ask the barangay administrator to submit a Barangay Account Request.' });
+      return;
+    }
+    const verification = role === 'admin'
+      ? await DispatcherVerificationService.getPersistedByUserId(user.id)
+      : null;
+    const token = jwt.sign(
+      { userId: user.id, barangayId: user.barangay_id, role },
+      config.jwtSecret,
+      { expiresIn: '30d' },
+    );
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        full_name: user.full_name,
+        phone: user.phone,
+        role,
+        barangay_id: user.barangay_id,
+        position_designation: user.position_designation,
+        barangay_name: barangay?.name || '',
+        municipality: barangay?.municipality || 'Norzagaray',
+        is_active: user.is_active,
+        coordination_verified: coordinationVerified,
+        verification_status: verification?.status || (coordinationVerified ? 'verified' : 'pending_document'),
+        verification,
+      },
+    });
   } catch (err) {
     console.error('Barangay login error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// ─── GET /api/barangay/me ────────────────────────────────────────────────────
-
 router.get('/me', authenticateBarangay, async (req: any, res: Response) => {
   try {
     const userId = req.barangayUser.userId;
-
-    // First try barangay_users (approved barangay accounts)
-    const { data: user } = await supabaseAdmin
-      .from('barangay_users')
-      .select('id, full_name, username, email, phone, role, barangay_id, position_designation, is_active, created_at')
-      .eq('id', userId)
-      .maybeSingle();
-
-    if (user) {
-      const { data: barangay } = await supabaseAdmin
-        .from('barangays')
-        .select('name, municipality')
-        .eq('id', user.barangay_id)
-        .maybeSingle();
-
-      const role = normalizeBarangayRole(user.role);
-      const verification = role === 'admin'
-        ? await DispatcherVerificationService.getPersistedByUserId(user.id)
-        : null;
-      const verificationStatus = verification?.status || (role === 'admin'
-        ? 'pending_document'
-        : (user.is_active ? 'verified' : 'pending_document'));
-      const coordinationVerified = await DispatcherVerificationService.isBarangayActive(user.barangay_id);
-
-      res.json({
-        ...user,
-        role,
-        barangay_name: barangay?.name,
-        municipality: barangay?.municipality,
-        verification_status: verificationStatus,
-        coordination_verified: coordinationVerified,
-        verification,
-      });
-      return;
-    }
-
-    // Fallback: pending dispatcher (not yet in barangay_users)
-    const verification = req.barangayUser.isPendingDispatcher
-      ? await DispatcherVerificationService.getByUserId(userId)
-      : await DispatcherVerificationService.getPersistedByUserId(userId);
-    if (verification) {
-      const { data: barangay } = await supabaseAdmin
-        .from('barangays')
-        .select('name, municipality')
-        .eq('id', verification.barangay_id)
-        .maybeSingle();
-
-      res.json({
-        id: verification.user_id,
-        full_name: verification.full_name,
-        email: verification.email,
-        phone: verification.phone,
-        role: 'dispatcher',
-        barangay_id: verification.barangay_id,
-        barangay_name: barangay?.name || verification.barangay_name,
-        municipality: barangay?.municipality || 'Norzagaray',
-        is_active: false,
-        coordination_verified: await DispatcherVerificationService.isBarangayActive(verification.barangay_id),
-        verification_status: verification.status,
-        verification,
-      });
-      return;
-    }
-
-    res.status(404).json({ error: 'User not found' });
+    const { data: user, error } = await supabaseAdmin.from('barangay_users')
+      .select('id, full_name, phone, role, barangay_id, position_designation, is_active, created_at')
+      .eq('id', userId).maybeSingle();
+    if (error) throw error;
+    if (!user) { res.status(404).json({ error: 'User not found.' }); return; }
+    const { data: barangay } = await supabaseAdmin.from('barangays')
+      .select('name, municipality').eq('id', user.barangay_id).maybeSingle();
+    const role = normalizeBarangayRole(user.role);
+    const verification = role === 'admin'
+      ? await DispatcherVerificationService.getPersistedByUserId(user.id)
+      : null;
+    const coordinationVerified = await DispatcherVerificationService.isBarangayActive(user.barangay_id);
+    res.json({
+      ...user,
+      role,
+      barangay_name: barangay?.name,
+      municipality: barangay?.municipality,
+      verification_status: verification?.status || (role === 'admin' ? 'pending_document' : (user.is_active ? 'verified' : 'pending_document')),
+      coordination_verified: coordinationVerified,
+      verification,
+    });
   } catch (err) {
     console.error('Get me error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// ─── PATCH /api/barangay/profile ────────────────────────────────────────────
-// Allow a signed-in barangay account to update only its own name and phone.
 router.patch('/profile', authenticateBarangay, async (req: any, res: Response) => {
   try {
-    const schema = z.object({
-      full_name: z.string().trim().min(2).max(100),
-      username: z.string().trim().toLowerCase().min(3).max(32).regex(/^[a-z0-9._-]+$/),
-      email: z.string().trim().toLowerCase().email().max(254).nullable().optional(),
-      phone: z.string().trim().max(11).nullable(),
-    }).strict();
-    const parsed = schema.safeParse(req.body);
+    const parsed = z.object({ full_name: z.string().trim().min(2).max(100) }).strict().safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: 'Provide a valid name, username, email, and mobile number.' });
+      res.status(400).json({ error: 'Provide a valid full name.' });
       return;
     }
-
-    const phone = parsed.data.phone?.replace(/\D/g, '') || null;
-    if (phone && !/^09\d{9}$/.test(phone)) {
-      res.status(400).json({ error: 'Enter an 11-digit mobile number starting with 09.' });
-      return;
-    }
-
-    const [{ data: emailOwner, error: emailError }, usernameTaken] = await Promise.all([
-      parsed.data.email
-        ? supabaseAdmin.from('barangay_users').select('id').eq('email', parsed.data.email).neq('id', req.barangayUser.userId).limit(1).maybeSingle()
-        : Promise.resolve({ data: null, error: null } as any),
-      isUsernameTaken(parsed.data.username, { table: 'barangay_users', id: req.barangayUser.userId }),
-    ]);
-    if (emailError) throw emailError;
-    if (usernameTaken) { res.status(409).json({ error: 'That username is already in use.' }); return; }
-    if (emailOwner) { res.status(409).json({ error: 'That email address is already linked to another barangay account.' }); return; }
-
-    const { data, error } = await supabaseAdmin
-      .from('barangay_users')
-      .update({ full_name: parsed.data.full_name, username: parsed.data.username, ...(parsed.data.email !== undefined ? { email: parsed.data.email } : {}), phone })
+    const { data, error } = await supabaseAdmin.from('barangay_users')
+      .update({ full_name: parsed.data.full_name })
       .eq('id', req.barangayUser.userId)
       .eq('barangay_id', req.barangayUser.barangayId)
-      .select('id, full_name, username, email, phone, role')
+      .select('id, full_name, phone, role')
       .maybeSingle();
-
-    if (isGlobalUsernameConflict(error)) { res.status(409).json({ error: 'That username is already in use.' }); return; }
-    if (error?.code === '23505') { res.status(409).json({ error: 'That email address is already in use.' }); return; }
     if (error) throw error;
-    if (!data) {
-      res.status(404).json({ error: 'Barangay account not found.' });
-      return;
-    }
-
+    if (!data) { res.status(404).json({ error: 'Barangay account not found.' }); return; }
     const token = jwt.sign(
-      { userId: data.id, barangayId: req.barangayUser.barangayId, role: data.role, email: data.email || '' },
+      { userId: data.id, barangayId: req.barangayUser.barangayId, role: data.role },
       config.jwtSecret,
       { expiresIn: '30d' },
     );
@@ -1098,55 +865,133 @@ router.patch('/profile', authenticateBarangay, async (req: any, res: Response) =
   }
 });
 
-router.post('/profile/password-otp', authenticateBarangay, async (req: any, res: Response) => {
+router.post('/profile/phone-otp', authenticateBarangay, async (req: any, res: Response) => {
   try {
-    const deliveryMethod = req.body?.delivery_method === 'sms' ? 'sms' : req.body?.delivery_method === 'email' ? 'email' : null;
+    const phone = normalizeMobileNumber(req.body?.phone);
     const currentPassword = typeof req.body?.current_password === 'string' ? req.body.current_password : '';
-    if (!deliveryMethod || !currentPassword) {
-      res.status(400).json({ error: 'Choose email or mobile and enter your current password.' });
+    if (!phone || !currentPassword) {
+      res.status(400).json({ error: 'Enter a valid new mobile number and your current password.' });
       return;
     }
     const { data: account, error } = await supabaseAdmin.from('barangay_users')
-      .select('id, full_name, email, phone, password_hash')
-      .eq('id', req.barangayUser.userId)
-      .eq('barangay_id', req.barangayUser.barangayId)
-      .maybeSingle();
+      .select('id, phone, password_hash').eq('id', req.barangayUser.userId)
+      .eq('barangay_id', req.barangayUser.barangayId).maybeSingle();
     if (error) throw error;
     if (!account) { res.status(404).json({ error: 'Barangay account not found.' }); return; }
     if (!(await bcrypt.compare(currentPassword, account.password_hash))) {
       res.status(400).json({ error: 'The current password is incorrect.' });
       return;
     }
-
-    const destination = deliveryMethod === 'email' ? String(account.email || '').trim().toLowerCase() : String(account.phone || '').replace(/\D/g, '');
-    if (deliveryMethod === 'email' && !z.string().email().safeParse(destination).success) {
-      res.status(400).json({ error: 'Add a valid email address to your profile before choosing email verification.' });
+    if (normalizeMobileNumber(account.phone) === phone) {
+      res.status(400).json({ error: 'That mobile number is already linked to your account.' });
       return;
     }
-    if (deliveryMethod === 'sms' && !/^09\d{9}$/.test(destination)) {
-      res.status(400).json({ error: 'Add a valid mobile number to your profile before choosing SMS verification.' });
+    const { data: reservation, error: reservationError } = await supabaseAdmin
+      .from('account_mobile_numbers').select('account_table, account_id').eq('phone_normalized', phone).maybeSingle();
+    if (reservationError) throw reservationError;
+    if (reservation && !(reservation.account_table === 'barangay_users' && reservation.account_id === account.id)) {
+      res.status(409).json({ error: 'That mobile number is already linked to another account.' });
       return;
     }
-    if (deliveryMethod === 'sms' && !config.textBeeApiKey) {
-      res.status(503).json({ error: 'SMS verification is not configured. Choose email or contact the administrator.' });
+    if (!config.textBeeApiKey) {
+      res.status(503).json({ error: 'SMS verification is not configured. Contact an administrator.' });
       return;
     }
-
     const otp = randomInt(100000, 1000000).toString();
-    const otpKey = `web-profile-password-change:barangay_users:${account.id}`;
-    await setOtp(otpKey, { otp, fullName: account.full_name, contactNumber: destination, deliveryMethod, purpose: 'web_profile_password_change' });
-    const sent = deliveryMethod === 'email'
-      ? await emailService.sendOtpEmail(destination, otp, 'web_profile_password_change')
-      : await smsService.sendPasswordChangeOtp(destination, otp, 'barangay');
-    if (!sent) {
+    const otpKey = 'barangay-phone-change:' + account.id;
+    const cooldown = await getOtpResendCooldownSeconds(otpKey);
+    if (cooldown > 0) { res.status(429).json({ error: 'A code was sent recently. Try again in ' + cooldown + ' seconds.' }); return; }
+    await setOtp(otpKey, { otp, phone, purpose: 'barangay_phone_change' });
+    if (!(await smsService.sendRegistrationOtp(phone, otp))) {
       await deleteOtp(otpKey);
-      res.status(503).json({ error: `We could not send the verification ${deliveryMethod === 'email' ? 'email' : 'SMS'}. Check the saved contact and try again.` });
+      res.status(503).json({ error: 'We could not send the verification SMS. Check the mobile number and try again.' });
       return;
     }
-    const masked = deliveryMethod === 'email'
-      ? `${destination.slice(0, 1)}***@${destination.split('@')[1]}`
-      : `****${destination.slice(-4)}`;
-    res.json({ success: true, message: `Verification code sent to ${masked}.`, expiresInMinutes: 10 });
+    res.json({ success: true, message: 'Verification code sent to ****' + phone.slice(-4) + '.', expiresInMinutes: 10 });
+  } catch (err) {
+    console.error('Barangay phone change OTP error:', err);
+    res.status(500).json({ error: 'Could not send the mobile number verification code.' });
+  }
+});
+
+router.post('/profile/change-phone', authenticateBarangay, async (req: any, res: Response) => {
+  try {
+    const phone = normalizeMobileNumber(req.body?.phone);
+    const otp = typeof req.body?.otp === 'string' ? req.body.otp.trim() : '';
+    const currentPassword = typeof req.body?.current_password === 'string' ? req.body.current_password : '';
+    if (!phone || !/^\d{6}$/.test(otp) || !currentPassword) {
+      res.status(400).json({ error: 'Enter the new mobile number, 6-digit SMS code, and current password.' });
+      return;
+    }
+    const { data: account, error } = await supabaseAdmin.from('barangay_users')
+      .select('id, phone, password_hash, role').eq('id', req.barangayUser.userId)
+      .eq('barangay_id', req.barangayUser.barangayId).maybeSingle();
+    if (error) throw error;
+    if (!account) { res.status(404).json({ error: 'Barangay account not found.' }); return; }
+    if (!(await bcrypt.compare(currentPassword, account.password_hash))) {
+      res.status(400).json({ error: 'The current password is incorrect.' });
+      return;
+    }
+    const otpKey = 'barangay-phone-change:' + account.id;
+    const record = await getOtp(otpKey);
+    if (!record || record.purpose !== 'barangay_phone_change' || record.phone !== phone) {
+      res.status(400).json({ error: 'No matching mobile number verification was found or the code expired.' });
+      return;
+    }
+    if (record.otp !== otp) {
+      const failedAttempts = (record.failedAttempts || 0) + 1;
+      if (failedAttempts >= 5) await deleteOtp(otpKey);
+      else await setOtp(otpKey, { ...record, failedAttempts });
+      res.status(400).json({ error: failedAttempts >= 5 ? 'Too many incorrect codes. Request a new verification code.' : 'That verification code is incorrect.' });
+      return;
+    }
+    const { error: updateError } = await supabaseAdmin.from('barangay_users')
+      .update({ phone }).eq('id', account.id).eq('barangay_id', req.barangayUser.barangayId);
+    if (isMobileNumberRegistryConflict(updateError)) {
+      res.status(409).json({ error: 'That mobile number is already linked to another account.' });
+      return;
+    }
+    if (updateError) throw updateError;
+    await supabaseAdmin.from('barangay_dispatcher_verifications')
+      .update({ phone }).eq('user_id', account.id);
+    await deleteOtp(otpKey);
+    res.json({ success: true, phone, message: 'Mobile number updated successfully.' });
+  } catch (err) {
+    console.error('Barangay phone change error:', err);
+    res.status(500).json({ error: 'Could not update your mobile number.' });
+  }
+});
+
+router.post('/profile/password-otp', authenticateBarangay, async (req: any, res: Response) => {
+  try {
+    const currentPassword = typeof req.body?.current_password === 'string' ? req.body.current_password : '';
+    if (!currentPassword) {
+      res.status(400).json({ error: 'Enter your current password.' });
+      return;
+    }
+    const { data: account, error } = await supabaseAdmin.from('barangay_users')
+      .select('id, full_name, phone, password_hash').eq('id', req.barangayUser.userId)
+      .eq('barangay_id', req.barangayUser.barangayId).maybeSingle();
+    if (error) throw error;
+    if (!account) { res.status(404).json({ error: 'Barangay account not found.' }); return; }
+    if (!(await bcrypt.compare(currentPassword, account.password_hash))) {
+      res.status(400).json({ error: 'The current password is incorrect.' });
+      return;
+    }
+    const phone = normalizeMobileNumber(account.phone);
+    if (!phone) { res.status(400).json({ error: 'Add a valid mobile number before changing your password.' }); return; }
+    if (!config.textBeeApiKey) { res.status(503).json({ error: 'SMS verification is not configured. Contact an administrator.' }); return; }
+    const otp = randomInt(100000, 1000000).toString();
+    const otpKey = 'web-profile-password-change:barangay_users:' + account.id;
+    const cooldown = await getOtpResendCooldownSeconds(otpKey);
+    if (cooldown > 0) { res.status(429).json({ error: 'A code was sent recently. Try again in ' + cooldown + ' seconds.' }); return; }
+    await setOtp(otpKey, { otp, purpose: 'web_profile_password_change' });
+    if (!(await smsService.sendPasswordChangeOtp(phone, otp, 'barangay'))) {
+      await deleteOtp(otpKey);
+      res.status(503).json({ error: 'We could not send the verification SMS. Check the saved mobile number and try again.' });
+      return;
+    }
+    res.json({ success: true, message: 'Verification code sent to ****' + phone.slice(-4) + '.', expiresInMinutes: 10 });
   } catch (err) {
     console.error('Barangay profile password OTP error:', err);
     res.status(500).json({ error: 'Could not send the password verification code.' });
@@ -1158,16 +1003,13 @@ router.post('/profile/change-password', authenticateBarangay, async (req: any, r
     const currentPassword = typeof req.body?.current_password === 'string' ? req.body.current_password : '';
     const otp = typeof req.body?.otp === 'string' || typeof req.body?.otp === 'number' ? String(req.body.otp).trim() : '';
     const newPassword = typeof req.body?.new_password === 'string' ? req.body.new_password : '';
-    const deliveryMethod = req.body?.delivery_method === 'sms' ? 'sms' : req.body?.delivery_method === 'email' ? 'email' : null;
-    if (!currentPassword || !/^\d{6}$/.test(otp) || !deliveryMethod || newPassword.length < 8 || newPassword.length > 128) {
-      res.status(400).json({ error: 'Enter your current password, the 6-digit code, and a new password with at least 8 characters.' });
+    if (!currentPassword || !/^\d{6}$/.test(otp) || newPassword.length < 8 || newPassword.length > 128) {
+      res.status(400).json({ error: 'Enter your current password, the 6-digit SMS code, and a new password with at least 8 characters.' });
       return;
     }
     const { data: account, error } = await supabaseAdmin.from('barangay_users')
-      .select('id, password_hash')
-      .eq('id', req.barangayUser.userId)
-      .eq('barangay_id', req.barangayUser.barangayId)
-      .maybeSingle();
+      .select('id, password_hash').eq('id', req.barangayUser.userId)
+      .eq('barangay_id', req.barangayUser.barangayId).maybeSingle();
     if (error) throw error;
     if (!account) { res.status(404).json({ error: 'Barangay account not found.' }); return; }
     if (!(await bcrypt.compare(currentPassword, account.password_hash))) {
@@ -1178,10 +1020,9 @@ router.post('/profile/change-password', authenticateBarangay, async (req: any, r
       res.status(400).json({ error: 'Choose a new password that differs from your current password.' });
       return;
     }
-
-    const otpKey = `web-profile-password-change:barangay_users:${account.id}`;
+    const otpKey = 'web-profile-password-change:barangay_users:' + account.id;
     const record = await getOtp(otpKey);
-    if (!record || record.purpose !== 'web_profile_password_change' || record.deliveryMethod !== deliveryMethod) {
+    if (!record || record.purpose !== 'web_profile_password_change') {
       res.status(400).json({ error: 'No matching password-change request was found or the code expired. Request a new code.' });
       return;
     }
@@ -1192,12 +1033,9 @@ router.post('/profile/change-password', authenticateBarangay, async (req: any, r
       res.status(400).json({ error: failedAttempts >= 5 ? 'Too many incorrect codes. Request a new verification code.' : 'That verification code is incorrect.' });
       return;
     }
-
     const passwordHash = await bcrypt.hash(newPassword, 12);
     const { error: updateError } = await supabaseAdmin.from('barangay_users')
-      .update({ password_hash: passwordHash })
-      .eq('id', account.id)
-      .eq('barangay_id', req.barangayUser.barangayId);
+      .update({ password_hash: passwordHash }).eq('id', account.id).eq('barangay_id', req.barangayUser.barangayId);
     if (updateError) throw updateError;
     await deleteOtp(otpKey);
     res.json({ success: true, message: 'Password changed successfully.' });
@@ -1258,7 +1096,7 @@ router.get(
       // Look up existing user registration in barangay_users
       const { data: bUser } = await supabaseAdmin
         .from('barangay_users')
-        .select('id, full_name, email, phone, barangay_id, role, position_designation, created_at, barangays(name, municipality)')
+        .select('id, full_name, phone, barangay_id, role, position_designation, created_at, barangays(name, municipality)')
         .eq('id', lookupId)
         .maybeSingle();
 
@@ -1269,7 +1107,6 @@ router.get(
           barangayId: bUser.barangay_id,
           barangayName,
           fullName: bUser.full_name,
-          email: bUser.email,
           phone: bUser.phone,
           positionDesignation: normalizePositionDesignation(bUser.position_designation) || '',
           punongBarangayName: '[AUTHORIZED BARANGAY OFFICIAL]',
@@ -1370,7 +1207,7 @@ router.get(
     if (!verification) {
       const { data: bUser } = await supabaseAdmin
         .from('barangay_users')
-        .select('id, full_name, email, phone, barangay_id, role, position_designation, created_at, barangays(name, municipality)')
+        .select('id, full_name, phone, barangay_id, role, position_designation, created_at, barangays(name, municipality)')
         .eq('id', lookupId)
         .maybeSingle();
 
@@ -1381,7 +1218,6 @@ router.get(
           barangayId: bUser.barangay_id,
           barangayName,
           fullName: bUser.full_name,
-          email: bUser.email,
           phone: bUser.phone,
           positionDesignation: normalizePositionDesignation(bUser.position_designation) || '',
           punongBarangayName: '[AUTHORIZED BARANGAY OFFICIAL]',
@@ -1549,7 +1385,7 @@ router.put(['/account-request', '/dispatcher/coordination-request'], authenticat
     if (!verification) {
       const { data: user, error: userError } = await supabaseAdmin
         .from('barangay_users')
-        .select('id, full_name, email, phone, barangay_id, position_designation, barangays(name)')
+        .select('id, full_name, phone, barangay_id, position_designation, barangays(name)')
         .eq('id', userId)
         .single();
       if (userError || !user) {
@@ -1564,7 +1400,6 @@ router.put(['/account-request', '/dispatcher/coordination-request'], authenticat
         barangayId: user.barangay_id,
         barangayName: (user as any).barangays?.name || 'Barangay',
         fullName: user.full_name,
-        email: user.email || '',
         phone: user.phone,
         positionDesignation: accountPosition,
         punongBarangayName: parsed.data.official_name,
@@ -1661,7 +1496,7 @@ router.get('/team', authenticateBarangay, async (req: any, res: Response) => {
   try {
     let query = supabaseAdmin
       .from('barangay_users')
-      .select('id, full_name, username, email, phone, role, is_active, created_at, added_by')
+      .select('id, full_name, phone, role, is_active, created_at, added_by')
       .eq('barangay_id', req.barangayUser.barangayId)
       .order('role', { ascending: true });
 
@@ -1732,9 +1567,15 @@ router.get('/team/crew-roster', authenticateBarangay, requireRole(['responder'])
 
 const addMemberSchema = z.object({
   full_name: z.string().min(2),
-  username: z.string().trim().min(3).max(32).regex(/^[A-Za-z0-9._-]+$/).transform((value) => value.toLowerCase()),
   password: z.string().min(8),
-  phone: z.string().optional(),
+  phone: z.string().trim().transform((value, ctx) => {
+    const normalized = normalizeMobileNumber(value);
+    if (!normalized) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Enter a valid Philippine mobile number.' });
+      return z.NEVER;
+    }
+    return normalized;
+  }),
   role: z.enum(['dispatcher', 'responder', 'staff']),
 });
 
@@ -1753,8 +1594,11 @@ router.post('/team', authenticateBarangay, requireRole(['admin']), async (req: a
     }
 
     const body = addMemberSchema.parse(req.body);
-    if (await isUsernameTaken(body.username)) {
-      res.status(409).json({ error: 'That username is already in use.' });
+    const { data: reservation, error: reservationError } = await supabaseAdmin
+      .from('account_mobile_numbers').select('account_id').eq('phone_normalized', body.phone).maybeSingle();
+    if (reservationError) throw reservationError;
+    if (reservation) {
+      res.status(409).json({ error: 'That mobile number is already linked to an account.' });
       return;
     }
 
@@ -1771,21 +1615,19 @@ router.post('/team', authenticateBarangay, requireRole(['admin']), async (req: a
       .from('barangay_users')
       .insert({
         full_name: body.full_name,
-        username: body.username,
-        email: null,
-        phone: body.phone || null,
+        phone: body.phone,
         password_hash,
         barangay_id: req.barangayUser.barangayId,
         role: body.role,
         added_by: req.barangayUser.userId,
         is_active: true,
       })
-      .select('id, full_name, username, email, phone, role, barangay_id, is_active, created_at')
+      .select('id, full_name, phone, role, barangay_id, is_active, created_at')
       .single();
 
     if (error) {
-      if (isGlobalUsernameConflict(error)) {
-        res.status(409).json({ error: 'That username is already in use.' });
+      if (isMobileNumberRegistryConflict(error) || error.code === '23505') {
+        res.status(409).json({ error: 'That mobile number is already linked to an account.' });
         return;
       }
       throw error;
@@ -1810,8 +1652,14 @@ router.patch('/team/:id', authenticateBarangay, requireRole(['admin']), async (r
   try {
     const schema = z.object({
       full_name: z.string().trim().min(2).max(120),
-      username: z.string().trim().min(3).max(32).regex(/^[A-Za-z0-9._-]+$/).transform((value) => value.toLowerCase()),
-      phone: z.string().trim().max(20).optional().nullable(),
+      phone: z.string().trim().transform((value, ctx) => {
+        const normalized = normalizeMobileNumber(value);
+        if (!normalized) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Enter a valid Philippine mobile number.' });
+          return z.NEVER;
+        }
+        return normalized;
+      }),
       role: z.enum(['dispatcher', 'responder', 'staff']),
       password: z.string().min(8).optional().or(z.literal('')),
     });
@@ -1837,14 +1685,9 @@ router.patch('/team/:id', authenticateBarangay, requireRole(['admin']), async (r
         return;
       }
     }
-    if (await isUsernameTaken(parsed.data.username, { table: 'barangay_users', id: req.params.id })) {
-      res.status(409).json({ error: 'That username is already in use.' });
-      return;
-    }
     const update: Record<string, unknown> = {
       full_name: parsed.data.full_name,
-      username: parsed.data.username,
-      phone: parsed.data.phone?.trim() || null,
+      phone: parsed.data.phone,
       role: parsed.data.role,
     };
     if (parsed.data.password) update.password_hash = await bcrypt.hash(parsed.data.password, 12);
@@ -1854,9 +1697,9 @@ router.patch('/team/:id', authenticateBarangay, requireRole(['admin']), async (r
       .eq('id', req.params.id)
       .eq('barangay_id', req.barangayUser.barangayId)
       .neq('role', 'admin')
-      .select('id, full_name, username, email, phone, role, barangay_id, is_active, created_at, added_by')
+      .select('id, full_name, phone, role, barangay_id, is_active, created_at, added_by')
       .maybeSingle();
-    if (isGlobalUsernameConflict(error)) { res.status(409).json({ error: 'That username is already in use.' }); return; }
+    if (isMobileNumberRegistryConflict(error) || error?.code === '23505') { res.status(409).json({ error: 'That mobile number is already linked to an account.' }); return; }
     if (error) throw error;
     if (!data) { res.status(404).json({ error: 'Team member not found.' }); return; }
     if (currentMember.role === 'dispatcher' && parsed.data.role !== 'dispatcher') {
@@ -1906,7 +1749,7 @@ router.patch('/team/:id/active', authenticateBarangay, requireRole(['admin']), a
       .eq('id', req.params.id)
       .eq('barangay_id', req.barangayUser.barangayId)
       .neq('role', 'admin')
-      .select('id, full_name, email, phone, role, barangay_id, is_active, created_at, added_by')
+      .select('id, full_name, phone, role, barangay_id, is_active, created_at, added_by')
       .maybeSingle();
     if (error) throw error;
     if (!data) {
@@ -2158,7 +2001,7 @@ router.get('/reports/resolved', authenticateBarangay, requireRole(['admin', 'sta
     const residents = new Map<string, any>();
     if (residentIds.length) {
       const { data: residentRows, error: residentError } = await supabaseAdmin
-        .from('resident_user').select('id, full_name, phone, email').in('id', residentIds);
+        .from('resident_user').select('id, full_name, phone').in('id', residentIds);
       if (residentError) throw residentError;
       for (const resident of residentRows || []) residents.set(resident.id, resident);
     }
@@ -2168,7 +2011,6 @@ router.get('/reports/resolved', authenticateBarangay, requireRole(['admin', 'sta
         ...report,
         reporter_name: report.reporter_name || resident?.full_name || null,
         reporter_phone: report.reporter_phone || resident?.phone || null,
-        reporter_email: report.reporter_email || resident?.email || null,
       });
     });
     res.json([...formattedLegacyReports, ...centralResolvedReports]
@@ -2192,20 +2034,18 @@ router.get('/reports', authenticateBarangay, requireRole(['admin', 'dispatcher',
     const { data, error: newError } = await query;
     if (newError) throw newError;
 
-    // Some older resident profiles used their login email as a fallback contact.
-    // Prefer the resident profile's actual phone when formatting contact details.
     const residentIds = [...new Set(data
       .filter((report: any) => report.reporter_type === 'resident' && report.reporter_id)
       .map((report: any) => report.reporter_id))];
-    const residentContacts = new Map<string, { full_name: string | null; phone: string | null; email: string | null }>();
+    const residentContacts = new Map<string, { full_name: string | null; phone: string | null }>();
     if (residentIds.length > 0) {
       const { data: residents, error: residentsError } = await supabaseAdmin
         .from('resident_user')
-        .select('id, full_name, phone, email')
+        .select('id, full_name, phone')
         .in('id', residentIds);
       if (residentsError) throw residentsError;
       for (const resident of residents || []) {
-        residentContacts.set(resident.id, { full_name: resident.full_name, phone: resident.phone, email: resident.email });
+        residentContacts.set(resident.id, { full_name: resident.full_name, phone: resident.phone });
       }
     }
 
@@ -2261,13 +2101,11 @@ router.get('/reports', authenticateBarangay, requireRole(['admin', 'dispatcher',
       const reporterPhone = typeof report.reporter_phone === 'string' && !report.reporter_phone.includes('@')
         ? report.reporter_phone
         : (typeof resident?.phone === 'string' && !resident.phone.includes('@') ? resident.phone : null);
-      const reporterEmail = report.reporter_email || resident?.email || (typeof report.reporter_phone === 'string' && report.reporter_phone.includes('@') ? report.reporter_phone : null);
 
       return formatIncidentReport({
         ...report,
         reporter_name: report.reporter_name || resident?.full_name || null,
         reporter_phone: reporterPhone,
-        reporter_email: reporterEmail,
         assigned_team_leader_ids: assignedIds,
         barangay_responder_name: responderName || responderNames.get(report.barangay_responded_by) || null,
       });

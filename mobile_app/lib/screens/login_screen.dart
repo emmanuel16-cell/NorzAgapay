@@ -1,13 +1,10 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import '../services/auth_service.dart';
-import '../services/api_service.dart';
 import '../core/phone_number_utils.dart';
+import '../services/api_service.dart';
+import '../services/auth_service.dart';
 import '../mdrrmo/screens/login_screen.dart' as mdrrmo;
-import '../mdrrmo/providers/auth_provider.dart' as global_auth;
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -18,983 +15,248 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
-  final _nameController = TextEditingController();
-  final _usernameController = TextEditingController();
-  final _phoneController = TextEditingController();
-  final _positionController = TextEditingController();
-
-  bool _isRegisterMode = false;
+  final _phone = TextEditingController();
+  final _password = TextEditingController();
+  final _name = TextEditingController();
+  final _position = TextEditingController();
+  final _otp = TextEditingController();
+  final _barangayFormKey = GlobalKey<FormState>();
+  bool _registering = false;
+  bool _otpSent = false;
+  bool _busy = false;
+  bool _obscurePassword = true;
   String? _selectedBarangayId;
   List<Map<String, dynamic>> _barangays = [];
-  bool _loadingBarangays = false;
-  bool _barangaysLoadFailed = false;
-  bool _obscurePassword = true;
-  String _registrationOtpChannel = 'sms';
-  int _registrationCooldownSeconds = 0;
-  Timer? _registrationCooldownTimer;
-
-  String get _registrationDeliveryMethod {
-    final hasEmail = _emailController.text.trim().isNotEmpty;
-    final hasPhone = _phoneController.text.trim().isNotEmpty;
-    if (hasEmail && hasPhone) return _registrationOtpChannel;
-    return hasEmail ? 'email' : 'sms';
-  }
-
-  String get _registrationDestination => _registrationDeliveryMethod == 'sms'
-      ? _phoneController.text.trim()
-      : _emailController.text.trim().toLowerCase();
+  String? _error;
 
   @override
   void initState() {
     super.initState();
-    _fetchBarangays();
+    _loadBarangays();
   }
 
-  void _startRegistrationCooldown() {
-    _registrationCooldownTimer?.cancel();
-    setState(() => _registrationCooldownSeconds = 60);
-    _registrationCooldownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!mounted || _registrationCooldownSeconds <= 1) {
-        timer.cancel();
-        if (mounted) setState(() => _registrationCooldownSeconds = 0);
-      } else {
-        setState(() => _registrationCooldownSeconds--);
-      }
-    });
-  }
-
-  Future<void> _fetchBarangays() async {
-    if (!mounted) return;
-    setState(() {
-      _loadingBarangays = true;
-      _barangaysLoadFailed = false;
-    });
+  Future<void> _loadBarangays() async {
     try {
-      final list = await ApiService.getBarangays(adminSignup: true);
+      final rows = await ApiService.getBarangays(adminSignup: true);
       if (!mounted) return;
       setState(() {
-        _barangays = list;
-        if (_selectedBarangayId != null &&
-            !_barangays.any((b) => b['id'] == _selectedBarangayId)) {
-          _selectedBarangayId = null;
-        }
+        _barangays = rows;
+        _selectedBarangayId ??= rows.isNotEmpty ? rows.first['id']?.toString() : null;
       });
     } catch (_) {
-      if (mounted) setState(() => _barangaysLoadFailed = true);
-    } finally {
-      if (mounted) setState(() => _loadingBarangays = false);
+      if (mounted) setState(() => _error = 'Eligible barangays could not be loaded.');
     }
   }
 
-  Future<void> _handleSubmit() async {
+  Future<void> _submitLogin() async {
     if (!_formKey.currentState!.validate()) return;
-
-    final auth = Provider.of<AuthService>(context, listen: false);
-    final mdrrmoAuth = Provider.of<global_auth.AuthProvider>(context, listen: false);
-
+    setState(() { _busy = true; _error = null; });
     try {
-      if (_isRegisterMode) {
-        if (_selectedBarangayId == null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Please select your Barangay')),
-          );
-          return;
-        }
-        await auth.sendBarangayRegistrationOtp(
-          fullName: _nameController.text.trim(),
-          username: _usernameController.text.trim(),
-          email: _emailController.text.trim(),
-          phone: _phoneController.text.trim(),
-          deliveryMethod: _registrationDeliveryMethod,
-          barangayId: _selectedBarangayId!,
-          positionDesignation: _positionController.text.trim(),
-        );
-        if (!mounted) return;
-        final result = await _showRegistrationOtpDialog(auth);
-        if (result == null || !mounted) return;
-        final password = result['temporaryPassword']?.toString() ?? '';
-        final continueToAccount = await showDialog<bool>(
-          context: context,
-          barrierDismissible: false,
-          builder: (dialogContext) => AlertDialog(
-            backgroundColor: const Color(0xFFE5E7EB),
-            surfaceTintColor: Colors.transparent,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
-            titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
-            contentPadding: const EdgeInsets.fromLTRB(24, 18, 24, 8),
-            actionsPadding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
-            title: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(9),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF0FDF4),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(Icons.check_circle_rounded, color: Color(0xFF16A34A), size: 28),
-                ),
-                const SizedBox(width: 14),
-                const Expanded(
-                  child: Text(
-                    '${_registrationDeliveryMethod == 'sms' ? 'Mobile' : 'Email'} Verified',
-                    style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold, color: Color(0xFF1F2937)),
-                  ),
-                ),
-              ],
-            ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF8FAFC),
-                    borderRadius: BorderRadius.circular(16),
-                    border: const Border(left: BorderSide(color: Color(0xFF1B4F72), width: 5)),
-                  ),
-                  child: const Text(
-                    'Norz-Agapay sent a temporary password using your selected verification channel. Don’t share it with anyone.',
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, height: 1.5, color: Color(0xFF0F172A)),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEFF6FF),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: const Color(0xFF93C5FD)),
-                  ),
-                  child: Column(
-                    children: [
-                      const Text('Your Temporary Login Password:', style: TextStyle(fontSize: 14, color: Color(0xFF1E40AF), fontWeight: FontWeight.w600)),
-                      const SizedBox(height: 4),
-                      SelectableText(
-                        password,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(fontSize: 27, fontWeight: FontWeight.bold, letterSpacing: 2, color: Color(0xFF1D4ED8)),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Text(
-                  'A temporary password was also sent to ${_registrationDestination}. You can use it to sign in and change it later in your account settings.',
-                  style: TextStyle(fontSize: 14, color: Colors.grey.shade700, height: 1.5),
-                ),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton.icon(
-                    onPressed: () => Clipboard.setData(ClipboardData(text: password)),
-                    icon: const Icon(Icons.content_copy_rounded, size: 18),
-                    label: const Text('Copy password'),
-                    style: TextButton.styleFrom(foregroundColor: const Color(0xFF1B4F72), textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              FilledButton(
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF1B4F72),
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  minimumSize: const Size(double.infinity, 54),
-                  textStyle: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
-                ),
-                onPressed: () => Navigator.pop(dialogContext, true),
-                child: const Text('Continue to Barangay Account Request'),
-              ),
-            ],
-          ),
-        );
-        if (continueToAccount == true) {
-          await auth.activateRegisteredAccount(result);
-          await mdrrmoAuth.logout();
-        }
-      } else {
-        await auth.login(
-          _emailController.text.trim(),
-          _passwordController.text,
-        );
-        await mdrrmoAuth.logout();
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
-        );
-      }
-    }
-  }
-
-  Future<void> _showForgotPasswordDialog() async {
-    final emailController = TextEditingController(
-      text: _emailController.text.trim(),
-    );
-    final otpController = TextEditingController();
-    final newPasswordController = TextEditingController();
-    final confirmPasswordController = TextEditingController();
-    var deliveryMethod = 'email';
-    var otpSent = false;
-    var isBusy = false;
-    String? errorMessage;
-    String? infoMessage;
-
-    try {
-      final reset = await showDialog<bool>(
-        context: context,
-        builder: (dialogContext) => StatefulBuilder(
-          builder: (dialogContext, setDialogState) => AlertDialog(
-            title: const Text('Forgot Password'),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Enter your username, email, or mobile number, then choose where to receive the one-time code.',
-                    style: TextStyle(color: Color(0xFF64748B)),
-                  ),
-                  const SizedBox(height: 14),
-                  TextField(
-                    controller: emailController,
-                    keyboardType: TextInputType.text,
-                    enabled: !otpSent,
-                    decoration: _inputDecoration(
-                      'Username, email, or mobile number',
-                      Icons.email_outlined,
-                    ),
-                  ),
-                  if (!otpSent) ...[
-                    const SizedBox(height: 14),
-                    const Text(
-                      'Send code by',
-                      style: TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      children: [
-                        ChoiceChip(
-                          label: const Text('Email / Gmail'),
-                          selected: deliveryMethod == 'email',
-                          onSelected: isBusy
-                              ? null
-                              : (_) => setDialogState(
-                                  () => deliveryMethod = 'email',
-                                ),
-                        ),
-                        ChoiceChip(
-                          label: const Text('Mobile SMS'),
-                          selected: deliveryMethod == 'sms',
-                          onSelected: isBusy
-                              ? null
-                              : (_) => setDialogState(
-                                  () => deliveryMethod = 'sms',
-                                ),
-                        ),
-                      ],
-                    ),
-                    if (deliveryMethod == 'sms')
-                      const Padding(
-                        padding: EdgeInsets.only(top: 4),
-                        child: Text(
-                          'The code goes to the mobile number saved on your account.',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Color(0xFF64748B),
-                          ),
-                        ),
-                      ),
-                  ],
-                  if (otpSent) ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      infoMessage ??
-                          'Check your selected delivery method for the code.',
-                      style: const TextStyle(color: Color(0xFF15803D)),
-                    ),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: TextButton(
-                        onPressed: isBusy
-                            ? null
-                            : () => setDialogState(() {
-                                otpSent = false;
-                                otpController.clear();
-                                infoMessage = null;
-                                errorMessage = null;
-                              }),
-                        child: const Text('Change delivery method / resend'),
-                      ),
-                    ),
-                    TextField(
-                      controller: otpController,
-                      keyboardType: TextInputType.number,
-                      maxLength: 6,
-                      decoration: const InputDecoration(
-                        labelText: '6-Digit Verification Code',
-                        prefixIcon: Icon(Icons.pin_outlined),
-                      ),
-                    ),
-                    TextField(
-                      controller: newPasswordController,
-                      obscureText: true,
-                      decoration: const InputDecoration(
-                        labelText: 'New Password',
-                        helperText: 'At least 6 characters',
-                        prefixIcon: Icon(Icons.lock_outline),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: confirmPasswordController,
-                      obscureText: true,
-                      decoration: const InputDecoration(
-                        labelText: 'Confirm New Password',
-                        prefixIcon: Icon(Icons.lock_outline),
-                      ),
-                    ),
-                  ],
-                  if (errorMessage != null) ...[
-                    const SizedBox(height: 10),
-                    Text(
-                      errorMessage!,
-                      style: const TextStyle(color: Color(0xFFDC2626)),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: isBusy
-                    ? null
-                    : () => Navigator.pop(dialogContext, false),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed: isBusy
-                    ? null
-                    : () async {
-                        final email = emailController.text.trim().toLowerCase();
-                        setDialogState(() {
-                          isBusy = true;
-                          errorMessage = null;
-                        });
-                        try {
-                          if (!otpSent) {
-                            if (email.isEmpty) throw 'Enter your username, email, or mobile number.';
-                            final message =
-                                await ApiService.sendBarangayForgotPasswordOtp(
-                                  identifier: email,
-                                  deliveryMethod: deliveryMethod,
-                                );
-                            if (!dialogContext.mounted) return;
-                            setDialogState(() {
-                              otpSent = true;
-                              infoMessage = message;
-                            });
-                          } else {
-                            final otp = otpController.text.trim();
-                            final password = newPasswordController.text;
-                            if (otp.length != 6)
-                              throw 'Enter the 6-digit verification code.';
-                            if (password.length < 6)
-                              throw 'Password must be at least 6 characters.';
-                            if (password != confirmPasswordController.text)
-                              throw 'The passwords do not match.';
-                            await ApiService.resetBarangayPassword(
-                              identifier: email,
-                              otp: otp,
-                              newPassword: password,
-                            );
-                            if (!dialogContext.mounted) return;
-                            Navigator.pop(dialogContext, true);
-                          }
-                        } catch (error) {
-                          if (dialogContext.mounted) {
-                            setDialogState(
-                              () => errorMessage = error
-                                  .toString()
-                                  .replaceFirst('Exception: ', ''),
-                            );
-                          }
-                        } finally {
-                          if (dialogContext.mounted)
-                            setDialogState(() => isBusy = false);
-                        }
-                      },
-                child: isBusy
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Text(otpSent ? 'Reset Password' : 'Send Code'),
-              ),
-            ],
-          ),
-        ),
-      );
-
-      if (reset == true && mounted) {
-        _emailController.text = emailController.text.trim();
-        _passwordController.clear();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Password reset. Sign in with your new password.'),
-          ),
-        );
-      }
+      await context.read<AuthService>().login(PhoneNumberUtils.digitsOnly(_phone.text), _password.text);
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString().replaceFirst('Exception: ', ''));
     } finally {
-      emailController.dispose();
-      otpController.dispose();
-      newPasswordController.dispose();
-      confirmPasswordController.dispose();
+      if (mounted) setState(() => _busy = false);
     }
   }
 
+  Future<void> _sendRegistrationCode() async {
+    if (!_barangayFormKey.currentState!.validate()) return;
+    if (_selectedBarangayId == null) { setState(() => _error = 'Choose a barangay.'); return; }
+    setState(() { _busy = true; _error = null; });
+    try {
+      await context.read<AuthService>().sendBarangayRegistrationOtp(
+        fullName: _name.text.trim(),
+        phone: _phone.text.trim(),
+        password: _password.text,
+        barangayId: _selectedBarangayId!,
+        positionDesignation: _position.text.trim(),
+      );
+      if (mounted) setState(() => _otpSent = true);
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
 
-  Future<Map<String, dynamic>?> _showRegistrationOtpDialog(AuthService auth) async {
+  Future<void> _verifyRegistrationCode() async {
+    if (_otp.text.trim().length != 6) { setState(() => _error = 'Enter the 6-digit SMS code.'); return; }
+    setState(() { _busy = true; _error = null; });
+    try {
+      final result = await context.read<AuthService>().verifyBarangayRegistrationOtp(
+        phone: PhoneNumberUtils.digitsOnly(_phone.text),
+        otp: _otp.text.trim(),
+      );
+      await context.read<AuthService>().activateRegisteredAccount(result);
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _showForgotPassword() async {
+    final phoneController = TextEditingController(text: PhoneNumberUtils.digitsOnly(_phone.text));
     final otpController = TextEditingController();
-    var verifying = false;
-    var resending = false;
-    var resendCooldownSeconds = 60;
-    Timer? resendTimer;
+    final newPassword = TextEditingController();
+    final confirmPassword = TextEditingController();
+    bool otpSent = false;
+    bool submitting = false;
     String? error;
+    String? message;
     try {
-      return await showDialog<Map<String, dynamic>>(
+      await showDialog<void>(
         context: context,
-        barrierDismissible: false,
-        builder: (dialogContext) => StatefulBuilder(
-          builder: (dialogContext, setDialogState) {
-            if (resendTimer == null) {
-              resendTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-                if (!dialogContext.mounted) {
-                  timer.cancel();
-                } else if (resendCooldownSeconds <= 1) {
-                  timer.cancel();
-                  setDialogState(() => resendCooldownSeconds = 0);
+        builder: (dialogContext) => StatefulBuilder(builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('Reset password'),
+          content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Text('We will send a verification code by SMS to your mobile number.'),
+            const SizedBox(height: 12),
+            TextField(controller: phoneController, enabled: !otpSent, keyboardType: TextInputType.phone, inputFormatters: PhoneNumberUtils.inputFormatters, decoration: const InputDecoration(labelText: 'Mobile number', hintText: '09XXXXXXXXX')),
+            if (otpSent) ...[
+              if (message != null) Align(alignment: Alignment.centerLeft, child: Text(message!, style: const TextStyle(color: Color(0xFF15803D)))),
+              TextField(controller: otpController, keyboardType: TextInputType.number, maxLength: 6, decoration: const InputDecoration(labelText: '6-digit SMS code')),
+              TextField(controller: newPassword, obscureText: true, decoration: const InputDecoration(labelText: 'New password (8+ characters)')),
+              TextField(controller: confirmPassword, obscureText: true, decoration: const InputDecoration(labelText: 'Confirm new password')),
+            ],
+            if (error != null) Align(alignment: Alignment.centerLeft, child: Text(error!, style: const TextStyle(color: Colors.red))),
+          ])),
+          actions: [
+            TextButton(onPressed: submitting ? null : () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+            FilledButton(onPressed: submitting ? null : () async {
+              setDialogState(() { submitting = true; error = null; });
+              try {
+                final phone = PhoneNumberUtils.digitsOnly(phoneController.text);
+                if (!PhoneNumberUtils.isValid(phone)) throw 'Enter an 11-digit mobile number starting with 09.';
+                if (!otpSent) {
+                  message = await ApiService.sendBarangayForgotPasswordOtp(phone: phone);
+                  setDialogState(() { otpSent = true; submitting = false; });
                 } else {
-                  setDialogState(() => resendCooldownSeconds--);
+                  if (otpController.text.trim().length != 6) throw 'Enter the 6-digit SMS code.';
+                  if (newPassword.text.length < 8) throw 'Password must be at least 8 characters.';
+                  if (newPassword.text != confirmPassword.text) throw 'Passwords do not match.';
+                  await ApiService.resetBarangayPassword(phone: phone, otp: otpController.text.trim(), newPassword: newPassword.text);
+                  if (dialogContext.mounted) Navigator.pop(dialogContext);
+                  if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Password reset. Sign in with your new password.')));
                 }
-              });
-            }
-            return AlertDialog(
-              backgroundColor: const Color(0xFFE7EAF1),
-              surfaceTintColor: Colors.transparent,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-              titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
-              contentPadding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
-              title: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(color: const Color(0xFFF5F8FC), borderRadius: BorderRadius.circular(14)),
-                    child: Icon(_registrationDeliveryMethod == 'sms' ? Icons.sms_rounded : Icons.mark_email_read_rounded, color: const Color(0xFF1B4F72), size: 27),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(child: Text('${_registrationDeliveryMethod == 'sms' ? 'SMS' : 'Email'} Verification', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 21, color: Color(0xFF171B20)))),
-                ],
-              ),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('We sent a 6-digit verification code to your ${_registrationDeliveryMethod == 'sms' ? 'mobile number' : 'email address'}:', style: const TextStyle(fontSize: 15, color: Color(0xFF70757C))),
-                    const SizedBox(height: 3),
-                    Text(_registrationDestination, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF1B4F72))),
-                    const SizedBox(height: 18),
-                    TextField(
-                      controller: otpController,
-                      autofocus: true,
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                      maxLength: 6,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700, letterSpacing: 9, color: Color(0xFF0F172A)),
-                      decoration: InputDecoration(
-                        hintText: '••••••', counterText: '', filled: true, fillColor: const Color(0xFFF8FAFC),
-                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: Color(0xFF555B63), width: 1.4)),
-                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: Color(0xFF1B4F72), width: 2)),
-                      ),
-                    ),
-                    if (error != null) ...[
-                      const SizedBox(height: 8),
-                      Text(error!, style: const TextStyle(color: Color(0xFFDC2626), fontSize: 12.5, fontWeight: FontWeight.w600)),
-                    ],
-                    const SizedBox(height: 10),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Code expires in 10 mins', style: TextStyle(fontSize: 12, color: Color(0xFF92979E))),
-                        TextButton(
-                          onPressed: verifying || resending || resendCooldownSeconds > 0 ? null : () async {
-                            setDialogState(() { resending = true; error = null; });
-                            try {
-                              await auth.sendBarangayRegistrationOtp(
-                                fullName: _nameController.text.trim(),
-                                username: _usernameController.text.trim(),
-                                email: _emailController.text.trim(),
-                                barangayId: _selectedBarangayId!,
-                                positionDesignation: _positionController.text.trim(),
-                                phone: _phoneController.text.trim(),
-                                deliveryMethod: _registrationDeliveryMethod,
-                              );
-                              if (!dialogContext.mounted) return;
-                              setDialogState(() { resending = false; resendCooldownSeconds = 60; error = 'A new code has been sent to $_registrationDestination.'; });
-                              resendTimer?.cancel();
-                              resendTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-                                if (!dialogContext.mounted) { timer.cancel(); return; }
-                                if (resendCooldownSeconds <= 1) { timer.cancel(); setDialogState(() => resendCooldownSeconds = 0); }
-                                else { setDialogState(() => resendCooldownSeconds--); }
-                              });
-                            } catch (exception) {
-                              if (dialogContext.mounted) setDialogState(() { resending = false; error = exception.toString().replaceFirst('Exception: ', ''); });
-                            }
-                          },
-                          child: Text(resendCooldownSeconds > 0 ? 'Resend Code (${resendCooldownSeconds}s)' : 'Resend Code'),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: verifying || resending ? null : () async {
-                    final cancel = await showDialog<bool>(
-                      context: dialogContext,
-                      builder: (confirmContext) => AlertDialog(
-                        title: const Text('Cancel account creation?'),
-                        content: const Text('If you close verification, you’ll need to wait 60 seconds before requesting another code.'),
-                        actions: [
-                          TextButton(onPressed: () => Navigator.pop(confirmContext, false), child: const Text('Keep verifying')),
-                          FilledButton(onPressed: () => Navigator.pop(confirmContext, true), child: const Text('Cancel registration')),
-                        ],
-                      ),
-                    );
-                    if (cancel == true && dialogContext.mounted) {
-                      _startRegistrationCooldown();
-                      Navigator.pop(dialogContext);
-                    }
-                  },
-                  child: const Text('Cancel', style: TextStyle(color: Color(0xFF1B4F72))),
-                ),
-                FilledButton(
-                  style: FilledButton.styleFrom(backgroundColor: const Color(0xFF1B4F72), foregroundColor: Colors.white, shape: const StadiumBorder(), padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12)),
-                  onPressed: verifying || resending ? null : () async {
-                    if (otpController.text.trim().length != 6) {
-                      setDialogState(() => error = 'Enter the 6-digit verification code.');
-                      return;
-                    }
-                    setDialogState(() { verifying = true; error = null; });
-                    try {
-                      final result = await auth.verifyBarangayRegistrationOtp(deliveryMethod: _registrationDeliveryMethod, destination: _registrationDestination, otp: otpController.text.trim());
-                      if (dialogContext.mounted) Navigator.pop(dialogContext, result);
-                    } catch (exception) {
-                      if (dialogContext.mounted) setDialogState(() { verifying = false; error = exception.toString().replaceFirst('Exception: ', ''); });
-                    }
-                  },
-                  child: verifying ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Text('Confirm OTP', style: TextStyle(fontWeight: FontWeight.bold)),
-                ),
-              ],
-            );
-          },
-        ),
+              } catch (e) {
+                setDialogState(() { submitting = false; error = e.toString().replaceFirst('Exception: ', ''); });
+              }
+            }, child: submitting ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : Text(otpSent ? 'Reset password' : 'Send SMS code')),
+          ],
+        )),
       );
     } finally {
-      resendTimer?.cancel();
-      otpController.dispose();
+      phoneController.dispose(); otpController.dispose(); newPassword.dispose(); confirmPassword.dispose();
     }
   }
 
   Future<void> _showDebugAccounts() async {
-    final auth = Provider.of<AuthService>(context, listen: false);
     try {
-      final accounts = await auth.getDebugAccounts();
+      final accounts = await context.read<AuthService>().getDebugAccounts();
       if (!mounted) return;
-      if (_barangays.isEmpty) await _fetchBarangays();
-      if (!mounted) return;
-      final accountsByBarangay = <String, List<Map<String, dynamic>>>{};
-      for (final account in accounts) {
-        final barangayId = account['barangay_id'] as String?;
-        final groupKey = (barangayId == null || barangayId.isEmpty)
-            ? 'unassigned'
-            : barangayId;
-        accountsByBarangay.putIfAbsent(groupKey, () => []).add(account);
-      }
-      final barangayGroups = accountsByBarangay.entries.toList()
-        ..sort((a, b) => _debugBarangayName(a.value.first)
-            .toLowerCase()
-            .compareTo(_debugBarangayName(b.value.first).toLowerCase()));
       await showModalBottomSheet<void>(
         context: context,
-        backgroundColor: Colors.white,
         showDragHandle: true,
-        builder: (sheetContext) => SafeArea(
-          child: SizedBox(
-            height: 420,
-            child: Column(children: [
-              const Padding(
-                padding: EdgeInsets.all(16),
-                child: Text('Debug quick login', style: TextStyle(color: Color(0xFF0F172A), fontSize: 18, fontWeight: FontWeight.bold)),
-              ),
-              Expanded(
-                child: accounts.isEmpty
-                    ? const Center(child: Text('No active barangay accounts', style: TextStyle(color: Color(0xFF64748B))))
-                    : ListView(
-                        children: [
-                          for (final group in barangayGroups) ...[
-                            Padding(
-                              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                              child: Text(
-                                _debugBarangayName(group.value.first),
-                                style: const TextStyle(
-                                  color: Color(0xFF475569),
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                            for (final account in group.value)
-                              ListTile(
-                                leading: const Icon(Icons.account_circle, color: Color(0xFF38BDF8)),
-                                title: Text(account['full_name'] ?? '', style: const TextStyle(color: Color(0xFF0F172A))),
-                                subtitle: Text('${account['email']} • ${account['role']}', style: const TextStyle(color: Color(0xFF64748B))),
-                                onTap: () async {
-                                  Navigator.pop(sheetContext);
-                                  try {
-                                    await auth.debugQuickLogin(account['id'] as String);
-                                    await Provider.of<global_auth.AuthProvider>(context, listen: false).logout();
-                                  } catch (error) {
-                                    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Quick login failed: $error'), backgroundColor: Colors.red));
-                                  }
-                                },
-                              ),
-                          ],
-                        ],
-                      ),
-              ),
-            ]),
-          ),
-        ),
+        builder: (sheetContext) => SafeArea(child: ListView(
+          shrinkWrap: true,
+          children: [
+            const ListTile(title: Text('Quick test accounts')),
+            ...accounts.map((account) => ListTile(
+              title: Text(account['full_name']?.toString() ?? 'Account'),
+              subtitle: Text(account['phone']?.toString() ?? 'No mobile number'),
+              onTap: () async {
+                try {
+                  await context.read<AuthService>().debugQuickLogin(account['id'].toString());
+                  if (sheetContext.mounted) Navigator.pop(sheetContext);
+                } catch (error) {
+                  if (mounted) setState(() => _error = error.toString());
+                }
+              },
+            )),
+          ],
+        )),
       );
     } catch (error) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Debug accounts unavailable: $error')));
+      if (mounted) setState(() => _error = error.toString());
     }
   }
 
-  String _debugBarangayName(Map<String, dynamic> account) {
-    var name = (account['barangay_name'] as String?)?.trim();
-    final barangayId = account['barangay_id'] as String?;
-    if ((name == null || name.isEmpty) && barangayId != null) {
-      for (final barangay in _barangays) {
-        if (barangay['id'] == barangayId) {
-          name = (barangay['name'] as String?)?.trim();
-          break;
-        }
-      }
-    }
-    if (name == null || name.isEmpty) {
-      return barangayId == null || barangayId.isEmpty
-          ? 'Unassigned Barangay'
-          : 'Barangay $barangayId';
-    }
-    return name.toLowerCase().startsWith('barangay') ? name : 'Barangay $name';
-  }
+  InputDecoration _decoration(String label, IconData icon) => InputDecoration(
+    labelText: label,
+    prefixIcon: Icon(icon, color: const Color(0xFF1B4F72)),
+    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+    filled: true,
+    fillColor: Colors.white,
+  );
 
   @override
   Widget build(BuildContext context) {
-    final auth = Provider.of<AuthService>(context);
-
+    final auth = context.watch<AuthService>();
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(28.0),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 440),
-            child: Card(
-              color: Colors.white,
-              elevation: 3,
-              shadowColor: const Color(0x1A0F172A),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-                side: const BorderSide(color: Color(0xFFE2E8F0)),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(28.0),
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Logo / Header
-                      InkWell(
-                        onTap: _showDebugAccounts,
-                        borderRadius: BorderRadius.circular(48),
-                        child: SizedBox(
-                          width: 88,
-                          height: 88,
-                          child: Image.asset('assets/NA-icon.png', fit: BoxFit.contain),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      const Text(
-                        'Norz-Agapay Barangay',
-                        style: TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                          color: const Color(0xFF0F172A),
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        _isRegisterMode
-                        ? 'Register your Barangay'
-                            : 'Sign in to your Barangay account',
-                        style: const TextStyle(color: Color(0xFF64748B), fontSize: 13),
-                      ),
-                      const SizedBox(height: 24),
-
-                      if (_isRegisterMode) ...[
-                        TextFormField(
-                          controller: _nameController,
-                          style: const TextStyle(color: Color(0xFF0F172A)),
-                          decoration: _inputDecoration('Full Name', Icons.person),
-                          validator: (v) => v == null || v.isEmpty ? 'Name required' : null,
-                        ),
-                        const SizedBox(height: 14),
-                        TextFormField(
-                          controller: _usernameController,
-                          textCapitalization: TextCapitalization.none,
-                          style: const TextStyle(color: Color(0xFF0F172A)),
-                          decoration: _inputDecoration('Username', Icons.alternate_email),
-                          validator: (value) => RegExp(r'^[A-Za-z0-9_.-]{3,32}$').hasMatch(value?.trim() ?? '')
-                              ? null
-                              : 'Use 3–32 letters, numbers, dots, underscores, or hyphens.',
-                        ),
-                        const SizedBox(height: 14),
-                        // Barangay Dropdown
-                        DropdownButtonFormField<String>(
-                          dropdownColor: Colors.white,
-                          style: const TextStyle(color: Color(0xFF0F172A)),
-                          value: _selectedBarangayId,
-                          decoration: _inputDecoration('Select Barangay', Icons.location_city),
-                          hint: Text(
-                            _loadingBarangays
-                                ? 'Loading...'
-                                : _barangays.isEmpty
-                                    ? 'No barangays available'
-                                    : 'Select Barangay',
-                            style: const TextStyle(color: Color(0xFF64748B)),
-                          ),
-                          items: _barangays.map((b) {
-                            return DropdownMenuItem<String>(
-                              value: b['id'],
-                              child: Text(b['name']),
-                            );
-                          }).toList(),
-                          onChanged: (v) => setState(() => _selectedBarangayId = v),
-                          validator: (v) => _isRegisterMode && v == null ? 'Barangay required' : null,
-                        ),
-                        if (!_loadingBarangays && _barangays.isEmpty) ...[
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  _barangaysLoadFailed
-                                      ? 'Could not load available barangays. Check your connection and retry.'
-                                      : 'No barangays are currently available for a new admin account.',
-                                  style: const TextStyle(color: Color(0xFFB45309), fontSize: 12),
-                                ),
-                              ),
-                              if (_barangaysLoadFailed)
-                                TextButton(
-                                  onPressed: _fetchBarangays,
-                                  child: const Text('Retry'),
-                                ),
-                            ],
-                          ),
-                        ],
-                        const SizedBox(height: 14),
-                        TextFormField(
-                          controller: _phoneController,
-                          keyboardType: TextInputType.phone,
-                          inputFormatters: PhoneNumberUtils.inputFormatters,
-                          style: const TextStyle(color: Color(0xFF0F172A)),
-                          decoration: _inputDecoration('Contact Number', Icons.phone),
-                          onChanged: (_) => setState(() {}),
-                          validator: (v) {
-                            if (!_isRegisterMode) return null;
-                            final phone = v?.trim() ?? '';
-                            if (phone.isEmpty && _emailController.text.trim().isEmpty) return 'Enter a mobile number or email for verification.';
-                            return phone.isEmpty ? null : PhoneNumberUtils.validationMessage(phone);
-                          },
-                        ),
-                        const SizedBox(height: 14),
-                        TextFormField(
-                          controller: _positionController,
-                          style: const TextStyle(color: Color(0xFF0F172A)),
-                          decoration: _inputDecoration('Position at Your Barangay', Icons.badge),
-                          validator: (v) => _isRegisterMode && (v == null || v.trim().isEmpty) ? 'Position required' : null,
-                        ),
-                        const SizedBox(height: 14),
-                      ],
-
-                      TextFormField(
-                        controller: _emailController,
-                        keyboardType: TextInputType.emailAddress,
-                        style: const TextStyle(color: Color(0xFF0F172A)),
-                        decoration: _inputDecoration(_isRegisterMode ? 'Email Address (optional)' : 'Username or Email', Icons.email),
-                        onChanged: (_) => setState(() {}),
-                        validator: (v) {
-                          final emailOrIdentifier = v?.trim() ?? '';
-                          if (!_isRegisterMode) return emailOrIdentifier.isEmpty ? 'Username or email is required' : null;
-                          if (emailOrIdentifier.isEmpty && _phoneController.text.trim().isEmpty) return 'Enter an email address or mobile number for verification.';
-                          if (emailOrIdentifier.isEmpty) return null;
-                          return emailOrIdentifier.contains('@') && emailOrIdentifier.contains('.') ? null : 'Enter a valid email address.';
-                        },
-                      ),
-                      const SizedBox(height: 14),
-                      if (_isRegisterMode && _emailController.text.trim().isNotEmpty && _phoneController.text.trim().isNotEmpty) ...[
-                        Align(alignment: Alignment.centerLeft, child: Text('Send verification code by', style: TextStyle(color: Colors.grey.shade700, fontWeight: FontWeight.w600))),
-                        const SizedBox(height: 8),
-                        Wrap(spacing: 8, children: [
-                          ChoiceChip(label: const Text('Mobile SMS'), selected: _registrationOtpChannel == 'sms', onSelected: (selected) { if (selected) setState(() => _registrationOtpChannel = 'sms'); }),
-                          ChoiceChip(label: const Text('Email'), selected: _registrationOtpChannel == 'email', onSelected: (selected) { if (selected) setState(() => _registrationOtpChannel = 'email'); }),
-                        ]),
-                        const SizedBox(height: 14),
-                      ],
-                      if (!_isRegisterMode) ...[
-                        TextFormField(
-                          controller: _passwordController,
-                          obscureText: _obscurePassword,
-                          style: const TextStyle(color: Color(0xFF0F172A)),
-                          decoration: _inputDecoration('Password', Icons.lock).copyWith(
-                            suffixIcon: IconButton(
-                              icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility, color: const Color(0xFF64748B)),
-                              onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
-                            ),
-                          ),
-                          validator: (v) => !_isRegisterMode && (v == null || v.length < 8) ? 'Min 8 characters' : null,
-                        ),
-                        const SizedBox(height: 24),
-                      ] else
-                        const SizedBox(height: 10),
-
-                      SizedBox(
-                        width: double.infinity,
-                        height: 48,
-                        child: ElevatedButton(
-                          onPressed: auth.isLoading ||
-                                  (_isRegisterMode &&
-                                      (_registrationCooldownSeconds > 0 ||
-                                          _loadingBarangays ||
-                                          _barangays.isEmpty))
-                              ? null
-                              : _handleSubmit,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF0284C7),
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          ),
-                          child: auth.isLoading
-                              ? const CircularProgressIndicator(color: Colors.white)
-                              : Text(
-                                  _isRegisterMode && _registrationCooldownSeconds > 0
-                                      ? 'Create Admin Account (${_registrationCooldownSeconds}s)'
-                                      : _isRegisterMode ? 'Create Admin Account' : 'Sign In',
-                                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                                ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-
-                      if (!_isRegisterMode)
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: TextButton(
-                            onPressed: auth.isLoading ? null : _showForgotPasswordDialog,
-                            child: const Text('Forgot password?'),
-                          ),
-                        ),
-
-                      TextButton(
-                        onPressed: () {
-                          setState(() {
-                            _isRegisterMode = !_isRegisterMode;
-                            _formKey.currentState?.reset();
-                          });
-                        },
-                        child: Text(
-                          _isRegisterMode
-                              ? 'Already have an account? Sign In'
-                              : 'Don’t have a Norz-Agapay barangay admin account? Create one',
-                          style: const TextStyle(color: Color(0xFF0284C7), fontSize: 13),
-                        ),
-                      ),
-                      if (!_isRegisterMode) ...[
-                        const SizedBox(height: 6),
-                        OutlinedButton.icon(
-                          onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const mdrrmo.LoginScreen())),
-                          icon: const Icon(Icons.admin_panel_settings_outlined),
-                          label: const Text('MDRRMO responder sign in'),
-                        ),
-                      ],
-                    ],
-                  ),
+      backgroundColor: const Color(0xFFF4F7FA),
+      body: SafeArea(child: Center(child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 460), child: Card(
+          elevation: 2,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+          child: Padding(padding: const EdgeInsets.all(24), child: Form(
+            key: _registering ? _barangayFormKey : _formKey,
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              const Icon(Icons.shield_moon_rounded, size: 44, color: Color(0xFF1B4F72)),
+              const SizedBox(height: 12),
+              Text(_registering ? (_otpSent ? 'Verify your mobile number' : 'Barangay account registration') : 'Barangay sign in', textAlign: TextAlign.center, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+              const SizedBox(height: 8),
+              Text(_otpSent ? 'Enter the 6-digit SMS code sent to ${PhoneNumberUtils.formatForDisplay(_phone.text)}.' : 'Sign in or create an account using a mobile number and password.', textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFF64748B))),
+              if (_error != null) ...[const SizedBox(height: 14), Text(_error!, style: const TextStyle(color: Colors.red), textAlign: TextAlign.center)],
+              const SizedBox(height: 18),
+              if (_registering && !_otpSent) ...[
+                TextFormField(controller: _name, decoration: _decoration('Full name', Icons.person_outline), validator: (v) => v == null || v.trim().length < 2 ? 'Enter your full name.' : null),
+                const SizedBox(height: 12),
+                TextFormField(controller: _phone, keyboardType: TextInputType.phone, inputFormatters: PhoneNumberUtils.inputFormatters, decoration: _decoration('Mobile number', Icons.phone_outlined), validator: PhoneNumberUtils.validationMessage),
+                const SizedBox(height: 12),
+                TextFormField(controller: _password, obscureText: _obscurePassword, decoration: _decoration('Password', Icons.lock_outline).copyWith(helperText: 'At least 8 characters', suffixIcon: IconButton(icon: Icon(_obscurePassword ? Icons.visibility : Icons.visibility_off), onPressed: () => setState(() => _obscurePassword = !_obscurePassword))), validator: (v) => v == null || v.length < 8 ? 'Password must be at least 8 characters.' : null),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  value: _selectedBarangayId,
+                  decoration: _decoration('Barangay', Icons.location_city),
+                  items: _barangays.map((barangay) => DropdownMenuItem(value: barangay['id']?.toString(), child: Text(barangay['name']?.toString() ?? 'Barangay'))).toList(),
+                  onChanged: (value) => setState(() => _selectedBarangayId = value),
+                  validator: (value) => value == null ? 'Choose a barangay.' : null,
                 ),
+                const SizedBox(height: 12),
+                TextFormField(controller: _position, decoration: _decoration('Official designation', Icons.badge_outlined), validator: (v) => v == null || v.trim().length < 2 ? 'Enter your official designation.' : null),
+              ] else if (_registering) ...[
+                TextFormField(controller: _otp, keyboardType: TextInputType.number, inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(6)], decoration: _decoration('6-digit SMS code', Icons.sms_outlined)),
+              ] else ...[
+                TextFormField(controller: _phone, keyboardType: TextInputType.phone, inputFormatters: PhoneNumberUtils.inputFormatters, decoration: _decoration('Mobile number', Icons.phone_outlined), validator: PhoneNumberUtils.validationMessage),
+                const SizedBox(height: 12),
+                TextFormField(controller: _password, obscureText: _obscurePassword, decoration: _decoration('Password', Icons.lock_outline).copyWith(suffixIcon: IconButton(icon: Icon(_obscurePassword ? Icons.visibility : Icons.visibility_off), onPressed: () => setState(() => _obscurePassword = !_obscurePassword))), validator: (v) => v == null || v.isEmpty ? 'Enter your password.' : null),
+              ],
+              const SizedBox(height: 18),
+              FilledButton.icon(
+                onPressed: _busy || auth.isLoading ? null : () => _registering ? (_otpSent ? _verifyRegistrationCode() : _sendRegistrationCode()) : _submitLogin(),
+                icon: (_busy || auth.isLoading) ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : Icon(_registering ? (_otpSent ? Icons.verified_user_outlined : Icons.sms_outlined) : Icons.login),
+                label: Text(_busy || auth.isLoading ? 'Please wait…' : _registering ? (_otpSent ? 'Verify and create account' : 'Send SMS verification code') : 'Sign in'),
               ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  InputDecoration _inputDecoration(String label, IconData icon) {
-    return InputDecoration(
-      labelText: label,
-      labelStyle: const TextStyle(color: Color(0xFF64748B)),
-      floatingLabelStyle: const TextStyle(color: Color(0xFF0284C7)),
-      prefixIcon: Icon(icon, color: const Color(0xFF0284C7), size: 20),
-      filled: true,
-      fillColor: const Color(0xFFF8FAFC),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: Color(0xFF0284C7), width: 1.5),
-      ),
+              if (!_registering) ...[
+                TextButton(onPressed: _busy ? null : _showForgotPassword, child: const Text('Forgot password?')),
+                TextButton(onPressed: _busy ? null : _showDebugAccounts, child: const Text('Quick test account')),
+              ],
+              TextButton(onPressed: _busy ? null : () => setState(() { _registering = !_registering; _otpSent = false; _error = null; _otp.clear(); }), child: Text(_registering ? 'Back to sign in' : 'Create barangay account')),
+              const Divider(height: 26),
+              OutlinedButton.icon(onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const mdrrmo.LoginScreen())), icon: const Icon(Icons.groups_2_outlined), label: const Text('MDRRMO responder sign in')),
+            ]),
+          )),
+        )),
+      ))),
     );
   }
 
   @override
   void dispose() {
-    _registrationCooldownTimer?.cancel();
-    _emailController.dispose();
-    _passwordController.dispose();
-    _nameController.dispose();
-    _usernameController.dispose();
-    _phoneController.dispose();
-    _positionController.dispose();
+    _phone.dispose(); _password.dispose(); _name.dispose(); _position.dispose(); _otp.dispose();
     super.dispose();
   }
 }

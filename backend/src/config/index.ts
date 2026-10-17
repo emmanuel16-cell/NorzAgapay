@@ -30,11 +30,6 @@ export const config = {
   // Mapbox
   mapboxAccessToken: process.env.MAPBOX_ACCESS_TOKEN || '',
 
-  // HTTPS Email API
-  sendGridApiKey: process.env.SENDGRID_API_KEY || '',
-  emailFrom: process.env.EMAIL_FROM || '',
-  emailReplyTo: process.env.EMAIL_REPLY_TO || '',
-
   // Firebase Cloud Messaging (optional until the Firebase project is configured)
   firebaseServiceAccountJson: process.env.FIREBASE_SERVICE_ACCOUNT_JSON || '',
   firebaseProjectId: process.env.FIREBASE_PROJECT_ID || '',

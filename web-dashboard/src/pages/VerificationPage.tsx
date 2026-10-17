@@ -6,7 +6,6 @@ import { formatMobileNumber } from '../lib/mobileNumber';
 interface PendingUser {
   id: string;
   full_name: string;
-  email: string;
   phone?: string;
   role: string;
   unit_type?: string;
@@ -20,7 +19,6 @@ interface DispatcherVerification {
   barangay_id: string;
   barangay_name?: string;
   full_name: string;
-  email: string;
   phone?: string | null;
   position_designation: string;
   punong_barangay_name: string;
@@ -1282,7 +1280,7 @@ export default function VerificationPage({ category }: { category: 'officers' | 
                       <td>
                         <div className="disp-applicant-name">{disp.full_name}</div>
                         <div className="disp-applicant-meta">
-                          {disp.email} {disp.phone ? `• ${formatMobileNumber(disp.phone)}` : ''}
+                          {formatMobileNumber(disp.phone) || 'Mobile number not provided'}
                         </div>
                       </td>
                       <td>
@@ -1339,7 +1337,7 @@ export default function VerificationPage({ category }: { category: 'officers' | 
               </button>
             </div>
             <div className="oq-card-name" style={{ fontSize: 20 }}>{selectedUser.full_name}</div>
-            <div style={{ fontSize: 13, color: '#94a3b8', marginBottom: 12 }}>{selectedUser.email}</div>
+            <div style={{ fontSize: 13, color: '#94a3b8', marginBottom: 12 }}>{formatMobileNumber(selectedUser.phone) || 'Mobile number not provided'}</div>
             <div style={{ fontSize: 12, color: '#38bdf8', fontWeight: 600, marginBottom: 16 }}>
               {getRoleLabel(selectedUser.role)}
             </div>
@@ -1446,12 +1444,10 @@ export default function VerificationPage({ category }: { category: 'officers' | 
               </div>
               <div className="review-grid">
                 <div>
-                  <div className="review-field-label">Email Address</div>
-                  <div className="review-field-value">{selectedDispatcher.email}</div>
+                  <div className="review-field-label">Mobile number</div>
+                  <div className="review-field-value">{formatMobileNumber(selectedDispatcher.phone) || 'Not provided'}</div>
                 </div>
                 <div>
-                  <div className="review-field-label">Contact Number</div>
-                  <div className="review-field-value">{formatMobileNumber(selectedDispatcher.phone) || 'Not provided'}</div>
                 </div>
                 <div>
                   <div className="review-field-label">Date Submitted</div>

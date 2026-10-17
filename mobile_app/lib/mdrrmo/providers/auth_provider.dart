@@ -53,7 +53,7 @@ class AuthProvider with ChangeNotifier {
           final myOfficerId = data['officer_id'];
           final myMember = _unitMembers.firstWhere(
             (m) => (myOfficerId != null && m['id']?.toString() == myOfficerId.toString()) ||
-                   (m['email'] != null && m['email'] == _user?.email),
+                   (m['phone'] != null && m['phone'] == _user?.phone),
             orElse: () => {},
           );
           final String? officerSpec = myMember['specialization'];
@@ -66,7 +66,6 @@ class AuthProvider with ChangeNotifier {
           _user = User(
             id: _user!.id,
             fullName: _user!.fullName,
-            email: _user!.email,
             phone: _user!.phone,
             role: _user!.role,
             unitType: _user!.unitType,
@@ -131,14 +130,14 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
-  Future<void> login(String email, String password) async {
+  Future<void> login(String phone, String password) async {
     _isLoading = true;
     notifyListeners();
 
     try {
       final response = await http.post(
         Uri.parse('${AppConstants.apiBaseUrl}/auth/login'),
-        body: json.encode({'email': email, 'password': password}),
+        body: json.encode({'phone': phone, 'password': password}),
         headers: {
           'Content-Type': 'application/json',
           'ngrok-skip-browser-warning': 'true',

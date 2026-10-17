@@ -27,7 +27,6 @@ enum UnitType {
 class User {
   final String id;
   final String fullName;
-  final String email;
   final String? phone;
   final UserRole role;
   final UnitType? unitType;
@@ -43,7 +42,6 @@ class User {
   User({
     required this.id,
     required this.fullName,
-    required this.email,
     this.phone,
     required this.role,
     this.unitType,
@@ -74,7 +72,6 @@ class User {
     return User(
       id: json['id'],
       fullName: json['full_name'] ?? '',
-      email: json['email'] ?? '',
       phone: json['phone'],
       role: UserRole.values.firstWhere(
         (e) => e.name == json['role'],
@@ -141,7 +138,6 @@ class User {
     return {
       'id': id,
       'full_name': fullName,
-      'email': email,
       'phone': phone,
       'role': role.name,
       'unit_type': unitTypeString ?? (unitType != null ? reverseMapping[unitType] : null),
