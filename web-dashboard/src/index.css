@@ -5463,6 +5463,21 @@ body.responder-map-open { overflow: hidden; }
   .public-login-register { transition: none; }
 }
 
+/* Keep the login page on the document's single scroll area, including on phones. */
+.public-login-screen {
+  display: block;
+  height: auto;
+  min-height: 100vh;
+  min-height: 100svh;
+  overflow-x: clip;
+  overflow-y: visible;
+}
+.public-login-screen > .public-login-main {
+  min-height: calc(100svh - 88px);
+  flex: none;
+  overflow: visible;
+}
+
 /* Barangay account creation uses the same light registration treatment as residents. */
 .barangay-registration-page {
   display: block;

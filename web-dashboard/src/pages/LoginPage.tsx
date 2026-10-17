@@ -192,7 +192,7 @@ export default function LoginPage() {
   }, [user, canAccessDashboard, navigate, logout]);
 
   return (
-    <div className="public-login-page">
+    <div className="public-login-page public-login-screen">
       <PublicHeader showActions={false} />
       <main className="login-page public-login-main">
       <div className="public-login-content">
