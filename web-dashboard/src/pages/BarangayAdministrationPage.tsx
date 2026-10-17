@@ -209,6 +209,7 @@ export default function BarangayAdministrationPage({ embedded = false, section =
 
   const status = String(verification?.status || user?.verification_status || 'pending_document').toLowerCase();
   const statusLabel = useMemo(() => status.replaceAll('_', ' '), [status]);
+  const accountRequestLocked = active || ['verified', 'activation_pending'].includes(status);
   const submittedDocumentUrl = verification?.document_url
     ? (/^https?:\/\//i.test(verification.document_url) ? verification.document_url : `${API_BASE.replace(/\/api\/?$/, '')}${verification.document_url}`)
     : null;
@@ -381,13 +382,21 @@ export default function BarangayAdministrationPage({ embedded = false, section =
       {showAccount && isAdmin && <section className="barangay-console-panel"><header><div><h2>Barangay Account Request</h2><p>Prepare the authorization, submit the signed document, and follow MDRRMO review.</p></div><span className={`barangay-console-status ${active ? 'active' : status}`}>{active ? 'Active' : statusLabel}</span></header>
         {verification?.reference_no && <div className="barangay-account-reference"><span>Request reference</span><strong>{verification.reference_no}</strong>{verification.submitted_at && <small>Submitted {new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(verification.submitted_at))}</small>}</div>}
         {(verification?.rejection_reason || verification?.correction_reason) && <div className="barangay-account-review-note"><strong>MDRRMO feedback</strong><p>{verification.correction_reason || verification.rejection_reason}</p></div>}
-        <form className="barangay-console-form-grid" onSubmit={(event) => void saveAccount(event)}>
+        {accountRequestLocked ? <div className="barangay-account-locked">
+          <div className="barangay-account-locked-heading"><BadgeCheck size={20} /><div><strong>Approved request details are locked</strong><p>Editing these details could restart MDRRMO review and interrupt barangay access. Contact MDRRMO if an authorized correction is needed.</p></div></div>
+          <dl>
+            <div><dt>Administrator designation</dt><dd>{official.position_designation || '—'}</dd></div>
+            <div><dt>Authorizing official</dt><dd>{official.official_name || '—'}</dd></div>
+            <div><dt>Official position</dt><dd>{official.official_position || '—'}</dd></div>
+          </dl>
+          <button className="workspace-secondary-action" type="button" onClick={() => void downloadTemplate()} disabled={saving}><Download size={16} /> Download authorization PDF</button>
+        </div> : <form className="barangay-console-form-grid" onSubmit={(event) => void saveAccount(event)}>
           <label>Administrator designation<input maxLength={120} value={official.position_designation} onChange={(event) => setOfficial((value) => ({ ...value, position_designation: event.target.value }))} placeholder="e.g. Barangay Administrator" /></label>
           <label>Authorizing official name<input required minLength={2} maxLength={120} value={official.official_name} onChange={(event) => setOfficial((value) => ({ ...value, official_name: event.target.value }))} /></label>
           <label>Authorizing official position<input required minLength={2} maxLength={120} value={official.official_position} onChange={(event) => setOfficial((value) => ({ ...value, official_position: event.target.value }))} placeholder="Punong Barangay" /></label>
-          <div className="barangay-console-form-actions"><button className="btn btn-primary" disabled={saving}><Save size={16} /> Save request details</button><button className="workspace-secondary-action" type="button" onClick={() => void downloadTemplate()}><Download size={16} /> Download authorization PDF</button></div>
-        </form>
-        {!active && <div className="barangay-account-upload"><FileText size={20} /><div><strong>Signed and sealed request</strong><p>Upload a PDF or clear image of the authorization document after it has been signed.</p>{submittedDocumentUrl && <a href={submittedDocumentUrl} target="_blank" rel="noreferrer">Open previously submitted document</a>}</div><label className="btn btn-outline">{saving ? 'Uploading…' : 'Upload signed document'}<input type="file" accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg" disabled={saving} onChange={(event) => { void uploadCertificate(event.target.files?.[0]); event.currentTarget.value = ''; }} /></label></div>}
+          <div className="barangay-console-form-actions"><button className="btn btn-primary" disabled={saving}><Save size={16} /> Save request details</button><button className="workspace-secondary-action" type="button" onClick={() => void downloadTemplate()} disabled={saving}><Download size={16} /> Download authorization PDF</button></div>
+        </form>}
+        {!active && ['pending_document', 'needs_correction'].includes(status) && <div className="barangay-account-upload"><FileText size={20} /><div><strong>Signed and sealed request</strong><p>Upload a PDF or clear image of the authorization document after it has been signed.</p>{submittedDocumentUrl && <a href={submittedDocumentUrl} target="_blank" rel="noreferrer">Open previously submitted document</a>}</div><label className="btn btn-outline">{saving ? 'Uploading…' : 'Upload signed document'}<input type="file" accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg" disabled={saving} onChange={(event) => { void uploadCertificate(event.target.files?.[0]); event.currentTarget.value = ''; }} /></label></div>}
         {status === 'rejected' && <div className="barangay-account-actions"><p>After correcting the issues listed above, reopen the request and upload the revised signed document.</p><button className="btn btn-primary" type="button" disabled={saving} onClick={() => void resubmit()}>Start resubmission</button></div>}
         {!active && status === 'verified' && <div className="barangay-account-actions"><p>This barangay was approved before and its access was later deactivated. Send MDRRMO a request to reactivate the existing account.</p><button className="btn btn-primary" type="button" disabled={saving} onClick={() => void requestActivation()}>Request activation</button></div>}
         {!active && status === 'activation_pending' && <div className="barangay-console-message"><BadgeCheck /><div><strong>Activation request is with MDRRMO</strong><p>Your barangay access will return after an administrator reviews this request.</p></div></div>}

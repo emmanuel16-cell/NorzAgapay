@@ -1412,6 +1412,14 @@ router.put(['/account-request', '/dispatcher/coordination-request'], authenticat
   try {
     const userId = req.barangayUser.userId;
     let verification = await DispatcherVerificationService.getPersistedByUserId(userId);
+    const coordinationVerified = await DispatcherVerificationService.isBarangayActive(req.barangayUser.barangayId);
+    const requestAlreadyApproved = ['verified', 'activation_pending'].includes(String(verification?.status || '').toLowerCase());
+    if (coordinationVerified || requestAlreadyApproved) {
+      res.status(409).json({
+        error: 'Approved Barangay Account Request details are locked. Contact MDRRMO if an authorized correction is needed.',
+      });
+      return;
+    }
     if (!verification) {
       const { data: user, error: userError } = await supabaseAdmin
         .from('barangay_users')
@@ -1452,8 +1460,8 @@ router.put(['/account-request', '/dispatcher/coordination-request'], authenticat
         parsed.data.position_designation,
       );
     }
-    const coordinationVerified = await DispatcherVerificationService.isBarangayActive(req.barangayUser.barangayId);
-    res.json({ verification, coordination_verified: coordinationVerified });
+    const isNowCoordinationVerified = await DispatcherVerificationService.isBarangayActive(req.barangayUser.barangayId);
+    res.json({ verification, coordination_verified: isNowCoordinationVerified });
   } catch (err: any) {
     console.error('Save Barangay Account Request error:', err);
     res.status(500).json({ error: err.message || 'Failed to save Barangay Account Request.' });

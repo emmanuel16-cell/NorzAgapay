@@ -5608,6 +5608,16 @@ body.responder-map-open { overflow: hidden; }
 .barangay-review-footer .resident-register-back { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .barangay-review-stage .resident-register-error { display: flex; align-items: center; gap: 8px; }
 .barangay-review-stage .resident-register-error button { margin-left: auto; border: 0; color: #087fb6; background: transparent; font: inherit; font-weight: 700; cursor: pointer; }
+.barangay-account-locked { display: grid; gap: 16px; padding: 17px; border: 1px solid #a7f3d0; border-radius: 13px; background: #f4fdf8; }
+.barangay-account-locked-heading { display: flex; align-items: flex-start; gap: 11px; color: #087451; }
+.barangay-account-locked-heading > svg { flex: 0 0 auto; margin-top: 1px; }
+.barangay-account-locked-heading strong { display: block; color: #14532d; font-size: 14px; }
+.barangay-account-locked-heading p { margin: 4px 0 0; color: #466456; font-size: 12px; line-height: 1.5; }
+.barangay-account-locked dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 0; }
+.barangay-account-locked dl > div { min-width: 0; }
+.barangay-account-locked dt { color: #64748b; font-size: 11px; font-weight: 700; }
+.barangay-account-locked dd { margin: 4px 0 0; color: #172033; font-size: 13px; overflow-wrap: anywhere; }
+.barangay-account-locked > .workspace-secondary-action { justify-self: start; }
 @media (max-width: 600px) {
   .barangay-onboarding-steps { margin: 18px auto 20px; }
   .barangay-onboarding-step > small { max-width: 85px; white-space: normal; }
@@ -5615,4 +5625,5 @@ body.responder-map-open { overflow: hidden; }
   .barangay-review-document { grid-template-columns: auto minmax(0, 1fr); }
   .barangay-review-document > .workspace-secondary-action, .barangay-review-upload { grid-column: 1 / -1; width: 100%; }
   .barangay-review-hint { grid-column: 1 / -1; }
+  .barangay-account-locked dl { grid-template-columns: minmax(0, 1fr); }
 }
