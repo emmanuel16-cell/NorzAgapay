@@ -5470,27 +5470,34 @@ body.responder-map-open { overflow: hidden; }
   min-height: 100svh;
   overflow-x: clip;
   overflow-y: visible;
-  background: #0a1933;
+  background-color: #0a1933;
+  background-image:
+    linear-gradient(90deg, rgba(5, 16, 35, .16) 0%, rgba(5, 16, 35, .08) 42%, rgba(5, 16, 35, .42) 100%),
+    linear-gradient(180deg, rgba(5, 16, 35, .04), rgba(5, 16, 35, .14)),
+    url('/login-background.jfif');
+  background-position: center, center, center 46%;
+  background-size: auto, auto, cover;
+  background-repeat: no-repeat;
+  background-attachment: fixed, fixed, fixed;
 }
 .barangay-registration-page::before {
-  position: fixed;
-  z-index: -1;
-  inset: 0;
-  background: url('/login-background.jfif') center 46% / cover no-repeat;
-  content: '';
-  pointer-events: none;
+  display: none;
 }
 .barangay-registration-main {
   display: grid;
+  grid-template-rows: max-content;
   min-height: 100svh;
-  place-items: center;
+  align-content: safe center;
+  justify-items: center;
   overflow: visible;
   padding: clamp(22px, 4vh, 42px) 16px;
   background: transparent;
 }
+.barangay-registration-main::before,
+.barangay-registration-main::after { display: none; }
 .barangay-registration-main .barangay-registration-card {
   width: min(100%, 560px);
-  margin: auto;
+  margin: 0 auto;
   padding: clamp(25px, 4vw, 38px);
   border: 1px solid rgba(255, 255, 255, .78);
   border-radius: 26px;
