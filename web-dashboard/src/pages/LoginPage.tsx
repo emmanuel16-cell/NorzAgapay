@@ -173,7 +173,7 @@ export default function LoginPage() {
     if (user) {
       if (canAccessDashboard) {
         const destination = user.account_kind === 'barangay'
-          ? user.role === 'responder' ? '/my-responses' : user.role === 'staff' ? '/barangay-workspace' : user.role === 'admin' && !user.coordination_verified ? '/barangay-settings' : user.role === 'admin' || user.role === 'dispatcher' ? '/barangay-dashboard' : '/command-center'
+          ? user.role === 'responder' ? '/my-responses' : user.role === 'staff' ? '/barangay-workspace' : user.role === 'admin' && !user.coordination_verified ? '/barangay/register' : user.role === 'admin' || user.role === 'dispatcher' ? '/barangay-dashboard' : '/command-center'
           : user.role === 'resident'
             ? '/my-reports'
             : user.role === 'responder'

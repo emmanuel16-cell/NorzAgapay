@@ -40,7 +40,7 @@ function landingPath(user: { role?: string; account_kind?: string; coordination_
   if (user?.account_kind === 'barangay') {
     if (user.role === 'responder') return '/my-responses';
     if (user.role === 'staff') return '/barangay-workspace';
-    if (user.role === 'admin' && !user.coordination_verified) return '/barangay-settings';
+    if (user.role === 'admin' && !user.coordination_verified) return '/barangay/register';
     if (user.role === 'admin') return '/barangay-dashboard';
     if (user.role === 'dispatcher') return '/barangay-dashboard';
     return '/command-center';
@@ -83,8 +83,16 @@ function BarangayAccess({ roles, children, allowInactive = false }: { roles: str
   if (user?.account_kind !== 'barangay' || !roles.includes(user.role || '')) {
     return <Navigate to={landingPath(user)} replace />;
   }
-  if (!allowInactive && !user.coordination_verified) return <Navigate to="/barangay-settings" replace />;
+  if (!allowInactive && !user.coordination_verified) return <Navigate to="/barangay/register" replace />;
   return <>{children}</>;
+}
+
+function BarangaySettingsRoute() {
+  const { user } = useAuth();
+  if (user?.account_kind === 'barangay' && user.role === 'admin' && !user.coordination_verified) {
+    return <Navigate to="/barangay/register" replace />;
+  }
+  return <BarangayAccess roles={['admin', 'dispatcher', 'responder', 'staff']} allowInactive><BarangayAdministrationPage /></BarangayAccess>;
 }
 
 function IncidentReportsRoute() {
@@ -146,7 +154,7 @@ function AppRoutes() {
         <Route path="my-responses" element={<RoleAccess roles={['responder']} allowBarangayRoles={['responder']}><ResponderWorkspacePage /></RoleAccess>} />
         <Route path="barangay-workspace" element={<BarangayAccess roles={['admin', 'staff']}><BarangayStaffWorkspacePage /></BarangayAccess>} />
         <Route path="barangay-dashboard" element={<BarangayAccess roles={['admin', 'dispatcher']}><BarangayDashboardPage /></BarangayAccess>} />
-        <Route path="barangay-settings" element={<BarangayAccess roles={['admin', 'dispatcher', 'responder', 'staff']} allowInactive><BarangayAdministrationPage /></BarangayAccess>} />
+        <Route path="barangay-settings" element={<BarangaySettingsRoute />} />
         <Route path="barangay-team" element={<BarangayTeamRoute />} />
         <Route path="barangay-board" element={<BarangayBoardRoute />} />
         <Route path="barangay-assistance" element={<BarangayAssistanceRoute />} />
