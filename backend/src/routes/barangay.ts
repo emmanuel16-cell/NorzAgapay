@@ -308,6 +308,7 @@ router.get('/list', async (req: Request, res: Response) => {
     const verifiedOnly = req.query.verified_only === 'true' || req.query.verified_only === '1';
     const verifiedIds = verifiedOnly ? await getVerifiedBarangayIds() : null;
     const adminSignupOnly = req.query.admin_signup === 'true' || req.query.admin_signup === '1';
+    if (adminSignupOnly) res.setHeader('Cache-Control', 'no-store');
     const barangayIdsWithApprovedAdmins = adminSignupOnly
       ? new Set(await getBarangayIdsWithApprovedAdmins())
       : null;

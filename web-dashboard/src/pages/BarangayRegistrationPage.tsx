@@ -104,6 +104,36 @@ export default function BarangayRegistrationPage() {
     return () => { cancelled = true; };
   }, [authLoading, user]);
 
+  useEffect(() => {
+    if (authLoading || user) return;
+    let cancelled = false;
+    let lastRefreshAt = 0;
+    const refreshEligibleBarangays = () => {
+      if (document.visibilityState === 'hidden' || Date.now() - lastRefreshAt < 500) return;
+      lastRefreshAt = Date.now();
+      authAPI.barangaysForAdminSignup()
+        .then(({ data }) => {
+          if (cancelled) return;
+          const rows = Array.isArray(data) ? data : [];
+          setBarangays(rows);
+          setForm((current) => ({
+            ...current,
+            barangay_id: rows.some((barangay) => barangay.id === current.barangay_id)
+              ? current.barangay_id
+              : rows[0]?.id || '',
+          }));
+        })
+        .catch(() => { /* Keep the last loaded options if the refresh is temporarily unavailable. */ });
+    };
+    window.addEventListener('focus', refreshEligibleBarangays);
+    document.addEventListener('visibilitychange', refreshEligibleBarangays);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('focus', refreshEligibleBarangays);
+      document.removeEventListener('visibilitychange', refreshEligibleBarangays);
+    };
+  }, [authLoading, user]);
+
   const loadAccountRequest = useCallback(async (quiet = false) => {
     if (!quiet) setRequestLoading(true);
     if (!quiet) setError('');
