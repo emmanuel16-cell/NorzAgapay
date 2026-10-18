@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import { Check } from 'lucide-react';
 
 export type IncidentTimeChoice = 'just_now' | 'earlier' | 'unknown';
@@ -43,6 +44,8 @@ export default function IncidentTimeInput({
   value: IncidentTimeValue;
   onChange: (next: IncidentTimeValue) => void;
 }) {
+  const titleId = useId();
+
   const selectChoice = (choice: IncidentTimeChoice) => {
     const now = new Date();
     if (choice === 'unknown') {
@@ -91,8 +94,8 @@ export default function IncidentTimeInput({
   const maxSelectedMinutes = Math.min(59, Math.max(0, availableMinutes - value.earlierHours * 60));
 
   return (
-    <fieldset className="incident-time-control">
-      <legend>When did the incident happen?</legend>
+    <div className="incident-time-control" role="group" aria-labelledby={titleId}>
+      <div className="incident-time-title" id={titleId}>When did the incident happen?</div>
       <div className="incident-time-choices" role="group" aria-label="Incident time">
         {([
           ['just_now', 'Just now'],
@@ -161,6 +164,6 @@ export default function IncidentTimeInput({
       ) : value.choice === 'unknown' ? (
         <p className="incident-time-hint">The incident time will be recorded as unknown.</p>
       ) : null}
-    </fieldset>
+    </div>
   );
 }
