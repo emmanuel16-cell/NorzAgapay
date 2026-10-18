@@ -63,6 +63,8 @@ export default function ResponderWorkspacePage() {
   const [crew, setCrew] = useState<CrewMember[]>([]);
   const [barangayRoster, setBarangayRoster] = useState<BarangayCrewMember[]>([]);
   const [crewSelections, setCrewSelections] = useState<Record<string, string[]>>({});
+  const [crewDraftSelections, setCrewDraftSelections] = useState<Record<string, string[]>>({});
+  const [crewEditorReportId, setCrewEditorReportId] = useState<string | null>(null);
   const [barangayCrewSelections, setBarangayCrewSelections] = useState<Record<string, BarangayCrewSelection[]>>({});
   const [assessments, setAssessments] = useState<Record<string, typeof emptyAssessment>>({});
   const [resolutionNotes, setResolutionNotes] = useState('');
@@ -112,6 +114,15 @@ export default function ResponderWorkspacePage() {
 
   useEffect(() => { void loadWorkspace(); }, [loadWorkspace]);
 
+  useEffect(() => {
+    if (!crewEditorReportId) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !saving) setCrewEditorReportId(null);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [crewEditorReportId, saving]);
+
   const responseStatusFor = (report: AssignedReport) => String((isBarangay ? report.barangay_response_status : report.response_status) || report.response_status || 'pending').toLowerCase();
   const activeReports = reports.filter((report) => responseStatusFor(report) !== 'resolved');
   const resolvedCount = reports.length - activeReports.length;
@@ -127,8 +138,10 @@ export default function ResponderWorkspacePage() {
       toast.success(successMessage);
       setResolutionNotes('');
       await loadWorkspace(true);
+      return true;
     } catch (actionError: any) {
       toast.error(actionError?.response?.data?.error || 'The response update could not be saved.');
+      return false;
     } finally {
       setSaving(false);
     }
@@ -144,7 +157,7 @@ export default function ResponderWorkspacePage() {
   const toggleCrew = (reportId: string, member: CrewMember) => {
     const id = member.unit_member_id || member.id;
     if (!id) return;
-    setCrewSelections((all) => {
+    setCrewDraftSelections((all) => {
       const current = all[reportId] || [];
       if (current.includes(id)) return { ...all, [reportId]: current.filter((value) => value !== id) };
       if (current.length >= 7) {
@@ -153,6 +166,28 @@ export default function ResponderWorkspacePage() {
       }
       return { ...all, [reportId]: [...current, id] };
     });
+  };
+
+  const openCrewEditor = (reportId: string) => {
+    setCrewDraftSelections((current) => ({
+      ...current,
+      [reportId]: [...(crewSelections[reportId] || [])],
+    }));
+    setCrewEditorReportId(reportId);
+  };
+
+  const cancelCrewEditor = () => setCrewEditorReportId(null);
+
+  const saveCrewEditor = async (reportId: string) => {
+    const memberIds = crewDraftSelections[reportId] || [];
+    const saved = await perform(
+      () => reportAPI.saveMdrrmoResponseCrew(reportId, memberIds),
+      'MDRRMO response crew saved.',
+    );
+    if (saved) {
+      setCrewSelections((current) => ({ ...current, [reportId]: [...memberIds] }));
+      setCrewEditorReportId(null);
+    }
   };
 
   const toggleBarangayCrew = (reportId: string, memberId: string) => {
@@ -233,10 +268,9 @@ export default function ResponderWorkspacePage() {
           const canManageCrew = !report.is_demo && !arrived && (isBarangay
             ? Boolean(report.is_central_assignment && report.barangay_dispatched_at && responseStatus === 'responding')
             : assignmentStatus === 'responding');
-          const selectedCrewIds = crewSelections[report.id] || [];
+          const selectedCrewIds = crewDraftSelections[report.id] || [];
           const currentAssessment = assessments[report.id] || emptyAssessment;
           const selectedBarangayCrew = barangayCrewSelections[report.id] || [];
-          const savedMdrrmoCrew = (assignment?.crew || []).filter((member) => member.member_role !== 'team_leader');
           const savedBarangayCrew = report.barangay_crew_members || [];
           const displayStatus = responseStatus === 'responding' ? 'Responding' : assignmentStatus === 'active' ? 'Assigned' : assignmentStatus || 'Assigned';
           return <article className="responder-report-card" key={report.id}>
@@ -246,14 +280,28 @@ export default function ResponderWorkspacePage() {
 
             {canManageCrew && !isBarangay && <section className="responder-action-panel">
               <h3><ClipboardList size={16} /> MDRRMO response crew</h3>
-              <p className="responder-report-description">This dispatch is already accepted. Choose crew members from your municipal unit roster.</p>
-              {savedMdrrmoCrew.length > 0 && <small className="responder-crew-guidance">Current crew: {savedMdrrmoCrew.map((member) => member.name || member.full_name).filter(Boolean).join(', ')}</small>}
-              {crew.filter((member) => member.is_active !== false && ['radio_operator', 'driver_responder', 'first_aider_responder'].includes(member.member_role)).map((member) => {
-                const id = member.unit_member_id || member.id || '';
-                return <label className="responder-crew-option" key={id}><input type="checkbox" checked={selectedCrewIds.includes(id)} onChange={() => toggleCrew(report.id, member)} /><span><strong>{member.name || member.full_name || 'Crew member'}</strong><small>{member.member_role.replaceAll('_', ' ')}</small></span></label>;
-              })}
-              <button className="workspace-primary-action" type="button" disabled={saving || !canSaveMdrrmoCrew(selectedCrewIds)} onClick={() => void perform(() => reportAPI.saveMdrrmoResponseCrew(report.id, selectedCrewIds), 'MDRRMO response crew saved.')}>Save response crew</button>
-              {!canSaveMdrrmoCrew(selectedCrewIds) && <small className="responder-crew-guidance">Select a driver responder and a first aider, up to seven crew members.</small>}
+              <p className="responder-report-description">This dispatch is accepted. You can update the assigned crew before recording arrival.</p>
+              <button className="workspace-secondary-action responder-change-crew-button" type="button" disabled={saving} onClick={() => openCrewEditor(report.id)}>Change crew</button>
+              {crewEditorReportId === report.id && <div className="responder-crew-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) cancelCrewEditor(); }}>
+                <section className="responder-crew-modal" role="dialog" aria-modal="true" aria-labelledby={`responder-crew-modal-title-${report.id}`}>
+                  <header className="responder-crew-modal-header">
+                    <div><span className="workspace-eyebrow">MDRRMO RESPONSE</span><h2 id={`responder-crew-modal-title-${report.id}`}>Change response crew</h2><p>Select a driver responder and a first aider, with up to seven crew members total.</p></div>
+                    <button className="responder-crew-modal-close" type="button" aria-label="Close crew editor" disabled={saving} onClick={cancelCrewEditor}><X size={18} /></button>
+                  </header>
+                  <div className="responder-crew-modal-list">
+                    {crew.filter((member) => member.is_active !== false && ['radio_operator', 'driver_responder', 'first_aider_responder'].includes(member.member_role)).map((member) => {
+                      const id = member.unit_member_id || member.id || '';
+                      return <label className="responder-crew-option" key={id}><input type="checkbox" checked={selectedCrewIds.includes(id)} onChange={() => toggleCrew(report.id, member)} /><span><strong>{member.name || member.full_name || 'Crew member'}</strong><small>{member.member_role.replaceAll('_', ' ')}</small></span></label>;
+                    })}
+                    {crew.every((member) => member.is_active === false || !['radio_operator', 'driver_responder', 'first_aider_responder'].includes(member.member_role)) && <p className="responder-crew-guidance">No active crew members are available in your municipal unit roster.</p>}
+                  </div>
+                  {!canSaveMdrrmoCrew(selectedCrewIds) && <small className="responder-crew-guidance responder-crew-modal-guidance">Choose a driver responder and a first aider, with no more than seven crew members.</small>}
+                  <footer className="responder-crew-modal-actions">
+                    <button className="workspace-secondary-action" type="button" disabled={saving} onClick={cancelCrewEditor}>Cancel</button>
+                    <button className="workspace-primary-action" type="button" disabled={saving || !canSaveMdrrmoCrew(selectedCrewIds)} onClick={() => void saveCrewEditor(report.id)}>{saving ? 'Saving crew…' : 'Save response crew'}</button>
+                  </footer>
+                </section>
+              </div>}
             </section>}
 
             {canManageCrew && isBarangay && <section className="responder-action-panel">
@@ -273,7 +321,6 @@ export default function ResponderWorkspacePage() {
               <button className="workspace-primary-action" type="button" disabled={saving || selectedBarangayCrew.length === 0 || selectedBarangayCrew.length > 20} onClick={() => void perform(() => reportAPI.saveBarangayResponseCrew(report.id, selectedBarangayCrew), 'Barangay response crew saved.')}>Save response crew</button>
             </section>}
 
-            {!canManageCrew && canUpdateField && !isBarangay && savedMdrrmoCrew.length > 0 && <div className="workspace-message">MDRRMO crew: {savedMdrrmoCrew.map((member) => member.name || member.full_name).filter(Boolean).join(', ')}</div>}
             {!canManageCrew && canUpdateField && isBarangay && savedBarangayCrew.length > 0 && <div className="workspace-message">Barangay crew: {savedBarangayCrew.map((member) => `${member.member_name} (${member.crew_role.replaceAll('_', ' ')})`).join(', ')}</div>}
 
             {canUpdateField && <section className="responder-action-panel">
