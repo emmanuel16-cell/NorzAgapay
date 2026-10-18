@@ -385,7 +385,10 @@ async function toBuffer(report: any, resident: any, assistance: any[]): Promise<
     doc.y += 4;
   };
 
-  const reporterName = cleanText(report.reporter_name || resident?.full_name) || 'Not provided';
+  const reportName = cleanText(report.reporter_name);
+  const residentName = cleanText(resident?.full_name);
+  const reporterName = (reportName && !/^not provided$/i.test(reportName) ? reportName : '') || residentName ||
+    (String(report.reporter_type || '').toLowerCase() === 'guest' ? 'Guest' : 'Not provided');
   const reporterPhone = cleanText(report.reporter_phone || resident?.phone);
   const contact = [reporterName, reporterPhone].filter(Boolean).join(' | ');
 
