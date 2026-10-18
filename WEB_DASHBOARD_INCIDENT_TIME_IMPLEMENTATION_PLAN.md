@@ -24,7 +24,7 @@ Implemented in the public and signed-in resident emergency forms. The dashboard 
    - **Just now** sets the timestamp to the current submission time and precision to `exact`.
    - **Earlier** opens hours-ago and minutes-ago controls, keeps the selection within the current day, updates the timestamp as the values change, and lets the reporter choose `exact` or `approximate` precision.
    - **Not sure** clears the timestamp and sets precision to `unknown`.
-2. Render **Incident category** and **When did the incident happen?** as two labeled field groups in one row in both web emergency forms. Match the attached dark theme and selected-chip treatment on the public form, and follow the resident form's existing theme. Keep the **Other emergency** detail field below that row at full width.
+2. Render **Incident category** and **When did the incident happen?** as two labeled field groups in one row in both web emergency forms. Match the attached dark theme and selected-chip treatment on the public form, and follow the resident form's existing theme. When **Other** is selected, keep the **What kind of emergency?** detail field directly below the category selector in the left column.
 3. Add responsive styles so the two groups sit side by side when there is enough room and stack cleanly on narrow screens. Ensure chip labels wrap without overflowing.
 4. Include the selected choice, ISO timestamp (or `null` for unknown), and precision in each emergency submission through the existing `guestReport` API. Include the incident-time choice and values in the request fingerprint so changing the time creates a new idempotency request instead of reusing the prior one.
 5. Reset the incident-time controls to their default after a successful submission, alongside the existing category and form reset behavior.
@@ -36,4 +36,5 @@ Implemented in the public and signed-in resident emergency forms. The dashboard 
 - Choosing **Earlier** exposes bounded hours/minutes controls and the exact/approximate precision choice; changing either updates the submitted timestamp.
 - Choosing **Not sure** clears the occurred-at timestamp and submits `unknown` precision.
 - Both guest emergency reports and signed-in resident emergency reports submit these fields; community concern reports remain unchanged.
+- When **Other** is selected, its required detail field appears immediately under **Incident category** in the same column in both reporting forms.
 - Existing backend validation and report display continue to receive the supported timestamp and precision fields without a schema change.
