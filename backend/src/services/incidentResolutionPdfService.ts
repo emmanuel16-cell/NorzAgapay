@@ -397,7 +397,7 @@ async function toBuffer(report: any, resident: any, assistance: any[]): Promise<
   row('Incident time & received', `Occurred ${occurred} | Received ${received}`);
   row('Location', `${cleanText(report.address) || 'Location not described'} | ${Number(report.latitude).toFixed(6)}, ${Number(report.longitude).toFixed(6)}`);
   row('Resident description', cleanDescription);
-  row('Resident evidence', `${proofCount} attachment file(s); not embedded | Evidence status: ${cleanText(report.evidence_status) || 'Not recorded'}`);
+  row('Resident evidence', `${proofCount} attachment file(s); not embedded`);
 
   section('2. Dispatch and Response');
   row('Classification & severity', `${cleanText(report.incident_type) || 'Not classified'} | ${cleanText(report.severity) || 'Not recorded'}`);
@@ -415,7 +415,7 @@ async function toBuffer(report: any, resident: any, assistance: any[]): Promise<
       ? report.barangay_resolved_at || report.resolved_at
       : report.mdrrmo_resolved_at || report.resolved_at;
     timelineHeader();
-    timelineRow('Responder accepted', acceptedAt, `Response to acceptance: ${completionDuration(receivedAt, acceptedAt)}`);
+    timelineRow('Responder received', acceptedAt, `Response to received: ${completionDuration(receivedAt, acceptedAt)}`);
     timelineRow('Arrived at incident area', arrivedAt, `Travel to arrival: ${completionDuration(acceptedAt, arrivedAt)}`);
     timelineRow('Incident resolved', cycleResolvedAt, `Time to resolve: ${completionDuration(arrivedAt, cycleResolvedAt)}`);
     if (cycles.includes(cycle)) {
