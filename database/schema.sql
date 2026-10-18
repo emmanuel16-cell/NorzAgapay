@@ -5104,10 +5104,10 @@ BEGIN
   IF p_active IS NULL OR NOT EXISTS (
     SELECT 1 FROM public.users
     WHERE id = p_activated_by
-      AND role::TEXT IN ('logistics', 'master_admin')
+      AND role::TEXT IN ('admin', 'logistics', 'master_admin')
       AND status::TEXT = 'active'
   ) THEN
-    RAISE EXCEPTION 'An active Staff account is required to change unit activation' USING ERRCODE = '42501';
+    RAISE EXCEPTION 'An active Admin or Staff account is required to change unit activation' USING ERRCODE = '42501';
   END IF;
 
   SELECT * INTO v_unit FROM public.respond_units WHERE id = p_unit_id FOR UPDATE;
@@ -5174,10 +5174,10 @@ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM public.users
     WHERE id = p_activated_by
-      AND role::TEXT IN ('logistics', 'master_admin')
+      AND role::TEXT IN ('admin', 'logistics', 'master_admin')
       AND status::TEXT = 'active'
   ) THEN
-    RAISE EXCEPTION 'An active Staff account is required for emergency activation' USING ERRCODE = '42501';
+    RAISE EXCEPTION 'An active Admin or Staff account is required for emergency activation' USING ERRCODE = '42501';
   END IF;
 
   PERFORM id FROM public.respond_units ORDER BY id FOR UPDATE;
