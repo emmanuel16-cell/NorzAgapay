@@ -93,7 +93,32 @@ const incidentTimeLabel = (report: IncidentReport) => {
   }
   return `Incident occurred: ${dateTime(report.incident_occurred_at)} (${report.incident_time_precision})`;
 };
-const hasPin = (report: IncidentReport) => report.latitude != null && report.longitude != null && Number.isFinite(Number(report.latitude)) && Number.isFinite(Number(report.longitude));
+const hasPin = (report: IncidentReport) => {
+  if (report.latitude == null || report.longitude == null || String(report.latitude).trim() === '' || String(report.longitude).trim() === '') return false;
+  const latitude = Number(report.latitude);
+  const longitude = Number(report.longitude);
+  return Number.isFinite(latitude) && latitude >= -90 && latitude <= 90 &&
+    Number.isFinite(longitude) && longitude >= -180 && longitude <= 180 && !(latitude === 0 && longitude === 0);
+};
+const formatIncidentLocation = (report: IncidentReport) => {
+  const barangay = report.barangay_name?.trim().replace(/^(?:(?:barangay|brgy\.?)\s*)/i, '');
+  const addMunicipality = (name: string) => {
+    if (/\bnorzagaray\b/i.test(name)) return /\bbulacan\b/i.test(name) ? name : `${name}, Bulacan`;
+    return `${name}, Norzagaray, Bulacan`;
+  };
+  const providedLocation = [report.location_name, report.address]
+    .map((value) => value?.trim())
+    .find((value) => value && !/^(?:norzagaray(?:,?\s*bulacan)?|bulacan)$/i.test(value));
+  if (providedLocation) return addMunicipality(providedLocation);
+  if (barangay) return addMunicipality(barangay);
+
+  const generalLocation = report.location_name?.trim() || report.address?.trim();
+  if (generalLocation) {
+    if (/^(?:norzagaray(?:,?\s*bulacan)?|bulacan)$/i.test(generalLocation)) return 'Norzagaray, Bulacan';
+    return addMunicipality(generalLocation);
+  }
+  return hasPin(report) ? 'Pinned incident location' : 'Location not provided';
+};
 const formatDistance = (distance?: number | null) => distance == null || !Number.isFinite(distance)
   ? 'distance unavailable'
   : distance < 1000 ? `${Math.round(distance)} m away` : `${(distance / 1000).toFixed(1)} km away`;
@@ -375,7 +400,7 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
   const assignment = selected?.mdrrmo_assignments?.find((item) => item.status !== 'removed');
   const activeAssignments = selected?.mdrrmo_assignments?.filter((item) => item.status !== 'removed') || [];
   const reporterName = selected?.reporter_name || selected?.reporter?.full_name || 'Resident';
-  const locationName = selected?.location_name || selected?.address || selected?.barangay_name || 'Norzagaray, Bulacan';
+  const locationName = selected ? formatIncidentLocation(selected) : 'Norzagaray, Bulacan';
   const locationNote = selected?.address && selected.address !== locationName ? selected.address : selected && hasPin(selected) ? 'Location pin received from the resident' : 'Location not provided';
   const proofs = selected ? getProofs(selected) : [];
   const fieldMedia = selected?.responder_media || [];
@@ -411,7 +436,7 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
                   <span className="reports-queue-item-top"><strong>{report.is_demo ? 'Demo: ' : ''}{report.description?.trim() || 'No report details provided.'}</strong><span className={'report-status-chip-v2 ' + stage}>{report.is_demo ? 'Demo preview' : stage === 'responding' ? 'Responding' : stage === 'resolved' ? 'Resolved' : 'Pending'}</span></span>
                   <span className="reports-queue-time">Report received {timeAgo(report.created_at)}</span>
                   <span className="reports-queue-time">{incidentTimeLabel(report)}</span>
-                  <span className="reports-queue-meta"><span><MapPin size={14} /> {report.is_demo ? 'Demo location' : report.barangay_name || 'Location not provided'}</span><span><Paperclip size={13} /> {reportProofs.length} attachment{reportProofs.length === 1 ? '' : 's'}</span></span>
+                  <span className="reports-queue-meta"><span><MapPin size={14} /> {report.is_demo ? 'Demo location' : formatIncidentLocation(report)}</span><span><Paperclip size={13} /> {reportProofs.length} attachment{reportProofs.length === 1 ? '' : 's'}</span></span>
                   {stage !== 'pending' && (report.incident_type || report.severity) && <span className="reports-classification-tags">
                     {report.incident_type && <small>{INCIDENT_TYPE_OPTIONS.find((item) => item.value === report.incident_type)?.label || report.incident_type.replaceAll('_', ' ')}</small>}
                     {report.severity && <small className="priority">{INCIDENT_SEVERITY_OPTIONS.find((item) => item.value === report.severity)?.label || report.severity} priority</small>}
@@ -458,7 +483,7 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
                 <div className="reports-info-card-v2"><span>Priority</span><strong>{priority || 'Not classified'}</strong></div>
               </div></section>}
 
-              <section className="reports-detail-section-v2"><h3>Reported location</h3><div className="reports-location-card-v2"><MapPin size={20} /><div><strong>{locationName}</strong><span>{locationNote}</span></div>{hasPin(selected) && <small>Map pin available</small>}</div></section>
+              {!isReadOnlyResponder && <section className="reports-detail-section-v2"><h3>Reported location</h3><div className="reports-location-card-v2"><MapPin size={20} /><div><strong>{locationName}</strong><span>{locationNote}</span></div>{hasPin(selected) && <small>Map pin available</small>}</div></section>}
 
               {!isBarangay && Boolean(selected.barangay_assignments?.length) && <section className="reports-detail-section-v2">
                 <h3>Barangay assignment history</h3>

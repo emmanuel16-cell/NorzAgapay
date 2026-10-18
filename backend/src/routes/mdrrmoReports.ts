@@ -9,7 +9,8 @@ import { distanceMeters, validateArrivalFix, validateRecentGpsFix } from '../ser
 import { IncidentResolutionPdfService, IncompleteResolutionReportError } from '../services/incidentResolutionPdfService';
 import { isEscalatedForMdrrmo, isVisibleToMdrrmo } from '../services/mdrrmoReportVisibility';
 import { getDispatchableRespondUnits } from '../services/respondUnitAvailability';
-import { getBarangayCoordinates, distanceMeters as distanceBetweenCoordinates } from '../services/nearestBarangay';
+import { getBarangayCoordinates, getNearestBarangay, distanceMeters as distanceBetweenCoordinates } from '../services/nearestBarangay';
+import { resolveIncidentLocation } from '../services/incidentLocation';
 import { getVerifiedBarangayIds } from '../services/verifiedBarangayService';
 import { getBarangayResponderGpsLocation, getResponderGpsLocation, RESPONDER_GPS_TTL_SECONDS } from '../config/redis';
 import { isValidLocationIcon, removeStoredLocationIcon, storeLocationIcon } from '../services/locationIconStorage';
@@ -193,12 +194,12 @@ router.get('/queue', authenticate, authorize('dispatcher', 'admin', 'responder')
         .select('*').in('report_id', reportIds).order('assigned_at', { ascending: false })
       : { data: [], error: null } as any;
     if (barangayAssignmentsError) throw barangayAssignmentsError;
-    const destinationIds = [...new Set((barangayAssignments || []).map((row: any) => row.barangay_id).filter(Boolean))];
-    const { data: destinationRows, error: destinationError } = destinationIds.length
-      ? await supabaseAdmin.from('barangays').select('id, name').in('id', destinationIds)
+    const { data: barangayRows, error: barangayError } = reports.length
+      ? await supabaseAdmin.from('barangays')
+        .select('id, name, latitude, longitude, location_latitude, location_longitude')
       : { data: [], error: null } as any;
-    if (destinationError) throw destinationError;
-    const destinationNames = new Map((destinationRows || []).map((row: any) => [row.id, row.name]));
+    if (barangayError) throw barangayError;
+    const barangayNames = new Map((barangayRows || []).map((row: any) => [row.id, row.name]));
 
     if (req.user!.role === 'responder') {
       reports = reports.filter((report: any) => allAssignments.some((assignment: any) =>
@@ -232,14 +233,45 @@ router.get('/queue', authenticate, authorize('dispatcher', 'admin', 'responder')
       for (const resident of residents || []) residentsById.set(resident.id, resident);
     }
 
-    res.json(reports.map((report: any) => {
+    const barangayNamesList = (barangayRows || []).map((row: any) => row.name).filter(Boolean);
+    const formattedReports = await Promise.all(reports.map(async (report: any) => {
       const assignments = allAssignments.filter((assignment: any) => assignment.report_id === report.id);
       const reportBarangayAssignments = (barangayAssignments || [])
         .filter((assignment: any) => assignment.report_id === report.id)
-        .map((assignment: any) => ({ ...assignment, barangay_name: destinationNames.get(assignment.barangay_id) || null }));
+        .map((assignment: any) => ({ ...assignment, barangay_name: barangayNames.get(assignment.barangay_id) || null }));
       const resident = residentsById.get(report.reporter_id);
+      const latitude = Number(report.latitude);
+      const longitude = Number(report.longitude);
+      const hasCoordinates = report.latitude != null && report.longitude != null &&
+        String(report.latitude).trim() !== '' && String(report.longitude).trim() !== '' &&
+        Number.isFinite(latitude) && latitude >= -90 && latitude <= 90 &&
+        Number.isFinite(longitude) && longitude >= -180 && longitude <= 180 && !(latitude === 0 && longitude === 0);
+      const nearestBarangayName = hasCoordinates
+        ? getNearestBarangay({ latitude, longitude }, barangayRows || [])?.name || null
+        : null;
+      const savedBarangayCandidate = barangayNames.get(report.barangay_id) || report.barangay_name || null;
+      const savedBarangayName = savedBarangayCandidate &&
+        !/^(?:norzagaray(?:,?\s*bulacan)?|bulacan)$/i.test(savedBarangayCandidate.trim())
+        ? savedBarangayCandidate
+        : null;
+      const existingAddress = typeof report.address === 'string' ? report.address.trim() : '';
+      const hasSpecificAddress = Boolean(existingAddress) &&
+        !/^(?:norzagaray(?:,?\s*bulacan)?|bulacan)$/i.test(existingAddress);
+      const reverseLocation = req.user!.role === 'responder' && hasCoordinates && !hasSpecificAddress
+        ? await resolveIncidentLocation(latitude, longitude, barangayNamesList, savedBarangayName || nearestBarangayName)
+        : null;
+      const reportBarangayName = reverseLocation?.barangayName || savedBarangayName || nearestBarangayName || null;
+      if (reverseLocation && reverseLocation.label !== existingAddress) {
+        const { error: locationUpdateError } = await supabaseAdmin.from('mdrrmo_reports')
+          .update({ address: reverseLocation.label, barangay_name: reportBarangayName })
+          .eq('id', report.id);
+        if (locationUpdateError) console.warn(`Could not save resolved incident location for ${report.id}:`, locationUpdateError);
+      }
       return formatReport({
         ...report,
+        barangay_name: reportBarangayName,
+        address: reverseLocation?.label || report.address || null,
+        location_name: reverseLocation?.label || report.location_name || null,
         reporter_name: report.reporter_name || resident?.full_name || null,
         reporter_phone: report.reporter_phone || resident?.phone || null,
         mdrrmo_assignments: assignments,
@@ -249,6 +281,7 @@ router.get('/queue', authenticate, authorize('dispatcher', 'admin', 'responder')
         mdrrmo_responder_name: assignments.map((assignment: any) => assignment.responder?.full_name).filter(Boolean).join(', ') || report.responder_name || report.mdrrmo_responder_name || null,
       });
     }));
+    res.json(formattedReports);
   } catch (err) {
     console.error('Fetch MDRRMO report queue error:', err);
     res.status(500).json({ error: 'Could not load the MDRRMO report queue.' });
