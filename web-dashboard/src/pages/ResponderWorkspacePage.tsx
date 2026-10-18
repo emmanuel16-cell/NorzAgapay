@@ -245,7 +245,7 @@ export default function ResponderWorkspacePage() {
         <button className="workspace-secondary-action" type="button" onClick={() => void loadWorkspace(true)} disabled={refreshing}><RefreshCw size={16} className={refreshing ? 'workspace-spinning' : ''} /> Refresh</button>
       </header>
       <section className="resident-summary-grid" aria-label="Response summary">
-        <article><span>Active assignments</span><strong>{activeReports.length}</strong></article>
+        <article><span>Active</span><strong>{activeReports.length}</strong></article>
         <article><span>Resolved</span><strong>{resolvedCount}</strong></article>
         <article><span>{isBarangay ? 'Scoped reports' : 'Unit crew'}</span><strong>{isBarangay ? reports.length : crew.length}</strong></article>
       </section>
