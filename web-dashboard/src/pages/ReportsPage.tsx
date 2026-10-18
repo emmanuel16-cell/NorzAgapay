@@ -388,7 +388,7 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
         <div><h1>Incidents Reports</h1><span>{isReadOnlyResponder ? `Responder workspace · ${isBarangay ? user?.barangay_name || 'Your barangay' : 'MDRRMO'} · assigned to you` : isReadOnlyBarangay ? `Read-only incident workspace · ${user?.barangay_name || 'Your barangay'}` : isBarangay ? `Barangay response workspace · ${user?.barangay_name || 'Your barangay'}` : 'Dispatcher workspace'}</span></div>
         <div className="reports-live-indicator"><i /> Live <span>·</span> {currentTime}</div>
       </header>
-      {!isBarangay && <nav className="reports-group-tabs-v2" aria-label="Report type">
+      {!isBarangay && !isReadOnlyResponder && <nav className="reports-group-tabs-v2" aria-label="Report type">
         <button type="button" className={group === 'resident' ? 'active' : ''} onClick={() => selectGroup('resident')}>Resident Reports <span>{residentCount}</span></button>
         <button type="button" className={group === 'escalated' ? 'active' : ''} onClick={() => selectGroup('escalated')}>Escalate Reports <span>{escalatedCount}</span></button>
       </nav>}
