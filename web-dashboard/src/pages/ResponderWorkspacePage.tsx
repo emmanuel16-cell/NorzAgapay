@@ -271,6 +271,7 @@ export default function ResponderWorkspacePage() {
           const selectedCrewIds = crewDraftSelections[report.id] || [];
           const currentAssessment = assessments[report.id] || emptyAssessment;
           const selectedBarangayCrew = barangayCrewSelections[report.id] || [];
+          const savedMdrrmoCrew = (assignment?.crew || []).filter((member) => member.member_role !== 'team_leader');
           const savedBarangayCrew = report.barangay_crew_members || [];
           const displayStatus = responseStatus === 'responding' ? 'Responding' : assignmentStatus === 'active' ? 'Assigned' : assignmentStatus || 'Assigned';
           return <article className="responder-report-card" key={report.id}>
@@ -280,7 +281,13 @@ export default function ResponderWorkspacePage() {
 
             {canManageCrew && !isBarangay && <section className="responder-action-panel">
               <h3><ClipboardList size={16} /> MDRRMO response crew</h3>
-              <p className="responder-report-description">This dispatch is accepted. You can update the assigned crew before recording arrival.</p>
+              <div className="responder-selected-crew-list">
+                {savedMdrrmoCrew.map((member) => <div className="responder-selected-crew-member" key={member.unit_member_id || member.id}>
+                  <strong>{member.name || member.full_name || 'Crew member'}</strong>
+                  <span>{member.member_role.replaceAll('_', ' ')}</span>
+                </div>)}
+                {savedMdrrmoCrew.length === 0 && <small>No crew selected yet.</small>}
+              </div>
               <button className="workspace-secondary-action responder-change-crew-button" type="button" disabled={saving} onClick={() => openCrewEditor(report.id)}>Change crew</button>
               {crewEditorReportId === report.id && <div className="responder-crew-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) cancelCrewEditor(); }}>
                 <section className="responder-crew-modal" role="dialog" aria-modal="true" aria-labelledby={`responder-crew-modal-title-${report.id}`}>
