@@ -8,6 +8,7 @@ import { reportAPI } from '../lib/api';
 import { INCIDENT_TYPE_OPTIONS } from '../lib/incidentClassification';
 import { CARTO_ATTRIBUTION, CARTO_DARK_MAP_URL } from '../lib/mapConfig';
 import { useAuth } from '../context/AuthContext';
+import IncidentTimeInput, { createInitialIncidentTime, type IncidentTimeValue } from '../components/IncidentTimeInput';
 import MobileNumberInput from '../components/MobileNumberInput';
 import { formatMobileNumber, isValidMobileNumber, normalizeMobileNumberInput } from '../lib/mobileNumber';
 
@@ -74,6 +75,7 @@ export default function PublicReportPage() {
   const [selectedHotlineBarangay, setSelectedHotlineBarangay] = useState('');
   const [guestPhone, setGuestPhone] = useState('');
   const [incidentCategory, setIncidentCategory] = useState('not_sure');
+  const [incidentTime, setIncidentTime] = useState<IncidentTimeValue>(createInitialIncidentTime);
   const [otherEmergency, setOtherEmergency] = useState('');
   const [communityCategory, setCommunityCategory] = useState(communityCategories[0]);
   const [description, setDescription] = useState('');
@@ -228,6 +230,9 @@ export default function PublicReportPage() {
     if (description.trim().length < 8) { setMessage('Describe the incident in at least 8 characters.'); return; }
     setBusy(true);
     try {
+      const incidentTimeFingerprint = reportType === 'emergency'
+        ? [incidentTime.choice, incidentTime.choice === 'earlier' ? incidentTime.occurredAt : null, incidentTime.choice === 'earlier' ? incidentTime.precision : null]
+        : null;
       const fingerprint = JSON.stringify([
         phone,
         reportType,
@@ -238,6 +243,7 @@ export default function PublicReportPage() {
         location.latitude,
         location.longitude,
         evidence ? [evidence.name, evidence.size, evidence.lastModified] : null,
+        incidentTimeFingerprint,
       ]);
       const requestId = submissionFingerprint === fingerprint ? submissionRequestId : createGuestRequestId();
       const submittedAt = submissionFingerprint === fingerprint && submissionStartedAt ? submissionStartedAt : new Date().toISOString();
@@ -249,6 +255,13 @@ export default function PublicReportPage() {
         specifics: reportType === 'community' ? communityCategory : incidentCategory === 'other' ? `Other emergency: ${otherEmergency.trim()}` : '', description: description.trim(),
         latitude: location.latitude, longitude: location.longitude, contact_number: phone, send_to: 'mdrrmo',
         incident_type: reportType === 'community' ? communityCategory.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') : incidentCategory,
+        ...(reportType === 'emergency' ? {
+          incident_time_choice: incidentTime.choice,
+          incident_occurred_at: incidentTime.choice === 'just_now'
+            ? submittedAt
+            : incidentTime.choice === 'unknown' ? null : incidentTime.occurredAt,
+          incident_time_precision: incidentTime.choice === 'just_now' ? 'exact' : incidentTime.precision,
+        } : {}),
         client_request_id: requestId, client_submitted_at: submittedAt,
       }, evidence);
       const reportId = response.data?.report?.id;
@@ -256,6 +269,7 @@ export default function PublicReportPage() {
       setDescription('');
       setGuestPhone('');
       setIncidentCategory('not_sure');
+      setIncidentTime(createInitialIncidentTime());
       setOtherEmergency('');
       setLocation(null);
       setLocationSource(null);
@@ -290,7 +304,7 @@ export default function PublicReportPage() {
           <section className="public-intake-panel" aria-labelledby="public-report-title">
             <div className="public-intake-heading"><span><Siren size={19} /></span><div><h2 id="public-report-title">{reportType === 'community' ? 'Community incident' : 'Emergency incident'}</h2><p>{user ? 'Your report will be linked to your resident account.' : 'No account is needed to submit a report.'}</p></div></div>
             <form className="public-report-form" onSubmit={(event) => void submitReport(event)}>
-              {reportType === 'community' ? <><label htmlFor="public-report-community-category">Concern category</label><select id="public-report-community-category" value={communityCategory} onChange={(event) => setCommunityCategory(event.target.value)}>{communityCategories.map((item) => <option key={item} value={item}>{item}</option>)}</select></> : <><label htmlFor="public-report-category">Incident category</label><select id="public-report-category" value={incidentCategory} onChange={(event) => setIncidentCategory(event.target.value)}>{INCIDENT_TYPE_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>{incidentCategory === 'other' && <><label htmlFor="public-report-other-emergency">What kind of emergency? <b>Required</b></label><input id="public-report-other-emergency" type="text" maxLength={120} value={otherEmergency} onChange={(event) => setOtherEmergency(event.target.value)} placeholder="Describe the emergency" required /></>}</>}
+              {reportType === 'community' ? <><label htmlFor="public-report-community-category">Concern category</label><select id="public-report-community-category" value={communityCategory} onChange={(event) => setCommunityCategory(event.target.value)}>{communityCategories.map((item) => <option key={item} value={item}>{item}</option>)}</select></> : <><div className="public-incident-time-row"><label className="public-incident-category-field" htmlFor="public-report-category">Incident category<select id="public-report-category" value={incidentCategory} onChange={(event) => setIncidentCategory(event.target.value)}>{INCIDENT_TYPE_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label><IncidentTimeInput value={incidentTime} onChange={setIncidentTime} /></div>{incidentCategory === 'other' && <><label htmlFor="public-report-other-emergency">What kind of emergency? <b>Required</b></label><input id="public-report-other-emergency" type="text" maxLength={120} value={otherEmergency} onChange={(event) => setOtherEmergency(event.target.value)} placeholder="Describe the emergency" required /></>}</>}
               <label htmlFor="public-report-phone">Mobile number <b>Required</b></label>
               <MobileNumberInput id="public-report-phone" value={guestPhone} onValueChange={setGuestPhone} placeholder="09XXXXXXXXX" required />
               <label htmlFor="public-report-description">Incident details <b>Required</b></label>
