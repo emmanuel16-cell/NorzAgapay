@@ -1,11 +1,14 @@
 type ReverseGeocodeResult = {
   address?: Record<string, unknown>;
   display_name?: string;
+  name?: string;
 };
 
 export type ResolvedIncidentLocation = {
   label: string;
   barangayName: string | null;
+  road: string | null;
+  landmark: string | null;
 };
 
 const RESULT_TTL_MS = 24 * 60 * 60 * 1000;
@@ -38,7 +41,7 @@ async function fetchReverseGeocode(latitude: number, longitude: number, key: str
     url.searchParams.set('format', 'jsonv2');
     url.searchParams.set('lat', String(latitude));
     url.searchParams.set('lon', String(longitude));
-    url.searchParams.set('zoom', '14');
+    url.searchParams.set('zoom', '18');
     url.searchParams.set('addressdetails', '1');
     lastRequestAt = Date.now();
 
@@ -86,6 +89,13 @@ export async function resolveIncidentLocation(
   if (!result) return null;
 
   const address = result.address || {};
+  const road = [address.road, address.residential, address.pedestrian, address.path, address.footway, address.service]
+    .map(locationPart)
+    .find(Boolean) || null;
+  const namedPlace = locationPart(result.name) || [address.building, address.amenity, address.shop, address.tourism, address.leisure]
+    .map(locationPart)
+    .find(Boolean) || null;
+  const landmark = namedPlace && normalizePlace(namedPlace) !== normalizePlace(road || '') ? namedPlace : null;
   const placeCandidates = [
     address.barangay,
     address.quarter,
@@ -109,5 +119,10 @@ export async function resolveIncidentLocation(
     locationPart(address.state) || 'Bulacan';
   const label = [...new Set([locality, municipality, province].filter(Boolean))].join(', ');
 
-  return label ? { label, barangayName: matchedBarangay || fallbackBarangayName?.trim() || null } : null;
+  return label ? {
+    label,
+    barangayName: matchedBarangay || fallbackBarangayName?.trim() || null,
+    road,
+    landmark,
+  } : null;
 }

@@ -14,7 +14,7 @@ import CurrentWeatherPanel from '../components/CurrentWeatherPanel';
 import { boundaryRings, isCoordinateInsideBoundary, type MunicipalityBoundary } from '../lib/municipalityBoundary';
 import { formatMobileNumber } from '../lib/mobileNumber';
 import toast from 'react-hot-toast';
-import { AlertTriangle, Siren, Users, CheckCircle2, X } from 'lucide-react';
+import { AlertTriangle, Siren, Users, CheckCircle2, MapPin, X } from 'lucide-react';
 
 type ReportKind = 'resident' | 'escalated';
 type ReportStage = 'pending' | 'responding' | 'arrived' | 'resolved';
@@ -29,6 +29,8 @@ interface IncidentItem {
   severity?: string;
   latitude: number;
   longitude: number;
+  address?: string | null;
+  location_name?: string | null;
   description?: string;
   specifics?: string;
   proof_url?: string;
@@ -90,6 +92,18 @@ const reportReceivedText = (createdAt?: string) => {
   return Number.isNaN(date.getTime())
     ? 'Report received: Not recorded'
     : `Report received: ${date.toLocaleString()}`;
+};
+
+const dispatchLocationFallback = (incident: IncidentItem) => {
+  const barangay = (incident.barangay_name || '').replace(/^(?:barangay|brgy\.?)\s*/i, '').trim().toLocaleLowerCase();
+  return [incident.location_name, incident.address]
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value))
+    .map((value) => value.split(',').map((part) => part.trim()).filter((part) => {
+      const normalized = part.replace(/^(?:barangay|brgy\.?)\s*/i, '').trim().toLocaleLowerCase();
+      return normalized && normalized !== barangay && !/^(?:norzagaray|bulacan)$/i.test(normalized);
+    }).join(', '))
+    .find(Boolean) || '';
 };
 
 interface DispatchUnitItem {
@@ -854,6 +868,8 @@ export default function CommandCenter() {
   const [escalatedResponseTab, setEscalatedResponseTab] = useState<'barangay' | 'responder'>('barangay');
   const [responderInfoTab, setResponderInfoTab] = useState<'assessment' | 'assistance'>('assessment');
   const [mdrrmoDispatchIncident, setMdrrmoDispatchIncident] = useState<IncidentItem | null>(null);
+  const [mdrrmoDispatchLocation, setMdrrmoDispatchLocation] = useState<{ road?: string | null; landmark?: string | null } | null>(null);
+  const [mdrrmoDispatchLocationLoading, setMdrrmoDispatchLocationLoading] = useState(false);
   const [mdrrmoDispatchResponders, setMdrrmoDispatchResponders] = useState<MdrrmoDispatchResponder[]>([]);
   const [mdrrmoDispatchLoading, setMdrrmoDispatchLoading] = useState(false);
   const [mdrrmoDispatchError, setMdrrmoDispatchError] = useState('');
@@ -949,6 +965,8 @@ export default function CommandCenter() {
             severity: r.severity || '',
             latitude: lat,
             longitude: lng,
+            address: r.address || null,
+            location_name: r.location_name || null,
             description: r.description || '',
             specifics: r.specifics || '',
             proof_url: r.proof_url || null,
@@ -1367,6 +1385,8 @@ export default function CommandCenter() {
   const openMdrrmoDispatch = async (incident: IncidentItem) => {
     const requestId = ++mdrrmoDispatchRequestId.current;
     setMdrrmoDispatchIncident(incident);
+    setMdrrmoDispatchLocation(null);
+    setMdrrmoDispatchLocationLoading(true);
     setMdrrmoDispatchResponders([]);
     setSelectedMdrrmoResponderIds([]);
     setMdrrmoDispatchError('');
@@ -1374,6 +1394,16 @@ export default function CommandCenter() {
     const incidentType = incident.incident_type || '';
     setMdrrmoDispatchIncidentType(MDRRMO_DISPATCH_INCIDENT_TYPES.some((option) => option.value === incidentType) ? incidentType : '');
     setMdrrmoDispatchSeverity(MDRRMO_DISPATCH_SEVERITIES.some((option) => option.value === incident.severity) ? incident.severity || '' : '');
+    void reportAPI.mdrrmoLocationPreview(incident.latitude, incident.longitude)
+      .then((response) => {
+        if (requestId === mdrrmoDispatchRequestId.current) setMdrrmoDispatchLocation(response.data || null);
+      })
+      .catch(() => {
+        if (requestId === mdrrmoDispatchRequestId.current) setMdrrmoDispatchLocation(null);
+      })
+      .finally(() => {
+        if (requestId === mdrrmoDispatchRequestId.current) setMdrrmoDispatchLocationLoading(false);
+      });
     setMdrrmoDispatchLoading(true);
     try {
       const response = await reportAPI.mdrrmoResponders();
@@ -1391,6 +1421,8 @@ export default function CommandCenter() {
     if (dispatching) return;
     mdrrmoDispatchRequestId.current += 1;
     setMdrrmoDispatchIncident(null);
+    setMdrrmoDispatchLocation(null);
+    setMdrrmoDispatchLocationLoading(false);
     setMdrrmoDispatchLoading(false);
   };
 
@@ -1478,6 +1510,10 @@ export default function CommandCenter() {
 
     executeMdrrmoDispatch(selectedIncident);
   };
+
+  const mdrrmoDispatchLocationFallback = mdrrmoDispatchIncident
+    ? dispatchLocationFallback(mdrrmoDispatchIncident)
+    : '';
 
   return (
     <div className="command-center-wrapper">
@@ -2386,8 +2422,26 @@ export default function CommandCenter() {
 
               <div className="mdrrmo-dispatch-summary">
                 <strong>{mdrrmoDispatchIncident.title}</strong>
-                <span>{mdrrmoDispatchIncident.barangay_name || 'Barangay not listed'}</span>
+                <div className="mdrrmo-dispatch-location">
+                  <MapPin size={15} aria-hidden="true" />
+                  <div>
+                    <span>
+                      {mdrrmoDispatchLocationLoading
+                        ? 'Finding nearby road and landmark…'
+                        : mdrrmoDispatchLocation?.road || mdrrmoDispatchLocation?.landmark || mdrrmoDispatchLocationFallback || 'Pinned incident location'}
+                    </span>
+                    {mdrrmoDispatchLocation?.road && mdrrmoDispatchLocation?.landmark &&
+                      <small>Near {mdrrmoDispatchLocation.landmark}</small>}
+                    {!mdrrmoDispatchLocationLoading && !mdrrmoDispatchLocation?.road && !mdrrmoDispatchLocation?.landmark &&
+                      <small>{mdrrmoDispatchLocationFallback ? 'Report location' : `${mdrrmoDispatchIncident.latitude.toFixed(5)}, ${mdrrmoDispatchIncident.longitude.toFixed(5)}`}</small>}
+                  </div>
+                </div>
               </div>
+
+              <section className="mdrrmo-dispatch-report-details" aria-label="Report details">
+                <strong>Details about the report..</strong>
+                <p>{mdrrmoDispatchIncident.description?.trim() || 'No report details provided.'}</p>
+              </section>
 
               <div className="mdrrmo-dispatch-classification">
                 <label>

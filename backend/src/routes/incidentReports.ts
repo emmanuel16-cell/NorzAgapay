@@ -8,6 +8,7 @@ import { AuthPayload, AuthRequest, authenticate, authorize } from '../middleware
 import { io } from '../server';
 import { isEscalatedForMdrrmo, isVisibleToMdrrmo } from '../services/mdrrmoReportVisibility';
 import { estimateReportTimings } from '../services/reportTiming';
+import { resolveIncidentLocation } from '../services/incidentLocation';
 import {
   getMunicipalityBoundaryConfiguration,
   isPointInBoundary,
@@ -948,6 +949,28 @@ router.get('/resident/:id', optionalAuthenticate, async (req: AuthRequest, res: 
   } catch (error) {
     console.error('Fetch resident incident report error:', error);
     res.status(500).json({ error: 'Could not refresh incident status.' });
+  }
+});
+
+router.post('/location-preview', authenticate, authorize('dispatcher', 'admin'), async (req: AuthRequest, res: Response): Promise<void> => {
+  const rawLatitude = req.body?.latitude;
+  const rawLongitude = req.body?.longitude;
+  const latitude = Number(rawLatitude);
+  const longitude = Number(rawLongitude);
+  if (rawLatitude === undefined || rawLatitude === null || rawLatitude === '' ||
+      rawLongitude === undefined || rawLongitude === null || rawLongitude === '' ||
+      !Number.isFinite(latitude) || latitude < -90 || latitude > 90 ||
+      !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+    res.status(400).json({ error: 'A valid latitude and longitude are required.' });
+    return;
+  }
+
+  try {
+    const location = await resolveIncidentLocation(latitude, longitude, []);
+    res.json({ road: location?.road || null, landmark: location?.landmark || null });
+  } catch (error) {
+    console.warn('Could not resolve dispatch location preview:', error);
+    res.status(502).json({ error: 'Could not find nearby map labels.' });
   }
 });
 
