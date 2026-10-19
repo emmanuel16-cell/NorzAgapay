@@ -1606,6 +1606,18 @@ tbody tr:last-child td { border-bottom: none; }
   border-left: 4px solid #ef4444;
 }
 
+.command-stat-card.assigned {
+  border-left: 4px solid #245be8;
+}
+
+.command-stat-card.assigned-local {
+  border-left: 4px solid #f97316;
+}
+
+.command-stat-card.community {
+  border-left: 4px solid #245be8;
+}
+
 .command-stat-card.dispatch {
   border-left: 4px solid #06b6d4;
 }
@@ -1681,23 +1693,6 @@ tbody tr:last-child td { border-bottom: none; }
 
 .hud-checkbox-label:hover { border-color: rgba(148, 163, 184, 0.48); background: rgba(15, 28, 52, 0.82); }
 .hud-checkbox-label.is-filtered-out { opacity: 0.52; }
-.hud-marker-preview {
-  box-sizing: border-box;
-  display: inline-grid;
-  width: 20px;
-  height: 20px;
-  flex: 0 0 20px;
-  place-items: center;
-  border: 2px solid #fff;
-  border-radius: 50%;
-  outline: 1px solid #101827;
-  color: #fff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
-  font-size: 13px;
-  font-weight: 900;
-  line-height: 1;
-}
-.hud-marker-preview svg { display: block; }
 
 .command-weather-panel {
   position: absolute;

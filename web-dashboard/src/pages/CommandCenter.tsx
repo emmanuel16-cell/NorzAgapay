@@ -15,11 +15,17 @@ import CurrentWeatherPanel from '../components/CurrentWeatherPanel';
 import { boundaryRings, isCoordinateInsideBoundary, type MunicipalityBoundary } from '../lib/municipalityBoundary';
 import { formatMobileNumber } from '../lib/mobileNumber';
 import toast from 'react-hot-toast';
-import { AlertTriangle, Siren, Users, CheckCircle2, MapPin, X, RefreshCw } from 'lucide-react';
+import { AlertTriangle, Siren, Users, CheckCircle2, MapPin, X } from 'lucide-react';
 
 type ReportKind = 'resident' | 'escalated';
 type MapReportCategory = 'resident' | 'barangay' | 'assigned' | 'community';
 type ReportStage = 'pending' | 'responding' | 'arrived' | 'resolved';
+type ReportMetric = {
+  map_category: MapReportCategory;
+  status: ReportStage;
+  dispatched: boolean;
+  active_assignment: boolean;
+};
 
 interface IncidentItem {
   id: string;
@@ -589,26 +595,6 @@ const mapStageSymbol = (status: ReportStage): string => {
   return '<svg class="command-map-status-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="m4 12 5 5L20 6"/></svg>';
 };
 
-function HudMarkerPreview({
-  category,
-  status = 'pending',
-  barangayDashboard = false,
-}: {
-  category: MapReportCategory;
-  status?: ReportStage;
-  barangayDashboard?: boolean;
-}) {
-  const color = status === 'resolved' ? '#5ce76b' : mapCategoryColor(category, barangayDashboard);
-  return (
-    <span className={`hud-marker-preview hud-marker-preview-${status}`} style={{ backgroundColor: color }} aria-hidden="true">
-      {status === 'pending' && <b>!</b>}
-      {status === 'responding' && <RefreshCw size={13} strokeWidth={3} />}
-      {status === 'arrived' && <MapPin size={13} strokeWidth={3} />}
-      {status === 'resolved' && <CheckCircle2 size={14} strokeWidth={3} />}
-    </span>
-  );
-}
-
 // Markers use the report-category colors and status symbols from the
 // Command Center reference, with a white normal ring and yellow selected ring.
 const createTeardropPin = (category: MapReportCategory, status: ReportStage, selected = false, barangayDashboard = false) => {
@@ -922,22 +908,18 @@ export default function CommandCenter() {
     return () => clearInterval(timer);
   }, []);
 
-  // Visibility toggles for report categories and marker statuses.
+  // Category toggles control all report markers for that category and status.
   const [filters, setFilters] = useState({
     resident: true,
     barangay: true,
     assigned: true,
     community: true,
-    arrived: true,
-    responding: true,
-    resolved: true,
   });
 
   // Data lists
   const [incidents, setIncidents] = useState<IncidentItem[]>([]);
-  const [reportMetrics, setReportMetrics] = useState<Array<Pick<IncidentItem, 'report_kind' | 'status'>>>([]);
+  const [reportMetrics, setReportMetrics] = useState<ReportMetric[]>([]);
   const [dispatchUnits, setDispatchUnits] = useState<DispatchUnitItem[]>([]);
-  const [activeDispatchCount, setActiveDispatchCount] = useState(0);
   const [commandLocationPins, setCommandLocationPins] = useState<CommandLocationPin[]>([]);
   const [availableResponderPins, setAvailableResponderPins] = useState<AvailableResponderPin[]>([]);
   const [selectedAvailabilityPin, setSelectedAvailabilityPin] = useState<CommandLocationPin | null>(null);
@@ -1028,14 +1010,13 @@ export default function CommandCenter() {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [reportsRes, unitsRes, queueRes] = await Promise.allSettled([
+      const [reportsRes, unitsRes] = await Promise.allSettled([
         isBarangayDashboard ? reportAPI.barangayReports() : reportAPI.list(),
         isBarangayDashboard ? Promise.resolve({ data: [] }) : respondUnitAPI.list(),
-        isBarangayDashboard ? Promise.resolve({ data: [] }) : reportAPI.mdrrmoQueue(),
       ]);
 
       const items: IncidentItem[] = [];
-      const metrics: Array<Pick<IncidentItem, 'report_kind' | 'status'>> = [];
+      const metrics: ReportMetric[] = [];
 
       if (reportsRes.status === 'fulfilled' && Array.isArray(reportsRes.value.data)) {
         reportsRes.value.data.forEach((r: any) => {
@@ -1073,7 +1054,17 @@ export default function CommandCenter() {
                 ? 'responding'
                 : 'pending';
 
-          metrics.push({ report_kind: reportGroup, status: stage });
+          const mdrrmoDispatched = isEscalated
+            ? Boolean(r.mdrrmo_dispatched_at || r.mdrrmo_responded_at || r.mdrrmo_responder_name)
+            : Boolean(r.mdrrmo_dispatched_at || r.dispatched_at || r.mdrrmo_responded_at || r.mdrrmo_responder_name);
+          const dispatched = isBarangayDashboard
+            ? Boolean(r.barangay_dispatched_at || r.dispatched_at || r.barangay_responded_at || r.barangay_responded_by || r.responded_by || r.barangay_responder_name || stage === 'responding' || stage === 'arrived')
+            : Boolean(mdrrmoDispatched || stage === 'responding' || stage === 'arrived');
+          const activeAssignment = isBarangayDashboard
+            ? mapCategory === 'assigned' && stage !== 'resolved'
+            : Boolean(r.is_central_assignment && String(r.assignment_status || '').toLowerCase() === 'active' && stage !== 'resolved');
+
+          metrics.push({ map_category: mapCategory, status: stage, dispatched, active_assignment: activeAssignment });
           if (!Number.isFinite(lat) || !Number.isFinite(lng)) return; // keep coordinate-less reports in the metrics, but not on the map
 
           items.push({
@@ -1123,9 +1114,7 @@ export default function CommandCenter() {
             mdrrmo_response_notes: r.mdrrmo_response_notes || '',
             mdrrmo_dispatch_notes: r.mdrrmo_dispatch_notes || '',
             mdrrmo_coordination_notes: r.mdrrmo_coordination_notes || '',
-            mdrrmo_dispatched: isEscalated
-              ? Boolean(r.mdrrmo_dispatched_at || r.mdrrmo_responded_at || r.mdrrmo_responder_name)
-              : Boolean(r.mdrrmo_dispatched_at || r.dispatched_at || r.mdrrmo_responded_at || r.mdrrmo_responder_name),
+            mdrrmo_dispatched: mdrrmoDispatched,
             barangay_responded_by: r.barangay_responded_by || null,
             mdrrmo_responded_by: r.mdrrmo_responded_by || null,
             arrived_at: r.arrived_at || null,
@@ -1137,19 +1126,6 @@ export default function CommandCenter() {
 
       setIncidents(items);
       setReportMetrics(metrics);
-
-      if (queueRes.status === 'fulfilled' && Array.isArray(queueRes.value.data)) {
-        const enRouteResponderIds = new Set<string>();
-        queueRes.value.data.forEach((report: any) => {
-          if (!Array.isArray(report?.mdrrmo_assignments)) return;
-          report.mdrrmo_assignments.forEach((assignment: any) => {
-            if (assignment?.status === 'responding' && !assignment?.arrived_at && typeof assignment?.responder_id === 'string') {
-              enRouteResponderIds.add(assignment.responder_id);
-            }
-          });
-        });
-        setActiveDispatchCount(enRouteResponderIds.size);
-      }
 
       // Real dispatch units from API
       const unitItems: DispatchUnitItem[] = [];
@@ -1332,16 +1308,23 @@ export default function CommandCenter() {
 
   // Stats calculation — real counts, no demo padding
   const stats = useMemo(() => {
-    const incCount = reportMetrics.filter(i => i.report_kind === 'resident' && i.status !== 'resolved').length;
-    const escCount = reportMetrics.filter(i => i.report_kind === 'escalated' && i.status !== 'resolved').length;
-    const resCount = reportMetrics.filter(i => i.status === 'resolved').length;
+    const resident = reportMetrics.filter((item) => item.map_category === 'resident' && item.status !== 'resolved').length;
+    const barangay = reportMetrics.filter((item) => item.map_category === 'barangay' && item.status !== 'resolved').length;
+    const assigned = isBarangayDashboard
+      ? reportMetrics.filter((item) => item.map_category === 'assigned' && item.status !== 'resolved').length
+      : reportMetrics.filter((item) => item.active_assignment).length;
+    const community = reportMetrics.filter((item) => item.map_category === 'community' && item.status !== 'resolved').length;
+    const dispatched = reportMetrics.filter((item) => item.dispatched && item.status !== 'resolved').length;
+    const resolved = reportMetrics.filter((item) => item.status === 'resolved').length;
     return {
-      incident: incCount,
-      escalated: escCount,
-      dispatch: activeDispatchCount,
-      resolved: resCount,
+      resident,
+      barangay,
+      assigned,
+      community,
+      dispatched,
+      resolved,
     };
-  }, [reportMetrics, activeDispatchCount]);
+  }, [reportMetrics, isBarangayDashboard]);
 
   const visibleIncidents = useMemo(() => incidents.filter((incident) => {
     if (incident.map_closed_at) return false;
@@ -1349,17 +1332,18 @@ export default function CommandCenter() {
     if (incident.map_category === 'barangay' && !filters.barangay) return false;
     if (incident.map_category === 'assigned' && !filters.assigned) return false;
     if (incident.map_category === 'community' && !filters.community) return false;
-    if (incident.status === 'arrived' && !filters.arrived) return false;
-    if (incident.status === 'responding' && !filters.responding) return false;
-    if (incident.status === 'resolved' && !filters.resolved) return false;
     // Assigned reports belong in this barangay's dispatcher queue and map,
     // even when a reported pin falls just outside the drawn boundary.
     return incident.is_central_assignment || !boundary.enabled ||
       isCoordinateInsideBoundary(incident.latitude, incident.longitude, boundary.geometry);
   }), [incidents, filters, boundary]);
 
+  const visibleDispatchUnits = useMemo(() => dispatchUnits.filter((unit) => {
+    if (boundary.enabled && !isCoordinateInsideBoundary(unit.latitude, unit.longitude, boundary.geometry)) return false;
+    return !unit.target_incident_id || visibleIncidents.some((incident) => incident.id === unit.target_incident_id);
+  }), [dispatchUnits, visibleIncidents, boundary]);
+
   const visibleLiveResponders = useMemo(() => {
-    if (!filters.responding) return [];
     const now = Date.now();
     return liveResponderLocations.filter((location: LiveResponderLocation) => {
       const age = now - Date.parse(location.timestamp);
@@ -1367,22 +1351,16 @@ export default function CommandCenter() {
       if (boundary.enabled && !isCoordinateInsideBoundary(location.latitude, location.longitude, boundary.geometry)) return false;
       return location.assignments.some((assignment) => visibleIncidents.some((incident) => incident.id === assignment.incidentId));
     });
-  }, [liveResponderLocations, visibleIncidents, filters.responding, boundary]);
+  }, [liveResponderLocations, visibleIncidents, boundary]);
 
   // Fit the initial and filtered map view to every report and visible unit point.
   const visiblePinPoints = useMemo((): [number, number][] => {
     const points = visibleIncidents.map((incident) => [incident.latitude, incident.longitude] as [number, number]);
     commandLocationPins.forEach((pin) => points.push([pin.latitude, pin.longitude]));
-    if (filters.responding) {
-      dispatchUnits.forEach((unit) => {
-        if (!boundary.enabled || isCoordinateInsideBoundary(unit.latitude, unit.longitude, boundary.geometry)) {
-          points.push([unit.latitude, unit.longitude]);
-        }
-      });
-      visibleLiveResponders.forEach((responder) => points.push([responder.latitude, responder.longitude]));
-    }
+    visibleDispatchUnits.forEach((unit) => points.push([unit.latitude, unit.longitude]));
+    visibleLiveResponders.forEach((responder) => points.push([responder.latitude, responder.longitude]));
     return points;
-  }, [visibleIncidents, commandLocationPins, dispatchUnits, visibleLiveResponders, filters.responding, boundary]);
+  }, [visibleIncidents, commandLocationPins, visibleDispatchUnits, visibleLiveResponders]);
 
   const selectedResponder = visibleLiveResponders.find((responder) => responder.responderId === selectedResponderId) || null;
   const selectedMapDot = selectedAvailabilityPin
@@ -1398,11 +1376,9 @@ export default function CommandCenter() {
   const mapFitKey = useMemo(() => [
     ...visibleIncidents.map((incident) => `report:${incident.id}:${incident.latitude}:${incident.longitude}`),
     ...commandLocationPins.map((pin) => `command-location:${pin.id}:${pin.latitude}:${pin.longitude}`),
-    ...(filters.responding ? dispatchUnits
-      .filter((unit) => !boundary.enabled || isCoordinateInsideBoundary(unit.latitude, unit.longitude, boundary.geometry))
-      .map((unit) => `unit:${unit.id}:${unit.latitude}:${unit.longitude}`) : []),
+    ...visibleDispatchUnits.map((unit) => `unit:${unit.id}:${unit.latitude}:${unit.longitude}`),
     ...visibleLiveResponders.map((responder) => `responder:${responder.responderId}`),
-  ].sort().join('|'), [visibleIncidents, commandLocationPins, dispatchUnits, filters.responding, boundary, visibleLiveResponders]);
+  ].sort().join('|'), [visibleIncidents, commandLocationPins, visibleDispatchUnits, visibleLiveResponders]);
 
   // Click Handlers
   const clearSelectedIncidentLocation = () => {
@@ -1873,26 +1849,27 @@ export default function CommandCenter() {
       <div className="command-center-toolbar">
         <div className="command-hud-top-row">
           <div className="command-hud-top-row-stats">
-              <div className="command-stat-card incident">
+            {isBarangayDashboard ? <>
+              <div className="command-stat-card assigned-local">
                 <div className="stat-info">
-                  <span className="stat-val">{stats.incident}</span>
-                  <span className="stat-name">Incident</span>
+                  <span className="stat-val">{stats.assigned}</span>
+                  <span className="stat-name">Assigned</span>
                 </div>
-                <span className="stat-card-icon"><AlertTriangle size={20} strokeWidth={2} color="#f59e0b" /></span>
+                <span className="stat-card-icon"><MapPin size={20} strokeWidth={2} color="#f97316" /></span>
               </div>
 
-              <div className="command-stat-card escalated">
+              <div className="command-stat-card community">
                 <div className="stat-info">
-                  <span className="stat-val">{stats.escalated}</span>
-                  <span className="stat-name">Escalated</span>
+                  <span className="stat-val">{stats.community}</span>
+                  <span className="stat-name">Community</span>
                 </div>
-                <span className="stat-card-icon"><Siren size={20} strokeWidth={2} color="#ef4444" /></span>
+                <span className="stat-card-icon"><Users size={20} strokeWidth={2} color="#245be8" /></span>
               </div>
 
               <div className="command-stat-card dispatch">
                 <div className="stat-info">
-                  <span className="stat-val">{stats.dispatch}</span>
-                  <span className="stat-name">Dispatch Units</span>
+                  <span className="stat-val">{stats.dispatched}</span>
+                  <span className="stat-name">Dispatched</span>
                 </div>
                 <span className="stat-card-icon"><Users size={20} strokeWidth={2} color="#38bdf8" /></span>
               </div>
@@ -1904,6 +1881,39 @@ export default function CommandCenter() {
                 </div>
                 <span className="stat-card-icon"><CheckCircle2 size={20} strokeWidth={2} color="#10b981" /></span>
               </div>
+            </> : <>
+              <div className="command-stat-card incident">
+                <div className="stat-info">
+                  <span className="stat-val">{stats.resident}</span>
+                  <span className="stat-name">Resident</span>
+                </div>
+                <span className="stat-card-icon"><AlertTriangle size={20} strokeWidth={2} color="#f97316" /></span>
+              </div>
+
+              <div className="command-stat-card escalated">
+                <div className="stat-info">
+                  <span className="stat-val">{stats.barangay}</span>
+                  <span className="stat-name">Barangay</span>
+                </div>
+                <span className="stat-card-icon"><Siren size={20} strokeWidth={2} color="#ef4444" /></span>
+              </div>
+
+              <div className="command-stat-card assigned">
+                <div className="stat-info">
+                  <span className="stat-val">{stats.assigned}</span>
+                  <span className="stat-name">Assigned</span>
+                </div>
+                <span className="stat-card-icon"><MapPin size={20} strokeWidth={2} color="#245be8" /></span>
+              </div>
+
+              <div className="command-stat-card dispatch">
+                <div className="stat-info">
+                  <span className="stat-val">{stats.dispatched}</span>
+                  <span className="stat-name">Dispatched</span>
+                </div>
+                <span className="stat-card-icon"><Users size={20} strokeWidth={2} color="#38bdf8" /></span>
+              </div>
+            </>}
           </div>
         </div>
 
@@ -1912,47 +1922,26 @@ export default function CommandCenter() {
             {isBarangayDashboard ? <>
               <label className={`hud-checkbox-label ${filters.assigned ? '' : 'is-filtered-out'}`}>
                 <input type="checkbox" checked={filters.assigned} onChange={(e) => setFilters({ ...filters, assigned: e.target.checked })} style={{ accentColor: '#ff7838' }} />
-                <HudMarkerPreview category="assigned" barangayDashboard />
                 Assigned Report
               </label>
               <label className={`hud-checkbox-label ${filters.community ? '' : 'is-filtered-out'}`}>
                 <input type="checkbox" checked={filters.community} onChange={(e) => setFilters({ ...filters, community: e.target.checked })} style={{ accentColor: '#245be8' }} />
-                <HudMarkerPreview category="community" barangayDashboard />
                 Community Incident
               </label>
             </> : <>
               <label className={`hud-checkbox-label ${filters.resident ? '' : 'is-filtered-out'}`}>
                 <input type="checkbox" checked={filters.resident} onChange={(e) => setFilters({ ...filters, resident: e.target.checked })} style={{ accentColor: '#ff7838' }} />
-                <HudMarkerPreview category="resident" />
                 Resident Report
               </label>
               <label className={`hud-checkbox-label ${filters.barangay ? '' : 'is-filtered-out'}`}>
                 <input type="checkbox" checked={filters.barangay} onChange={(e) => setFilters({ ...filters, barangay: e.target.checked })} style={{ accentColor: '#ff3c43' }} />
-                <HudMarkerPreview category="barangay" />
                 Barangay Report
               </label>
               <label className={`hud-checkbox-label ${filters.assigned ? '' : 'is-filtered-out'}`}>
                 <input type="checkbox" checked={filters.assigned} onChange={(e) => setFilters({ ...filters, assigned: e.target.checked })} style={{ accentColor: '#245be8' }} />
-                <HudMarkerPreview category="assigned" />
                 Assigned Report
               </label>
             </>}
-
-            <label className={`hud-checkbox-label ${filters.arrived ? '' : 'is-filtered-out'}`}>
-              <input type="checkbox" checked={filters.arrived} onChange={(e) => setFilters({ ...filters, arrived: e.target.checked })} style={{ accentColor: '#ff7838' }} />
-              <HudMarkerPreview category={isBarangayDashboard ? 'assigned' : 'resident'} status="arrived" barangayDashboard={isBarangayDashboard} />
-              Rescuer Arrived
-            </label>
-            <label className={`hud-checkbox-label ${filters.responding ? '' : 'is-filtered-out'}`}>
-              <input type="checkbox" checked={filters.responding} onChange={(e) => setFilters({ ...filters, responding: e.target.checked })} style={{ accentColor: '#ff7838' }} />
-              <HudMarkerPreview category={isBarangayDashboard ? 'assigned' : 'resident'} status="responding" barangayDashboard={isBarangayDashboard} />
-              Responding
-            </label>
-            <label className={`hud-checkbox-label ${filters.resolved ? '' : 'is-filtered-out'}`}>
-              <input type="checkbox" checked={filters.resolved} onChange={(e) => setFilters({ ...filters, resolved: e.target.checked })} style={{ accentColor: '#10b981' }} />
-              <HudMarkerPreview category={isBarangayDashboard ? 'assigned' : 'resident'} status="resolved" barangayDashboard={isBarangayDashboard} />
-              Resolved
-            </label>
         </div>
       </div>
 
@@ -1995,54 +1984,47 @@ export default function CommandCenter() {
             </Marker>
           ))}
 
-          {/* Dispatch Units Markers */}
-          {filters.responding &&
-            dispatchUnits.map((u) => (
-              (!boundary.enabled || isCoordinateInsideBoundary(u.latitude, u.longitude, boundary.geometry)) &&
-              <Marker
-                key={u.id}
-                position={[u.latitude, u.longitude]}
-                icon={createResponderUnitBadge(selectedUnit?.id === u.id)}
-                zIndexOffset={selectedUnit?.id === u.id ? 1600 : 0}
-                eventHandlers={{ click: () => handleOpenUnitPin(u) }}
-              />
-            ))}
+          {/* Dispatch unit visibility follows the category toggle for its target report. */}
+          {visibleDispatchUnits.map((u) => (
+            <Marker
+              key={u.id}
+              position={[u.latitude, u.longitude]}
+              icon={createResponderUnitBadge(selectedUnit?.id === u.id)}
+              zIndexOffset={selectedUnit?.id === u.id ? 1600 : 0}
+              eventHandlers={{ click: () => handleOpenUnitPin(u) }}
+            />
+          ))}
 
           {/* Units Line (Dashed Polyline connecting Unit to Target Incident) */}
-          {filters.responding &&
-            dispatchUnits.map((u) => {
-              if (!u.target_incident_id) return null;
-              if (boundary.enabled && !isCoordinateInsideBoundary(u.latitude, u.longitude, boundary.geometry)) return null;
-              const target = incidents.find((i) => i.id === u.target_incident_id);
-              if (!target) return null;
-              if (boundary.enabled && !isCoordinateInsideBoundary(target.latitude, target.longitude, boundary.geometry)) return null;
+          {visibleDispatchUnits.map((u) => {
+            if (!u.target_incident_id) return null;
+            const target = visibleIncidents.find((i) => i.id === u.target_incident_id);
+            if (!target) return null;
 
-              return (
-                <Polyline
-                  key={`line-${u.id}-${target.id}`}
-                  positions={[
-                    [u.latitude, u.longitude],
-                    [target.latitude, target.longitude],
-                  ]}
-                  pathOptions={{
-                    color: '#6366F1',
-                    weight: 3,
-                    dashArray: '8, 8',
-                    opacity: 0.9,
-                  }}
-                />
-              );
-            })}
+            return (
+              <Polyline
+                key={`line-${u.id}-${target.id}`}
+                positions={[
+                  [u.latitude, u.longitude],
+                  [target.latitude, target.longitude],
+                ]}
+                pathOptions={{
+                  color: incidentClusterColor(target),
+                  weight: 3,
+                  dashArray: '8, 8',
+                  opacity: 0.9,
+                }}
+              />
+            );
+          })}
 
-          {filters.responding && (
-            <LiveResponderOverlays
-              locations={visibleLiveResponders}
-              incidents={visibleIncidents}
-              selectedResponderId={selectedResponderId}
-              onSelectResponder={handleSelectResponderPin}
-              onSelectIncident={handleOpenIncidentPin}
-            />
-          )}
+          <LiveResponderOverlays
+            locations={visibleLiveResponders}
+            incidents={visibleIncidents}
+            selectedResponderId={selectedResponderId}
+            onSelectResponder={handleSelectResponderPin}
+            onSelectIncident={handleOpenIncidentPin}
+          />
           <MunicipalityBoundaryMapLayer boundary={boundary} />
         </MapContainer>
 
