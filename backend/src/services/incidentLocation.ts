@@ -2,6 +2,14 @@ type ReverseGeocodeResult = {
   address?: Record<string, unknown>;
   display_name?: string;
   name?: string;
+  featureLatitude?: number;
+  featureLongitude?: number;
+};
+type PhotonReverseGeocodePayload = {
+  features?: Array<{
+    properties?: Record<string, unknown>;
+    geometry?: { coordinates?: unknown };
+  }>;
 };
 
 export type ResolvedIncidentLocation = {
@@ -21,7 +29,7 @@ type OverpassElement = {
 };
 
 const RESULT_TTL_MS = 24 * 60 * 60 * 1000;
-const FAILURE_TTL_MS = 15 * 60 * 1000;
+const FAILURE_TTL_MS = 60 * 1000;
 const MIN_REQUEST_INTERVAL_MS = 1000;
 const resultCache = new Map<string, { value: ReverseGeocodeResult | null; expiresAt: number }>();
 const pendingLookups = new Map<string, Promise<ReverseGeocodeResult | null>>();
@@ -64,7 +72,10 @@ async function fetchReverseGeocode(latitude: number, longitude: number, key: str
         },
         signal: AbortSignal.timeout(5000),
       });
-      if (!response.ok) return null;
+      if (!response.ok) {
+        console.warn(`Nominatim reverse geocode returned HTTP ${response.status}.`);
+        return null;
+      }
       return await response.json() as ReverseGeocodeResult;
     } catch (error) {
       console.warn('Could not reverse geocode incident location:', error);
@@ -83,6 +94,85 @@ async function fetchReverseGeocode(latitude: number, longitude: number, key: str
     return result;
   } finally {
     pendingLookups.delete(key);
+  }
+}
+
+async function fetchPhotonReverseGeocode(latitude: number, longitude: number, key: string): Promise<ReverseGeocodeResult | null> {
+  const cacheKey = `photon:${key}`;
+  const cached = resultCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+
+  const pending = pendingLookups.get(cacheKey);
+  if (pending) return pending;
+
+  const lookup = requestQueue.then(async () => {
+    const waitMs = MIN_REQUEST_INTERVAL_MS - (Date.now() - lastRequestAt);
+    if (waitMs > 0) await new Promise((resolve) => setTimeout(resolve, waitMs));
+
+    const url = new URL('https://photon.komoot.io/reverse');
+    url.searchParams.set('lat', String(latitude));
+    url.searchParams.set('lon', String(longitude));
+    url.searchParams.set('lang', 'en');
+    url.searchParams.set('limit', '1');
+    lastRequestAt = Date.now();
+
+    try {
+      const response = await fetch(url, {
+        headers: {
+          Accept: 'application/json',
+          'User-Agent': 'NorzAgapay/1.0 (incident location lookup)',
+        },
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!response.ok) {
+        console.warn(`Photon reverse geocode returned HTTP ${response.status}.`);
+        return null;
+      }
+
+      const payload = await response.json() as PhotonReverseGeocodePayload;
+      const feature = payload.features?.[0];
+      if (!feature?.properties) return null;
+      const properties = feature.properties;
+      const name = locationPart(properties.name);
+      const street = locationPart(properties.street);
+      const coordinates = Array.isArray(feature.geometry?.coordinates) ? feature.geometry.coordinates : [];
+      const featureLongitude = Number(coordinates[0]);
+      const featureLatitude = Number(coordinates[1]);
+      const osmKey = locationPart(properties.osm_key);
+      const address: Record<string, unknown> = {
+        road: street,
+        neighbourhood: properties.locality,
+        quarter: properties.district,
+        town: properties.city,
+        province: properties.state,
+      };
+      if (name && osmKey) address[osmKey] = name;
+
+      return {
+        name: name || undefined,
+        display_name: [name, street, properties.locality, properties.city, properties.state]
+          .map(locationPart).filter(Boolean).join(', '),
+        address,
+        featureLatitude: Number.isFinite(featureLatitude) ? featureLatitude : undefined,
+        featureLongitude: Number.isFinite(featureLongitude) ? featureLongitude : undefined,
+      };
+    } catch (error) {
+      console.warn('Could not use Photon as a reverse-geocoding fallback:', error);
+      return null;
+    }
+  });
+
+  requestQueue = lookup.then(() => undefined, () => undefined);
+  pendingLookups.set(cacheKey, lookup);
+  try {
+    const result = await lookup;
+    resultCache.set(cacheKey, {
+      value: result,
+      expiresAt: Date.now() + (result ? RESULT_TTL_MS : FAILURE_TTL_MS),
+    });
+    return result;
+  } finally {
+    pendingLookups.delete(cacheKey);
   }
 }
 
@@ -168,22 +258,52 @@ export async function resolveIncidentLocation(
       !Number.isFinite(longitude) || longitude < -180 || longitude > 180) return null;
 
   const key = `${latitude.toFixed(5)},${longitude.toFixed(5)}`;
-  const result = await fetchReverseGeocode(latitude, longitude, key);
-  if (!result) return null;
-
-  const address = result.address || {};
-  const road = [address.road, address.residential, address.pedestrian, address.path, address.footway, address.service]
+  let result = await fetchReverseGeocode(latitude, longitude, key);
+  let address = result?.address || {};
+  let road = [address.road, address.street, address.residential, address.pedestrian, address.path, address.footway, address.service]
     .map(locationPart)
     .find(Boolean) || null;
-  const namedPlace = locationPart(result.name) || [address.building, address.amenity, address.shop, address.tourism, address.leisure]
+  let namedPlace = locationPart(result?.name) || [address.building, address.amenity, address.shop, address.tourism, address.leisure]
     .map(locationPart)
     .find(Boolean) || null;
   let landmark = namedPlace && normalizePlace(namedPlace) !== normalizePlace(road || '') ? namedPlace : null;
   let landmarkDistanceMeters: number | null = null;
+
+  // Nominatim can be temporarily unavailable or return only a road. Photon
+  // often has a nearby named business/building for the same OSM coordinates.
+  if (!result || !road || (includeNearbyLandmark && !landmark)) {
+    const fallback = await fetchPhotonReverseGeocode(latitude, longitude, key);
+    if (fallback) {
+      const fallbackAddress = fallback.address || {};
+      road ||= [fallbackAddress.road, fallbackAddress.street, fallbackAddress.residential,
+        fallbackAddress.pedestrian, fallbackAddress.path, fallbackAddress.footway, fallbackAddress.service]
+        .map(locationPart).find(Boolean) || null;
+      if (!landmark) {
+        const fallbackName = locationPart(fallback.name) || [fallbackAddress.building, fallbackAddress.amenity,
+          fallbackAddress.shop, fallbackAddress.tourism, fallbackAddress.leisure]
+          .map(locationPart).find(Boolean) || null;
+        if (fallbackName && normalizePlace(fallbackName) !== normalizePlace(road || '')) {
+          const distance = fallback.featureLatitude != null && fallback.featureLongitude != null
+            ? distanceMeters(latitude, longitude, fallback.featureLatitude, fallback.featureLongitude)
+            : null;
+          if (distance == null || distance <= 150) {
+            landmark = fallbackName;
+            landmarkDistanceMeters = distance == null ? null : Math.round(distance);
+          }
+        }
+      }
+      if (!result) result = fallback;
+    }
+  }
+
+  if (!result && !road && !landmark) return null;
+  address = result?.address || {};
   if (!landmark && includeNearbyLandmark) {
     const nearbyLandmark = await fetchNearbyLandmark(latitude, longitude, key, road);
-    landmark = nearbyLandmark?.name || null;
-    landmarkDistanceMeters = nearbyLandmark?.distanceMeters ?? null;
+    if (nearbyLandmark) {
+      landmark = nearbyLandmark.name;
+      landmarkDistanceMeters = nearbyLandmark.distanceMeters;
+    }
   }
   const placeCandidates = [
     address.barangay,
