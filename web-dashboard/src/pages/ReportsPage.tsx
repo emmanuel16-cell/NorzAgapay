@@ -635,7 +635,7 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
                     <button type="button" className="reports-invalid-button-v2" onClick={() => void recallBarangayAssignment(selected)} disabled={saving}>Recall assignment</button>
                     <button type="button" className="reports-dispatch-button-v2" onClick={() => void openBarangayAssignment(selected)} disabled={saving}>Reassign</button>
                   </> : <button type="button" className="reports-invalid-button-v2" onClick={() => void openBarangayAssignment(selected)} disabled={saving}>Assign to barangay</button>}
-                  {!hasActiveBarangayAssignment(selected) && <button type="button" className="reports-dispatch-button-v2" onClick={() => void openDispatch(selected)} disabled={saving}><Send size={17} /> {selected.mdrrmo_dispatched_at ? 'Update MDRRMO dispatch' : 'Dispatch to MDRRMO responders'}</button>}
+                  {!hasActiveBarangayAssignment(selected) && <button type="button" className="reports-dispatch-button-v2" onClick={() => void openDispatch(selected)} disabled={saving}><Send size={17} /> {selected.mdrrmo_dispatched_at ? 'Update MDRRMO dispatch' : 'Dispatch responders'}</button>}
                 </>}
             </footer>}
             {stage === 'responding' && !isBarangay && hasActiveBarangayAssignment(selected) && <footer className="reports-detail-actions-v2">
