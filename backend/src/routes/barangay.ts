@@ -2317,12 +2317,22 @@ router.get('/reports', authenticateBarangay, requireRole(['admin', 'dispatcher',
 
 async function updateCentralBarangayAssignment(req: any, res: Response, action: string, payload: Record<string, unknown>): Promise<void> {
   try {
+    let actionPayload = payload;
+    if (action === 'dispatch') {
+      const { data: report, error: reportError } = await supabaseAdmin.from('mdrrmo_reports')
+        .select('incident_type, severity').eq('id', req.params.id).maybeSingle();
+      if (reportError) throw reportError;
+      if (!report) { res.status(404).json({ error: 'Assigned incident not found.' }); return; }
+      // Classification belongs to the resident report. A barangay dispatcher
+      // can add responder instructions, but cannot reclassify the incident.
+      actionPayload = { ...payload, incident_type: report.incident_type, severity: report.severity };
+    }
     const { data: assignmentId, error } = await supabaseAdmin.rpc('update_mdrrmo_report_barangay_lifecycle_v1', {
       p_report_id: req.params.id,
       p_barangay_id: req.barangayUser.barangayId,
       p_actor_id: req.barangayUser.userId,
       p_action: action,
-      p_payload: { ...payload, actor_role: req.barangayUser.role },
+      p_payload: { ...actionPayload, actor_role: req.barangayUser.role },
     });
     if (error) throw error;
     const [{ data: report, error: reportError }, { data: assignment, error: assignmentError }] = await Promise.all([
@@ -2384,17 +2394,12 @@ async function updateCentralBarangayAssignment(req: any, res: Response, action: 
 router.patch('/assigned-reports/:id/dispatch', authenticateBarangay, requireRole(['dispatcher']), async (req: any, res: Response) => {
   const ids: string[] = Array.isArray(req.body?.team_leader_ids) && req.body.team_leader_ids.length
     ? req.body.team_leader_ids : req.body?.team_leader_id ? [req.body.team_leader_id] : [];
-  const incidentType = String(req.body?.incident_type || 'other');
-  const severity = String(req.body?.severity || 'moderate');
-  if (!ids.length || !['not_sure','flash_flood','fire','earthquake','medical_emergency','typhoon','other'].includes(incidentType) ||
-      !['low','moderate','high','critical'].includes(severity)) {
-    res.status(400).json({ error: 'Choose at least one responder, incident type, and severity before dispatching.' });
+  if (!ids.length) {
+    res.status(400).json({ error: 'Choose at least one responder before dispatching.' });
     return;
   }
   void updateCentralBarangayAssignment(req, res, 'dispatch', {
     responder_ids: ids,
-    incident_type: incidentType,
-    severity,
     notes: typeof req.body?.notes === 'string' ? req.body.notes.trim() : '',
   });
 });
@@ -2818,16 +2823,23 @@ router.post('/reports/:id/field-media', authenticateBarangay, requireRole(['disp
 
 router.patch('/reports/:id/dispatch', authenticateBarangay, requireRole(['dispatcher']), async (req: any, res: Response) => {
   try {
-    const { team_leader_id, team_leader_ids, notes, incident_type, severity } = req.body;
+    const { team_leader_id, team_leader_ids, notes } = req.body;
     const validTypes = ['not_sure', 'flash_flood', 'fire', 'earthquake', 'medical_emergency', 'typhoon', 'other'];
     const validSeverities = ['low', 'moderate', 'high', 'critical'];
+    const { data: report, error: reportError } = await supabaseAdmin.from('barangay_reports')
+      .select('incident_type, severity').eq('id', req.params.id).eq('barangay_id', req.barangayUser.barangayId).maybeSingle();
+    if (reportError) throw reportError;
+    if (!report) { res.status(404).json({ error: 'Incident report not found.' }); return; }
+    const incident_type = String(report.incident_type || '');
+    const severity = String(report.severity || '');
     if (!validTypes.includes(incident_type) || !validSeverities.includes(severity)) {
-      res.status(400).json({ error: 'Choose an incident type and severity before dispatching.' });
+      res.status(409).json({ error: 'This report is missing a valid incident type or severity and cannot be dispatched.' });
       return;
     }
-    const ids: string[] = Array.isArray(team_leader_ids) && team_leader_ids.length > 0
+    const requestedIds: string[] = Array.isArray(team_leader_ids) && team_leader_ids.length > 0
       ? team_leader_ids
       : (team_leader_id ? [team_leader_id] : []);
+    const ids = [...new Set(requestedIds)];
 
     if (ids.length === 0) {
       res.status(400).json({ error: 'At least one responder ID is required' });
@@ -2838,10 +2850,12 @@ router.patch('/reports/:id/dispatch', authenticateBarangay, requireRole(['dispat
       .from('barangay_users')
       .select('id, full_name')
       .in('id', ids)
-      .eq('barangay_id', req.barangayUser.barangayId);
+      .eq('barangay_id', req.barangayUser.barangayId)
+      .eq('role', 'responder')
+      .eq('is_active', true);
 
-    if (tlErr || !teamLeaders || teamLeaders.length === 0) {
-      res.status(404).json({ error: 'Team leader(s) not found' });
+    if (tlErr || !teamLeaders || teamLeaders.length !== ids.length) {
+      res.status(404).json({ error: 'One or more active barangay responders were not found.' });
       return;
     }
 

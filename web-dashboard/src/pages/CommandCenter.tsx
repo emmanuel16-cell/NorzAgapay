@@ -6,6 +6,7 @@ import { CARTO_DARK_MAP_URL, CARTO_ATTRIBUTION } from '../lib/mapConfig';
 import 'leaflet/dist/leaflet.css';
 import { reportAPI, requestAPI, respondUnitAPI, socket } from '../lib/api';
 import { createLocationMapIcon } from '../lib/locationMapIcon';
+import { INCIDENT_SEVERITY_OPTIONS, INCIDENT_TYPE_OPTIONS } from '../lib/incidentClassification';
 import { getMdrrmoReportGroup, isVisibleToMdrrmo } from '../lib/mdrrmoReportVisibility';
 import { useAuth } from '../context/AuthContext';
 import { useMunicipalityBoundary } from '../context/MunicipalityBoundaryContext';
@@ -14,9 +15,10 @@ import CurrentWeatherPanel from '../components/CurrentWeatherPanel';
 import { boundaryRings, isCoordinateInsideBoundary, type MunicipalityBoundary } from '../lib/municipalityBoundary';
 import { formatMobileNumber } from '../lib/mobileNumber';
 import toast from 'react-hot-toast';
-import { AlertTriangle, Siren, Users, CheckCircle2, MapPin, X } from 'lucide-react';
+import { AlertTriangle, Siren, Users, CheckCircle2, MapPin, X, RefreshCw } from 'lucide-react';
 
 type ReportKind = 'resident' | 'escalated';
+type MapReportCategory = 'resident' | 'barangay' | 'assigned' | 'community';
 type ReportStage = 'pending' | 'responding' | 'arrived' | 'resolved';
 
 interface IncidentItem {
@@ -25,6 +27,7 @@ interface IncidentItem {
   type: string;
   incident_type?: string;
   report_kind: ReportKind;
+  map_category: MapReportCategory;
   status: ReportStage;
   severity?: string;
   latitude: number;
@@ -283,6 +286,15 @@ const MDRRMO_DISPATCH_SEVERITIES = [
   { value: 'high', label: 'High' },
   { value: 'critical', label: 'Critical' },
 ] as const;
+
+const formatClassificationLabel = (
+  value: string | undefined,
+  options: ReadonlyArray<{ value: string; label: string }>,
+) => {
+  const normalized = value?.trim();
+  if (!normalized) return 'Not specified';
+  return options.find((option) => option.value === normalized)?.label || normalized.replaceAll('_', ' ');
+};
 
 function parseFieldAssessment(notes?: string) {
   const content = (notes || '')
@@ -556,26 +568,58 @@ const isVideoProof = (url?: string | null, proof_type?: string | null): boolean 
     lower.endsWith('.3gp') || lower.endsWith('.mkv') || lower.endsWith('.avi');
 };
 
-// Circular report markers use the white normal ring and yellow selected ring
-// shown in the Command Center reference.
-const createTeardropPin = (reportKind: ReportKind, status: ReportStage, selected = false) => {
+const mapCategoryColor = (category: MapReportCategory, barangayDashboard = false): string => {
+  if (category === 'resident') return '#ff7838';
+  if (category === 'barangay') return '#ff3c43';
+  if (category === 'community') return '#245be8';
+  return barangayDashboard ? '#ff7838' : '#245be8';
+};
+
+const mapCategoryLabel = (category: MapReportCategory): string => ({
+  resident: 'Resident report',
+  barangay: 'Barangay report',
+  assigned: 'Assigned report',
+  community: 'Community incident',
+}[category]);
+
+const mapStageSymbol = (status: ReportStage): string => {
+  if (status === 'pending') return '<span class="command-map-symbol command-map-symbol-pending">!</span>';
+  if (status === 'responding') return '<svg class="command-map-status-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5"/><path d="M4.4 9A8 8 0 0 1 18.2 5.8L20 7"/><path d="M4 17v-5h5"/><path d="M19.6 15a8 8 0 0 1-13.8 3.2L4 17"/></svg>';
+  if (status === 'arrived') return '<svg class="command-map-status-svg command-map-pin-symbol" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></svg>';
+  return '<svg class="command-map-status-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="m4 12 5 5L20 6"/></svg>';
+};
+
+function HudMarkerPreview({
+  category,
+  status = 'pending',
+  barangayDashboard = false,
+}: {
+  category: MapReportCategory;
+  status?: ReportStage;
+  barangayDashboard?: boolean;
+}) {
+  const color = status === 'resolved' ? '#5ce76b' : mapCategoryColor(category, barangayDashboard);
+  return (
+    <span className={`hud-marker-preview hud-marker-preview-${status}`} style={{ backgroundColor: color }} aria-hidden="true">
+      {status === 'pending' && <b>!</b>}
+      {status === 'responding' && <RefreshCw size={13} strokeWidth={3} />}
+      {status === 'arrived' && <MapPin size={13} strokeWidth={3} />}
+      {status === 'resolved' && <CheckCircle2 size={14} strokeWidth={3} />}
+    </span>
+  );
+}
+
+// Markers use the report-category colors and status symbols from the
+// Command Center reference, with a white normal ring and yellow selected ring.
+const createTeardropPin = (category: MapReportCategory, status: ReportStage, selected = false, barangayDashboard = false) => {
   const size = 64;
   const color = status === 'resolved'
     ? '#5CE76B'
-    : reportKind === 'escalated'
-      ? '#FF3C43'
-      : '#FF7838';
-  const symbol = status === 'pending'
-    ? reportKind === 'escalated' ? '‼' : '!'
-    : status === 'responding'
-      ? '⟳'
-      : status === 'arrived'
-        ? '<svg class="command-map-pin-symbol" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></svg>'
-        : '✓';
+    : mapCategoryColor(category, barangayDashboard);
   return L.divIcon({
     html: `
       <div class="command-map-dot ${selected ? 'selected' : ''}" style="width:${size}px;height:${size}px;background:${color}">
-        ${symbol.startsWith('<svg') ? symbol : `<span class="command-map-symbol command-map-symbol-${status}">${symbol}</span>`}
+        ${mapStageSymbol(status)}
       </div>
     `,
     className: 'command-map-dot-icon',
@@ -702,28 +746,28 @@ function createIncidentClusterIcon(count: number) {
 }
 
 function incidentClusterLabel(incident: IncidentItem): string {
-  const group = incident.report_kind === 'escalated' ? 'Escalation report' : 'Resident report';
+  const group = mapCategoryLabel(incident.map_category);
   const stage = incident.status === 'pending'
     ? 'Pending'
     : incident.status.charAt(0).toUpperCase() + incident.status.slice(1);
   return `${group} · ${stage}`;
 }
 
-function incidentClusterColor(incident: IncidentItem): string {
+function incidentClusterColor(incident: IncidentItem, barangayDashboard = false): string {
   if (incident.status === 'resolved') return '#5ce76b';
-  if (incident.status === 'responding') return '#9b86ff';
-  if (incident.status === 'arrived') return '#f5c542';
-  return incident.report_kind === 'escalated' ? '#ff3c43' : '#ff7838';
+  return mapCategoryColor(incident.map_category, barangayDashboard);
 }
 
 function ClusteredIncidentMarkers({
   incidents,
   selectedId,
   onSelect,
+  barangayDashboard,
 }: {
   incidents: IncidentItem[];
   selectedId?: string;
   onSelect: (incident: IncidentItem) => void;
+  barangayDashboard: boolean;
 }) {
   const map = useMap();
   const [viewportRevision, setViewportRevision] = useState(0);
@@ -769,7 +813,7 @@ function ClusteredIncidentMarkers({
           <Marker
             key={incident.id}
             position={[incident.latitude, incident.longitude]}
-            icon={createTeardropPin(incident.report_kind, incident.status, selectedId === incident.id)}
+            icon={createTeardropPin(incident.map_category, incident.status, selectedId === incident.id, barangayDashboard)}
             zIndexOffset={selectedId === incident.id ? 1600 : 0}
             eventHandlers={{ click: () => onSelect(incident) }}
           />
@@ -788,7 +832,7 @@ function ClusteredIncidentMarkers({
               <strong>Nearby reports <span>{group.length}</span></strong>
               {group.map((incident) => (
                 <button key={incident.id} type="button" onClick={(event) => { event.stopPropagation(); onSelect(incident); }}>
-                  <i style={{ backgroundColor: incidentClusterColor(incident) }} />
+                  <i style={{ backgroundColor: incidentClusterColor(incident, barangayDashboard) }} />
                   <span>{incidentClusterLabel(incident)}</span>
                 </button>
               ))}
@@ -825,7 +869,7 @@ function LiveResponderOverlays({
           <Polyline
             key={`live-route-${location.responderId}-${target.id}`}
             positions={[[location.latitude, location.longitude], [target.latitude, target.longitude]]}
-            pathOptions={{ color: '#818cf8', weight: 3, dashArray: '8, 8', opacity: 0.9 }}
+            pathOptions={{ color: incidentClusterColor(target), weight: 3, dashArray: '8, 8', opacity: 0.9 }}
           />
         )),
         <Marker
@@ -843,7 +887,7 @@ function LiveResponderOverlays({
                 const crew = assignment?.crew || [];
                 return (
                   <button key={target.id} type="button" onClick={(event) => { event.stopPropagation(); onSelectIncident(target); }}>
-                    <i style={{ backgroundColor: target.report_kind === 'escalated' ? '#ff3c43' : '#ff7838' }} />
+                    <i style={{ backgroundColor: incidentClusterColor(target) }} />
                     <div className="command-map-live-target-details">
                       <span>En route · {target.title}</span>
                       {crew.length > 0 && (
@@ -878,10 +922,12 @@ export default function CommandCenter() {
     return () => clearInterval(timer);
   }, []);
 
-  // Filters matching Image 3
+  // Visibility toggles for report categories and marker statuses.
   const [filters, setFilters] = useState({
-    incidents: true,
-    escalated: true,
+    resident: true,
+    barangay: true,
+    assigned: true,
+    community: true,
     arrived: true,
     responding: true,
     resolved: true,
@@ -930,6 +976,13 @@ export default function CommandCenter() {
   const [mdrrmoDispatchIncidentType, setMdrrmoDispatchIncidentType] = useState('');
   const [mdrrmoDispatchSeverity, setMdrrmoDispatchSeverity] = useState('');
   const [mdrrmoDispatchNotes, setMdrrmoDispatchNotes] = useState('');
+  const [barangayDispatchIncident, setBarangayDispatchIncident] = useState<IncidentItem | null>(null);
+  const [barangayDispatchResponders, setBarangayDispatchResponders] = useState<MdrrmoDispatchResponder[]>([]);
+  const [barangayDispatchLoading, setBarangayDispatchLoading] = useState(false);
+  const [barangayDispatchError, setBarangayDispatchError] = useState('');
+  const [selectedBarangayResponderIds, setSelectedBarangayResponderIds] = useState<string[]>([]);
+  const [barangayDispatchNotes, setBarangayDispatchNotes] = useState('');
+  const [barangayDispatchSaving, setBarangayDispatchSaving] = useState(false);
   const [barangayPickerOpen, setBarangayPickerOpen] = useState(false);
   const [barangayDestinations, setBarangayDestinations] = useState<BarangayDestination[]>([]);
   const [barangayDestinationsLoading, setBarangayDestinationsLoading] = useState(false);
@@ -938,6 +991,7 @@ export default function CommandCenter() {
   const [barangayAssignmentNotes, setBarangayAssignmentNotes] = useState('');
   const [barangayAssignmentSaving, setBarangayAssignmentSaving] = useState(false);
   const mdrrmoDispatchRequestId = useRef(0);
+  const barangayDispatchRequestId = useRef(0);
   const barangayDestinationsRequestId = useRef(0);
   const selectedIncidentLocationRequestId = useRef(0);
   const previewMediaRef = useRef<HTMLImageElement | HTMLVideoElement>(null);
@@ -992,6 +1046,11 @@ export default function CommandCenter() {
           const barangayStatus = String(r.barangay_response_status || '').toLowerCase();
           const mdrrmoStatus = String(r.mdrrmo_response_status || r.response_status || '').toLowerCase();
           const reportGroup = isBarangayDashboard ? 'resident' : getMdrrmoReportGroup(r);
+          const mapCategory: MapReportCategory = isBarangayDashboard
+            ? (Boolean(r.is_central_assignment) || String(r.type || '').toLowerCase() !== 'community' ? 'assigned' : 'community')
+            : Boolean(r.is_central_assignment)
+              ? 'assigned'
+              : reportGroup === 'escalated' ? 'barangay' : 'resident';
           const isEscalated = reportGroup === 'escalated';
           const mdrrmoCycleStatus = mdrrmoStatus || (isEscalated
             ? r.mdrrmo_resolved_at ? 'resolved' : r.mdrrmo_accepted_at || r.mdrrmo_arrived_at ? 'responding' : 'pending'
@@ -1021,8 +1080,9 @@ export default function CommandCenter() {
             id: r.id,
             title: r.title || 'Emergency Incident',
             type: r.type || 'emergency',
-            incident_type: r.incident_type || r.type || '',
+            incident_type: r.incident_type || '',
             report_kind: reportGroup,
+            map_category: mapCategory,
             status: stage,
             severity: r.severity || '',
             latitude: lat,
@@ -1285,8 +1345,10 @@ export default function CommandCenter() {
 
   const visibleIncidents = useMemo(() => incidents.filter((incident) => {
     if (incident.map_closed_at) return false;
-    if (incident.report_kind === 'resident' && !filters.incidents) return false;
-    if (incident.report_kind === 'escalated' && !filters.escalated) return false;
+    if (incident.map_category === 'resident' && !filters.resident) return false;
+    if (incident.map_category === 'barangay' && !filters.barangay) return false;
+    if (incident.map_category === 'assigned' && !filters.assigned) return false;
+    if (incident.map_category === 'community' && !filters.community) return false;
     if (incident.status === 'arrived' && !filters.arrived) return false;
     if (incident.status === 'responding' && !filters.responding) return false;
     if (incident.status === 'resolved' && !filters.resolved) return false;
@@ -1530,6 +1592,70 @@ export default function CommandCenter() {
     }
   };
 
+  const openBarangayDispatch = async (incident: IncidentItem) => {
+    const requestId = ++barangayDispatchRequestId.current;
+    setBarangayDispatchIncident(incident);
+    setBarangayDispatchResponders([]);
+    setSelectedBarangayResponderIds([]);
+    setBarangayDispatchNotes('');
+    setBarangayDispatchError('');
+    setBarangayDispatchLoading(true);
+    try {
+      const response = await reportAPI.barangayResponders();
+      if (requestId === barangayDispatchRequestId.current) {
+        setBarangayDispatchResponders(Array.isArray(response.data?.responders) ? response.data.responders : []);
+      }
+    } catch (error: any) {
+      if (requestId === barangayDispatchRequestId.current) {
+        setBarangayDispatchError(error?.response?.data?.error || 'Could not load active barangay responders.');
+      }
+    } finally {
+      if (requestId === barangayDispatchRequestId.current) setBarangayDispatchLoading(false);
+    }
+  };
+
+  const closeBarangayDispatch = (force = false) => {
+    if (barangayDispatchSaving && !force) return;
+    barangayDispatchRequestId.current += 1;
+    setBarangayDispatchIncident(null);
+    setBarangayDispatchResponders([]);
+    setBarangayDispatchLoading(false);
+    setBarangayDispatchError('');
+  };
+
+  const submitBarangayDispatch = async () => {
+    const incident = barangayDispatchIncident;
+    if (!incident || barangayDispatchSaving || selectedBarangayResponderIds.length === 0) return;
+    const incidentTypeIsValid = INCIDENT_TYPE_OPTIONS.some((option) => option.value === incident.incident_type);
+    const severityIsValid = INCIDENT_SEVERITY_OPTIONS.some((option) => option.value === incident.severity);
+    if (!incidentTypeIsValid || !severityIsValid) {
+      toast.error('This report is missing a valid incident type or severity.');
+      return;
+    }
+
+    setBarangayDispatchSaving(true);
+    try {
+      const payload = { team_leader_ids: selectedBarangayResponderIds, notes: barangayDispatchNotes.trim() };
+      if (incident.is_central_assignment) {
+        await reportAPI.dispatchToBarangay(incident.id, payload);
+      } else {
+        await reportAPI.dispatchBarangayReport(incident.id, payload);
+      }
+      const assignedNames = barangayDispatchResponders
+        .filter((responder) => selectedBarangayResponderIds.includes(responder.id))
+        .map((responder) => responder.full_name)
+        .join(', ');
+      toast.success(`Dispatched to ${assignedNames}.`);
+      closeBarangayDispatch(true);
+      closeModal();
+      await fetchData();
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error || 'Could not dispatch this report to barangay responders.');
+    } finally {
+      setBarangayDispatchSaving(false);
+    }
+  };
+
   const closeBarangayPicker = () => {
     barangayDestinationsRequestId.current += 1;
     setBarangayPickerOpen(false);
@@ -1683,7 +1809,15 @@ export default function CommandCenter() {
   const handleDispatch = (overrideConfirm = false) => {
     if (!selectedIncident) return;
     if (isBarangayDashboard) {
-      navigate(`/reports?id=${encodeURIComponent(selectedIncident.id)}&status=${selectedIncident.status === 'resolved' ? 'resolved' : selectedIncident.status === 'responding' || selectedIncident.status === 'arrived' ? 'responding' : 'pending'}`);
+      if (user?.role !== 'dispatcher') {
+        toast.error('Only a barangay dispatcher can dispatch responders.');
+        return;
+      }
+      if (selectedIncident.status !== 'pending') {
+        toast.error('Only pending reports can be dispatched.');
+        return;
+      }
+      void openBarangayDispatch(selectedIncident);
       return;
     }
 
@@ -1712,6 +1846,12 @@ export default function CommandCenter() {
   const mdrrmoDispatchLocationFallback = mdrrmoDispatchIncident
     ? dispatchLocationFallback(mdrrmoDispatchIncident)
     : '';
+  const barangayDispatchLocationFallback = barangayDispatchIncident
+    ? dispatchLocationFallback(barangayDispatchIncident)
+    : '';
+  const barangayDispatchClassificationValid = Boolean(barangayDispatchIncident) &&
+    INCIDENT_TYPE_OPTIONS.some((option) => option.value === barangayDispatchIncident?.incident_type) &&
+    INCIDENT_SEVERITY_OPTIONS.some((option) => option.value === barangayDispatchIncident?.severity);
   const nearestBarangayDestinationId = barangayDestinations.find((destination) => destination.distance_meters !== null)?.id || null;
   const currentAssignedBarangayId = mdrrmoDispatchIncident?.assignment_status === 'active'
     ? mdrrmoDispatchIncident.response_barangay_id || null
@@ -1769,53 +1909,48 @@ export default function CommandCenter() {
 
         <div className="command-hud-filter-row">
             <span className="command-hud-filter-heading">Showing:</span>
-            <label className="hud-checkbox-label" style={{ color: filters.incidents ? '#f97316' : '#64748b' }}>
-              <input
-                type="checkbox"
-                checked={filters.incidents}
-                onChange={(e) => setFilters({ ...filters, incidents: e.target.checked })}
-                style={{ accentColor: '#f97316' }}
-              />
-              Resident Report
-            </label>
+            {isBarangayDashboard ? <>
+              <label className={`hud-checkbox-label ${filters.assigned ? '' : 'is-filtered-out'}`}>
+                <input type="checkbox" checked={filters.assigned} onChange={(e) => setFilters({ ...filters, assigned: e.target.checked })} style={{ accentColor: '#ff7838' }} />
+                <HudMarkerPreview category="assigned" barangayDashboard />
+                Assigned Report
+              </label>
+              <label className={`hud-checkbox-label ${filters.community ? '' : 'is-filtered-out'}`}>
+                <input type="checkbox" checked={filters.community} onChange={(e) => setFilters({ ...filters, community: e.target.checked })} style={{ accentColor: '#245be8' }} />
+                <HudMarkerPreview category="community" barangayDashboard />
+                Community Incident
+              </label>
+            </> : <>
+              <label className={`hud-checkbox-label ${filters.resident ? '' : 'is-filtered-out'}`}>
+                <input type="checkbox" checked={filters.resident} onChange={(e) => setFilters({ ...filters, resident: e.target.checked })} style={{ accentColor: '#ff7838' }} />
+                <HudMarkerPreview category="resident" />
+                Resident Report
+              </label>
+              <label className={`hud-checkbox-label ${filters.barangay ? '' : 'is-filtered-out'}`}>
+                <input type="checkbox" checked={filters.barangay} onChange={(e) => setFilters({ ...filters, barangay: e.target.checked })} style={{ accentColor: '#ff3c43' }} />
+                <HudMarkerPreview category="barangay" />
+                Barangay Report
+              </label>
+              <label className={`hud-checkbox-label ${filters.assigned ? '' : 'is-filtered-out'}`}>
+                <input type="checkbox" checked={filters.assigned} onChange={(e) => setFilters({ ...filters, assigned: e.target.checked })} style={{ accentColor: '#245be8' }} />
+                <HudMarkerPreview category="assigned" />
+                Assigned Report
+              </label>
+            </>}
 
-            <label className="hud-checkbox-label" style={{ color: filters.escalated ? '#ef4444' : '#64748b' }}>
-              <input
-                type="checkbox"
-                checked={filters.escalated}
-                onChange={(e) => setFilters({ ...filters, escalated: e.target.checked })}
-                style={{ accentColor: '#ef4444' }}
-              />
-              Escalated Report
-            </label>
-
-            <label className="hud-checkbox-label" style={{ color: filters.arrived ? '#06b6d4' : '#64748b' }}>
-              <input
-                type="checkbox"
-                checked={filters.arrived}
-                onChange={(e) => setFilters({ ...filters, arrived: e.target.checked })}
-                style={{ accentColor: '#06b6d4' }}
-              />
+            <label className={`hud-checkbox-label ${filters.arrived ? '' : 'is-filtered-out'}`}>
+              <input type="checkbox" checked={filters.arrived} onChange={(e) => setFilters({ ...filters, arrived: e.target.checked })} style={{ accentColor: '#ff7838' }} />
+              <HudMarkerPreview category={isBarangayDashboard ? 'assigned' : 'resident'} status="arrived" barangayDashboard={isBarangayDashboard} />
               Rescuer Arrived
             </label>
-
-            <label className="hud-checkbox-label" style={{ color: filters.responding ? '#818cf8' : '#64748b' }}>
-              <input
-                type="checkbox"
-                checked={filters.responding}
-                onChange={(e) => setFilters({ ...filters, responding: e.target.checked })}
-                style={{ accentColor: '#818cf8' }}
-              />
+            <label className={`hud-checkbox-label ${filters.responding ? '' : 'is-filtered-out'}`}>
+              <input type="checkbox" checked={filters.responding} onChange={(e) => setFilters({ ...filters, responding: e.target.checked })} style={{ accentColor: '#ff7838' }} />
+              <HudMarkerPreview category={isBarangayDashboard ? 'assigned' : 'resident'} status="responding" barangayDashboard={isBarangayDashboard} />
               Responding
             </label>
-
-            <label className="hud-checkbox-label" style={{ color: filters.resolved ? '#10b981' : '#64748b' }}>
-              <input
-                type="checkbox"
-                checked={filters.resolved}
-                onChange={(e) => setFilters({ ...filters, resolved: e.target.checked })}
-                style={{ accentColor: '#10b981' }}
-              />
+            <label className={`hud-checkbox-label ${filters.resolved ? '' : 'is-filtered-out'}`}>
+              <input type="checkbox" checked={filters.resolved} onChange={(e) => setFilters({ ...filters, resolved: e.target.checked })} style={{ accentColor: '#10b981' }} />
+              <HudMarkerPreview category={isBarangayDashboard ? 'assigned' : 'resident'} status="resolved" barangayDashboard={isBarangayDashboard} />
               Resolved
             </label>
         </div>
@@ -1840,7 +1975,7 @@ export default function CommandCenter() {
             selectedPosition={selectedMapDot?.position || null}
           />
 
-          <ClusteredIncidentMarkers incidents={visibleIncidents} selectedId={selectedIncident?.id} onSelect={handleOpenIncidentPin} />
+          <ClusteredIncidentMarkers incidents={visibleIncidents} selectedId={selectedIncident?.id} onSelect={handleOpenIncidentPin} barangayDashboard={isBarangayDashboard} />
 
           {commandLocationPins.map((pin) => (
             <Marker
@@ -2116,7 +2251,7 @@ export default function CommandCenter() {
                 </div>
                 {selectedIncident.status === 'pending' && <div className="selection-actions">
                   {!isBarangayDashboard && <button className="selection-invalid-btn" onClick={() => setInvalidReviewStep('choice')}>Invalid Report</button>}
-                  {!selectedIncident.mdrrmo_dispatched && (
+                  {!selectedIncident.mdrrmo_dispatched && (!isBarangayDashboard || user?.role === 'dispatcher') && (
                     <button type="button" className="selection-dispatch-btn" onClick={() => handleDispatch()} disabled={dispatching}>
                       {dispatching ? 'Dispatching…' : 'Dispatch'}
                     </button>
@@ -2182,9 +2317,11 @@ export default function CommandCenter() {
                   <button className="btn-preview-close" onClick={closeModal}>
                     ✕ CLOSE
                   </button>
-                  <button className="btn-preview-dispatch" onClick={() => handleDispatch()}>
-                    🚑 DISPATCH
-                  </button>
+                  {(!isBarangayDashboard || (selectedIncident.status === 'pending' && user?.role === 'dispatcher')) && (
+                    <button className="btn-preview-dispatch" onClick={() => handleDispatch()}>
+                      🚑 DISPATCH
+                    </button>
+                  )}
                 </div>
               </div>
               {selectedIncident.status !== 'pending' && (
@@ -2454,9 +2591,11 @@ export default function CommandCenter() {
                   <button className="btn-preview-close" onClick={closeModal}>
                     ✕ CLOSE
                   </button>
-                  <button className="btn-preview-dispatch" onClick={() => handleDispatch()}>
-                    🚑 DISPATCH
-                  </button>
+                  {(!isBarangayDashboard || (selectedIncident.status === 'pending' && user?.role === 'dispatcher')) && (
+                    <button className="btn-preview-dispatch" onClick={() => handleDispatch()}>
+                      🚑 DISPATCH
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -2615,6 +2754,148 @@ export default function CommandCenter() {
                 <span className="unit-location-val">{selectedUnit.target_location || 'Location'}</span>
               </div>
             </div>
+          </div>
+        )}
+
+        {barangayDispatchIncident && (
+          <div className="mdrrmo-dispatch-overlay" onClick={closeBarangayDispatch}>
+            <section
+              className="mdrrmo-dispatch-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="barangay-dispatch-title"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <header className="mdrrmo-dispatch-header">
+                <div>
+                  <h2 id="barangay-dispatch-title">Dispatch Barangay Responders</h2>
+                  <p>Assign this report to active responders in your barangay.</p>
+                </div>
+                <button type="button" className="selection-close-btn" aria-label="Close dispatch" onClick={closeBarangayDispatch} disabled={barangayDispatchSaving}>
+                  <X size={18} />
+                </button>
+              </header>
+
+              <div className="mdrrmo-dispatch-summary">
+                <strong>{barangayDispatchIncident.title}</strong>
+                <div className="mdrrmo-dispatch-location">
+                  <MapPin size={15} aria-hidden="true" />
+                  <div>
+                    <span>
+                      {selectedIncidentLocationLoading
+                        ? 'Finding nearby road and landmark…'
+                        : selectedIncidentLocation?.road || selectedIncidentLocation?.landmark || barangayDispatchLocationFallback || 'Pinned incident location'}
+                    </span>
+                    {selectedIncidentLocation?.road && selectedIncidentLocation?.landmark &&
+                      <small>Near {selectedIncidentLocation.landmark}{selectedIncidentLocation.landmark_distance_meters != null ? ` · ${selectedIncidentLocation.landmark_distance_meters} m` : ''}</small>}
+                    {!selectedIncidentLocationLoading && !selectedIncidentLocation?.road && !selectedIncidentLocation?.landmark &&
+                      <small>{barangayDispatchLocationFallback ? 'Report location' : `${barangayDispatchIncident.latitude.toFixed(5)}, ${barangayDispatchIncident.longitude.toFixed(5)}`}</small>}
+                    {!selectedIncidentLocationLoading && selectedIncidentLocationError &&
+                      <small className="mdrrmo-dispatch-location-error">{selectedIncidentLocationError}</small>}
+                  </div>
+                </div>
+              </div>
+
+              <section className="mdrrmo-dispatch-report-details" aria-label="Report details">
+                <strong>Details about the report..</strong>
+                <p>{barangayDispatchIncident.description?.trim() || 'No report details provided.'}</p>
+              </section>
+
+              <div className="mdrrmo-dispatch-classification">
+                <label>
+                  Incident type
+                  <input
+                    type="text"
+                    value={formatClassificationLabel(barangayDispatchIncident.incident_type, INCIDENT_TYPE_OPTIONS)}
+                    readOnly
+                    aria-readonly="true"
+                  />
+                </label>
+                <label>
+                  Severity
+                  <input
+                    type="text"
+                    value={formatClassificationLabel(barangayDispatchIncident.severity, INCIDENT_SEVERITY_OPTIONS)}
+                    readOnly
+                    aria-readonly="true"
+                  />
+                </label>
+              </div>
+              {!barangayDispatchClassificationValid && (
+                <div className="mdrrmo-dispatch-error">This report is missing a valid incident type or severity.</div>
+              )}
+
+              <label className="mdrrmo-dispatch-notes">
+                Dispatcher notes <span>additional information for responders</span>
+                <textarea
+                  value={barangayDispatchNotes}
+                  onChange={(event) => setBarangayDispatchNotes(event.target.value)}
+                  maxLength={1000}
+                  placeholder="Add instructions or response details…"
+                  disabled={barangayDispatchSaving}
+                />
+              </label>
+
+              <section className="mdrrmo-dispatch-team">
+                <div className="mdrrmo-dispatch-team-heading">
+                  <h3>Active barangay responders</h3>
+                  {barangayDispatchResponders.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedBarangayResponderIds(
+                        selectedBarangayResponderIds.length === barangayDispatchResponders.length
+                          ? []
+                          : barangayDispatchResponders.map((responder) => responder.id),
+                      )}
+                      disabled={barangayDispatchLoading || barangayDispatchSaving}
+                    >
+                      {selectedBarangayResponderIds.length === barangayDispatchResponders.length ? 'Deselect all' : 'Select all'}
+                    </button>
+                  )}
+                </div>
+
+                {barangayDispatchLoading ? (
+                  <div className="mdrrmo-dispatch-empty">Loading barangay responders…</div>
+                ) : barangayDispatchError ? (
+                  <div className="mdrrmo-dispatch-error">{barangayDispatchError}</div>
+                ) : barangayDispatchResponders.length === 0 ? (
+                  <div className="mdrrmo-dispatch-empty">No active barangay responders are available.</div>
+                ) : (
+                  <div className="mdrrmo-dispatch-responder-list">
+                    {barangayDispatchResponders.map((responder) => (
+                      <label key={responder.id} className={`mdrrmo-dispatch-responder ${selectedBarangayResponderIds.includes(responder.id) ? 'selected' : ''}`}>
+                        <input
+                          type="checkbox"
+                          checked={selectedBarangayResponderIds.includes(responder.id)}
+                          onChange={(event) => setSelectedBarangayResponderIds((current) => event.target.checked
+                            ? [...current, responder.id]
+                            : current.filter((id) => id !== responder.id))}
+                          disabled={barangayDispatchSaving}
+                        />
+                        <span>
+                          <strong>{responder.full_name}</strong>
+                          <small>{responder.unit_name || 'Barangay response team'}</small>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </section>
+
+              <footer className="mdrrmo-dispatch-actions">
+                <button type="button" className="mdrrmo-dispatch-assign" onClick={closeBarangayDispatch} disabled={barangayDispatchSaving}>
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="mdrrmo-dispatch-submit"
+                  onClick={() => void submitBarangayDispatch()}
+                  disabled={barangayDispatchSaving || barangayDispatchLoading || barangayDispatchResponders.length === 0 || selectedBarangayResponderIds.length === 0 || !barangayDispatchClassificationValid}
+                >
+                  {barangayDispatchSaving ? 'Dispatching…' : `Dispatch${selectedBarangayResponderIds.length ? ` · ${selectedBarangayResponderIds.length}` : ''}`}
+                </button>
+              </footer>
+            </section>
           </div>
         )}
 
