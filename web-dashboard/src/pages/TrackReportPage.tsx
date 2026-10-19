@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { AlertCircle, FileText, MapPin, Search } from 'lucide-react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { AlertCircle, ArrowLeft, FileText, MapPin, Search } from 'lucide-react';
 import PublicHeader from '../components/PublicHeader';
 import { reportAPI } from '../lib/api';
 import { INCIDENT_TYPE_OPTIONS } from '../lib/incidentClassification';
@@ -174,6 +174,7 @@ export default function TrackReportPage() {
     <PublicHeader showActions={false} />
     <main className="public-report-layout public-track-layout">
       <div className="public-report-intro">
+        <Link className="public-track-back" to="/report"><ArrowLeft size={16} aria-hidden="true" /> Back to reporting</Link>
         <span className="public-home-eyebrow">PUBLIC REPORT TRACKING</span>
         <h1>Follow your report.</h1>
         <p>Enter the report reference and the mobile number used when submitting it.</p>

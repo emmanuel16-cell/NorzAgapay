@@ -3984,6 +3984,9 @@ tbody tr:last-child td { border-bottom: none; }
 .public-report-page { background: radial-gradient(ellipse at 80% 0, rgba(30, 81, 140, .28), transparent 48%), #08152e; }
 .public-report-layout { width: 100%; max-width: 1200px; margin: 0 auto; padding: clamp(30px, 5vw, 58px) clamp(16px, 4vw, 36px) 60px; }
 .public-track-layout { max-width: 900px; }
+.public-track-back { display: inline-flex; align-items: center; gap: 7px; width: max-content; margin-bottom: 16px; padding: 8px 11px; border: 1px solid rgba(160, 187, 229, .3); border-radius: 8px; color: #d9e9ff; background: #0b1b35; font-size: 12px; font-weight: 700; text-decoration: none; transition: border-color .15s ease, background .15s ease; }
+.public-track-back:hover { border-color: #44c5e3; background: #102543; }
+.public-track-back:focus-visible { outline: 2px solid #44c5e3; outline-offset: 2px; }
 .public-track-panel { display: grid; gap: 20px; }
 .public-tracked-report { min-width: 0; padding-top: 18px; border-top: 1px solid rgba(186, 213, 242, .18); }
 .public-tracked-report > header { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; }
