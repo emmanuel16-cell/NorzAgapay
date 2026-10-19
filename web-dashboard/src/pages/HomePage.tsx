@@ -1,6 +1,13 @@
+import { useEffect, useState } from 'react';
 import { ArrowRight, CheckCircle2, MapPin, ShieldCheck } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { toDataURL } from 'qrcode';
 import PublicHeader from '../components/PublicHeader';
+
+const quickAccessLinks = [
+  { id: 'home', label: 'Landing page', description: 'Scan to open the Norz-Agapay home page.', url: 'https://norz-agapay.vercel.app/' },
+  { id: 'report', label: 'Report an incident', description: 'Scan to start a new incident report.', url: 'https://norz-agapay.vercel.app/report' },
+];
 
 const reportSteps = [
   { icon: MapPin, title: 'Share the location and evidence', description: 'Pin where it happened and, if available, attach a photo or video to help responders assess the situation.' },
@@ -9,6 +16,29 @@ const reportSteps = [
 ];
 
 export default function HomePage() {
+  const [qrCodes, setQrCodes] = useState<Record<string, string>>({});
+  const [qrCodeError, setQrCodeError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all(quickAccessLinks.map(async ({ id, url }) => [
+      id,
+      await toDataURL(url, {
+        width: 240,
+        margin: 2,
+        errorCorrectionLevel: 'Q',
+        color: { dark: '#07142e', light: '#ffffff' },
+      }),
+    ] as const))
+      .then((entries) => {
+        if (!cancelled) setQrCodes(Object.fromEntries(entries));
+      })
+      .catch(() => {
+        if (!cancelled) setQrCodeError(true);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
   return (
     <div className="public-home-page">
       <PublicHeader />
@@ -43,6 +73,30 @@ export default function HomePage() {
                 <span className="public-home-step-icon"><Icon size={20} aria-hidden="true" /></span>
                 <h3>{title}</h3>
                 <p>{description}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="public-home-qr-section" aria-labelledby="public-home-qr-title">
+          <div className="public-home-section-heading public-home-qr-heading">
+            <span>QUICK ACCESS</span>
+            <h2 id="public-home-qr-title">Scan to visit or report.</h2>
+            <p>Open the home page or go straight to incident reporting with your phone.</p>
+          </div>
+          <div className="public-home-qr-grid">
+            {quickAccessLinks.map(({ id, label, description, url }) => (
+              <article className="public-home-qr-card" key={id}>
+                <a className="public-home-qr-image-link" href={url} aria-label={`Open ${label}`}>
+                  {qrCodes[id]
+                    ? <img src={qrCodes[id]} alt={`QR code linking to ${label}`} />
+                    : <span className="public-home-qr-placeholder" role="status">{qrCodeError ? 'QR code unavailable' : 'Preparing QR code…'}</span>}
+                </a>
+                <div className="public-home-qr-copy">
+                  <h3>{label}</h3>
+                  <p>{description}</p>
+                  <a href={url}>{url.replace('https://', '')}</a>
+                </div>
               </article>
             ))}
           </div>
