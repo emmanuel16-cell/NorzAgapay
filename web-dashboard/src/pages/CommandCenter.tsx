@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Polyline, Popup, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { CARTO_DARK_MAP_URL, CARTO_ATTRIBUTION } from '../lib/mapConfig';
 import 'leaflet/dist/leaflet.css';
 import { reportAPI, requestAPI, respondUnitAPI, socket } from '../lib/api';
@@ -900,6 +900,7 @@ export default function CommandCenter() {
   const isBarangayDashboard = user?.account_kind === 'barangay';
   const { boundary } = useMunicipalityBoundary();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // Clock
   const [currentTime, setCurrentTime] = useState(new Date().toLocaleTimeString());
@@ -976,6 +977,7 @@ export default function CommandCenter() {
   const barangayDispatchRequestId = useRef(0);
   const barangayDestinationsRequestId = useRef(0);
   const selectedIncidentLocationRequestId = useRef(0);
+  const linkedReportIdRef = useRef<string | null>(null);
   const previewMediaRef = useRef<HTMLImageElement | HTMLVideoElement>(null);
   const selectedIncidentId = selectedIncident?.id;
 
@@ -1328,6 +1330,7 @@ export default function CommandCenter() {
 
   const visibleIncidents = useMemo(() => incidents.filter((incident) => {
     if (incident.map_closed_at) return false;
+    if (incident.id === selectedIncident?.id) return true;
     if (incident.map_category === 'resident' && !filters.resident) return false;
     if (incident.map_category === 'barangay' && !filters.barangay) return false;
     if (incident.map_category === 'assigned' && !filters.assigned) return false;
@@ -1336,7 +1339,7 @@ export default function CommandCenter() {
     // even when a reported pin falls just outside the drawn boundary.
     return incident.is_central_assignment || !boundary.enabled ||
       isCoordinateInsideBoundary(incident.latitude, incident.longitude, boundary.geometry);
-  }), [incidents, filters, boundary]);
+  }), [incidents, filters, boundary, selectedIncident?.id]);
 
   const visibleDispatchUnits = useMemo(() => dispatchUnits.filter((unit) => {
     if (boundary.enabled && !isCoordinateInsideBoundary(unit.latitude, unit.longitude, boundary.geometry)) return false;
@@ -1435,6 +1438,32 @@ export default function CommandCenter() {
     setSelectedVisualUrl(firstVisual);
     setActiveModalType(item.report_kind === 'escalated' ? 'escalated' : 'incident');
   };
+
+  useEffect(() => {
+    const reportId = searchParams.get('report_id');
+    if (!reportId) {
+      linkedReportIdRef.current = null;
+      return;
+    }
+    if (loading || linkedReportIdRef.current === reportId) return;
+
+    linkedReportIdRef.current = reportId;
+    const incident = incidents.find((item) => item.id === reportId);
+    if (!incident) {
+      toast.error('This report is not available in your Command Center.');
+    } else if (incident.status === 'resolved') {
+      toast.error('This report has been resolved and is no longer available as an active map report.');
+    } else {
+      setFilters((current) => ({ ...current, [incident.map_category]: true }));
+      handleOpenIncidentPin(incident);
+    }
+
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      next.delete('report_id');
+      return next;
+    }, { replace: true });
+  }, [incidents, loading, searchParams, setSearchParams, handleOpenIncidentPin]);
 
   const handleOpenUnitPin = (unit: DispatchUnitItem) => {
     clearSelectedIncidentLocation();

@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { format, formatDistanceToNowStrict } from 'date-fns';
 import { AlertTriangle, ArrowLeft, CheckCircle2, Download, Image as ImageIcon, MapPin, Paperclip, Phone, Send, UserRound, X } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -27,6 +27,11 @@ type BarangayDestination = {
   id: string;
   name: string;
   distance_meters?: number | null;
+};
+type IncidentLocationPreview = {
+  road?: string | null;
+  landmark?: string | null;
+  landmark_distance_meters?: number | null;
 };
 
 interface IncidentReport {
@@ -130,6 +135,9 @@ const formatIncidentLocation = (report: IncidentReport) => {
   }
   return hasPin(report) ? 'Pinned incident location' : 'Location not provided';
 };
+const nearbyLandmarkLabel = (location?: IncidentLocationPreview) => location?.landmark
+  ? `Near ${location.landmark}${location.landmark_distance_meters != null ? ` · ${Math.round(location.landmark_distance_meters)} m` : ''}`
+  : '';
 const formatDistance = (distance?: number | null) => distance == null || !Number.isFinite(distance)
   ? 'distance unavailable'
   : distance < 1000 ? `${Math.round(distance)} m away` : `${(distance / 1000).toFixed(1)} km away`;
@@ -184,6 +192,10 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
   const [destinations, setDestinations] = useState<BarangayDestination[]>([]);
   const [destinationId, setDestinationId] = useState('');
   const [assignmentNotes, setAssignmentNotes] = useState('');
+  const [locationPreviews, setLocationPreviews] = useState<Record<string, IncidentLocationPreview>>({});
+  const [locationPreviewLoading, setLocationPreviewLoading] = useState<Record<string, boolean>>({});
+  const requestedLocationPreviews = useRef(new Set<string>());
+  const queueListRef = useRef<HTMLDivElement>(null);
 
   const showDemoPreview = isReadOnlyResponder &&
     localStorage.getItem('norzagapay_debug_session') === 'true' &&
@@ -256,6 +268,51 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
   const visible = useMemo(() => inGroup.filter((item) => getStage(item) === stage), [inGroup, stage]);
   const selected = visible.find((item) => item.id === selectedId) || visible[0] || null;
   const nearestDestination = destinations.find((item) => item.distance_meters != null) || null;
+
+  const loadLocationPreview = useCallback(async (report: IncidentReport) => {
+    if (isReadOnlyResponder || report.is_demo || !hasPin(report)) return;
+    const requestKey = `${report.id}:${report.latitude}:${report.longitude}`;
+    if (requestedLocationPreviews.current.has(requestKey)) return;
+    requestedLocationPreviews.current.add(requestKey);
+    setLocationPreviewLoading((current) => ({ ...current, [report.id]: true }));
+    try {
+      const response = isBarangay
+        ? await reportAPI.barangayLocationPreview(report.id)
+        : await reportAPI.mdrrmoLocationPreview(Number(report.latitude), Number(report.longitude));
+      setLocationPreviews((current) => ({ ...current, [report.id]: response.data || {} }));
+    } catch (error) {
+      console.warn(`Could not load map labels for incident ${report.id}:`, error);
+    } finally {
+      setLocationPreviewLoading((current) => ({ ...current, [report.id]: false }));
+    }
+  }, [isBarangay, isReadOnlyResponder]);
+
+  useEffect(() => {
+    if (selected) void loadLocationPreview(selected);
+  }, [selected?.id, selected?.latitude, selected?.longitude, loadLocationPreview]);
+
+  useEffect(() => {
+    const list = queueListRef.current;
+    if (!list || isReadOnlyResponder) return;
+    const locationRows = Array.from(list.querySelectorAll<HTMLElement>('[data-report-location-id]'));
+    if (!locationRows.length) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      const firstVisibleReports = visible.slice(0, 5);
+      firstVisibleReports.forEach((report) => void loadLocationPreview(report));
+      return;
+    }
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        const reportId = (entry.target as HTMLElement).dataset.reportLocationId;
+        const report = visible.find((item) => item.id === reportId);
+        if (report) void loadLocationPreview(report);
+        observer.unobserve(entry.target);
+      });
+    }, { root: list, rootMargin: '120px 0px' });
+    locationRows.forEach((element) => observer.observe(element));
+    return () => observer.disconnect();
+  }, [visible, isReadOnlyResponder, loadLocationPreview]);
 
   const clearLink = () => {
     if (!searchParams.has('id') && !searchParams.has('status')) return;
@@ -412,8 +469,13 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
   const assignment = selected?.mdrrmo_assignments?.find((item) => item.status !== 'removed');
   const activeAssignments = selected?.mdrrmo_assignments?.filter((item) => item.status !== 'removed') || [];
   const reporterName = selected?.reporter_name || selected?.reporter?.full_name || 'Resident';
-  const locationName = selected ? formatIncidentLocation(selected) : 'Norzagaray, Bulacan';
-  const locationNote = selected?.address && selected.address !== locationName ? selected.address : selected && hasPin(selected) ? 'Location pin received from the resident' : 'Location not provided';
+  const selectedLocationPreview = selected ? locationPreviews[selected.id] : undefined;
+  const locationName = selected
+    ? selectedLocationPreview?.road || selectedLocationPreview?.landmark || formatIncidentLocation(selected)
+    : 'Norzagaray, Bulacan';
+  const locationNote = selectedLocationPreview?.road && selectedLocationPreview.landmark
+    ? nearbyLandmarkLabel(selectedLocationPreview)
+    : selected?.address && selected.address !== locationName ? selected.address : selected && hasPin(selected) ? 'Location pin received from the resident' : 'Location not provided';
   const proofs = selected ? getProofs(selected) : [];
   const fieldMedia = selected?.responder_media || [];
   const category = INCIDENT_TYPE_OPTIONS.find((item) => item.value === selected?.incident_type)?.label || selected?.incident_type?.replaceAll('_', ' ');
@@ -441,14 +503,27 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
           <div className="reports-queue-heading"><h2>{stage === 'pending' ? 'Pending queue' : stage === 'responding' ? 'Responding reports' : 'Resolved reports'}</h2><span>{visible.length}</span></div>
           {loading ? <div className="reports-empty-v2"><span className="spinner" /><p>Loading reports…</p></div>
             : visible.length === 0 ? <div className="reports-empty-v2"><AlertTriangle size={22} /><strong>No {stage} reports</strong><p>Reports in this queue will appear here.</p></div>
-              : <div className="reports-queue-list-v2">{visible.map((report) => {
+              : <div className="reports-queue-list-v2" ref={queueListRef}>{visible.map((report) => {
                 const reportProofs = getProofs(report);
                 const active = selected?.id === report.id;
+                const locationPreview = locationPreviews[report.id];
+                const reportLocationName = report.is_demo
+                  ? 'Demo location'
+                  : locationPreview?.road || locationPreview?.landmark || formatIncidentLocation(report);
                 return <button key={report.id} type="button" className={'reports-queue-item-v2 ' + stage + (active ? ' selected' : '')} onClick={() => selectReport(report)}>
                   <span className="reports-queue-item-top"><strong>{report.is_demo ? 'Demo: ' : ''}{report.description?.trim() || 'No report details provided.'}</strong><span className={'report-status-chip-v2 ' + stage}>{report.is_demo ? 'Demo preview' : stage === 'responding' ? 'Responding' : stage === 'resolved' ? 'Resolved' : 'Pending'}</span></span>
                   <span className="reports-queue-time">Report received {timeAgo(report.created_at)}</span>
                   <span className="reports-queue-time">{incidentTimeLabel(report)}</span>
-                  <span className="reports-queue-meta"><span><MapPin size={14} /> {report.is_demo ? 'Demo location' : formatIncidentLocation(report)}</span><span><Paperclip size={13} /> {reportProofs.length} attachment{reportProofs.length === 1 ? '' : 's'}</span></span>
+                  <span className="reports-queue-meta">
+                    <span className="reports-queue-location-v2" data-report-location-id={report.is_demo ? undefined : report.id}>
+                      <MapPin size={14} />
+                      <span><strong>{reportLocationName}</strong>
+                        {locationPreview?.road && nearbyLandmarkLabel(locationPreview) && <small>{nearbyLandmarkLabel(locationPreview)}</small>}
+                        {!report.is_demo && locationPreviewLoading[report.id] && !locationPreview && <small>Looking up road and nearby places…</small>}
+                      </span>
+                    </span>
+                    <span><Paperclip size={13} /> {reportProofs.length} attachment{reportProofs.length === 1 ? '' : 's'}</span>
+                  </span>
                   {stage !== 'pending' && (report.incident_type || report.severity) && <span className="reports-classification-tags">
                     {report.incident_type && <small>{INCIDENT_TYPE_OPTIONS.find((item) => item.value === report.incident_type)?.label || report.incident_type.replaceAll('_', ' ')}</small>}
                     {report.severity && <small className="priority">{INCIDENT_SEVERITY_OPTIONS.find((item) => item.value === report.severity)?.label || report.severity} priority</small>}
@@ -495,7 +570,7 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
                 <div className="reports-info-card-v2"><span>Priority</span><strong>{priority || 'Not classified'}</strong></div>
               </div></section>}
 
-              {!isReadOnlyResponder && <section className="reports-detail-section-v2"><h3>Reported location</h3><div className="reports-location-card-v2"><MapPin size={20} /><div><strong>{locationName}</strong><span>{locationNote}</span></div>{hasPin(selected) && <small>Map pin available</small>}</div></section>}
+              {!isReadOnlyResponder && <section className="reports-detail-section-v2"><h3>Reported location</h3><div className="reports-location-card-v2"><MapPin size={20} /><div><strong>{locationName}</strong><span>{locationPreviewLoading[selected.id] && !selectedLocationPreview ? 'Looking up the road and nearby places…' : locationNote}</span></div>{hasPin(selected) && ['pending', 'responding'].includes(stage) && <Link className="reports-view-map-link-v2" to={`/command-center?report_id=${encodeURIComponent(selected.id)}`}>View in map</Link>}</div></section>}
 
               {!isBarangay && Boolean(selected.barangay_assignments?.length) && <section className="reports-detail-section-v2">
                 <h3>Barangay assignment history</h3>
