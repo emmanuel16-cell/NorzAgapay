@@ -46,7 +46,6 @@ export default function HomePage() {
               </article>
             ))}
           </div>
-          <Link className="public-home-inline-link" to="/report">Start a report <ArrowRight size={16} aria-hidden="true" /></Link>
         </section>
       </main>
       <footer className="public-home-footer"><img src="/NA-icon.png" alt="" /><span>Norz-Agapay · Norzagaray, Bulacan</span></footer>
