@@ -332,8 +332,32 @@ CREATE TABLE IF NOT EXISTS respond_units (
   specialization TEXT NOT NULL,
   officer_ids UUID[] NOT NULL DEFAULT '{}',
   status TEXT NOT NULL DEFAULT 'available',
+  is_active BOOLEAN NOT NULL DEFAULT false,
+  activation_mode TEXT CHECK (activation_mode IS NULL OR activation_mode IN ('manual', 'emergency')),
+  activated_by UUID REFERENCES public.users(id) ON DELETE SET NULL,
+  activated_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE public.respond_units
+  ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS activation_mode TEXT,
+  ADD COLUMN IF NOT EXISTS activated_by UUID REFERENCES public.users(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS activated_at TIMESTAMPTZ;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'public.respond_units'::regclass
+      AND conname = 'respond_units_activation_mode_check'
+  ) THEN
+    ALTER TABLE public.respond_units
+      ADD CONSTRAINT respond_units_activation_mode_check
+      CHECK (activation_mode IS NULL OR activation_mode IN ('manual', 'emergency'));
+  END IF;
+END;
+$$;
 
 CREATE TABLE IF NOT EXISTS public.respond_unit_members (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -2550,9 +2574,7 @@ BEGIN
   JOIN public.respond_units AS units
     ON units.id = leaders.unit_id
    AND units.status = 'available'
-  JOIN public.respond_unit_daily_activations AS activations
-    ON activations.unit_id = units.id
-   AND activations.activation_date = timezone('Asia/Manila', v_now)::DATE
+    AND units.is_active
   JOIN public.users AS leader_accounts
     ON leader_accounts.id = leaders.responder_user_id
    AND leader_accounts.role::TEXT = 'responder'
@@ -2568,7 +2590,7 @@ BEGIN
         AND first_aiders.member_role = 'first_aider_responder'
     );
   IF v_dispatchable_count <> cardinality(p_responder_ids) THEN
-    RAISE EXCEPTION 'One or more selected responders do not belong to an available unit activated today with a complete roster' USING ERRCODE = '23514';
+    RAISE EXCEPTION 'One or more selected responders do not belong to an active available unit with a complete roster' USING ERRCODE = '23514';
   END IF;
 
   PERFORM 1
@@ -3644,9 +3666,7 @@ BEGIN
   JOIN public.respond_units AS units
     ON units.id = leaders.unit_id
    AND units.status = 'available'
-  JOIN public.respond_unit_daily_activations AS activations
-    ON activations.unit_id = units.id
-   AND activations.activation_date = timezone('Asia/Manila', v_now)::DATE
+    AND units.is_active
   JOIN public.users AS leader_accounts
     ON leader_accounts.id = leaders.responder_user_id
    AND leader_accounts.role::TEXT = 'responder'
@@ -3662,7 +3682,7 @@ BEGIN
         AND first_aiders.member_role = 'first_aider_responder'
     );
   IF v_dispatchable_count <> cardinality(p_responder_ids) THEN
-    RAISE EXCEPTION 'One or more selected responders do not belong to an available unit activated today with a complete roster' USING ERRCODE = '23514';
+    RAISE EXCEPTION 'One or more selected responders do not belong to an active available unit with a complete roster' USING ERRCODE = '23514';
   END IF;
 
   UPDATE public.mdrrmo_reports SET
@@ -5099,18 +5119,21 @@ SET search_path = public
 AS $$
 DECLARE
   v_unit public.respond_units%ROWTYPE;
-  v_date DATE := timezone('Asia/Manila', now())::DATE;
+  v_now TIMESTAMPTZ := now();
 BEGIN
   IF p_active IS NULL OR NOT EXISTS (
     SELECT 1 FROM public.users
     WHERE id = p_activated_by
-      AND role::TEXT IN ('admin', 'logistics', 'master_admin')
+      AND role::TEXT IN ('admin', 'logistics', 'dispatcher', 'master_admin')
       AND status::TEXT = 'active'
   ) THEN
     RAISE EXCEPTION 'An active Admin or Staff account is required to change unit activation' USING ERRCODE = '42501';
   END IF;
 
-  SELECT * INTO v_unit FROM public.respond_units WHERE id = p_unit_id FOR UPDATE;
+  -- Serialize unit switches so two concurrent activations cannot leave two
+  -- single-activation teams enabled.
+  PERFORM id FROM public.respond_units ORDER BY id FOR UPDATE;
+  SELECT * INTO v_unit FROM public.respond_units WHERE id = p_unit_id;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Respond unit not found' USING ERRCODE = 'P0002';
   END IF;
@@ -5137,21 +5160,27 @@ BEGIN
       RAISE EXCEPTION 'The unit needs an active Team Leader, a Driver Responder, and a First Aider Responder before activation' USING ERRCODE = '23514';
     END IF;
 
-    INSERT INTO public.respond_unit_daily_activations (
-      unit_id, activation_date, activated_by, activation_mode, activated_at
-    ) VALUES (p_unit_id, v_date, p_activated_by, 'manual', now())
-    ON CONFLICT (unit_id, activation_date) DO UPDATE SET
-      activated_by = EXCLUDED.activated_by,
-      activation_mode = 'manual',
-      activated_at = EXCLUDED.activated_at;
-  ELSE
-    DELETE FROM public.respond_unit_daily_activations
-    WHERE unit_id = p_unit_id AND activation_date = v_date;
   END IF;
+
+  IF p_active THEN
+    UPDATE public.respond_units
+    SET is_active = false,
+        activation_mode = NULL,
+        activated_by = NULL,
+        activated_at = NULL
+    WHERE id <> p_unit_id AND is_active;
+  END IF;
+
+  UPDATE public.respond_units
+  SET is_active = p_active,
+      activation_mode = CASE WHEN p_active THEN 'manual' ELSE NULL END,
+      activated_by = CASE WHEN p_active THEN p_activated_by ELSE NULL END,
+      activated_at = CASE WHEN p_active THEN v_now ELSE NULL END
+  WHERE id = p_unit_id;
 
   RETURN jsonb_build_object(
     'unit_id', p_unit_id,
-    'activation_date', v_date,
+    'is_active', p_active,
     'is_active_today', p_active
   );
 END;
@@ -5166,7 +5195,6 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  v_date DATE := timezone('Asia/Manila', now())::DATE;
   v_now TIMESTAMPTZ := now();
   v_activated_count INTEGER := 0;
   v_total_count INTEGER := 0;
@@ -5183,11 +5211,11 @@ BEGIN
   PERFORM id FROM public.respond_units ORDER BY id FOR UPDATE;
   SELECT count(*) INTO v_total_count FROM public.respond_units;
 
-  INSERT INTO public.respond_unit_daily_activations (
-    unit_id, activation_date, activated_by, activation_mode, activated_at
-  )
-  SELECT units.id, v_date, p_activated_by, 'emergency', v_now
-  FROM public.respond_units AS units
+  UPDATE public.respond_units AS units
+  SET is_active = true,
+      activation_mode = 'emergency',
+      activated_by = p_activated_by,
+      activated_at = v_now
   WHERE units.status = 'available'
     AND EXISTS (
       SELECT 1
@@ -5205,15 +5233,10 @@ BEGIN
     AND EXISTS (
       SELECT 1 FROM public.respond_unit_members
       WHERE unit_id = units.id AND is_active AND member_role = 'first_aider_responder'
-    )
-  ON CONFLICT (unit_id, activation_date) DO UPDATE SET
-    activated_by = EXCLUDED.activated_by,
-    activation_mode = 'emergency',
-    activated_at = EXCLUDED.activated_at;
+    );
   GET DIAGNOSTICS v_activated_count = ROW_COUNT;
 
   RETURN jsonb_build_object(
-    'activation_date', v_date,
     'activated_count', v_activated_count,
     'skipped_count', GREATEST(v_total_count - v_activated_count, 0)
   );
@@ -6088,9 +6111,7 @@ BEGIN
    AND leaders.is_active
   JOIN public.respond_units AS units
     ON units.id = leaders.unit_id AND units.status = 'available'
-  JOIN public.respond_unit_daily_activations AS activations
-    ON activations.unit_id = units.id
-   AND activations.activation_date = timezone('Asia/Manila', v_now)::DATE
+    AND units.is_active
   JOIN public.users AS leader_accounts
     ON leader_accounts.id = leaders.responder_user_id
    AND leader_accounts.role::TEXT = 'responder'
@@ -6105,7 +6126,7 @@ BEGIN
       AND first_aiders.member_role = 'first_aider_responder'
   );
   IF v_dispatchable_count <> cardinality(p_responder_ids) THEN
-    RAISE EXCEPTION 'One or more selected responders do not belong to an available unit activated today with a complete roster' USING ERRCODE = '23514';
+    RAISE EXCEPTION 'One or more selected responders do not belong to an active available unit with a complete roster' USING ERRCODE = '23514';
   END IF;
 
   UPDATE public.mdrrmo_reports SET

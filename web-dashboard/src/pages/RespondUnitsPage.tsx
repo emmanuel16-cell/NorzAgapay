@@ -50,11 +50,10 @@ interface RespondUnit {
   team_leader?: { id: string; full_name: string; phone?: string | null; is_active_account?: boolean } | null;
   members: UnitMember[];
   roster_ready: boolean;
-  is_active_today: boolean;
-  activation_date?: string | null;
+  is_active: boolean;
   activation_mode?: 'manual' | 'emergency' | null;
   activated_at?: string | null;
-  can_dispatch_today: boolean;
+  can_dispatch: boolean;
 }
 
 const roles: Array<{ value: CrewRole; label: string; limit: number }> = [
@@ -80,7 +79,7 @@ const roleIcons: Record<CrewRole, typeof Radio> = {
 export default function RespondUnitsPage() {
   const { user, isMasterAdmin } = useAuth();
   const canManageRoster = isMasterAdmin || user?.role === 'admin' || user?.role === 'logistics';
-  const canActivateUnits = canManageRoster;
+  const canActivateUnits = canManageRoster || user?.role === 'dispatcher';
   const isDispatcher = user?.role === 'dispatcher';
   const noLeaderAccountsMessage = isMasterAdmin
     ? 'No available active responder accounts. You can create this unit now and assign a Team Leader after a responder account is available.'
@@ -285,16 +284,18 @@ export default function RespondUnitsPage() {
     }
   };
 
-  const setUnitActiveToday = async (unit: RespondUnit, active: boolean) => {
+  const setUnitActive = async (unit: RespondUnit, active: boolean) => {
     if (active && (unit.status !== 'available' || !unit.roster_ready)) return;
     setSaving(true);
     try {
-      const response = await respondUnitAPI.activateToday(unit.id, active);
+      const response = await respondUnitAPI.activate(unit.id, active);
       await fetchUnits(unit.id);
-      toast.success(active ? `${unit.unit_name} is active for dispatch today.` : `${unit.unit_name} is inactive for new dispatches today.`);
+      toast.success(active
+        ? `${unit.unit_name} is active for dispatch; other units have been deactivated.`
+        : `${unit.unit_name} is inactive for dispatch.`);
       return response.data;
     } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Could not update today’s unit activation.');
+      toast.error(error.response?.data?.error || 'Could not update unit activation.');
       return null;
     } finally {
       setSaving(false);
@@ -307,10 +308,10 @@ export default function RespondUnitsPage() {
       toast.error('No available units have a complete responder roster.');
       return;
     }
-    if (!window.confirm('Emergency activation will make every available unit with a complete roster selectable for MDRRMO dispatch today. Continue?')) return;
+    if (!window.confirm('Emergency activation will keep every available unit with a complete roster selectable for MDRRMO dispatch until deactivated. Continue?')) return;
     setActivatingAll(true);
     try {
-      const response = await respondUnitAPI.emergencyActivateAllToday();
+      const response = await respondUnitAPI.emergencyActivateAll();
       await fetchUnits();
       const { activated_count, skipped_count } = response.data;
       toast.success(`Emergency activation enabled ${activated_count} unit(s); ${skipped_count} unit(s) were not eligible.`);
@@ -358,8 +359,8 @@ export default function RespondUnitsPage() {
                       <strong>{unit.unit_name}</strong>
                       <small>{unit.team_leader?.full_name || 'Team Leader unassigned'}</small>
                       <small>{activeMembers.length} roster members · {unit.status || 'available'}</small>
-                      <small className={`ru-unit-activation ${unit.can_dispatch_today ? 'dispatchable' : ''}`}>
-                        {unit.can_dispatch_today ? 'Active today · dispatchable' : unit.is_active_today ? 'Activated · not dispatchable' : 'Inactive today · not dispatchable'}
+                      <small className={`ru-unit-activation ${unit.can_dispatch ? 'dispatchable' : ''}`}>
+                        {unit.can_dispatch ? 'Active · dispatchable' : unit.is_active ? 'Active · not dispatchable' : 'Inactive · not dispatchable'}
                       </small>
                     </span>
                   </button>
@@ -383,15 +384,15 @@ export default function RespondUnitsPage() {
                   <div className="ru-eyebrow">Response unit</div>
                   <h2>{selectedUnit.unit_name}</h2>
                   <p><MapPin size={14} /> {selectedUnit.specialization || 'Mixed response'} <span>·</span> {selectedUnit.status || 'available'}</p>
-                  <div className={`ru-activation-state ${selectedUnit.can_dispatch_today ? 'dispatchable' : ''}`}>
+                  <div className={`ru-activation-state ${selectedUnit.can_dispatch ? 'dispatchable' : ''}`}>
                     <Power size={15} />
-                    <span>{selectedUnit.can_dispatch_today ? 'Active today · dispatchers can assign this unit' : selectedUnit.is_active_today ? 'Activated today · unavailable for dispatch' : 'Inactive today · hidden from dispatchers'}</span>
+                    <span>{selectedUnit.can_dispatch ? 'Active · dispatchers can assign this unit' : selectedUnit.is_active ? 'Active · unavailable for dispatch' : 'Inactive · hidden from dispatchers'}</span>
                     {selectedUnit.activation_mode === 'emergency' && <small>Emergency activation</small>}
                   </div>
                 </div>
                 <div className="ru-detail-actions">
-                  {canActivateUnits && <button className={`btn btn-sm ${selectedUnit.is_active_today ? 'btn-outline' : 'btn-primary'}`} onClick={() => void setUnitActiveToday(selectedUnit, !selectedUnit.is_active_today)} disabled={saving || (!selectedUnit.is_active_today && (selectedUnit.status !== 'available' || !selectedUnit.roster_ready))}>
-                    <Power size={14} /> {selectedUnit.is_active_today ? 'Deactivate today' : 'Activate today'}
+                  {canActivateUnits && <button className={`btn btn-sm ${selectedUnit.is_active ? 'btn-outline' : 'btn-primary'}`} onClick={() => void setUnitActive(selectedUnit, !selectedUnit.is_active)} disabled={saving || (!selectedUnit.is_active && (selectedUnit.status !== 'available' || !selectedUnit.roster_ready))}>
+                    <Power size={14} /> {selectedUnit.is_active ? 'Deactivate' : 'Activate'}
                   </button>}
                   {canManageRoster && <button className="btn btn-outline btn-sm" onClick={() => void openEdit(selectedUnit)} disabled={saving}><Pencil size={14} /> Edit unit</button>}
                   {canManageRoster && <button className="btn btn-primary btn-sm" onClick={() => setShowMemberForm((visible) => !visible)}><Plus size={15} /> Add crew</button>}
@@ -481,7 +482,7 @@ export default function RespondUnitsPage() {
             <div className="form-group"><label className="form-label">Specialization *</label><input className="form-input" required maxLength={120} value={unitForm.specialization} onChange={(event) => setUnitForm({ ...unitForm, specialization: event.target.value })} /></div>
             {editingUnit && <div className="form-group"><label className="form-label">Status</label><select className="form-select" value={unitForm.status} onChange={(event) => setUnitForm({ ...unitForm, status: event.target.value })}><option value="available">Available</option><option value="unavailable">Unavailable</option><option value="maintenance">Maintenance</option></select></div>}
             <div className="form-group"><label className="form-label">Team Leader · MDRRMO mobile responder</label><select className="form-select" value={unitForm.team_leader_user_id} onChange={(event) => setUnitForm({ ...unitForm, team_leader_user_id: event.target.value })}><option value="">Assign a Team Leader later</option>{editingUnit?.team_leader_user_id && !leaderAccounts.some((account) => account.id === editingUnit.team_leader_user_id) && <option value={editingUnit.team_leader_user_id}>{editingUnit.team_leader?.full_name || 'Current Team Leader'}</option>}{leaderAccounts.length > 0 && <optgroup label="Active MDRRMO mobile responder accounts">{leaderAccounts.map((account) => <option key={account.id} value={account.id}>{account.officer_name || account.full_name}{account.phone ? ` · ${formatMobileNumber(account.phone)}` : ''}</option>)}</optgroup>}{officerProfiles.length > 0 && <optgroup label="MDRRMO Officers without an active mobile account">{officerProfiles.map((officer) => <option key={officer.id} value={`officer-${officer.id}`} disabled>{officer.name}{officer.phone ? ` · ${formatMobileNumber(officer.phone)}` : ''} · account needed</option>)}</optgroup>}</select>
-              {leaderAccountsError ? <small className="ru-form-warning" role="status">{leaderAccountsError} {officerProfiles.length > 0 ? 'Officer profiles are shown below, but they need an active mobile responder account to be assigned as Team Leader.' : ''} You can still create the unit and assign the Team Leader later.</small> : leaderAccounts.length === 0 ? <small className="ru-form-warning" role="status">{officerProfiles.length > 0 ? `Found ${officerProfiles.length} active MDRRMO Officer profile(s), but none has a matching active mobile responder account. Create or activate a responder account with the same mobile number, then retry.` : noLeaderAccountsMessage}</small> : <small className="ru-form-hint">Officer profiles are matched to MDRRMO mobile responder accounts by mobile number. Assign one now or later; the unit also needs a Driver Responder, a First Aider Responder, and today’s activation before dispatch.</small>}
+              {leaderAccountsError ? <small className="ru-form-warning" role="status">{leaderAccountsError} {officerProfiles.length > 0 ? 'Officer profiles are shown below, but they need an active mobile responder account to be assigned as Team Leader.' : ''} You can still create the unit and assign the Team Leader later.</small> : leaderAccounts.length === 0 ? <small className="ru-form-warning" role="status">{officerProfiles.length > 0 ? `Found ${officerProfiles.length} active MDRRMO Officer profile(s), but none has a matching active mobile responder account. Create or activate a responder account with the same mobile number, then retry.` : noLeaderAccountsMessage}</small> : <small className="ru-form-hint">Officer profiles are matched to MDRRMO mobile responder accounts by mobile number. Assign one now or later; the unit also needs a Driver Responder, a First Aider Responder, and activation before dispatch.</small>}
             </div>
             <div className="modal-footer">
               {editingUnit && <button type="button" className="btn btn-danger ru-delete-unit" onClick={() => void deleteUnit()} disabled={saving || deletingUnit || editingUnit.members.length > 0}><Trash2 size={15} /> {deletingUnit ? 'Deleting…' : 'Delete Unit'}</button>}

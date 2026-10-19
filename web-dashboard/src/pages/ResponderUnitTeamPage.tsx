@@ -16,8 +16,8 @@ type UnitMember = {
 type RespondUnit = {
   unit_name?: string;
   unit_type?: string;
-  is_active_today?: boolean;
-  can_dispatch_today?: boolean;
+  is_active?: boolean;
+  can_dispatch?: boolean;
 };
 
 export default function ResponderUnitTeamPage() {
@@ -62,7 +62,7 @@ export default function ResponderUnitTeamPage() {
       <section className="barangay-console-stat-grid barangay-console-stat-grid-compact" aria-label="Response unit summary">
         <article><span>Response unit</span><strong>{unit?.unit_name || 'Not assigned'}</strong><Users size={20} /></article>
         <article><span>Active crew</span><strong>{members.length}</strong><Users size={20} /></article>
-        <article><span>Deployment status</span><strong>{unit?.can_dispatch_today ? 'Ready' : unit?.is_active_today ? 'Standby' : 'Not active'}</strong><ShieldAlert size={20} /></article>
+        <article><span>Deployment status</span><strong>{unit?.can_dispatch ? 'Ready' : unit?.is_active ? 'Standby' : 'Not active'}</strong><ShieldAlert size={20} /></article>
       </section>
 
       <section className="barangay-console-panel">

@@ -751,7 +751,7 @@ const dispatchMdrrmoReport = async (req: AuthRequest, res: Response): Promise<vo
     const dispatchableUnits = await getDispatchableRespondUnits();
     const dispatchableResponderIds = new Set(dispatchableUnits.map((unit) => unit.responder_user_id));
     if (responderIds.some((id) => !dispatchableResponderIds.has(id))) {
-      res.status(400).json({ error: 'One or more selected responders do not belong to an available unit activated today with a complete roster.' });
+      res.status(400).json({ error: 'One or more selected responders do not belong to an active available unit with a complete roster.' });
       return;
     }
 

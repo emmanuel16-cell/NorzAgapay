@@ -1,16 +1,5 @@
 import { supabaseAdmin } from '../config/supabase';
 
-export function currentManilaDate(): string {
-  const parts = new Intl.DateTimeFormat('en', {
-    timeZone: 'Asia/Manila',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date());
-  const get = (type: string) => parts.find((part) => part.type === type)?.value || '';
-  return `${get('year')}-${get('month')}-${get('day')}`;
-}
-
 export interface DispatchableRespondUnit {
   unit_id: string;
   unit_name: string;
@@ -20,18 +9,10 @@ export interface DispatchableRespondUnit {
 }
 
 export async function getDispatchableRespondUnits(): Promise<DispatchableRespondUnit[]> {
-  const { data: activations, error: activationError } = await supabaseAdmin
-    .from('respond_unit_daily_activations')
-    .select('unit_id')
-    .eq('activation_date', currentManilaDate());
-  if (activationError) throw activationError;
-  const activatedUnitIds = [...new Set((activations || []).map((row: any) => row.unit_id))];
-  if (!activatedUnitIds.length) return [];
-
   const { data: units, error: unitsError } = await supabaseAdmin
     .from('respond_units')
     .select('id, unit_name')
-    .in('id', activatedUnitIds)
+    .eq('is_active', true)
     .eq('status', 'available');
   if (unitsError) throw unitsError;
   const activeUnits = units || [];

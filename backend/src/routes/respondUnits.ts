@@ -2,7 +2,6 @@ import { Router, Response } from 'express';
 import { z } from 'zod';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth';
 import { supabaseAdmin } from '../config/supabase';
-import { currentManilaDate } from '../services/respondUnitAvailability';
 import { normalizeMobileNumber } from '../services/mobileNumberService';
 
 const router = Router();
@@ -62,15 +61,7 @@ async function getUnitDetails(unitIds?: string[]) {
     .in('unit_id', ids)
     .eq('is_active', true);
   if (membersError) throw membersError;
-  const { data: activationRows, error: activationError } = await supabaseAdmin
-    .from('respond_unit_daily_activations')
-    .select('unit_id, activation_date, activation_mode, activated_at')
-    .in('unit_id', ids)
-    .eq('activation_date', currentManilaDate());
-  if (activationError) throw activationError;
-
   const memberships = memberRows || [];
-  const activationByUnit = new Map((activationRows || []).map((activation: any) => [activation.unit_id, activation]));
   const officerIds = [...new Set(memberships.map((member: any) => member.officer_id))];
   const responderIds = [...new Set(memberships.map((member: any) => member.responder_user_id).filter(Boolean))];
   const [officersResult, respondersResult] = await Promise.all([
@@ -111,7 +102,6 @@ async function getUnitDetails(unitIds?: string[]) {
     const leaderAccount: any = leader?.responder_user_id ? responderMap.get(leader.responder_user_id) : null;
     const activeMembers = members.filter((member: any) => member.member_role !== 'unassigned');
     const officerIds = [...new Set(members.map((member: any) => member.officer_id))];
-    const activation: any = activationByUnit.get(unit.id);
     const rosterReady = Boolean(leader && leaderAccount?.role === 'responder' && leaderAccount?.status === 'active') &&
       activeMembers.some((member: any) => member.member_role === 'driver_responder') &&
       activeMembers.some((member: any) => member.member_role === 'first_aider_responder');
@@ -128,11 +118,13 @@ async function getUnitDetails(unitIds?: string[]) {
       } : null,
       members,
       roster_ready: rosterReady,
-      is_active_today: Boolean(activation),
-      activation_date: activation?.activation_date || null,
-      activation_mode: activation?.activation_mode || null,
-      activated_at: activation?.activated_at || null,
-      can_dispatch_today: Boolean(activation) && unit.status === 'available' && rosterReady,
+      is_active: Boolean(unit.is_active),
+      // Keep the former API flags available while older web clients roll forward.
+      is_active_today: Boolean(unit.is_active),
+      can_dispatch_today: Boolean(unit.is_active) && unit.status === 'available' && rosterReady,
+      activation_mode: unit.activation_mode || null,
+      activated_at: unit.activated_at || null,
+      can_dispatch: Boolean(unit.is_active) && unit.status === 'available' && rosterReady,
     };
   });
 }
@@ -311,9 +303,9 @@ router.get('/', authenticate, authorize('logistics', 'admin', 'dispatcher', 'mas
   }
 });
 
-router.put('/:id/activation-today', authenticate, authorize('admin', 'logistics', 'master_admin'), async (req: AuthRequest, res: Response): Promise<void> => {
+const updateUnitActivation = async (req: AuthRequest, res: Response): Promise<void> => {
   const parsed = z.object({ active: z.boolean() }).safeParse(req.body);
-  if (!parsed.success) { res.status(400).json({ error: 'Choose whether this unit should be active today.' }); return; }
+  if (!parsed.success) { res.status(400).json({ error: 'Choose whether this unit should be active.' }); return; }
   try {
     const { data, error } = await supabaseAdmin.rpc('set_respond_unit_activation_today_v1', {
       p_unit_id: req.params.id,
@@ -325,21 +317,28 @@ router.put('/:id/activation-today', authenticate, authorize('admin', 'logistics'
     if (!unit) { res.status(404).json({ error: 'Respond unit not found.' }); return; }
     res.json({ unit, activation: data });
   } catch (error: any) {
-    reportDbError(res, error, 'Could not update today’s unit activation.');
+    reportDbError(res, error, 'Could not update unit activation.');
   }
-});
+};
 
-router.post('/activate-all-today', authenticate, authorize('admin', 'logistics', 'master_admin'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.put('/:id/activation', authenticate, authorize('admin', 'logistics', 'dispatcher', 'master_admin'), updateUnitActivation);
+// Keep older web clients working while applying the new persistent activation behavior.
+router.put('/:id/activation-today', authenticate, authorize('admin', 'logistics', 'dispatcher', 'master_admin'), updateUnitActivation);
+
+const emergencyActivateAllUnits = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { data, error } = await supabaseAdmin.rpc('emergency_activate_all_respond_units_today_v1', {
       p_activated_by: req.user!.userId,
     });
     if (error) throw error;
-    res.json(data || { activated_count: 0, activation_date: currentManilaDate() });
+    res.json(data || { activated_count: 0, skipped_count: 0 });
   } catch (error: any) {
     reportDbError(res, error, 'Could not emergency activate response units.');
   }
-});
+};
+
+router.post('/activate-all', authenticate, authorize('admin', 'logistics', 'master_admin'), emergencyActivateAllUnits);
+router.post('/activate-all-today', authenticate, authorize('admin', 'logistics', 'master_admin'), emergencyActivateAllUnits);
 
 router.post('/', authenticate, authorize('admin', 'logistics', 'master_admin'), async (req: AuthRequest, res: Response): Promise<void> => {
   const schema = z.object({
