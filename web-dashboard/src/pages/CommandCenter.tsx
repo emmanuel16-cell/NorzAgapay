@@ -2680,7 +2680,7 @@ export default function CommandCenter() {
               </div>
 
               <label className="mdrrmo-dispatch-notes">
-                Dispatcher notes <span>(optional · sent to responders; separate from escalation notes)</span>
+                Dispatcher notes <span>additional information for responders</span>
                 <textarea
                   value={mdrrmoDispatchNotes}
                   onChange={(event) => setMdrrmoDispatchNotes(event.target.value)}
