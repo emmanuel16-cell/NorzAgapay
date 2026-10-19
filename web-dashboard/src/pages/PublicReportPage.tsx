@@ -297,8 +297,8 @@ export default function PublicReportPage() {
         <div className="public-report-intro">
           <span className="public-home-eyebrow">{reportType === 'community' ? 'COMMUNITY INCIDENT REPORTING' : 'EMERGENCY INCIDENT REPORTING'}</span>
           <h1>{reportType === 'community' ? 'Share a local concern.' : 'Tell us what is happening.'}</h1>
-          <p>{reportType === 'community' ? 'Report a community hazard so MDRRMO can review it and coordinate a local response.' : 'Share a mobile number, incident category, location, and clear details. Reports are sent to MDRRMO for review.'}</p>
-          {user ? <p className="public-report-login-note">Reporting as <strong>{user.full_name}</strong>. <Link to="/resident-home">Back to resident portal</Link>.</p> : <p className="public-report-login-note">Already have an account? <Link to="/login">Sign in to follow your reports or open the command center</Link>.</p>}
+          <p>{reportType === 'community' ? 'Report a community hazard so MDRRMO can review it and coordinate a local response.' : 'Reports are sent to MDRRMO for review.'}</p>
+          {user ? <p className="public-report-login-note">Reporting as <strong>{user.full_name}</strong>. <Link to="/resident-home">Back to resident portal</Link>.</p> : <p className="public-report-login-note">Already have an account? <Link to="/login">Sign in</Link>.</p>}
         </div>
         <div className="public-report-content-grid">
           <section className="public-intake-panel" aria-labelledby="public-report-title">
