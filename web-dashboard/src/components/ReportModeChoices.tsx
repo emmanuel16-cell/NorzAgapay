@@ -1,4 +1,5 @@
 import { Camera, FileText } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 type ReportModeChoicesProps = {
   onSelect: (mode: 'standard' | 'visual') => void;
@@ -19,5 +20,6 @@ export default function ReportModeChoices({ onSelect }: ReportModeChoicesProps) 
         <small>No incident details needed. Capture at least one photo or video with your camera.</small>
       </button>
     </div>
+    <p className="report-mode-track-note">Already submitted a report? <Link to="/track-report">Track it</Link></p>
   </section>;
 }

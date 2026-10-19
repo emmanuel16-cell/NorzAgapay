@@ -65,7 +65,7 @@ export default function HomePage() {
 
   return (
     <div className="public-home-page">
-      <PublicHeader />
+      <PublicHeader showActions={false} />
       <main>
         <section className="public-home-hero" aria-labelledby="public-home-title">
           <div className="public-home-hero-content">
@@ -74,7 +74,7 @@ export default function HomePage() {
             <p className="public-home-intro">Share the incident location and details, and attach a photo or video if available. MDRRMO reviews reports first and can coordinate a barangay response.</p>
             <div className="public-home-hero-actions">
               <Link className="public-home-primary-action" to="/report">Report an incident <ArrowRight size={19} aria-hidden="true" /></Link>
-              <Link className="public-home-secondary-action" to="/login">Command center login</Link>
+              <Link className="public-home-secondary-action" to="/login">Log in</Link>
             </div>
             <p className="public-home-note">You can report an incident without creating an account.</p>
           </div>

@@ -4015,6 +4015,8 @@ tbody tr:last-child td { border-bottom: none; }
 .report-mode-choice-icon { display: grid; width: 36px; height: 36px; place-items: center; border-radius: 10px; color: var(--primary-light, #44c5e3); background: rgba(55, 189, 216, .12); }
 .report-mode-choice strong { font-size: 13px; }
 .report-mode-choice small { color: var(--text-muted, #a9bddb); font-size: 11px; font-weight: 450; line-height: 1.5; }
+.report-mode-track-note { margin: 0; color: var(--text-muted, #91a9ca); font-size: 12px; text-align: center; }
+.report-mode-track-note a { color: var(--primary-light, #44c5e3); font-weight: 700; text-decoration: underline; text-underline-offset: 2px; }
 .report-mode-back { justify-self: start; padding: 0; border: 0; color: var(--primary-light, #76d8ed); background: transparent; font: inherit; font-size: 11px; font-weight: 700; cursor: pointer; }
 .camera-evidence-control { display: grid; gap: 8px; min-width: 0; color: var(--text-primary, #dce8fb); }
 .camera-evidence-heading { display: grid; gap: 4px; }
