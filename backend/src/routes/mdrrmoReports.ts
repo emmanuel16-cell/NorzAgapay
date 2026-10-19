@@ -295,7 +295,10 @@ router.get('/barangay-destinations', authenticate, authorize('dispatcher', 'admi
     if (reportId) {
       const { data: report, error: reportError } = await supabaseAdmin
         .from('mdrrmo_reports')
-        .select('id, type, specifics, description, latitude, longitude, status, coordination_notes, review_outcome')
+        // Keep this in sync with the dedicated MDRRMO table. review_outcome
+        // belongs to the legacy incident tables, so selecting it makes
+        // PostgREST reject the destination lookup before barangays are read.
+        .select('*')
         .eq('id', reportId)
         .maybeSingle();
       if (reportError) throw reportError;
@@ -313,7 +316,7 @@ router.get('/barangay-destinations', authenticate, authorize('dispatcher', 'admi
     const verifiedIds = await getVerifiedBarangayIds();
     if (!verifiedIds.length) { res.json({ barangays: [] }); return; }
     const { data, error } = await supabaseAdmin.from('barangays')
-      .select('id, name, municipality, latitude, longitude, location_latitude, location_longitude')
+      .select('id, name, latitude, longitude, location_latitude, location_longitude')
       .in('id', verifiedIds).order('name', { ascending: true });
     if (error) throw error;
     const destinations = (data || []).map((barangay: any) => {

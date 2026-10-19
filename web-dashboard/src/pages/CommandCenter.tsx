@@ -63,6 +63,7 @@ interface IncidentItem {
   assigned_unit_id?: string;
   barangay_name?: string;
   barangay_response_status?: string;
+  is_central_assignment?: boolean;
   response_barangay_id?: string | null;
   response_barangay_name?: string | null;
   assignment_status?: string | null;
@@ -1052,6 +1053,7 @@ export default function CommandCenter() {
             assigned_unit_id: r.assigned_unit_id || null,
             barangay_name: r.barangay_name || (r.barangays && r.barangays.name) || '',
             barangay_response_status: r.barangay_response_status || 'pending',
+            is_central_assignment: Boolean(r.is_central_assignment),
             response_barangay_id: r.response_barangay_id || null,
             response_barangay_name: r.response_barangay_name || null,
             assignment_status: r.assignment_status || null,
@@ -1288,7 +1290,10 @@ export default function CommandCenter() {
     if (incident.status === 'arrived' && !filters.arrived) return false;
     if (incident.status === 'responding' && !filters.responding) return false;
     if (incident.status === 'resolved' && !filters.resolved) return false;
-    return !boundary.enabled || isCoordinateInsideBoundary(incident.latitude, incident.longitude, boundary.geometry);
+    // Assigned reports belong in this barangay's dispatcher queue and map,
+    // even when a reported pin falls just outside the drawn boundary.
+    return incident.is_central_assignment || !boundary.enabled ||
+      isCoordinateInsideBoundary(incident.latitude, incident.longitude, boundary.geometry);
   }), [incidents, filters, boundary]);
 
   const visibleLiveResponders = useMemo(() => {
