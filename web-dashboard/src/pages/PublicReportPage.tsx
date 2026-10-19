@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { LocateFixed, MapPin, Phone, Siren, Upload, X } from 'lucide-react';
+import { LocateFixed, MapPin, Phone, Siren, X } from 'lucide-react';
 import { MapContainer, Marker, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import { Link, Navigate, useSearchParams } from 'react-router-dom';
@@ -10,6 +10,8 @@ import { CARTO_ATTRIBUTION, CARTO_DARK_MAP_URL } from '../lib/mapConfig';
 import { useAuth } from '../context/AuthContext';
 import IncidentTimeInput, { createInitialIncidentTime, type IncidentTimeValue } from '../components/IncidentTimeInput';
 import MobileNumberInput from '../components/MobileNumberInput';
+import CameraEvidenceCapture from '../components/CameraEvidenceCapture';
+import ReportModeChoices from '../components/ReportModeChoices';
 import { formatMobileNumber, isValidMobileNumber, normalizeMobileNumberInput } from '../lib/mobileNumber';
 
 function createGuestRequestId() {
@@ -74,6 +76,7 @@ export default function PublicReportPage() {
   const [publicBarangays, setPublicBarangays] = useState<PublicBarangayOption[]>([]);
   const [selectedHotlineBarangay, setSelectedHotlineBarangay] = useState('');
   const [guestPhone, setGuestPhone] = useState('');
+  const [reportMode, setReportMode] = useState<'standard' | 'visual' | null>(null);
   const [incidentCategory, setIncidentCategory] = useState('not_sure');
   const [incidentTime, setIncidentTime] = useState<IncidentTimeValue>(createInitialIncidentTime);
   const [otherEmergency, setOtherEmergency] = useState('');
@@ -87,7 +90,7 @@ export default function PublicReportPage() {
   const [mapFocus, setMapFocus] = useState<[number, number]>(defaultMapCenter);
   const [mapLocationLoading, setMapLocationLoading] = useState(false);
   const [mapLocationMessage, setMapLocationMessage] = useState('');
-  const [evidence, setEvidence] = useState<File | null>(null);
+  const [evidence, setEvidence] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [submitted, setSubmitted] = useState(false);
@@ -225,24 +228,33 @@ export default function PublicReportPage() {
     setSubmitted(false);
     const phone = normalizeMobileNumberInput(guestPhone);
     if (!isValidMobileNumber(phone)) { setMessage('Enter exactly 11 digits starting with 09.'); return; }
-    if (reportType === 'emergency' && incidentCategory === 'other' && !otherEmergency.trim()) { setMessage('Describe the other emergency.'); return; }
+    if (reportMode === 'standard' && reportType === 'emergency' && incidentCategory === 'other' && !otherEmergency.trim()) { setMessage('Describe the other emergency.'); return; }
     if (!location) { setMessage('Add the incident location before submitting.'); return; }
-    if (description.trim().length < 8) { setMessage('Describe the incident in at least 8 characters.'); return; }
+    if (reportMode === 'standard' && description.trim().length < 8) { setMessage('Describe the incident in at least 8 characters.'); return; }
+    if (reportMode === 'visual' && evidence.length === 0) { setMessage('Capture at least one photo or video for a visual report.'); return; }
+    if (!reportMode) { setMessage('Choose a report format to continue.'); return; }
     setBusy(true);
     try {
+      const reportDescription = reportMode === 'visual'
+        ? `Visual report submitted with ${evidence.filter((file) => file.type.startsWith('image/')).length} photo(s) and ${evidence.filter((file) => file.type.startsWith('video/')).length} video(s).`
+        : description.trim();
+      const reportTitle = reportMode === 'visual'
+        ? (reportType === 'community' ? 'Visual Community Report' : 'Visual Incident Report')
+        : (reportType === 'community' ? communityCategory : 'Resident Incident Report');
       const incidentTimeFingerprint = reportType === 'emergency'
         ? [incidentTime.choice, incidentTime.choice === 'earlier' ? incidentTime.occurredAt : null, incidentTime.choice === 'earlier' ? incidentTime.precision : null]
         : null;
       const fingerprint = JSON.stringify([
         phone,
         reportType,
+        reportMode,
         communityCategory,
         incidentCategory,
-        incidentCategory === 'other' ? otherEmergency.trim() : '',
-        description.trim(),
+        reportMode === 'standard' && incidentCategory === 'other' ? otherEmergency.trim() : '',
+        reportDescription,
         location.latitude,
         location.longitude,
-        evidence ? [evidence.name, evidence.size, evidence.lastModified] : null,
+        evidence.map((file) => [file.name, file.size, file.lastModified]),
         incidentTimeFingerprint,
       ]);
       const requestId = submissionFingerprint === fingerprint ? submissionRequestId : createGuestRequestId();
@@ -251,8 +263,8 @@ export default function PublicReportPage() {
       setSubmissionFingerprint(fingerprint);
       setSubmissionStartedAt(submittedAt);
       const response = await reportAPI.guestReport({
-        type: reportType, title: reportType === 'community' ? communityCategory : 'Resident Incident Report',
-        specifics: reportType === 'community' ? communityCategory : incidentCategory === 'other' ? `Other emergency: ${otherEmergency.trim()}` : '', description: description.trim(),
+        type: reportType, title: reportTitle,
+        specifics: reportType === 'community' ? communityCategory : reportMode === 'standard' && incidentCategory === 'other' && otherEmergency.trim() ? `Other emergency: ${otherEmergency.trim()}` : '', description: reportDescription,
         latitude: location.latitude, longitude: location.longitude, contact_number: phone, send_to: 'mdrrmo',
         incident_type: reportType === 'community' ? communityCategory.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') : incidentCategory,
         ...(reportType === 'emergency' ? {
@@ -273,12 +285,10 @@ export default function PublicReportPage() {
       setOtherEmergency('');
       setLocation(null);
       setLocationSource(null);
-      setEvidence(null);
+      setEvidence([]);
       setSubmissionRequestId(createGuestRequestId());
       setSubmissionFingerprint('');
       setSubmissionStartedAt('');
-      const input = document.getElementById('public-report-evidence') as HTMLInputElement | null;
-      if (input) input.value = '';
       setSubmitted(true);
       setMessage(reportType === 'community' ? 'Community concern sent to MDRRMO for review and local coordination.' : 'Report sent to MDRRMO for review. A dispatcher can assign it to a nearby active barangay.');
     } catch (error: any) {
@@ -304,11 +314,13 @@ export default function PublicReportPage() {
           <section className="public-intake-panel" aria-labelledby="public-report-title">
             <div className="public-intake-heading"><span><Siren size={19} /></span><div><h2 id="public-report-title">{reportType === 'community' ? 'Community incident' : 'Emergency incident'}</h2><p>{user ? 'Your report will be linked to your resident account.' : 'No account is needed to submit a report.'}</p></div></div>
             <form className="public-report-form" onSubmit={(event) => void submitReport(event)}>
-              {reportType === 'community' ? <><label htmlFor="public-report-community-category">Concern category</label><select id="public-report-community-category" value={communityCategory} onChange={(event) => setCommunityCategory(event.target.value)}>{communityCategories.map((item) => <option key={item} value={item}>{item}</option>)}</select></> : <div className="public-incident-time-row"><div className="public-incident-category-column"><label className="public-incident-category-field" htmlFor="public-report-category">Incident category<select id="public-report-category" value={incidentCategory} onChange={(event) => setIncidentCategory(event.target.value)}>{INCIDENT_TYPE_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>{incidentCategory === 'other' && <label className="public-incident-other-field" htmlFor="public-report-other-emergency">What kind of emergency? <b>Required</b><input id="public-report-other-emergency" type="text" maxLength={120} value={otherEmergency} onChange={(event) => setOtherEmergency(event.target.value)} placeholder="Describe the emergency" required /></label>}</div><IncidentTimeInput value={incidentTime} onChange={setIncidentTime} /></div>}
+              {!reportMode ? <ReportModeChoices onSelect={setReportMode} /> : <>
+              <button type="button" className="report-mode-back" onClick={() => setReportMode(null)}>← Change report format</button>
+              {reportType === 'community' ? <><label htmlFor="public-report-community-category">Concern category</label><select id="public-report-community-category" value={communityCategory} onChange={(event) => setCommunityCategory(event.target.value)}>{communityCategories.map((item) => <option key={item} value={item}>{item}</option>)}</select></> : <div className="public-incident-time-row"><div className="public-incident-category-column"><label className="public-incident-category-field" htmlFor="public-report-category">Incident category<select id="public-report-category" value={incidentCategory} onChange={(event) => setIncidentCategory(event.target.value)}>{INCIDENT_TYPE_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>{incidentCategory === 'other' && reportMode === 'standard' && <label className="public-incident-other-field" htmlFor="public-report-other-emergency">What kind of emergency? <b>Required</b><input id="public-report-other-emergency" type="text" maxLength={120} value={otherEmergency} onChange={(event) => setOtherEmergency(event.target.value)} placeholder="Describe the emergency" required /></label>}</div><IncidentTimeInput value={incidentTime} onChange={setIncidentTime} /></div>}
               <label htmlFor="public-report-phone">Mobile number <b>Required</b></label>
               <MobileNumberInput id="public-report-phone" value={guestPhone} onValueChange={setGuestPhone} placeholder="09XXXXXXXXX" required />
-              <label htmlFor="public-report-description">Incident details <b>Required</b></label>
-              <textarea id="public-report-description" rows={5} minLength={8} maxLength={2000} placeholder="Describe what happened and who needs help…" value={description} onChange={(event) => setDescription(event.target.value)} required />
+              {reportMode === 'standard' && <><label htmlFor="public-report-description">Incident details <b>Required</b></label>
+              <textarea id="public-report-description" rows={5} minLength={8} maxLength={2000} placeholder="Describe what happened and who needs help…" value={description} onChange={(event) => setDescription(event.target.value)} required /></>}
               <span className="public-report-field-label">Incident location <b>Required</b></span>
               <div className="public-report-location-actions">
                 <button className={'public-location-button ' + (locationSource === 'current' ? 'located' : '')} type="button" onClick={requestLocation} aria-describedby="public-report-location-status">
@@ -323,10 +335,10 @@ export default function PublicReportPage() {
                 <legend>Send report to</legend>
                 <div className="public-report-routing-choice"><span className="public-report-routing-indicator" aria-hidden="true" /><span><strong>MDRRMO</strong><small>A dispatcher can assign the report to a nearby active barangay.</small></span></div>
               </fieldset>
-              <label className="public-evidence-label" htmlFor="public-report-evidence"><Upload size={15} aria-hidden="true" /> Add photo or video <span>(optional)</span></label>
-              <input id="public-report-evidence" type="file" accept="image/*,video/*" onChange={(event) => setEvidence(event.target.files?.[0] || null)} />
+              <CameraEvidenceCapture files={evidence} onFilesChange={setEvidence} required={reportMode === 'visual'} />
               {message && <p className={submitted ? 'public-report-success' : 'public-report-error'} role="status">{message}{submitted && trackingReference && <> <span>Keep this report reference: <strong>{trackingReference}</strong>.</span> <Link to={`/track-report?reference=${encodeURIComponent(trackingReference)}`}>Track this report</Link></>}</p>}
               <button type="submit" className="btn btn-primary btn-lg public-report-submit" disabled={busy}>{busy ? 'Sending report…' : 'Send report to MDRRMO'}</button>
+              </>}
             </form>
           </section>
           <aside className="public-hotlines-panel" aria-labelledby="public-hotlines-title">

@@ -305,10 +305,12 @@ export const reportAPI = {
   removeBarangayLocationIcon: () => api.delete('/barangay/location/icon'),
   saveOfficeLocationIcon: (file: File) => { const body = new FormData(); body.append('icon', file); return api.put('/mdrrmo/reports/command-locations/office/icon', body, { headers: { 'Content-Type': 'multipart/form-data' } }); },
   removeOfficeLocationIcon: () => api.delete('/mdrrmo/reports/command-locations/office/icon'),
-  guestReport: (data: { type: string; title: string; description: string; latitude: number; longitude: number; contact_number: string; send_to: 'mdrrmo'; incident_type?: string; specifics?: string; incident_time_choice?: string; incident_occurred_at?: string | null; incident_time_precision?: string; client_request_id?: string; client_submitted_at?: string }, evidence?: File | null) => {
+  guestReport: (data: { type: string; title: string; description: string; latitude: number; longitude: number; contact_number: string; send_to: 'mdrrmo'; incident_type?: string; specifics?: string; incident_time_choice?: string; incident_occurred_at?: string | null; incident_time_precision?: string; client_request_id?: string; client_submitted_at?: string }, evidence?: File | File[] | null) => {
     const body = new FormData();
     Object.entries(data).forEach(([key, value]) => body.append(key, value == null ? '' : String(value)));
-    if (evidence) { body.append('proof', evidence); body.append('proof_type', evidence.type.startsWith('video/') ? 'video' : 'image'); }
+    const evidenceFiles = Array.isArray(evidence) ? evidence : evidence ? [evidence] : [];
+    evidenceFiles.forEach((file) => body.append('proof', file));
+    if (evidenceFiles.length > 0) body.append('proof_type', evidenceFiles[0].type.startsWith('video/') ? 'video' : 'image');
     return api.post('/incident-reports', body, { headers: { 'Content-Type': 'multipart/form-data' } });
   },
   trackGuestReport: (id: string, contactNumber: string) => api.get(`/incident-reports/resident/${encodeURIComponent(id)}`, { params: { contact_number: contactNumber } }),
