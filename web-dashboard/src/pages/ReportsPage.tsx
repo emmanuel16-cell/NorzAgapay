@@ -12,6 +12,7 @@ import ResponderLocationMapModal from '../components/ResponderLocationMapModal';
 import { formatMobileNumber } from '../lib/mobileNumber';
 
 type ReportGroup = 'resident' | 'escalated';
+type ReportTab = 'resident' | 'assigned';
 type ReportStage = 'pending' | 'responding' | 'resolved';
 type CrewMember = { unit_member_id: string; name: string; member_role: string; selected_at?: string };
 type Assignment = { responder_id: string; status: string; assigned_at?: string; accepted_at?: string; arrived_at?: string; resolved_at?: string; responder?: { full_name?: string; phone?: string } | null; crew?: CrewMember[] };
@@ -56,9 +57,15 @@ type ResponderOption = { id: string; full_name: string; phone?: string | null; u
 
 const isVideo = (url?: string | null, type?: string | null) => type === 'video' || Boolean(url && /\.(mp4|mov|webm|3gp|mkv|avi)(\?.*)?$/i.test(url));
 const getStage = (report: IncidentReport): ReportStage => {
-  const latestBarangayAssignment = report.barangay_assignments?.[0];
-  if (latestBarangayAssignment?.assignment_status === 'completed' || latestBarangayAssignment?.response_status === 'resolved') return 'resolved';
-  if (latestBarangayAssignment?.assignment_status === 'active' && latestBarangayAssignment.response_status === 'responding') return 'responding';
+  const latestBarangayAssignment = report.active_barangay_assignment ||
+    report.barangay_assignments?.find((assignment) => assignment.assignment_status === 'active') ||
+    report.barangay_assignments?.[0];
+  if (latestBarangayAssignment?.assignment_status === 'completed' || latestBarangayAssignment?.response_status === 'resolved' || report.barangay_resolved_at) return 'resolved';
+  if (latestBarangayAssignment?.assignment_status === 'active') {
+    return latestBarangayAssignment.dispatched_at || latestBarangayAssignment.response_status === 'responding' || report.barangay_dispatched_at
+      ? 'responding'
+      : 'pending';
+  }
   if (report.is_central_assignment) {
     const barangayStatus = String(report.barangay_response_status || report.response_status || report.status || '').toLowerCase();
     if (['resolved', 'closed'].includes(barangayStatus) || report.assignment_status === 'completed') return 'resolved';
@@ -76,6 +83,10 @@ const getStage = (report: IncidentReport): ReportStage => {
   return 'pending';
 };
 const getGroup = (report: IncidentReport): ReportGroup => getMdrrmoReportGroup(report);
+const isAssignedToBarangay = (report: IncidentReport) =>
+  report.active_barangay_assignment?.assignment_status === 'active' ||
+  report.barangay_assignments?.some((assignment) => ['active', 'completed'].includes(assignment.assignment_status)) ||
+  (report.is_central_assignment && ['active', 'completed'].includes(report.assignment_status || ''));
 const getProofs = (report: IncidentReport) => report.proof_urls?.length ? report.proof_urls : report.proof_url ? [report.proof_url] : [];
 const timeAgo = (value?: string | null, fallback = 'Time unavailable') => {
   if (!value) return fallback;
@@ -151,7 +162,7 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
   });
   const [demoDismissed, setDemoDismissed] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [group, setGroup] = useState<ReportGroup>('resident');
+  const [group, setGroup] = useState<ReportTab>('resident');
   const [stage, setStage] = useState<ReportStage>(() => isReadOnlyResponder &&
     localStorage.getItem('norzagapay_debug_session') === 'true' &&
     localStorage.getItem('norzagapay_responder_demo_hidden') !== 'true' ? 'responding' : 'pending');
@@ -232,10 +243,11 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
     const id = searchParams.get('id');
     if (!id || !reports.length) return;
     const target = reports.find((item) => item.id === id);
-    if (target) { setSelectedId(target.id); setGroup(getGroup(target)); setStage(getStage(target)); }
+    if (target) { setSelectedId(target.id); setGroup(isAssignedToBarangay(target) ? 'assigned' : 'resident'); setStage(getStage(target)); }
   }, [searchParams, reports]);
 
-  const inGroup = useMemo(() => isBarangay ? displayedReports : displayedReports.filter((item) => getGroup(item) === group), [displayedReports, group, isBarangay]);
+  const inGroup = useMemo(() => isBarangay ? displayedReports : displayedReports.filter((item) =>
+    group === 'assigned' ? isAssignedToBarangay(item) : !isAssignedToBarangay(item)), [displayedReports, group, isBarangay]);
   const counts = useMemo(() => ({
     pending: inGroup.filter((item) => getStage(item) === 'pending').length,
     responding: inGroup.filter((item) => getStage(item) === 'responding').length,
@@ -250,7 +262,7 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
     const next = new URLSearchParams(searchParams); next.delete('id'); next.delete('status');
     setSearchParams(next, { replace: true });
   };
-  const selectGroup = (value: ReportGroup) => { setGroup(value); setSelectedId(null); clearLink(); };
+  const selectGroup = (value: ReportTab) => { setGroup(value); setSelectedId(null); clearLink(); };
   const selectStage = (value: ReportStage) => { setStage(value); setSelectedId(null); clearLink(); };
   const selectReport = (report: IncidentReport) => {
     setSelectedId(report.id);
@@ -392,8 +404,8 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
     }
   };
 
-  const residentCount = reports.filter((item) => getGroup(item) === 'resident').length;
-  const escalatedCount = reports.filter((item) => getGroup(item) === 'escalated').length;
+  const residentCount = reports.filter((item) => !isAssignedToBarangay(item)).length;
+  const assignedCount = reports.filter(isAssignedToBarangay).length;
   const assessment = parseAssessment(isBarangay
     ? selected?.barangay_response_notes || selected?.response_notes || selected?.mdrrmo_response_notes
     : selected?.mdrrmo_response_notes || selected?.response_notes || selected?.barangay_response_notes);
@@ -413,9 +425,9 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
         <div><h1>Incidents Reports</h1><span>{isReadOnlyResponder ? `Responder workspace · ${isBarangay ? user?.barangay_name || 'Your barangay' : 'MDRRMO'} · assigned to you` : isReadOnlyBarangay ? `Read-only incident workspace · ${user?.barangay_name || 'Your barangay'}` : isBarangay ? `Barangay response workspace · ${user?.barangay_name || 'Your barangay'}` : 'Dispatcher workspace'}</span></div>
         <div className="reports-live-indicator"><i /> Live <span>·</span> {currentTime}</div>
       </header>
-      {!isBarangay && !isReadOnlyResponder && <nav className="reports-group-tabs-v2" aria-label="Report type">
+      {!isBarangay && !isReadOnlyResponder && <nav className="reports-group-tabs-v2" aria-label="Report assignment">
         <button type="button" className={group === 'resident' ? 'active' : ''} onClick={() => selectGroup('resident')}>Resident Reports <span>{residentCount}</span></button>
-        <button type="button" className={group === 'escalated' ? 'active' : ''} onClick={() => selectGroup('escalated')}>Escalate Reports <span>{escalatedCount}</span></button>
+        <button type="button" className={group === 'assigned' ? 'active' : ''} onClick={() => selectGroup('assigned')}>Assigned Reports <span>{assignedCount}</span></button>
       </nav>}
       <nav className="reports-stage-tabs-v2" aria-label="Report status">
         {([['pending', 'Pending'], ['responding', 'Responding'], ['resolved', 'Resolved']] as Array<[ReportStage, string]>).map(([value, label]) => (
