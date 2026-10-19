@@ -152,7 +152,7 @@ function navigationForRole(role?: string, accountKind?: string, isMasterAdmin = 
     'Operations', '/respond-units', '/officers',
     'Administration', '/verification/barangay', '/users', '/alert-broadcasts', '/analytics',
   ].includes(item.path || item.label));
-  if (role === 'dispatcher') return navItems.filter((item) => ['Incident Monitoring', '/command-center', '/reports', '/requests', 'Operations', '/locations', '/respond-units'].includes(item.path || item.label));
+  if (role === 'dispatcher') return navItems.filter((item) => ['Incident Monitoring', '/command-center', '/reports', '/requests', 'Operations', '/respond-units'].includes(item.path || item.label));
   return [];
 }
 

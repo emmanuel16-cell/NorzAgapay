@@ -159,7 +159,7 @@ function AppRoutes() {
         <Route path="barangay-board" element={<BarangayBoardRoute />} />
         <Route path="barangay-assistance" element={<BarangayAssistanceRoute />} />
         <Route path="barangay-analytics" element={<BarangayAccess roles={['admin']}><BarangayAnalyticsPage /></BarangayAccess>} />
-        <Route path="locations" element={<RoleAccess roles={['admin', 'logistics', 'dispatcher']}><CommandLocationsPage /></RoleAccess>} />
+        <Route path="locations" element={<RoleAccess roles={['admin', 'logistics']}><CommandLocationsPage /></RoleAccess>} />
         <Route path="requests" element={<RoleAccess roles={['dispatcher']}><ResourceRequestsPage /></RoleAccess>} />
         <Route path="municipality-boundary" element={<RoleAccess roles={['admin', 'logistics']}><MunicipalityBoundaryPage /></RoleAccess>} />
         <Route path="verification" element={<Navigate to="/verification/barangay" replace />} />
