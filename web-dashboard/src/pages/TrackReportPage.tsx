@@ -174,8 +174,10 @@ export default function TrackReportPage() {
     <PublicHeader showActions={false} />
     <main className="public-report-layout public-track-layout">
       <div className="public-report-intro">
-        <Link className="public-track-back" to="/report"><ArrowLeft size={16} aria-hidden="true" /> Back to reporting</Link>
-        <span className="public-home-eyebrow">PUBLIC REPORT TRACKING</span>
+        <div className="public-track-intro-row">
+          <span className="public-home-eyebrow">PUBLIC REPORT TRACKING</span>
+          <Link className="public-track-back" to="/report"><ArrowLeft size={16} aria-hidden="true" /> Back to reporting</Link>
+        </div>
         <h1>Follow your report.</h1>
         <p>Enter the report reference and the mobile number used when submitting it.</p>
       </div>
