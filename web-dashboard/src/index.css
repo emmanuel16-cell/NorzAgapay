@@ -3417,6 +3417,15 @@ tbody tr:last-child td { border-bottom: none; }
   background: #11264b;
 }
 .resident-selection-overlay .panel-resident .reporter-notes > svg { display: none; }
+.incident-location-card { min-height: 0; padding: 8px 11px; border-color: #41629e; background: #11264b; }
+.incident-location-card > svg { flex: 0 0 18px; margin-top: 1px; color: #69c8e7; }
+.incident-location-card .reporter-note-content { gap: 4px; }
+.incident-location-card .reporter-note-content > strong { font-size: 14px; }
+.incident-location-card .reporter-note-content p { font-size: 13px; }
+.incident-location-card .reporter-note-content small { color: #9ab1d2; font-size: 11px; }
+.incident-location-card .incident-location-message { color: #f1b1ad; }
+.resident-selection-overlay .panel-resident .incident-location-card,
+.escalated-selection-overlay .panel-resident .incident-location-card { order: 2; }
 .reporter-note-content { display: flex; height: 100%; flex-direction: column; gap: 6px; }
 .reporter-note-content > strong { color: #dce6f7; }
 .reporter-note-content p { margin: 0; color: #dce6f7; font-size: 14px; line-height: 1.4; white-space: pre-wrap; }
@@ -3533,6 +3542,7 @@ tbody tr:last-child td { border-bottom: none; }
 .mdrrmo-dispatch-location > div { display: grid; gap: 2px; }
 .mdrrmo-dispatch-location span { color: #8bdcf0; font-size: 13px; font-weight: 700; }
 .mdrrmo-dispatch-location small { color: #b1c1dc; font-size: 11px; }
+.mdrrmo-dispatch-location .mdrrmo-dispatch-location-error { color: #fca5a5; }
 .mdrrmo-dispatch-report-details {
   display: grid;
   gap: 6px;

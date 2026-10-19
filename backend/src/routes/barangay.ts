@@ -28,6 +28,7 @@ import { IncidentResolutionPdfService, IncompleteResolutionReportError } from '.
 import { isValidLocationIcon, removeStoredLocationIcon, storeLocationIcon } from '../services/locationIconStorage';
 import { formatIncidentReport } from './incidentReports';
 import { isReportResolved, reportStageDurations, summarizeReportTimings } from '../services/reportTiming';
+import { resolveIncidentLocation } from '../services/incidentLocation';
 import { isDirectMdrrmoReport } from '../services/mdrrmoReportVisibility';
 import { isMobileNumberRegistryConflict, normalizeMobileNumber } from '../services/mobileNumberService';
 import { countPasswordMatchesForPhone, hasPasswordReuseForPhone, hasPhoneInAccountType, withPhoneAccountLock } from '../services/accountAuthService';
@@ -2073,6 +2074,71 @@ router.get('/reports/resolved', authenticateBarangay, requireRole(['admin', 'sta
   } catch (err) {
     console.error('Barangay resolved reports error:', err);
     res.status(500).json({ error: 'Failed to fetch resolved reports.' });
+  }
+});
+
+router.get('/reports/:id/location-preview', authenticateBarangay, requireRole(['admin', 'dispatcher', 'responder']), async (req: any, res: Response): Promise<void> => {
+  try {
+    const barangayId = req.barangayUser.barangayId;
+    const [{ data: assignment, error: assignmentError }, { data: legacyReport, error: legacyError }] = await Promise.all([
+      supabaseAdmin.from('mdrrmo_report_barangay_assignments')
+        .select('report_id, assignment_status, responder_ids, responded_by')
+        .eq('report_id', req.params.id)
+        .eq('barangay_id', barangayId)
+        .in('assignment_status', ['active', 'completed'])
+        .order('assigned_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      supabaseAdmin.from('barangay_reports')
+        .select('id, latitude, longitude, response_notes, responded_by, barangay_response_notes, barangay_responded_by')
+        .eq('id', req.params.id)
+        .eq('barangay_id', barangayId)
+        .maybeSingle(),
+    ]);
+    if (assignmentError) throw assignmentError;
+    if (legacyError) throw legacyError;
+
+    let latitude: number;
+    let longitude: number;
+    if (assignment) {
+      if (req.barangayUser.role === 'responder' && assignment.responded_by !== req.barangayUser.userId &&
+          !(assignment.responder_ids || []).includes(req.barangayUser.userId)) {
+        res.status(404).json({ error: 'Assigned incident not found.' });
+        return;
+      }
+      const { data: report, error: reportError } = await supabaseAdmin.from('mdrrmo_reports')
+        .select('latitude, longitude').eq('id', req.params.id).maybeSingle();
+      if (reportError) throw reportError;
+      if (!report) { res.status(404).json({ error: 'Assigned incident not found.' }); return; }
+      latitude = Number(report.latitude);
+      longitude = Number(report.longitude);
+    } else if (legacyReport) {
+      if (req.barangayUser.role === 'responder') {
+        const notes = String(legacyReport.barangay_response_notes || legacyReport.response_notes || '');
+        const assignedMatch = notes.match(/\[ASSIGNED:([^\]]+)\]/);
+        const assignedIds = assignedMatch?.[1]?.split(',').map((id: string) => id.trim()).filter(Boolean) || [];
+        const respondedBy = legacyReport.barangay_responded_by || legacyReport.responded_by;
+        if (respondedBy !== req.barangayUser.userId && !assignedIds.includes(req.barangayUser.userId)) {
+          res.status(404).json({ error: 'Assigned incident not found.' });
+          return;
+        }
+      }
+      latitude = Number(legacyReport.latitude);
+      longitude = Number(legacyReport.longitude);
+    } else {
+      res.status(404).json({ error: 'Assigned incident not found.' });
+      return;
+    }
+
+    const location = await resolveIncidentLocation(latitude, longitude, [], null, true);
+    res.json({
+      road: location?.road || null,
+      landmark: location?.landmark || null,
+      landmark_distance_meters: location?.landmarkDistanceMeters ?? null,
+    });
+  } catch (error) {
+    console.error('Barangay incident location preview failed:', error);
+    res.status(500).json({ error: 'Could not look up this assigned report’s location.' });
   }
 });
 

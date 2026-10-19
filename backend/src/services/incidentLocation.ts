@@ -9,6 +9,15 @@ export type ResolvedIncidentLocation = {
   barangayName: string | null;
   road: string | null;
   landmark: string | null;
+  landmarkDistanceMeters: number | null;
+};
+
+type NearbyLandmark = { name: string; distanceMeters: number };
+type OverpassElement = {
+  lat?: number;
+  lon?: number;
+  center?: { lat?: number; lon?: number };
+  tags?: Record<string, string>;
 };
 
 const RESULT_TTL_MS = 24 * 60 * 60 * 1000;
@@ -16,6 +25,8 @@ const FAILURE_TTL_MS = 15 * 60 * 1000;
 const MIN_REQUEST_INTERVAL_MS = 1000;
 const resultCache = new Map<string, { value: ReverseGeocodeResult | null; expiresAt: number }>();
 const pendingLookups = new Map<string, Promise<ReverseGeocodeResult | null>>();
+const landmarkCache = new Map<string, { value: NearbyLandmark | null; expiresAt: number }>();
+const pendingLandmarkLookups = new Map<string, Promise<NearbyLandmark | null>>();
 let requestQueue: Promise<void> = Promise.resolve();
 let lastRequestAt = 0;
 
@@ -75,11 +86,83 @@ async function fetchReverseGeocode(latitude: number, longitude: number, key: str
   }
 }
 
+function distanceMeters(fromLatitude: number, fromLongitude: number, toLatitude: number, toLongitude: number): number {
+  const toRadians = (degrees: number) => degrees * Math.PI / 180;
+  const latitudeDelta = toRadians(toLatitude - fromLatitude);
+  const longitudeDelta = toRadians(toLongitude - fromLongitude);
+  const arc = Math.sin(latitudeDelta / 2) ** 2
+    + Math.cos(toRadians(fromLatitude)) * Math.cos(toRadians(toLatitude)) * Math.sin(longitudeDelta / 2) ** 2;
+  return 6371000 * 2 * Math.atan2(Math.sqrt(arc), Math.sqrt(1 - arc));
+}
+
+async function fetchNearbyLandmark(latitude: number, longitude: number, key: string, road: string | null): Promise<NearbyLandmark | null> {
+  const cached = landmarkCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+
+  const pending = pendingLandmarkLookups.get(key);
+  if (pending) return pending;
+
+  const lookup = requestQueue.then(async () => {
+    const waitMs = MIN_REQUEST_INTERVAL_MS - (Date.now() - lastRequestAt);
+    if (waitMs > 0) await new Promise((resolve) => setTimeout(resolve, waitMs));
+
+    const selectors = ['amenity', 'shop', 'tourism', 'leisure', 'healthcare', 'office', 'historic', 'craft', 'building', 'man_made'];
+    const selectorQuery = selectors.map((tag) => `nwr(around:150,${latitude},${longitude})["name"]["${tag}"];`).join('');
+    const query = `[out:json][timeout:4];(${selectorQuery});out center tags 50;`;
+    const body = new URLSearchParams({ data: query });
+    lastRequestAt = Date.now();
+
+    try {
+      const response = await fetch('https://overpass-api.de/api/interpreter', {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+          'User-Agent': 'NorzAgapay/1.0 (incident location lookup)',
+        },
+        body,
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!response.ok) return null;
+      const payload = await response.json() as { elements?: OverpassElement[] };
+      const normalizedRoad = normalizePlace(road || '');
+      const candidates = (payload.elements || []).flatMap((element) => {
+        const name = locationPart(element.tags?.name);
+        const featureLatitude = Number(element.lat ?? element.center?.lat);
+        const featureLongitude = Number(element.lon ?? element.center?.lon);
+        if (!name || normalizePlace(name) === normalizedRoad ||
+            !Number.isFinite(featureLatitude) || !Number.isFinite(featureLongitude)) return [];
+        const distance = distanceMeters(latitude, longitude, featureLatitude, featureLongitude);
+        return distance <= 150 ? [{ name, distanceMeters: Math.round(distance) }] : [];
+      });
+      candidates.sort((first, second) => first.distanceMeters - second.distanceMeters);
+      return candidates[0] || null;
+    } catch (error) {
+      console.warn('Could not find nearby incident landmarks:', error);
+      return null;
+    }
+  });
+
+  requestQueue = lookup.then(() => undefined, () => undefined);
+  pendingLandmarkLookups.set(key, lookup);
+  try {
+    const landmark = await lookup;
+    landmarkCache.set(key, {
+      value: landmark,
+      expiresAt: Date.now() + (landmark ? RESULT_TTL_MS : FAILURE_TTL_MS),
+    });
+    return landmark;
+  } finally {
+    pendingLandmarkLookups.delete(key);
+  }
+}
+
 export async function resolveIncidentLocation(
   latitude: number,
   longitude: number,
   barangayNames: string[],
   fallbackBarangayName?: string | null,
+  includeNearbyLandmark = false,
 ): Promise<ResolvedIncidentLocation | null> {
   if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 ||
       !Number.isFinite(longitude) || longitude < -180 || longitude > 180) return null;
@@ -95,7 +178,13 @@ export async function resolveIncidentLocation(
   const namedPlace = locationPart(result.name) || [address.building, address.amenity, address.shop, address.tourism, address.leisure]
     .map(locationPart)
     .find(Boolean) || null;
-  const landmark = namedPlace && normalizePlace(namedPlace) !== normalizePlace(road || '') ? namedPlace : null;
+  let landmark = namedPlace && normalizePlace(namedPlace) !== normalizePlace(road || '') ? namedPlace : null;
+  let landmarkDistanceMeters: number | null = null;
+  if (!landmark && includeNearbyLandmark) {
+    const nearbyLandmark = await fetchNearbyLandmark(latitude, longitude, key, road);
+    landmark = nearbyLandmark?.name || null;
+    landmarkDistanceMeters = nearbyLandmark?.distanceMeters ?? null;
+  }
   const placeCandidates = [
     address.barangay,
     address.quarter,
@@ -124,5 +213,6 @@ export async function resolveIncidentLocation(
     barangayName: matchedBarangay || fallbackBarangayName?.trim() || null,
     road,
     landmark,
+    landmarkDistanceMeters,
   } : null;
 }

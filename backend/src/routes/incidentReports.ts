@@ -966,8 +966,12 @@ router.post('/location-preview', authenticate, authorize('dispatcher', 'admin'),
   }
 
   try {
-    const location = await resolveIncidentLocation(latitude, longitude, []);
-    res.json({ road: location?.road || null, landmark: location?.landmark || null });
+    const location = await resolveIncidentLocation(latitude, longitude, [], null, true);
+    res.json({
+      road: location?.road || null,
+      landmark: location?.landmark || null,
+      landmark_distance_meters: location?.landmarkDistanceMeters ?? null,
+    });
   } catch (error) {
     console.warn('Could not resolve dispatch location preview:', error);
     res.status(502).json({ error: 'Could not find nearby map labels.' });

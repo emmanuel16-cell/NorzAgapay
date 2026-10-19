@@ -126,6 +126,45 @@ interface MdrrmoDispatchResponder {
   officer_name?: string | null;
 }
 
+type IncidentLocationPreview = {
+  road?: string | null;
+  landmark?: string | null;
+  landmark_distance_meters?: number | null;
+};
+
+function IncidentLocationCard({
+  incident,
+  location,
+  loading,
+  error,
+}: {
+  incident: IncidentItem;
+  location: IncidentLocationPreview | null;
+  loading: boolean;
+  error: string;
+}) {
+  const fallback = dispatchLocationFallback(incident);
+  const primary = location?.road || location?.landmark || fallback || 'Pinned incident location';
+  const coordinates = `${incident.latitude.toFixed(5)}, ${incident.longitude.toFixed(5)}`;
+  const landmarkText = location?.landmark
+    ? `Near ${location.landmark}${location.landmark_distance_meters != null ? ` · ${location.landmark_distance_meters} m` : ''}`
+    : '';
+
+  return (
+    <div className="panel-details-box incident-location-card">
+      <MapPin size={18} aria-hidden="true" />
+      <div className="reporter-note-content">
+        <strong>Incident location</strong>
+        <p>{loading ? 'Looking up the road and nearby places…' : primary}</p>
+        {!loading && landmarkText && <small>{landmarkText}</small>}
+        {!loading && error && <small className="incident-location-message">{error} · {coordinates}</small>}
+        {!loading && !error && !location?.road && !location?.landmark && !fallback &&
+          <small className="incident-location-message">{coordinates}</small>}
+      </div>
+    </div>
+  );
+}
+
 interface LiveResponderAssignment {
   incidentId: string;
   title: string;
@@ -854,6 +893,9 @@ export default function CommandCenter() {
   // Interactive Modal State
   const [activeModalType, setActiveModalType] = useState<'incident' | 'escalated' | 'unit' | null>(null);
   const [selectedIncident, setSelectedIncident] = useState<IncidentItem | null>(null);
+  const [selectedIncidentLocation, setSelectedIncidentLocation] = useState<IncidentLocationPreview | null>(null);
+  const [selectedIncidentLocationLoading, setSelectedIncidentLocationLoading] = useState(false);
+  const [selectedIncidentLocationError, setSelectedIncidentLocationError] = useState('');
   const [assistanceRequests, setAssistanceRequests] = useState<AssistanceRequestItem[]>([]);
   const [assistanceRequestsLoading, setAssistanceRequestsLoading] = useState(false);
   const [selectedUnit, setSelectedUnit] = useState<DispatchUnitItem | null>(null);
@@ -868,8 +910,9 @@ export default function CommandCenter() {
   const [escalatedResponseTab, setEscalatedResponseTab] = useState<'barangay' | 'responder'>('barangay');
   const [responderInfoTab, setResponderInfoTab] = useState<'assessment' | 'assistance'>('assessment');
   const [mdrrmoDispatchIncident, setMdrrmoDispatchIncident] = useState<IncidentItem | null>(null);
-  const [mdrrmoDispatchLocation, setMdrrmoDispatchLocation] = useState<{ road?: string | null; landmark?: string | null } | null>(null);
+  const [mdrrmoDispatchLocation, setMdrrmoDispatchLocation] = useState<IncidentLocationPreview | null>(null);
   const [mdrrmoDispatchLocationLoading, setMdrrmoDispatchLocationLoading] = useState(false);
+  const [mdrrmoDispatchLocationError, setMdrrmoDispatchLocationError] = useState('');
   const [mdrrmoDispatchResponders, setMdrrmoDispatchResponders] = useState<MdrrmoDispatchResponder[]>([]);
   const [mdrrmoDispatchLoading, setMdrrmoDispatchLoading] = useState(false);
   const [mdrrmoDispatchError, setMdrrmoDispatchError] = useState('');
@@ -878,6 +921,7 @@ export default function CommandCenter() {
   const [mdrrmoDispatchSeverity, setMdrrmoDispatchSeverity] = useState('');
   const [mdrrmoDispatchNotes, setMdrrmoDispatchNotes] = useState('');
   const mdrrmoDispatchRequestId = useRef(0);
+  const selectedIncidentLocationRequestId = useRef(0);
   const previewMediaRef = useRef<HTMLImageElement | HTMLVideoElement>(null);
   const selectedIncidentId = selectedIncident?.id;
 
@@ -1274,12 +1318,46 @@ export default function CommandCenter() {
   ].sort().join('|'), [visibleIncidents, commandLocationPins, dispatchUnits, filters.responding, boundary, visibleLiveResponders]);
 
   // Click Handlers
+  const clearSelectedIncidentLocation = () => {
+    selectedIncidentLocationRequestId.current += 1;
+    setSelectedIncidentLocation(null);
+    setSelectedIncidentLocationLoading(false);
+    setSelectedIncidentLocationError('');
+  };
+
+  const loadSelectedIncidentLocation = (incident: IncidentItem) => {
+    const requestId = ++selectedIncidentLocationRequestId.current;
+    setSelectedIncidentLocation(null);
+    setSelectedIncidentLocationLoading(true);
+    setSelectedIncidentLocationError('');
+    const lookup = isBarangayDashboard
+      ? reportAPI.barangayLocationPreview(incident.id)
+      : reportAPI.mdrrmoLocationPreview(incident.latitude, incident.longitude);
+    void lookup
+      .then((response) => {
+        if (requestId === selectedIncidentLocationRequestId.current) {
+          const location = response.data || null;
+          setSelectedIncidentLocation(location);
+          if (!location?.road && !location?.landmark) setSelectedIncidentLocationError('No nearby road or named place was found.');
+        }
+      })
+      .catch((error: any) => {
+        if (requestId === selectedIncidentLocationRequestId.current) {
+          setSelectedIncidentLocationError(error?.response?.data?.error || 'Nearby map labels could not be loaded.');
+        }
+      })
+      .finally(() => {
+        if (requestId === selectedIncidentLocationRequestId.current) setSelectedIncidentLocationLoading(false);
+      });
+  };
+
   const handleOpenIncidentPin = (item: IncidentItem) => {
     setSelectedAvailabilityPin(null);
     setAvailableResponderPins([]);
     setSelectedResponderId(null);
     setSelectedUnit(null);
     setSelectedIncident(item);
+    loadSelectedIncidentLocation(item);
     setInvalidReviewStep(null);
     setInvalidReason('');
     // Dispatcher instructions have their own field. Never seed them from
@@ -1296,6 +1374,7 @@ export default function CommandCenter() {
   };
 
   const handleOpenUnitPin = (unit: DispatchUnitItem) => {
+    clearSelectedIncidentLocation();
     setSelectedAvailabilityPin(null);
     setAvailableResponderPins([]);
     setSelectedResponderId(null);
@@ -1313,6 +1392,7 @@ export default function CommandCenter() {
   };
 
   const closeModal = () => {
+    clearSelectedIncidentLocation();
     setActiveModalType(null);
     setSelectedIncident(null);
     setSelectedUnit(null);
@@ -1387,6 +1467,7 @@ export default function CommandCenter() {
     setMdrrmoDispatchIncident(incident);
     setMdrrmoDispatchLocation(null);
     setMdrrmoDispatchLocationLoading(true);
+    setMdrrmoDispatchLocationError('');
     setMdrrmoDispatchResponders([]);
     setSelectedMdrrmoResponderIds([]);
     setMdrrmoDispatchError('');
@@ -1396,10 +1477,17 @@ export default function CommandCenter() {
     setMdrrmoDispatchSeverity(MDRRMO_DISPATCH_SEVERITIES.some((option) => option.value === incident.severity) ? incident.severity || '' : '');
     void reportAPI.mdrrmoLocationPreview(incident.latitude, incident.longitude)
       .then((response) => {
-        if (requestId === mdrrmoDispatchRequestId.current) setMdrrmoDispatchLocation(response.data || null);
+        if (requestId === mdrrmoDispatchRequestId.current) {
+          const location = response.data || null;
+          setMdrrmoDispatchLocation(location);
+          if (!location?.road && !location?.landmark) setMdrrmoDispatchLocationError('No nearby road or named place was found.');
+        }
       })
       .catch(() => {
-        if (requestId === mdrrmoDispatchRequestId.current) setMdrrmoDispatchLocation(null);
+        if (requestId === mdrrmoDispatchRequestId.current) {
+          setMdrrmoDispatchLocation(null);
+          setMdrrmoDispatchLocationError('Nearby map labels could not be loaded.');
+        }
       })
       .finally(() => {
         if (requestId === mdrrmoDispatchRequestId.current) setMdrrmoDispatchLocationLoading(false);
@@ -1423,6 +1511,7 @@ export default function CommandCenter() {
     setMdrrmoDispatchIncident(null);
     setMdrrmoDispatchLocation(null);
     setMdrrmoDispatchLocationLoading(false);
+    setMdrrmoDispatchLocationError('');
     setMdrrmoDispatchLoading(false);
   };
 
@@ -1773,6 +1862,13 @@ export default function CommandCenter() {
                   </div>
                 </div>
 
+                <IncidentLocationCard
+                  incident={selectedIncident}
+                  location={selectedIncidentLocation}
+                  loading={selectedIncidentLocationLoading}
+                  error={selectedIncidentLocationError}
+                />
+
                 {/* Section Title */}
                 <div className="section-label-row resident-proof-heading">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" strokeWidth="2.5">
@@ -2045,6 +2141,13 @@ export default function CommandCenter() {
                     <p>{reportReceivedText(selectedIncident.created_at)}</p>
                   </div>
                 </div>
+
+                <IncidentLocationCard
+                  incident={selectedIncident}
+                  location={selectedIncidentLocation}
+                  loading={selectedIncidentLocationLoading}
+                  error={selectedIncidentLocationError}
+                />
 
                 <div className="panel-details-box reporter-notes">
                   <div className="reporter-note-content">
@@ -2431,9 +2534,11 @@ export default function CommandCenter() {
                         : mdrrmoDispatchLocation?.road || mdrrmoDispatchLocation?.landmark || mdrrmoDispatchLocationFallback || 'Pinned incident location'}
                     </span>
                     {mdrrmoDispatchLocation?.road && mdrrmoDispatchLocation?.landmark &&
-                      <small>Near {mdrrmoDispatchLocation.landmark}</small>}
+                      <small>Near {mdrrmoDispatchLocation.landmark}{mdrrmoDispatchLocation.landmark_distance_meters != null ? ` · ${mdrrmoDispatchLocation.landmark_distance_meters} m` : ''}</small>}
                     {!mdrrmoDispatchLocationLoading && !mdrrmoDispatchLocation?.road && !mdrrmoDispatchLocation?.landmark &&
                       <small>{mdrrmoDispatchLocationFallback ? 'Report location' : `${mdrrmoDispatchIncident.latitude.toFixed(5)}, ${mdrrmoDispatchIncident.longitude.toFixed(5)}`}</small>}
+                    {!mdrrmoDispatchLocationLoading && mdrrmoDispatchLocationError &&
+                      <small className="mdrrmo-dispatch-location-error">{mdrrmoDispatchLocationError}</small>}
                   </div>
                 </div>
               </div>
