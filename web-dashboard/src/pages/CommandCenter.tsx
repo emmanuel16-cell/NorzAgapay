@@ -63,6 +63,9 @@ interface IncidentItem {
   assigned_unit_id?: string;
   barangay_name?: string;
   barangay_response_status?: string;
+  response_barangay_id?: string | null;
+  response_barangay_name?: string | null;
+  assignment_status?: string | null;
   barangay_responder_name?: string;
   mdrrmo_response_status?: string;
   mdrrmo_responder_name?: string;
@@ -124,6 +127,12 @@ interface MdrrmoDispatchResponder {
   full_name: string;
   unit_name?: string | null;
   officer_name?: string | null;
+}
+
+interface BarangayDestination {
+  id: string;
+  name: string;
+  distance_meters: number | null;
 }
 
 type IncidentLocationPreview = {
@@ -920,7 +929,15 @@ export default function CommandCenter() {
   const [mdrrmoDispatchIncidentType, setMdrrmoDispatchIncidentType] = useState('');
   const [mdrrmoDispatchSeverity, setMdrrmoDispatchSeverity] = useState('');
   const [mdrrmoDispatchNotes, setMdrrmoDispatchNotes] = useState('');
+  const [barangayPickerOpen, setBarangayPickerOpen] = useState(false);
+  const [barangayDestinations, setBarangayDestinations] = useState<BarangayDestination[]>([]);
+  const [barangayDestinationsLoading, setBarangayDestinationsLoading] = useState(false);
+  const [barangayDestinationsError, setBarangayDestinationsError] = useState('');
+  const [selectedBarangayDestinationId, setSelectedBarangayDestinationId] = useState('');
+  const [barangayAssignmentNotes, setBarangayAssignmentNotes] = useState('');
+  const [barangayAssignmentSaving, setBarangayAssignmentSaving] = useState(false);
   const mdrrmoDispatchRequestId = useRef(0);
+  const barangayDestinationsRequestId = useRef(0);
   const selectedIncidentLocationRequestId = useRef(0);
   const previewMediaRef = useRef<HTMLImageElement | HTMLVideoElement>(null);
   const selectedIncidentId = selectedIncident?.id;
@@ -1035,6 +1052,9 @@ export default function CommandCenter() {
             assigned_unit_id: r.assigned_unit_id || null,
             barangay_name: r.barangay_name || (r.barangays && r.barangays.name) || '',
             barangay_response_status: r.barangay_response_status || 'pending',
+            response_barangay_id: r.response_barangay_id || null,
+            response_barangay_name: r.response_barangay_name || null,
+            assignment_status: r.assignment_status || null,
             barangay_responder_name: r.barangay_responder_name,
             mdrrmo_response_status: r.mdrrmo_response_status || 'pending',
             mdrrmo_responder_name: r.mdrrmo_responder_name,
@@ -1505,14 +1525,98 @@ export default function CommandCenter() {
     }
   };
 
+  const closeBarangayPicker = () => {
+    barangayDestinationsRequestId.current += 1;
+    setBarangayPickerOpen(false);
+    setBarangayDestinationsLoading(false);
+  };
+
   const closeMdrrmoDispatch = () => {
     if (dispatching) return;
     mdrrmoDispatchRequestId.current += 1;
+    closeBarangayPicker();
     setMdrrmoDispatchIncident(null);
     setMdrrmoDispatchLocation(null);
     setMdrrmoDispatchLocationLoading(false);
     setMdrrmoDispatchLocationError('');
     setMdrrmoDispatchLoading(false);
+  };
+
+  const openBarangayPicker = async () => {
+    const incident = mdrrmoDispatchIncident;
+    if (!incident) return;
+    const requestId = ++barangayDestinationsRequestId.current;
+    setBarangayPickerOpen(true);
+    setBarangayDestinations([]);
+    setBarangayDestinationsError('');
+    setBarangayDestinationsLoading(true);
+    setBarangayAssignmentNotes('');
+    setSelectedBarangayDestinationId(
+      incident.assignment_status === 'active' ? incident.response_barangay_id || '' : '',
+    );
+    try {
+      const response = await reportAPI.barangayDestinations(incident.id);
+      if (requestId !== barangayDestinationsRequestId.current) return;
+      const destinations: BarangayDestination[] = Array.isArray(response.data?.barangays)
+        ? response.data.barangays
+          .filter((item: any) => typeof item?.id === 'string' && typeof item?.name === 'string')
+          .map((item: any) => ({
+            id: item.id,
+            name: item.name,
+            distance_meters: item.distance_meters !== null && item.distance_meters !== undefined && Number.isFinite(Number(item.distance_meters))
+              ? Number(item.distance_meters)
+              : null,
+          }))
+        : [];
+      setBarangayDestinations(destinations);
+      setSelectedBarangayDestinationId((current) => current || destinations[0]?.id || '');
+    } catch (error: any) {
+      if (requestId === barangayDestinationsRequestId.current) {
+        setBarangayDestinationsError(error?.response?.data?.error || 'Could not load eligible barangays.');
+      }
+    } finally {
+      if (requestId === barangayDestinationsRequestId.current) setBarangayDestinationsLoading(false);
+    }
+  };
+
+  const submitBarangayAssignment = async () => {
+    const incident = mdrrmoDispatchIncident;
+    const destination = barangayDestinations.find((item) => item.id === selectedBarangayDestinationId);
+    const notes = barangayAssignmentNotes.trim();
+    if (!incident || !destination || notes.length < 3 || barangayAssignmentSaving) return;
+    const isReassignment = incident.assignment_status === 'active' && Boolean(incident.response_barangay_id);
+    if (isReassignment && incident.response_barangay_id === destination.id) return;
+
+    setBarangayAssignmentSaving(true);
+    try {
+      if (isReassignment) {
+        await reportAPI.reassignBarangay(incident.id, { barangay_id: destination.id, notes });
+      } else {
+        await reportAPI.assignBarangay(incident.id, { barangay_id: destination.id, notes });
+      }
+      setSelectedIncident((current) => current?.id === incident.id ? {
+        ...current,
+        response_barangay_id: destination.id,
+        response_barangay_name: destination.name,
+        assignment_status: 'active',
+        barangay_response_status: 'pending',
+      } : current);
+      setIncidents((current) => current.map((item) => item.id === incident.id ? {
+        ...item,
+        response_barangay_id: destination.id,
+        response_barangay_name: destination.name,
+        assignment_status: 'active',
+        barangay_response_status: 'pending',
+      } : item));
+      toast.success(`${isReassignment ? 'Reassigned' : 'Assigned'} to ${destination.name}.`);
+      setBarangayPickerOpen(false);
+      closeMdrrmoDispatch();
+      await fetchData();
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error || 'Could not assign this report to the barangay.');
+    } finally {
+      setBarangayAssignmentSaving(false);
+    }
   };
 
   const submitMdrrmoDispatch = async () => {
@@ -1603,6 +1707,11 @@ export default function CommandCenter() {
   const mdrrmoDispatchLocationFallback = mdrrmoDispatchIncident
     ? dispatchLocationFallback(mdrrmoDispatchIncident)
     : '';
+  const nearestBarangayDestinationId = barangayDestinations.find((destination) => destination.distance_meters !== null)?.id || null;
+  const currentAssignedBarangayId = mdrrmoDispatchIncident?.assignment_status === 'active'
+    ? mdrrmoDispatchIncident.response_barangay_id || null
+    : null;
+  const selectedDestinationIsCurrent = Boolean(currentAssignedBarangayId && currentAssignedBarangayId === selectedBarangayDestinationId);
 
   return (
     <div className="command-center-wrapper">
@@ -2516,7 +2625,7 @@ export default function CommandCenter() {
               <header className="mdrrmo-dispatch-header">
                 <div>
                   <h2 id="mdrrmo-dispatch-title">Dispatch MDRRMO Responders</h2>
-                  <p>Classify the incident and assign active responders to the report.</p>
+                  <p>Classify the incident, dispatch MDRRMO responders, or assign it to a barangay.</p>
                 </div>
                 <button type="button" className="selection-close-btn" aria-label="Close dispatch" onClick={closeMdrrmoDispatch} disabled={dispatching}>
                   <X size={18} />
@@ -2622,7 +2731,14 @@ export default function CommandCenter() {
               </section>
 
               <footer className="mdrrmo-dispatch-actions">
-                <button type="button" className="mdrrmo-dispatch-cancel" onClick={closeMdrrmoDispatch} disabled={dispatching}>Cancel</button>
+                <button
+                  type="button"
+                  className="mdrrmo-dispatch-assign"
+                  onClick={() => void openBarangayPicker()}
+                  disabled={dispatching || barangayAssignmentSaving}
+                >
+                  Assign to barangay
+                </button>
                 <button
                   type="button"
                   className="mdrrmo-dispatch-submit"
@@ -2633,6 +2749,111 @@ export default function CommandCenter() {
                 </button>
               </footer>
             </section>
+
+            {barangayPickerOpen && (
+              <div
+                className="mdrrmo-barangay-picker-overlay"
+                onClick={(event) => { event.stopPropagation(); if (!barangayAssignmentSaving) closeBarangayPicker(); }}
+              >
+                <section
+                  className="mdrrmo-barangay-picker-dialog"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="mdrrmo-barangay-picker-title"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <header className="mdrrmo-barangay-picker-header">
+                    <div>
+                      <h2 id="mdrrmo-barangay-picker-title">
+                        {currentAssignedBarangayId ? 'Reassign to barangay' : 'Assign to barangay'}
+                      </h2>
+                      <p>Choose an active barangay response center. Destinations are sorted by distance from the incident.</p>
+                    </div>
+                    <button
+                      type="button"
+                      className="selection-close-btn"
+                      aria-label="Close barangay list"
+                      onClick={closeBarangayPicker}
+                      disabled={barangayAssignmentSaving}
+                    >
+                      <X size={18} />
+                    </button>
+                  </header>
+
+                  {mdrrmoDispatchIncident.response_barangay_name && currentAssignedBarangayId && (
+                    <p className="mdrrmo-barangay-current-assignment">
+                      Currently assigned to <strong>{mdrrmoDispatchIncident.response_barangay_name}</strong>. Choose another barangay to reassign.
+                    </p>
+                  )}
+
+                  {barangayDestinationsLoading ? (
+                    <div className="mdrrmo-barangay-picker-message">Loading eligible barangays…</div>
+                  ) : barangayDestinationsError ? (
+                    <div className="mdrrmo-barangay-picker-message error">{barangayDestinationsError}</div>
+                  ) : barangayDestinations.length === 0 ? (
+                    <div className="mdrrmo-barangay-picker-message">No active barangay command centers are available for assignment.</div>
+                  ) : (
+                    <div className="mdrrmo-barangay-list" role="group" aria-label="Eligible barangays">
+                      {barangayDestinations.map((destination) => {
+                        const isNearest = destination.id === nearestBarangayDestinationId;
+                        const isSelected = destination.id === selectedBarangayDestinationId;
+                        const distance = destination.distance_meters;
+                        const distanceText = distance === null
+                          ? 'Distance unavailable'
+                          : distance < 1000
+                            ? `${Math.round(distance)} m from incident`
+                            : `${(distance / 1000).toFixed(1)} km from incident`;
+                        return (
+                          <button
+                            key={destination.id}
+                            type="button"
+                            aria-pressed={isSelected}
+                            className={`mdrrmo-barangay-option ${isSelected ? 'selected' : ''}`}
+                            onClick={() => setSelectedBarangayDestinationId(destination.id)}
+                            disabled={barangayAssignmentSaving}
+                          >
+                            <span>
+                              <strong>{destination.name}</strong>
+                              <small>{distanceText}</small>
+                            </span>
+                            {isNearest && <b className="mdrrmo-barangay-nearest">Nearest</b>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  <label className="mdrrmo-barangay-assignment-notes">
+                    Assignment notes <span>(required · at least 3 characters)</span>
+                    <textarea
+                      value={barangayAssignmentNotes}
+                      onChange={(event) => setBarangayAssignmentNotes(event.target.value)}
+                      maxLength={1000}
+                      placeholder="Add response context or instructions for the barangay…"
+                      disabled={barangayAssignmentSaving}
+                    />
+                  </label>
+
+                  {selectedDestinationIsCurrent && (
+                    <p className="mdrrmo-barangay-current-assignment">This report is already assigned to this barangay. Choose a different destination to reassign it.</p>
+                  )}
+
+                  <footer className="mdrrmo-barangay-picker-actions">
+                    <button type="button" onClick={closeBarangayPicker} disabled={barangayAssignmentSaving}>Back</button>
+                    <button
+                      type="button"
+                      className="primary"
+                      onClick={() => void submitBarangayAssignment()}
+                      disabled={barangayDestinationsLoading || barangayAssignmentSaving || !selectedBarangayDestinationId || barangayAssignmentNotes.trim().length < 3 || selectedDestinationIsCurrent}
+                    >
+                      {barangayAssignmentSaving
+                        ? 'Assigning…'
+                        : currentAssignedBarangayId ? 'Reassign report' : 'Assign report'}
+                    </button>
+                  </footer>
+                </section>
+              </div>
+            )}
           </div>
         )}
 

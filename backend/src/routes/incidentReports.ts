@@ -1106,7 +1106,7 @@ router.get('/', authenticate, authorize('dispatcher', 'admin'), async (req: Auth
         const mdrrmoReports = formatted.filter((report) =>
           !report.review_outcome && isVisibleToMdrrmo(report));
 
-        res.json(mdrrmoReports);
+        res.json(await attachResidentBarangayAssignmentState(mdrrmoReports));
     } catch (err) {
         console.error('Fetch reports error:', err);
         res.status(500).json({ error: 'Internal server error' });
