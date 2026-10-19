@@ -108,7 +108,10 @@ function requestCategories(request: AssistanceRequest): string[] {
 }
 
 function isResponderAssistanceRequest(request: AssistanceRequest): boolean {
+  const subtype = String(request.sub_type || '').trim().toLowerCase().replaceAll(' ', '_');
+  const type = String(request.request_type || '').trim().toLowerCase().replaceAll(' ', '_');
   return (request.source === 'mdrrmo' || request.source === 'barangay') &&
+    subtype !== 'escalation' && type !== 'escalation' &&
     !request.id.startsWith('resident-request-') &&
     !request.id.startsWith('escalation-');
 }

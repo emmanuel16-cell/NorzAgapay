@@ -283,7 +283,10 @@ function requestTimestamp(request: AssistanceRequestItem): number {
 }
 
 function isResponderAssistanceRequest(request: AssistanceRequestItem): boolean {
+  const subtype = String(request.sub_type || '').trim().toLowerCase().replaceAll(' ', '_');
+  const type = String(request.request_type || '').trim().toLowerCase().replaceAll(' ', '_');
   return (request.source === 'mdrrmo' || request.source === 'barangay') &&
+    subtype !== 'escalation' && type !== 'escalation' &&
     !request.id.startsWith('resident-request-') &&
     !request.id.startsWith('escalation-');
 }
@@ -1037,7 +1040,7 @@ export default function CommandCenter() {
           if (!active) return;
           const requests = Array.isArray(response.data.requests) ? response.data.requests as AssistanceRequestItem[] : [];
           setPendingAssistanceIncidentIds(new Set(requests
-            .filter((request) => request.source === 'mdrrmo' && request.status === 'pending' && request.incident_id)
+            .filter((request) => isResponderAssistanceRequest(request) && request.source === 'mdrrmo' && request.status === 'pending' && request.incident_id)
             .map((request) => request.incident_id)));
         })
         .catch((error) => console.error('Could not load pending assistance indicators:', error));

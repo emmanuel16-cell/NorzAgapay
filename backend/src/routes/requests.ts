@@ -158,65 +158,15 @@ router.get('/', authenticate, authorize('dispatcher'), async (req: AuthRequest, 
       };
     });
 
-    // 3. Ensure direct MDRRMO reports and escalated reports without explicit sub-requests are included
-    const existingIncidentIds = new Set([
-      ...responderRequests.map((r) => r.incident_id).filter(Boolean),
-      ...mappedBgRequests.map((r) => r.incident_id).filter(Boolean),
-    ]);
-
-    const synthesizedRequests: any[] = [];
-    for (const report of eligibleReports) {
-      if (existingIncidentIds.has(report.id)) continue;
-      const isEscalated = Boolean(report.is_escalated);
-      const mdrrmoRespStatus = String(report.mdrrmo_response_status || '').toLowerCase();
-      const reqStatus = ['resolved', 'closed'].includes(mdrrmoRespStatus)
-        ? 'fulfilled'
-        : mdrrmoRespStatus === 'responding'
-          ? 'approved'
-          : 'pending';
-
-      if (isEscalated) {
-        synthesizedRequests.push({
-          id: `escalation-${report.id}`,
-          request_type: 'responders',
-          sub_type: 'escalation',
-          details: report.mdrrmo_coordination_notes || report.description || 'Barangay escalated incident to MDRRMO for emergency assistance.',
-          status: reqStatus,
-          incident_id: report.id,
-          created_at: report.created_at,
-          requested_by: report.reporter_name || 'Barangay Dispatcher',
-          requested_by_user: {
-            full_name: `${report.barangay_name || 'Barangay'} Dispatcher`,
-            role: 'responder',
-            unit_type: 'Barangay Dispatcher',
-            phone: report.reporter_phone || null,
-          },
-          incident_report: report,
-          source: 'barangay',
-        });
-      } else {
-        synthesizedRequests.push({
-          id: `resident-request-${report.id}`,
-          request_type: report.type === 'emergency' ? 'responders' : 'goods',
-          sub_type: report.incident_type || report.specifics || 'emergency',
-          details: report.description || report.specifics || report.title || 'Direct MDRRMO report submitted by resident.',
-          status: reqStatus,
-          incident_id: report.id,
-          created_at: report.created_at,
-          requested_by: report.reporter_name || 'Resident',
-          requested_by_user: {
-            full_name: report.reporter_name || 'Resident',
-            role: 'responder',
-            unit_type: 'Resident',
-            phone: report.reporter_phone || null,
-          },
-          incident_report: report,
-          source: 'resident',
-        });
-      }
-    }
-
-    const allRequests = [...responderRequests, ...mappedBgRequests, ...synthesizedRequests].sort(
+    // Only include actual assistance-request records. Unassigned reports and
+    // legacy escalations without a request row are not assistance requests.
+    const allRequests = [...responderRequests, ...mappedBgRequests]
+      .filter((request) => {
+        const requestType = String(request.request_type || '').trim().toLowerCase().replaceAll(' ', '_');
+        const subtype = String(request.sub_type || '').trim().toLowerCase().replaceAll(' ', '_');
+        return requestType !== 'escalation' && subtype !== 'escalation';
+      })
+      .sort(
       (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
 
