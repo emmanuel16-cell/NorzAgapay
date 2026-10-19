@@ -973,6 +973,7 @@ export default function CommandCenter() {
   const [selectedBarangayDestinationId, setSelectedBarangayDestinationId] = useState('');
   const [barangayAssignmentNotes, setBarangayAssignmentNotes] = useState('');
   const [barangayAssignmentSaving, setBarangayAssignmentSaving] = useState(false);
+  const [assignmentPickerOnly, setAssignmentPickerOnly] = useState(false);
   const mdrrmoDispatchRequestId = useRef(0);
   const barangayDispatchRequestId = useRef(0);
   const barangayDestinationsRequestId = useRef(0);
@@ -980,6 +981,9 @@ export default function CommandCenter() {
   const linkedReportIdRef = useRef<string | null>(null);
   const previewMediaRef = useRef<HTMLImageElement | HTMLVideoElement>(null);
   const selectedIncidentId = selectedIncident?.id;
+  const selectedHasActiveBarangayAssignment = Boolean(
+    !isBarangayDashboard && selectedIncident?.is_central_assignment && selectedIncident.assignment_status === 'active',
+  );
 
   useEffect(() => {
     if (!selectedIncidentId || !['incident', 'escalated'].includes(activeModalType || '')) {
@@ -1665,10 +1669,14 @@ export default function CommandCenter() {
     barangayDestinationsRequestId.current += 1;
     setBarangayPickerOpen(false);
     setBarangayDestinationsLoading(false);
+    if (assignmentPickerOnly) {
+      setAssignmentPickerOnly(false);
+      setMdrrmoDispatchIncident(null);
+    }
   };
 
-  const closeMdrrmoDispatch = () => {
-    if (dispatching) return;
+  const closeMdrrmoDispatch = (force = false) => {
+    if (dispatching || (barangayAssignmentSaving && !force)) return;
     mdrrmoDispatchRequestId.current += 1;
     closeBarangayPicker();
     setMdrrmoDispatchIncident(null);
@@ -1678,9 +1686,10 @@ export default function CommandCenter() {
     setMdrrmoDispatchLoading(false);
   };
 
-  const openBarangayPicker = async () => {
-    const incident = mdrrmoDispatchIncident;
+  const openBarangayPicker = async (incidentOverride?: IncidentItem) => {
+    const incident = incidentOverride || mdrrmoDispatchIncident;
     if (!incident) return;
+    if (!mdrrmoDispatchIncident) setMdrrmoDispatchIncident(incident);
     const requestId = ++barangayDestinationsRequestId.current;
     setBarangayPickerOpen(true);
     setBarangayDestinations([]);
@@ -1715,6 +1724,44 @@ export default function CommandCenter() {
     }
   };
 
+  const openAssignmentPickerOnly = (incident: IncidentItem) => {
+    setAssignmentPickerOnly(true);
+    setMdrrmoDispatchIncident(incident);
+    setMdrrmoDispatchLocation(null);
+    setMdrrmoDispatchLocationLoading(false);
+    setMdrrmoDispatchLocationError('');
+    setMdrrmoDispatchResponders([]);
+    setMdrrmoDispatchLoading(false);
+    void openBarangayPicker(incident);
+  };
+
+  const recallSelectedBarangayAssignment = async () => {
+    const incident = selectedIncident;
+    if (!incident || !selectedHasActiveBarangayAssignment || barangayAssignmentSaving) return;
+    const notes = window.prompt('Reason for recalling this assignment:')?.trim();
+    if (!notes) return;
+    setBarangayAssignmentSaving(true);
+    try {
+      await reportAPI.recallBarangay(incident.id, notes);
+      const recalledReport = (item: IncidentItem): IncidentItem => ({
+        ...item,
+        is_central_assignment: false,
+        response_barangay_id: null,
+        response_barangay_name: null,
+        assignment_status: null,
+        barangay_response_status: undefined,
+      });
+      setSelectedIncident((current) => current?.id === incident.id ? recalledReport(current) : current);
+      setIncidents((current) => current.map((item) => item.id === incident.id ? recalledReport(item) : item));
+      toast.success('Barangay assignment recalled to the MDRRMO queue.');
+      await fetchData();
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error || 'Could not recall the barangay assignment.');
+    } finally {
+      setBarangayAssignmentSaving(false);
+    }
+  };
+
   const submitBarangayAssignment = async () => {
     const incident = mdrrmoDispatchIncident;
     const destination = barangayDestinations.find((item) => item.id === selectedBarangayDestinationId);
@@ -1745,8 +1792,15 @@ export default function CommandCenter() {
         barangay_response_status: 'pending',
       } : item));
       toast.success(`${isReassignment ? 'Reassigned' : 'Assigned'} to ${destination.name}.`);
+      const pickerOnly = assignmentPickerOnly;
       setBarangayPickerOpen(false);
-      closeMdrrmoDispatch();
+      setAssignmentPickerOnly(false);
+      if (pickerOnly) {
+        setMdrrmoDispatchIncident(null);
+      } else {
+        closeMdrrmoDispatch(true);
+        closeModal();
+      }
       await fetchData();
     } catch (error: any) {
       toast.error(error?.response?.data?.error || 'Could not assign this report to the barangay.');
@@ -1813,6 +1867,10 @@ export default function CommandCenter() {
 
   const handleDispatch = (overrideConfirm = false) => {
     if (!selectedIncident) return;
+    if (selectedHasActiveBarangayAssignment) {
+      toast.error('This report is assigned to a barangay. Recall or reassign it to change its destination.');
+      return;
+    }
     if (isBarangayDashboard) {
       if (user?.role !== 'dispatcher') {
         toast.error('Only a barangay dispatcher can dispatch responders.');
@@ -2260,13 +2318,18 @@ export default function CommandCenter() {
                       : <div className="reporter-note-empty"><strong>No Details Provided</strong><span>Review the attached media</span></div>}
                   </div>
                 </div>
-                {selectedIncident.status === 'pending' && <div className="selection-actions">
-                  {!isBarangayDashboard && <button className="selection-invalid-btn" onClick={() => setInvalidReviewStep('choice')}>Invalid Report</button>}
-                  {!selectedIncident.mdrrmo_dispatched && (!isBarangayDashboard || user?.role === 'dispatcher') && (
-                    <button type="button" className="selection-dispatch-btn" onClick={() => handleDispatch()} disabled={dispatching}>
-                      {dispatching ? 'Dispatching…' : 'Dispatch'}
-                    </button>
-                  )}
+                {(selectedIncident.status === 'pending' || selectedHasActiveBarangayAssignment) && <div className="selection-actions">
+                  {selectedHasActiveBarangayAssignment ? <>
+                    <button type="button" className="selection-invalid-btn" onClick={() => void recallSelectedBarangayAssignment()} disabled={barangayAssignmentSaving}>Recall assignment</button>
+                    <button type="button" className="selection-dispatch-btn" onClick={() => openAssignmentPickerOnly(selectedIncident)} disabled={barangayAssignmentSaving}>Reassign</button>
+                  </> : <>
+                    {!isBarangayDashboard && <button className="selection-invalid-btn" onClick={() => setInvalidReviewStep('choice')}>Invalid Report</button>}
+                    {!selectedIncident.mdrrmo_dispatched && (!isBarangayDashboard || user?.role === 'dispatcher') && (
+                      <button type="button" className="selection-dispatch-btn" onClick={() => handleDispatch()} disabled={dispatching}>
+                        {dispatching ? 'Dispatching…' : 'Dispatch'}
+                      </button>
+                    )}
+                  </>}
                 </div>}
               </div>
 
@@ -2328,7 +2391,7 @@ export default function CommandCenter() {
                   <button className="btn-preview-close" onClick={closeModal}>
                     ✕ CLOSE
                   </button>
-                  {(!isBarangayDashboard || (selectedIncident.status === 'pending' && user?.role === 'dispatcher')) && (
+                  {!selectedHasActiveBarangayAssignment && (!isBarangayDashboard || (selectedIncident.status === 'pending' && user?.role === 'dispatcher')) && (
                     <button className="btn-preview-dispatch" onClick={() => handleDispatch()}>
                       🚑 DISPATCH
                     </button>
@@ -2534,7 +2597,7 @@ export default function CommandCenter() {
                   </div>
                 )}
 
-                {selectedIncident.status === 'pending' && !selectedIncident.mdrrmo_dispatched && (
+                {selectedIncident.status === 'pending' && !selectedIncident.mdrrmo_dispatched && !selectedHasActiveBarangayAssignment && (
                   <div className="selection-actions escalated-selection-actions">
                     {!isBarangayDashboard && <button type="button" className="selection-dispatch-btn" onClick={() => handleDispatch()} disabled={dispatching}>
                       {dispatching ? 'Dispatching…' : 'Dispatch'}
@@ -2602,7 +2665,7 @@ export default function CommandCenter() {
                   <button className="btn-preview-close" onClick={closeModal}>
                     ✕ CLOSE
                   </button>
-                  {(!isBarangayDashboard || (selectedIncident.status === 'pending' && user?.role === 'dispatcher')) && (
+                  {!selectedHasActiveBarangayAssignment && (!isBarangayDashboard || (selectedIncident.status === 'pending' && user?.role === 'dispatcher')) && (
                     <button className="btn-preview-dispatch" onClick={() => handleDispatch()}>
                       🚑 DISPATCH
                     </button>
@@ -2911,7 +2974,8 @@ export default function CommandCenter() {
         )}
 
         {mdrrmoDispatchIncident && (
-          <div className="mdrrmo-dispatch-overlay" onClick={closeMdrrmoDispatch}>
+          <div className="mdrrmo-dispatch-overlay" onClick={() => closeMdrrmoDispatch()}>
+            {!assignmentPickerOnly && (
             <section
               className="mdrrmo-dispatch-dialog"
               role="dialog"
@@ -2924,7 +2988,7 @@ export default function CommandCenter() {
                   <h2 id="mdrrmo-dispatch-title">Dispatch MDRRMO Responders</h2>
                   <p>Classify the incident, dispatch MDRRMO responders, or assign it to a barangay.</p>
                 </div>
-                <button type="button" className="selection-close-btn" aria-label="Close dispatch" onClick={closeMdrrmoDispatch} disabled={dispatching}>
+                <button type="button" className="selection-close-btn" aria-label="Close dispatch" onClick={() => closeMdrrmoDispatch()} disabled={dispatching || barangayAssignmentSaving}>
                   <X size={18} />
                 </button>
               </header>
@@ -3046,6 +3110,7 @@ export default function CommandCenter() {
                 </button>
               </footer>
             </section>
+            )}
 
             {barangayPickerOpen && (
               <div

@@ -38,7 +38,7 @@ interface IncidentReport {
   id: string; type: string; title?: string; specifics?: string; description?: string; status: string;
   send_to?: string; is_escalated?: boolean; beyond_barangay_capability?: boolean;
   response_status?: string; mdrrmo_response_status?: string; barangay_response_status?: string;
-  response_barangay_name?: string | null;
+  response_barangay_id?: string | null; response_barangay_name?: string | null;
   mdrrmo_dispatched_at?: string | null; mdrrmo_accepted_at?: string | null; mdrrmo_arrived_at?: string | null; mdrrmo_resolved_at?: string | null;
   barangay_dispatched_at?: string | null; barangay_accepted_at?: string | null; barangay_arrived_at?: string | null; barangay_resolved_at?: string | null;
   severity?: string; incident_type?: string; latitude?: number | string | null; longitude?: number | string | null;
@@ -88,8 +88,11 @@ const getStage = (report: IncidentReport): ReportStage => {
   return 'pending';
 };
 const getGroup = (report: IncidentReport): ReportGroup => getMdrrmoReportGroup(report);
-const isAssignedToBarangay = (report: IncidentReport) =>
+const hasActiveBarangayAssignment = (report: IncidentReport) =>
   report.active_barangay_assignment?.assignment_status === 'active' ||
+  (report.is_central_assignment && report.assignment_status === 'active');
+const isAssignedToBarangay = (report: IncidentReport) =>
+  hasActiveBarangayAssignment(report) ||
   report.barangay_assignments?.some((assignment) => ['active', 'completed'].includes(assignment.assignment_status)) ||
   (report.is_central_assignment && ['active', 'completed'].includes(report.assignment_status || ''));
 const getProofs = (report: IncidentReport) => report.proof_urls?.length ? report.proof_urls : report.proof_url ? [report.proof_url] : [];
@@ -372,13 +375,13 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
   const openBarangayAssignment = async (report: IncidentReport) => {
     setAssignmentReport(report);
     setDestinations([]);
-    setDestinationId(report.active_barangay_assignment?.barangay_id || '');
-    setAssignmentNotes(report.active_barangay_assignment?.assignment_notes || '');
+    setDestinationId(report.active_barangay_assignment?.barangay_id || report.response_barangay_id || '');
+    setAssignmentNotes(report.active_barangay_assignment?.assignment_notes || report.assignment_notes || '');
     try {
       const response = await reportAPI.barangayDestinations(report.id);
       const available: BarangayDestination[] = response.data.barangays || [];
       setDestinations(available);
-      if (!report.active_barangay_assignment) {
+      if (!hasActiveBarangayAssignment(report)) {
         setDestinationId(available.find((item) => item.distance_meters != null)?.id || '');
       }
     } catch (error: any) {
@@ -392,7 +395,7 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
     }
     try {
       setSaving(true);
-      if (assignmentReport.active_barangay_assignment) {
+      if (hasActiveBarangayAssignment(assignmentReport)) {
         await reportAPI.reassignBarangay(assignmentReport.id, { barangay_id: destinationId, notes: assignmentNotes.trim() });
       } else {
         await reportAPI.assignBarangay(assignmentReport.id, { barangay_id: destinationId, notes: assignmentNotes.trim() });
@@ -623,21 +626,21 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
               </>}
             </div>
             {!isReadOnlyWorkspace && stage === 'pending' && <footer className="reports-detail-actions-v2">
-                {!isBarangay && getGroup(selected) === 'resident' && !selected.mdrrmo_dispatched_at && <button type="button" className="reports-invalid-button-v2" onClick={() => void markInvalid(selected)}>Mark invalid</button>}
+                {!isBarangay && getGroup(selected) === 'resident' && !isAssignedToBarangay(selected) && !selected.mdrrmo_dispatched_at && <button type="button" className="reports-invalid-button-v2" onClick={() => void markInvalid(selected)}>Mark invalid</button>}
                 {isBarangay && selected.is_central_assignment ? <>
                   <button type="button" className="reports-invalid-button-v2" onClick={() => void escalateBarangayAssignment(selected)} disabled={saving}>Return to MDRRMO</button>
                   <button type="button" className="reports-dispatch-button-v2" onClick={() => void openDispatch(selected)} disabled={saving}><Send size={17} /> Dispatch to barangay responders</button>
                 </> : isBarangay ? <span className="reports-legacy-note-v2">This older report is read-only in the central assignment workflow.</span> : <>
-                  {selected.active_barangay_assignment ? <>
-                    <button type="button" className="reports-invalid-button-v2" onClick={() => void recallBarangayAssignment(selected)} disabled={saving}>Recall barangay assignment</button>
-                    <button type="button" className="reports-dispatch-button-v2" onClick={() => void openBarangayAssignment(selected)} disabled={saving}>Reassign barangay</button>
+                  {hasActiveBarangayAssignment(selected) ? <>
+                    <button type="button" className="reports-invalid-button-v2" onClick={() => void recallBarangayAssignment(selected)} disabled={saving}>Recall assignment</button>
+                    <button type="button" className="reports-dispatch-button-v2" onClick={() => void openBarangayAssignment(selected)} disabled={saving}>Reassign</button>
                   </> : <button type="button" className="reports-invalid-button-v2" onClick={() => void openBarangayAssignment(selected)} disabled={saving}>Assign to barangay</button>}
-                  {!selected.active_barangay_assignment && <button type="button" className="reports-dispatch-button-v2" onClick={() => void openDispatch(selected)} disabled={saving}><Send size={17} /> {selected.mdrrmo_dispatched_at ? 'Update MDRRMO dispatch' : 'Dispatch to MDRRMO responders'}</button>}
+                  {!hasActiveBarangayAssignment(selected) && <button type="button" className="reports-dispatch-button-v2" onClick={() => void openDispatch(selected)} disabled={saving}><Send size={17} /> {selected.mdrrmo_dispatched_at ? 'Update MDRRMO dispatch' : 'Dispatch to MDRRMO responders'}</button>}
                 </>}
             </footer>}
-            {stage === 'responding' && !isBarangay && selected.active_barangay_assignment && <footer className="reports-detail-actions-v2">
-              <button type="button" className="reports-invalid-button-v2" onClick={() => void recallBarangayAssignment(selected)} disabled={saving}>Recall barangay assignment</button>
-              <button type="button" className="reports-dispatch-button-v2" onClick={() => void openBarangayAssignment(selected)} disabled={saving}>Reassign barangay</button>
+            {stage === 'responding' && !isBarangay && hasActiveBarangayAssignment(selected) && <footer className="reports-detail-actions-v2">
+              <button type="button" className="reports-invalid-button-v2" onClick={() => void recallBarangayAssignment(selected)} disabled={saving}>Recall assignment</button>
+              <button type="button" className="reports-dispatch-button-v2" onClick={() => void openBarangayAssignment(selected)} disabled={saving}>Reassign</button>
             </footer>}
             {stage === 'responding' && isBarangay && selected.is_central_assignment && user?.role === 'dispatcher' && <footer className="reports-detail-actions-v2">
               <button type="button" className="reports-invalid-button-v2" onClick={() => void escalateBarangayAssignment(selected)} disabled={saving}>Return to MDRRMO</button>
@@ -683,7 +686,7 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
 
       {assignmentReport && <div className="reports-modal-backdrop-v2" onClick={() => !saving && setAssignmentReport(null)}>
         <section className="reports-dispatch-modal-v2" role="dialog" aria-modal="true" aria-labelledby="barangay-assignment-title" onClick={(event) => event.stopPropagation()}>
-          <header><div><span className="reports-eyebrow-v2">MDRRMO triage</span><h2 id="barangay-assignment-title">{assignmentReport.active_barangay_assignment ? 'Reassign report' : 'Assign to barangay'}</h2></div><button type="button" aria-label="Close" onClick={() => setAssignmentReport(null)}><X size={19} /></button></header>
+          <header><div><span className="reports-eyebrow-v2">MDRRMO triage</span><h2 id="barangay-assignment-title">{hasActiveBarangayAssignment(assignmentReport) ? 'Reassign report' : 'Assign to barangay'}</h2></div><button type="button" aria-label="Close" onClick={() => setAssignmentReport(null)}><X size={19} /></button></header>
           <div className="reports-modal-report-v2"><strong>{assignmentReport.title || 'Incident report'}</strong><br />Incident location: {assignmentReport.barangay_name || 'Norzagaray'}</div>
           {nearestDestination && <div className="reports-modal-report-v2">
             <strong>Nearest active barangay:</strong> {nearestDestination.name} ({formatDistance(nearestDestination.distance_meters)})
