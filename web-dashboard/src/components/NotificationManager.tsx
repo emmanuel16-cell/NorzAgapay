@@ -55,13 +55,17 @@ export default function NotificationManager() {
         <div
           onClick={() => {
             toast.dismiss(t.id);
-            navigate(request.incident_id ? `/requests?incident_id=${encodeURIComponent(request.incident_id)}` : '/requests');
+            navigate(request.incident_id
+              ? `/command-center?report_id=${encodeURIComponent(request.incident_id)}&responder_tab=assistance`
+              : '/requests');
           }}
           style={{ width: '100%', cursor: 'pointer', padding: '10px' }}
         >
-          <div style={{ fontWeight: 'bold', color: 'white' }}>Assistance requested</div>
+          <div style={{ fontWeight: 'bold', color: 'white' }}>
+            Assistance requested by {request.requested_by_user?.full_name || 'Responder'}
+          </div>
           <div style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.9)' }}>
-            {request.requested_by_user?.full_name || 'Responder'} submitted a {request.request_type || 'resource'} request.
+            Click to open the incident map and assistance request.
           </div>
         </div>
       ), { duration: 30000, position: 'top-right' });

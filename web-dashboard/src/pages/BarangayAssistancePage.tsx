@@ -161,8 +161,8 @@ type MdrrmoAssistance = {
   dispatcher_notes?: string | null;
   created_at?: string;
 };
-type MdrrmoRequestForm = { incident_id: string; category: string; details: string };
-const initialMdrrmoRequest: MdrrmoRequestForm = { incident_id: '', category: 'manpower', details: '' };
+type MdrrmoRequestForm = { incident_id: string; needs_more_manpower: boolean; needs_resources: boolean; needs_equipment: boolean; details: string };
+const initialMdrrmoRequest: MdrrmoRequestForm = { incident_id: '', needs_more_manpower: false, needs_resources: false, needs_equipment: false, details: '' };
 
 function MdrrmoResponderAssistanceWorkspace() {
   const [requests, setRequests] = useState<MdrrmoAssistance[]>([]);
@@ -202,11 +202,18 @@ function MdrrmoResponderAssistanceWorkspace() {
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!form.incident_id) { toast.error('Choose an active incident for this request.'); return; }
+    const categories = [
+      form.needs_more_manpower ? 'manpower' : null,
+      form.needs_resources ? 'resources' : null,
+      form.needs_equipment ? 'equipment' : null,
+    ].filter((category): category is string => Boolean(category));
+    if (!categories.length) { toast.error('Select at least one type of assistance.'); return; }
+    if (form.details.trim().length < 10) { toast.error('Add a short explanation of at least 10 characters.'); return; }
     setSaving(true);
     try {
       await requestAPI.create({
-        request_type: form.category === 'manpower' ? 'responders' : 'goods',
-        sub_type: form.category,
+        request_type: form.needs_more_manpower ? 'responders' : 'goods',
+        sub_type: categories.join(','),
         details: form.details.trim(),
         incident_id: form.incident_id,
       });
@@ -248,8 +255,12 @@ function MdrrmoResponderAssistanceWorkspace() {
           <header><div><h2 id="mdrrmo-assistance-request-title">Request MDRRMO assistance</h2><p>Link the request to an active incident assigned to your responder account.</p></div><button autoFocus className="workspace-secondary-action" type="button" onClick={reset} disabled={saving}><X size={15} /> Cancel</button></header>
           <form className="barangay-console-form-grid" onSubmit={(event) => void submit(event)}>
             <label className="barangay-console-form-wide">Linked incident<select required value={form.incident_id} onChange={(event) => setForm((current) => ({ ...current, incident_id: event.target.value }))}><option value="">Choose an assigned incident</option>{activeIncidents.map((incident) => <option value={incident.id} key={incident.id}>{incident.title || incident.incident_type?.replaceAll('_', ' ') || 'Incident'}</option>)}</select></label>
-            <label className="barangay-console-form-wide">Assistance type<select value={form.category} onChange={(event) => setForm((current) => ({ ...current, category: event.target.value }))}><option value="manpower">Additional responders</option><option value="supplies">Supplies or resources</option><option value="equipment">Equipment</option><option value="other">Other support</option></select></label>
-            <label className="barangay-console-form-wide">Explain what is needed<textarea required minLength={10} rows={3} value={form.details} onChange={(event) => setForm((current) => ({ ...current, details: event.target.value }))} placeholder="Describe the support needed and why…" /></label>
+            <div className="barangay-assistance-needs barangay-console-form-wide"><span>Assistance needed</span>
+              <label><input type="checkbox" checked={form.needs_more_manpower} onChange={(event) => setForm((current) => ({ ...current, needs_more_manpower: event.target.checked }))} /> Additional responders</label>
+              <label><input type="checkbox" checked={form.needs_resources} onChange={(event) => setForm((current) => ({ ...current, needs_resources: event.target.checked }))} /> Supplies or resources</label>
+              <label><input type="checkbox" checked={form.needs_equipment} onChange={(event) => setForm((current) => ({ ...current, needs_equipment: event.target.checked }))} /> Equipment</label>
+            </div>
+            <label className="barangay-console-form-wide">Additional information for responders<textarea required minLength={10} rows={3} value={form.details} onChange={(event) => setForm((current) => ({ ...current, details: event.target.value }))} placeholder="Explain what is needed and how it will help…" /></label>
             <div className="barangay-console-form-actions"><button className="btn btn-primary" type="submit" disabled={saving || activeIncidents.length === 0}>{saving ? 'Submitting…' : <><Send size={16} /> Submit request</>}</button>{activeIncidents.length === 0 && <span className="barangay-console-muted">There are no active assigned incidents to link.</span>}</div>
           </form>
         </section>

@@ -267,6 +267,11 @@ interface AssistanceRequestItem {
   details: string;
   status: string;
   created_at: string;
+  source?: 'mdrrmo' | 'barangay' | 'resident';
+  needs_more_manpower?: boolean;
+  needs_resources?: boolean;
+  needs_equipment?: boolean;
+  beyond_barangay_capability?: boolean;
   decision?: string | null;
   dispatcher_notes?: string | null;
   requested_by_user?: { full_name?: string; role?: string; unit_type?: string | null; phone?: string | null } | null;
@@ -275,6 +280,26 @@ interface AssistanceRequestItem {
 function requestTimestamp(request: AssistanceRequestItem): number {
   const timestamp = Date.parse(request.created_at);
   return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function isResponderAssistanceRequest(request: AssistanceRequestItem): boolean {
+  return (request.source === 'mdrrmo' || request.source === 'barangay') &&
+    !request.id.startsWith('resident-request-') &&
+    !request.id.startsWith('escalation-');
+}
+
+function assistanceCategories(request: AssistanceRequestItem): string[] {
+  const categories = new Set<string>();
+  if (request.needs_more_manpower) categories.add('Manpower');
+  if (request.needs_resources) categories.add('Resources');
+  if (request.needs_equipment) categories.add('Equipment');
+  if (categories.size === 0) {
+    const type = `${request.request_type || ''} ${request.sub_type || ''}`.toLowerCase().replaceAll('_', ' ');
+    if (/responder|manpower|personnel/.test(type)) categories.add('Manpower');
+    if (/equipment/.test(type)) categories.add('Equipment');
+    if (/resource|suppl|goods/.test(type)) categories.add('Resources');
+  }
+  return [...categories];
 }
 
 const MDRRMO_DISPATCH_INCIDENT_TYPES = [
@@ -419,9 +444,13 @@ function ResponderAssessmentPanel({
 }) {
   const navigate = useNavigate();
   const latestAssistanceRequest = assistanceRequests.reduce<AssistanceRequestItem | null>(
-    (latest, request) => !latest || requestTimestamp(request) > requestTimestamp(latest) ? request : latest,
+    (latest, request) => !isResponderAssistanceRequest(request)
+      ? latest
+      : !latest || requestTimestamp(request) > requestTimestamp(latest) ? request : latest,
     null,
   );
+  const responderAssistanceCount = assistanceRequests.filter(isResponderAssistanceRequest).length;
+  const hasPendingAssistance = assistanceRequests.some((request) => isResponderAssistanceRequest(request) && request.status === 'pending');
 
   return (
     <div className="responder-detail-panel">
@@ -431,7 +460,7 @@ function ResponderAssessmentPanel({
           Field Assessment
         </button>
         <button type="button" role="tab" aria-selected={view === 'assistance'} className={view === 'assistance' ? 'active' : ''} onClick={() => onViewChange('assistance')}>
-          Assistance Request
+          Assistance Request{hasPendingAssistance && <span className="responder-tab-alert-dot" aria-label="Pending assistance request" />}
         </button>
       </div>
       {view === 'assessment' ? (
@@ -477,13 +506,19 @@ function ResponderAssessmentPanel({
                 {request.decision && <span><small>Decision</small><b>{request.decision.replaceAll('_', ' ')}</b></span>}
                 <span><small>Requested</small><b>{new Date(request.created_at).toLocaleString()}</b></span>
               </div>
-              <p>{request.details}</p>
+              {assistanceCategories(request).length > 0 && (
+                <div className="assistance-request-category-checklist" aria-label="Requested assistance categories">
+                  {assistanceCategories(request).map((category) => <span key={category}>✓ {category}</span>)}
+                  {request.beyond_barangay_capability && <span>✓ MDRRMO coordination</span>}
+                </div>
+              )}
+              <div className="assistance-request-explanation"><small>Additional information</small><p>{request.details || 'No additional information provided.'}</p></div>
               {request.dispatcher_notes && <p><b>Dispatcher notes:</b> {request.dispatcher_notes}</p>}
               {request.requested_by_user && <small>Requested by {request.requested_by_user.full_name || 'Responder'}{request.requested_by_user.phone ? ` · ${formatMobileNumber(request.requested_by_user.phone)}` : ''}</small>}
             </div>
           )) : <div className="assistance-request-card"><strong>Assistance Request</strong><span>No assistance request details provided.</span></div>}
-          {assistanceRequests.length > 1 && <small className="assistance-request-history-count">Showing the latest of {assistanceRequests.length} requests.</small>}
-          <button type="button" className="assistance-request-view-all" onClick={() => navigate(`/requests?incident_id=${encodeURIComponent(incident.id)}`)}>
+          {responderAssistanceCount > 1 && <small className="assistance-request-history-count">Showing the latest of {responderAssistanceCount} requests.</small>}
+          <button type="button" className="assistance-request-view-all" onClick={() => navigate('/requests')}>
             View all assistance requests
           </button>
         </div>
@@ -597,7 +632,7 @@ const mapStageSymbol = (status: ReportStage): string => {
 
 // Markers use the report-category colors and status symbols from the
 // Command Center reference, with a white normal ring and yellow selected ring.
-const createTeardropPin = (category: MapReportCategory, status: ReportStage, selected = false, barangayDashboard = false) => {
+const createTeardropPin = (category: MapReportCategory, status: ReportStage, selected = false, barangayDashboard = false, hasPendingAssistance = false) => {
   const size = 64;
   const color = status === 'resolved'
     ? '#5CE76B'
@@ -606,6 +641,7 @@ const createTeardropPin = (category: MapReportCategory, status: ReportStage, sel
     html: `
       <div class="command-map-dot ${selected ? 'selected' : ''}" style="width:${size}px;height:${size}px;background:${color}">
         ${mapStageSymbol(status)}
+        ${hasPendingAssistance ? '<span class="command-map-dot-unread" aria-label="Pending assistance request"></span>' : ''}
       </div>
     `,
     className: 'command-map-dot-icon',
@@ -721,10 +757,10 @@ function CommandCenterViewportController({
   return null;
 }
 
-function createIncidentClusterIcon(count: number) {
+function createIncidentClusterIcon(count: number, hasPendingAssistance = false) {
   const size = 54;
   return L.divIcon({
-    html: `<div class="command-map-cluster-badge" aria-label="${count} nearby reports"><svg viewBox="0 0 30 30" aria-hidden="true"><circle cx="6" cy="7" r="2.2"/><path d="M12 7h12M12 15h12M12 23h12"/><circle cx="6" cy="15" r="2.2"/><circle cx="6" cy="23" r="2.2"/></svg><span>${count}</span></div>`,
+    html: `<div class="command-map-cluster-badge" aria-label="${count} nearby reports${hasPendingAssistance ? ', pending assistance request' : ''}"><svg viewBox="0 0 30 30" aria-hidden="true"><circle cx="6" cy="7" r="2.2"/><path d="M12 7h12M12 15h12M12 23h12"/><circle cx="6" cy="15" r="2.2"/><circle cx="6" cy="23" r="2.2"/></svg><span>${count}</span>${hasPendingAssistance ? '<i class="command-map-cluster-alert" aria-hidden="true"></i>' : ''}</div>`,
     className: 'command-map-cluster-marker',
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
@@ -749,11 +785,13 @@ function ClusteredIncidentMarkers({
   selectedId,
   onSelect,
   barangayDashboard,
+  pendingAssistanceIncidentIds,
 }: {
   incidents: IncidentItem[];
   selectedId?: string;
   onSelect: (incident: IncidentItem) => void;
   barangayDashboard: boolean;
+  pendingAssistanceIncidentIds: Set<string>;
 }) {
   const map = useMap();
   const [viewportRevision, setViewportRevision] = useState(0);
@@ -799,7 +837,7 @@ function ClusteredIncidentMarkers({
           <Marker
             key={incident.id}
             position={[incident.latitude, incident.longitude]}
-            icon={createTeardropPin(incident.map_category, incident.status, selectedId === incident.id, barangayDashboard)}
+            icon={createTeardropPin(incident.map_category, incident.status, selectedId === incident.id, barangayDashboard, pendingAssistanceIncidentIds.has(incident.id))}
             zIndexOffset={selectedId === incident.id ? 1600 : 0}
             eventHandlers={{ click: () => onSelect(incident) }}
           />
@@ -812,7 +850,7 @@ function ClusteredIncidentMarkers({
         group.reduce((total, incident) => total + incident.longitude, 0) / group.length,
       ];
       return (
-        <Marker key={`cluster-${groupKey}`} position={center} icon={createIncidentClusterIcon(group.length)} zIndexOffset={1200}>
+        <Marker key={`cluster-${groupKey}`} position={center} icon={createIncidentClusterIcon(group.length, group.some((incident) => pendingAssistanceIncidentIds.has(incident.id)))} zIndexOffset={1200}>
           <Popup className="command-map-cluster-popup" minWidth={240} maxWidth={320}>
             <div className="command-map-cluster-list">
               <strong>Nearby reports <span>{group.length}</span></strong>
@@ -937,6 +975,7 @@ export default function CommandCenter() {
   const [selectedIncidentLocationError, setSelectedIncidentLocationError] = useState('');
   const [assistanceRequests, setAssistanceRequests] = useState<AssistanceRequestItem[]>([]);
   const [assistanceRequestsLoading, setAssistanceRequestsLoading] = useState(false);
+  const [pendingAssistanceIncidentIds, setPendingAssistanceIncidentIds] = useState<Set<string>>(() => new Set());
   const [selectedUnit, setSelectedUnit] = useState<DispatchUnitItem | null>(null);
   const [selectedVisualUrl, setSelectedVisualUrl] = useState<string | null>(null);
   const [proofPreviewOpen, setProofPreviewOpen] = useState(false);
@@ -986,6 +1025,35 @@ export default function CommandCenter() {
   );
 
   useEffect(() => {
+    if (isBarangayDashboard) {
+      setPendingAssistanceIncidentIds(new Set());
+      return;
+    }
+
+    let active = true;
+    const refreshPendingAssistance = () => {
+      requestAPI.list()
+        .then((response) => {
+          if (!active) return;
+          const requests = Array.isArray(response.data.requests) ? response.data.requests as AssistanceRequestItem[] : [];
+          setPendingAssistanceIncidentIds(new Set(requests
+            .filter((request) => request.source === 'mdrrmo' && request.status === 'pending' && request.incident_id)
+            .map((request) => request.incident_id)));
+        })
+        .catch((error) => console.error('Could not load pending assistance indicators:', error));
+    };
+
+    refreshPendingAssistance();
+    socket.on('connect', refreshPendingAssistance);
+    socket.on('resource:request', refreshPendingAssistance);
+    return () => {
+      active = false;
+      socket.off('connect', refreshPendingAssistance);
+      socket.off('resource:request', refreshPendingAssistance);
+    };
+  }, [isBarangayDashboard]);
+
+  useEffect(() => {
     if (!selectedIncidentId || !['incident', 'escalated'].includes(activeModalType || '')) {
       setAssistanceRequests([]);
       setAssistanceRequestsLoading(false);
@@ -999,17 +1067,26 @@ export default function CommandCenter() {
       setAssistanceRequestsLoading(false);
       return;
     }
-    requestAPI.list({ incident_id: selectedIncidentId })
-      .then((response) => {
-        if (active) setAssistanceRequests(Array.isArray(response.data.requests) ? response.data.requests : []);
-      })
-      .catch((error) => {
-        console.error('Could not load the assistance request for this report:', error);
-        if (active) setAssistanceRequests([]);
-      })
-      .finally(() => { if (active) setAssistanceRequestsLoading(false); });
+    const refreshAssistanceRequests = () => {
+      requestAPI.list({ incident_id: selectedIncidentId })
+        .then((response) => {
+          if (active) setAssistanceRequests(Array.isArray(response.data.requests) ? response.data.requests : []);
+        })
+        .catch((error) => {
+          console.error('Could not load the assistance request for this report:', error);
+          if (active) setAssistanceRequests([]);
+        })
+        .finally(() => { if (active) setAssistanceRequestsLoading(false); });
+    };
+    refreshAssistanceRequests();
+    socket.on('connect', refreshAssistanceRequests);
+    socket.on('resource:request', refreshAssistanceRequests);
 
-    return () => { active = false; };
+    return () => {
+      active = false;
+      socket.off('connect', refreshAssistanceRequests);
+      socket.off('resource:request', refreshAssistanceRequests);
+    };
   }, [activeModalType, selectedIncidentId, isBarangayDashboard]);
 
   // Fetch data
@@ -1421,7 +1498,7 @@ export default function CommandCenter() {
       });
   };
 
-  const handleOpenIncidentPin = (item: IncidentItem) => {
+  const handleOpenIncidentPin = (item: IncidentItem, responderView: 'assessment' | 'assistance' = 'assessment') => {
     setSelectedAvailabilityPin(null);
     setAvailableResponderPins([]);
     setSelectedResponderId(null);
@@ -1433,8 +1510,8 @@ export default function CommandCenter() {
     // Dispatcher instructions have their own field. Never seed them from
     // barangay escalation or responder field-assessment notes.
     setMdrrmoNotes(item.mdrrmo_dispatch_notes || '');
-    setEscalatedResponseTab('barangay');
-    setResponderInfoTab('assessment');
+    setEscalatedResponseTab(responderView === 'assistance' ? 'responder' : 'barangay');
+    setResponderInfoTab(responderView);
     setProofPreviewOpen(false);
     const firstVisual = (item.proof_urls && item.proof_urls.length > 0)
       ? item.proof_urls[0]
@@ -1459,12 +1536,13 @@ export default function CommandCenter() {
       toast.error('This report has been resolved and is no longer available as an active map report.');
     } else {
       setFilters((current) => ({ ...current, [incident.map_category]: true }));
-      handleOpenIncidentPin(incident);
+      handleOpenIncidentPin(incident, searchParams.get('responder_tab') === 'assistance' ? 'assistance' : 'assessment');
     }
 
     setSearchParams((current) => {
       const next = new URLSearchParams(current);
       next.delete('report_id');
+      next.delete('responder_tab');
       return next;
     }, { replace: true });
   }, [incidents, loading, searchParams, setSearchParams, handleOpenIncidentPin]);
@@ -2051,7 +2129,13 @@ export default function CommandCenter() {
             selectedPosition={selectedMapDot?.position || null}
           />
 
-          <ClusteredIncidentMarkers incidents={visibleIncidents} selectedId={selectedIncident?.id} onSelect={handleOpenIncidentPin} barangayDashboard={isBarangayDashboard} />
+          <ClusteredIncidentMarkers
+            incidents={visibleIncidents}
+            selectedId={selectedIncident?.id}
+            onSelect={handleOpenIncidentPin}
+            barangayDashboard={isBarangayDashboard}
+            pendingAssistanceIncidentIds={pendingAssistanceIncidentIds}
+          />
 
           {commandLocationPins.map((pin) => (
             <Marker

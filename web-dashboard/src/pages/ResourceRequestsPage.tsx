@@ -4,7 +4,6 @@ import { format, formatDistanceToNowStrict } from 'date-fns';
 import { AlertTriangle, ClipboardList, Phone, UserRound } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { requestAPI, socket } from '../lib/api';
-import { getMdrrmoReportGroup, type MdrrmoReportGroup } from '../lib/mdrrmoReportVisibility';
 import { formatMobileNumber } from '../lib/mobileNumber';
 
 type RequestStatus = 'pending' | 'approved' | 'rejected' | 'fulfilled';
@@ -92,11 +91,26 @@ function coordinationLabel(request: AssistanceRequest): string {
   return statusLabel(request.status);
 }
 
-function requestReportGroup(request: AssistanceRequest): MdrrmoReportGroup {
-  if (request.sub_type === 'escalation' || request.request_type === 'escalation') {
-    return 'escalated';
+function requestCategories(request: AssistanceRequest): string[] {
+  const categories = new Set<string>();
+  if (request.needs_more_manpower) categories.add('Manpower');
+  if (request.needs_resources) categories.add('Resources');
+  if (request.needs_equipment) categories.add('Equipment');
+
+  if (categories.size === 0) {
+    const type = `${request.request_type || ''} ${request.sub_type || ''}`.toLowerCase().replaceAll('_', ' ');
+    if (/responder|manpower|personnel/.test(type)) categories.add('Manpower');
+    if (/equipment/.test(type)) categories.add('Equipment');
+    if (/resource|suppl|goods/.test(type)) categories.add('Resources');
   }
-  return getMdrrmoReportGroup(request.incident_report || {});
+
+  return [...categories];
+}
+
+function isResponderAssistanceRequest(request: AssistanceRequest): boolean {
+  return (request.source === 'mdrrmo' || request.source === 'barangay') &&
+    !request.id.startsWith('resident-request-') &&
+    !request.id.startsWith('escalation-');
 }
 
 export default function ResourceRequestsPage() {
@@ -105,7 +119,6 @@ export default function ResourceRequestsPage() {
   const requestedId = searchParams.get('request_id');
   const [requests, setRequests] = useState<AssistanceRequest[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [group, setGroup] = useState<MdrrmoReportGroup>('resident');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [currentTime, setCurrentTime] = useState(() => new Date().toLocaleTimeString());
@@ -147,11 +160,16 @@ export default function ResourceRequestsPage() {
     };
   }, [fetchRequests]);
 
-  const residentCount = useMemo(() => requests.filter((request) => requestReportGroup(request) === 'resident').length, [requests]);
-  const escalatedCount = useMemo(() => requests.filter((request) => requestReportGroup(request) === 'escalated').length, [requests]);
   const visibleRequests = useMemo(() => requests
-    .filter((request) => requestReportGroup(request) === group)
-    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()), [requests, group]);
+    .filter(isResponderAssistanceRequest)
+    .slice()
+    .sort((a, b) => {
+      const aTime = Date.parse(a.created_at);
+      const bTime = Date.parse(b.created_at);
+      const safeATime = Number.isFinite(aTime) ? aTime : Number.NEGATIVE_INFINITY;
+      const safeBTime = Number.isFinite(bTime) ? bTime : Number.NEGATIVE_INFINITY;
+      return safeATime - safeBTime || a.id.localeCompare(b.id);
+    }), [requests]);
   const selected = visibleRequests.find((request) => request.id === selectedId) || visibleRequests[visibleRequests.length - 1] || null;
   const selectedHistory = selected ? [selected] : [];
 
@@ -164,14 +182,7 @@ export default function ResourceRequestsPage() {
         : null;
     if (!deepLinked) return;
     setSelectedId(deepLinked.id);
-    setGroup(requestReportGroup(deepLinked));
   }, [incidentId, requestedId, requests]);
-
-  const selectGroup = (nextGroup: MdrrmoReportGroup) => {
-    setGroup(nextGroup);
-    setSelectedId(null);
-    setSearchParams({}, { replace: true });
-  };
 
   const selectRequest = (request: AssistanceRequest) => {
     setSelectedId(request.id);
@@ -199,25 +210,16 @@ export default function ResourceRequestsPage() {
         <div className="reports-live-indicator"><i /> Live <span>·</span> {currentTime}</div>
       </header>
 
-      <nav className="reports-group-tabs-v2" aria-label="Assistance request group">
-        <button type="button" className={group === 'resident' ? 'active' : ''} onClick={() => selectGroup('resident')}>
-          Resident Requests <span>{residentCount}</span>
-        </button>
-        <button type="button" className={group === 'escalated' ? 'active' : ''} onClick={() => selectGroup('escalated')}>
-          Escalated Requests <span>{escalatedCount}</span>
-        </button>
-      </nav>
-
       <section className="reports-split-view-v2">
         <aside className="reports-queue-v2">
           <div className="reports-queue-heading">
-            <h2>{group === 'resident' ? 'Resident assistance queue' : 'Escalated assistance queue'}</h2>
+            <h2>Responder assistance queue</h2>
             <span>{visibleRequests.length}</span>
           </div>
           {loading ? (
             <div className="reports-empty-v2"><span className="spinner" /><p>Loading assistance requests…</p></div>
           ) : visibleRequests.length === 0 ? (
-            <div className="reports-empty-v2"><AlertTriangle size={22} /><strong>No assistance requests</strong><p>Requests attached to eligible reports will appear here.</p></div>
+            <div className="reports-empty-v2"><AlertTriangle size={22} /><strong>No assistance requests</strong><p>Responder requests for support will appear here.</p></div>
           ) : (
             <div className="reports-queue-list-v2">
               {visibleRequests.map((request) => {
@@ -267,9 +269,7 @@ export default function ResourceRequestsPage() {
                       {selectedHistory.map((request) => {
                         const hasDispatcherResponse = Boolean(request.decision || request.dispatcher_notes) || request.status !== 'pending';
                         const categoryTags = [
-                          request.needs_more_manpower ? 'Manpower' : null,
-                          request.needs_resources ? 'Resources' : null,
-                          request.needs_equipment ? 'Equipment' : null,
+                          ...requestCategories(request),
                           request.beyond_barangay_capability ? 'Needs MDRRMO' : null,
                         ].filter((tag): tag is string => Boolean(tag));
                         return (
@@ -284,7 +284,7 @@ export default function ResourceRequestsPage() {
                                 <span>{requestTypeLabel(request.request_type, request.sub_type)}</span>
                                 <time>{dateTime(request.created_at)}</time>
                               </div>
-                              {categoryTags.length > 0 && <div className="assistance-history-tags">{categoryTags.map((tag) => <span key={tag}>{tag}</span>)}</div>}
+                              {categoryTags.length > 0 && <div className="assistance-history-tags" aria-label="Requested assistance categories">{categoryTags.map((tag) => <span key={tag}>✓ {tag}</span>)}</div>}
                               <p>{request.explanation || request.details || 'No request details provided.'}</p>
                             </div>
                             {hasDispatcherResponse && (
