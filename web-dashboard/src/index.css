@@ -3984,8 +3984,8 @@ tbody tr:last-child td { border-bottom: none; }
 .public-report-page { background: radial-gradient(ellipse at 80% 0, rgba(30, 81, 140, .28), transparent 48%), #08152e; }
 .public-report-layout { width: 100%; max-width: 1200px; margin: 0 auto; padding: clamp(30px, 5vw, 58px) clamp(16px, 4vw, 36px) 60px; }
 .public-track-layout { max-width: 900px; }
-.public-track-intro-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 8px; }
-.public-track-back { display: inline-flex; align-items: center; gap: 7px; width: max-content; padding: 8px 11px; border: 1px solid rgba(160, 187, 229, .3); border-radius: 8px; color: #d9e9ff; background: #0b1b35; font-size: 12px; font-weight: 700; text-decoration: none; transition: border-color .15s ease, background .15s ease; }
+.public-track-intro-row { display: flex; width: 100%; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 8px; }
+.public-track-back { display: inline-flex; align-items: center; gap: 7px; width: max-content; margin-left: auto; padding: 8px 11px; border: 1px solid rgba(160, 187, 229, .3); border-radius: 8px; color: #d9e9ff; background: #0b1b35; font-size: 12px; font-weight: 700; text-decoration: none; transition: border-color .15s ease, background .15s ease; }
 .public-track-back:hover { border-color: #44c5e3; background: #102543; }
 .public-track-back:focus-visible { outline: 2px solid #44c5e3; outline-offset: 2px; }
 .public-track-panel { display: grid; gap: 20px; }
@@ -3998,6 +3998,7 @@ tbody tr:last-child td { border-bottom: none; }
 .public-tracked-timeline .resident-timeline-marker { background: #07162e; }
 .public-track-panel .public-report-error { display: flex; align-items: center; gap: 5px; }
 .public-report-intro { max-width: 770px; margin-bottom: 24px; }
+.public-track-layout .public-report-intro { max-width: none; }
 .public-report-intro h1 { margin: 10px 0 8px; color: #f4f7fc; font-size: clamp(30px, 4.5vw, 48px); letter-spacing: -.04em; line-height: 1.1; }
 .public-report-intro > p { max-width: 710px; margin: 0; color: #afc1dc; font-size: 15px; line-height: 1.65; }
 .public-report-intro .public-report-login-note { margin-top: 13px; font-size: 12px; }
