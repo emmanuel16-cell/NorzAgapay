@@ -2080,23 +2080,15 @@ router.get('/reports/resolved', authenticateBarangay, requireRole(['admin', 'sta
 router.get('/reports/:id/location-preview', authenticateBarangay, requireRole(['admin', 'dispatcher', 'responder']), async (req: any, res: Response): Promise<void> => {
   try {
     const barangayId = req.barangayUser.barangayId;
-    const [{ data: assignment, error: assignmentError }, { data: legacyReport, error: legacyError }] = await Promise.all([
-      supabaseAdmin.from('mdrrmo_report_barangay_assignments')
-        .select('report_id, assignment_status, responder_ids, responded_by')
-        .eq('report_id', req.params.id)
-        .eq('barangay_id', barangayId)
-        .in('assignment_status', ['active', 'completed'])
-        .order('assigned_at', { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-      supabaseAdmin.from('barangay_reports')
-        .select('id, latitude, longitude, response_notes, responded_by, barangay_response_notes, barangay_responded_by')
-        .eq('id', req.params.id)
-        .eq('barangay_id', barangayId)
-        .maybeSingle(),
-    ]);
+    const { data: assignment, error: assignmentError } = await supabaseAdmin.from('mdrrmo_report_barangay_assignments')
+      .select('report_id, assignment_status, responder_ids, responded_by')
+      .eq('report_id', req.params.id)
+      .eq('barangay_id', barangayId)
+      .in('assignment_status', ['active', 'completed'])
+      .order('assigned_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
     if (assignmentError) throw assignmentError;
-    if (legacyError) throw legacyError;
 
     let latitude: number;
     let longitude: number;
@@ -2112,12 +2104,22 @@ router.get('/reports/:id/location-preview', authenticateBarangay, requireRole(['
       if (!report) { res.status(404).json({ error: 'Assigned incident not found.' }); return; }
       latitude = Number(report.latitude);
       longitude = Number(report.longitude);
-    } else if (legacyReport) {
+    } else {
+      // Older reports use barangay_reports. Only query it when no central
+      // assignment exists so its schema cannot block a centrally assigned report.
+      const { data: legacyReport, error: legacyError } = await supabaseAdmin.from('barangay_reports')
+        .select('id, latitude, longitude, response_notes, responded_by')
+        .eq('id', req.params.id)
+        .eq('barangay_id', barangayId)
+        .maybeSingle();
+      if (legacyError) throw legacyError;
+      if (!legacyReport) { res.status(404).json({ error: 'Assigned incident not found.' }); return; }
+
       if (req.barangayUser.role === 'responder') {
-        const notes = String(legacyReport.barangay_response_notes || legacyReport.response_notes || '');
+        const notes = String(legacyReport.response_notes || '');
         const assignedMatch = notes.match(/\[ASSIGNED:([^\]]+)\]/);
         const assignedIds = assignedMatch?.[1]?.split(',').map((id: string) => id.trim()).filter(Boolean) || [];
-        const respondedBy = legacyReport.barangay_responded_by || legacyReport.responded_by;
+        const respondedBy = legacyReport.responded_by;
         if (respondedBy !== req.barangayUser.userId && !assignedIds.includes(req.barangayUser.userId)) {
           res.status(404).json({ error: 'Assigned incident not found.' });
           return;
@@ -2125,9 +2127,6 @@ router.get('/reports/:id/location-preview', authenticateBarangay, requireRole(['
       }
       latitude = Number(legacyReport.latitude);
       longitude = Number(legacyReport.longitude);
-    } else {
-      res.status(404).json({ error: 'Assigned incident not found.' });
-      return;
     }
 
     const location = await resolveIncidentLocation(latitude, longitude, [], null, true);
