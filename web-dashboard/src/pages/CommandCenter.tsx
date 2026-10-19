@@ -2758,7 +2758,7 @@ export default function CommandCenter() {
         )}
 
         {barangayDispatchIncident && (
-          <div className="mdrrmo-dispatch-overlay" onClick={closeBarangayDispatch}>
+          <div className="mdrrmo-dispatch-overlay" onClick={() => closeBarangayDispatch()}>
             <section
               className="mdrrmo-dispatch-dialog"
               role="dialog"
@@ -2771,7 +2771,7 @@ export default function CommandCenter() {
                   <h2 id="barangay-dispatch-title">Dispatch Barangay Responders</h2>
                   <p>Assign this report to active responders in your barangay.</p>
                 </div>
-                <button type="button" className="selection-close-btn" aria-label="Close dispatch" onClick={closeBarangayDispatch} disabled={barangayDispatchSaving}>
+                <button type="button" className="selection-close-btn" aria-label="Close dispatch" onClick={() => closeBarangayDispatch()} disabled={barangayDispatchSaving}>
                   <X size={18} />
                 </button>
               </header>
@@ -2883,7 +2883,7 @@ export default function CommandCenter() {
               </section>
 
               <footer className="mdrrmo-dispatch-actions">
-                <button type="button" className="mdrrmo-dispatch-assign" onClick={closeBarangayDispatch} disabled={barangayDispatchSaving}>
+                <button type="button" className="mdrrmo-dispatch-assign" onClick={() => closeBarangayDispatch()} disabled={barangayDispatchSaving}>
                   Cancel
                 </button>
                 <button

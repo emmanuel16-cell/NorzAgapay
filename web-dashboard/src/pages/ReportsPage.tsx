@@ -277,13 +277,13 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
     } finally { setLoadingResponders(false); }
   };
   const submitDispatch = async () => {
-    if (!dispatchReport || !incidentType || !severity || !responderIds.length) {
-      toast.error('Choose an incident category, priority, and at least one active responder'); return;
+    if (!dispatchReport || !responderIds.length || (!isBarangay && (!incidentType || !severity))) {
+      toast.error(isBarangay ? 'Choose at least one active responder.' : 'Choose an incident category, priority, and at least one active responder'); return;
     }
     try {
       setSaving(true);
       if (isBarangay) {
-        await reportAPI.dispatchToBarangay(dispatchReport.id, { incident_type: incidentType || 'other', severity: severity || 'moderate', team_leader_ids: responderIds, notes: dispatchNotes.trim() });
+        await reportAPI.dispatchToBarangay(dispatchReport.id, { team_leader_ids: responderIds, notes: dispatchNotes.trim() });
       } else {
         await reportAPI.dispatchToMdrrmo(dispatchReport.id, { incident_type: incidentType, severity, responder_ids: responderIds, notes: dispatchNotes.trim() });
       }
@@ -578,15 +578,19 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
 
       {dispatchReport && <div className="reports-modal-backdrop-v2" onClick={() => setDispatchReport(null)}>
         <section className="reports-dispatch-modal-v2" role="dialog" aria-modal="true" aria-labelledby="dispatch-title-v2" onClick={(event) => event.stopPropagation()}>
-          <header><div><span className="reports-eyebrow-v2">Dispatcher review</span><h2 id="dispatch-title-v2">{dispatchReport.mdrrmo_dispatched_at ? 'Update dispatch' : 'Classify and dispatch'}</h2></div><button type="button" aria-label="Close" onClick={() => setDispatchReport(null)}><X size={19} /></button></header>
+          <header><div><span className="reports-eyebrow-v2">Dispatcher review</span><h2 id="dispatch-title-v2">{isBarangay ? 'Dispatch barangay responders' : dispatchReport.mdrrmo_dispatched_at ? 'Update dispatch' : 'Classify and dispatch'}</h2></div><button type="button" aria-label="Close" onClick={() => setDispatchReport(null)}><X size={19} /></button></header>
           <div className="reports-modal-report-v2">{dispatchReport.description?.trim() || 'No details provided.'}</div>
           {getProofs(dispatchReport).length > 0 && <div className="reports-modal-proof-links-v2"><strong>Submitted evidence</strong>{getProofs(dispatchReport).map((url, index) => <a key={url + index} href={url} target="_blank" rel="noreferrer">Open attachment {index + 1}</a>)}</div>}
-          <label htmlFor="report-category-v2">Incident category</label><select id="report-category-v2" value={incidentType} onChange={(event) => setIncidentType(event.target.value)}><option value="">Select incident category</option>{INCIDENT_TYPE_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>
-          <label htmlFor="report-priority-v2">Priority</label><select id="report-priority-v2" value={severity} onChange={(event) => setSeverity(event.target.value)}><option value="">Select priority</option>{INCIDENT_SEVERITY_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>
+          <label htmlFor="report-category-v2">Incident category</label>{isBarangay
+            ? <div className="reports-dispatch-readonly-value">{INCIDENT_TYPE_OPTIONS.find((item) => item.value === incidentType)?.label || incidentType?.replaceAll('_', ' ') || 'Not specified'}</div>
+            : <select id="report-category-v2" value={incidentType} onChange={(event) => setIncidentType(event.target.value)}><option value="">Select incident category</option>{INCIDENT_TYPE_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>}
+          <label htmlFor="report-priority-v2">Priority</label>{isBarangay
+            ? <div className="reports-dispatch-readonly-value">{INCIDENT_SEVERITY_OPTIONS.find((item) => item.value === severity)?.label || severity?.replaceAll('_', ' ') || 'Not specified'}</div>
+            : <select id="report-priority-v2" value={severity} onChange={(event) => setSeverity(event.target.value)}><option value="">Select priority</option>{INCIDENT_SEVERITY_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>}
           <label htmlFor="report-dispatch-notes-v2">Dispatcher notes <span>(optional)</span></label><textarea id="report-dispatch-notes-v2" rows={3} maxLength={1000} value={dispatchNotes} onChange={(event) => setDispatchNotes(event.target.value)} placeholder="Add instructions or response details…" />
-          <div className="reports-responder-list-heading-v2"><strong>Active MDRRMO responders</strong>{responders.length > 0 && <button type="button" onClick={() => setResponderIds(responderIds.length === responders.length ? [] : responders.map((item) => item.id))}>{responderIds.length === responders.length ? 'Deselect all' : 'Select all'}</button>}</div>
+          <div className="reports-responder-list-heading-v2"><strong>Active {isBarangay ? 'barangay' : 'MDRRMO'} responders</strong>{responders.length > 0 && <button type="button" onClick={() => setResponderIds(responderIds.length === responders.length ? [] : responders.map((item) => item.id))}>{responderIds.length === responders.length ? 'Deselect all' : 'Select all'}</button>}</div>
           <div className="reports-responder-list-v2">{loadingResponders ? <p>Loading active responders…</p> : responderError ? <p className="error">{responderError}</p> : responders.length === 0 ? <p>No units are active for dispatch today.</p> : responders.map((item) => <label key={item.id}><input type="checkbox" checked={responderIds.includes(item.id)} onChange={(event) => setResponderIds((current) => event.target.checked ? [...current, item.id] : current.filter((id) => id !== item.id))} /><span><strong>{item.full_name}</strong><small>{[item.unit_name, item.unit_type, item.phone ? formatMobileNumber(item.phone) : ''].filter(Boolean).join(' · ')}</small></span></label>)}</div>
-          <footer><button type="button" className="reports-invalid-button-v2" onClick={() => setDispatchReport(null)}>Cancel</button><button type="button" className="reports-dispatch-button-v2" disabled={saving || loadingResponders || !incidentType || !severity || responderIds.length === 0} onClick={() => void submitDispatch()}>{saving ? 'Saving dispatch…' : 'Send responders'}</button></footer>
+          <footer><button type="button" className="reports-invalid-button-v2" onClick={() => setDispatchReport(null)}>Cancel</button><button type="button" className="reports-dispatch-button-v2" disabled={saving || loadingResponders || (!isBarangay && (!incidentType || !severity)) || responderIds.length === 0} onClick={() => void submitDispatch()}>{saving ? 'Saving dispatch…' : 'Send responders'}</button></footer>
         </section>
       </div>}
 
