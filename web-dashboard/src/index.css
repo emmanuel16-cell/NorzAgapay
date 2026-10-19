@@ -3957,8 +3957,8 @@ tbody tr:last-child td { border-bottom: none; }
 .public-home-qr-heading h2 { margin-bottom: 8px; }
 .public-home-qr-heading p { margin: 0; color: #a8bad5; font-size: 13px; line-height: 1.55; }
 .public-home-qr-grid { display: grid; width: 100%; max-width: 1160px; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 0 auto; }
-.public-home-qr-card { display: grid; min-width: 0; grid-template-columns: 190px minmax(0, 1fr); align-items: center; gap: 20px; padding: 18px; border: 1px solid rgba(160, 187, 229, .18); border-radius: 15px; background: linear-gradient(145deg, rgba(19, 43, 81, .8), rgba(13, 31, 60, .9)); }
-.public-home-qr-image-link { display: grid; width: 190px; aspect-ratio: 1; place-items: center; overflow: hidden; border: 8px solid #fff; border-radius: 10px; background: #fff; }
+.public-home-qr-card { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 14px; padding: 18px; border: 1px solid rgba(160, 187, 229, .18); border-radius: 15px; background: linear-gradient(145deg, rgba(19, 43, 81, .8), rgba(13, 31, 60, .9)); }
+.public-home-qr-image-link { display: grid; box-sizing: border-box; width: 100%; aspect-ratio: 1; place-items: center; overflow: hidden; border: 8px solid #fff; border-radius: 10px; background: #fff; }
 .public-home-qr-image-link img { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
 .public-home-qr-placeholder { display: grid; width: 100%; height: 100%; place-items: center; padding: 12px; color: #53627a; background: #fff; font-size: 11px; text-align: center; }
 .public-home-qr-copy { min-width: 0; }
@@ -3966,7 +3966,7 @@ tbody tr:last-child td { border-bottom: none; }
 .public-home-qr-copy p { margin: 0 0 10px; color: #a8bad5; font-size: 12px; line-height: 1.5; }
 .public-home-qr-copy > a { color: #6dd8ef; font-size: 11px; font-weight: 700; overflow-wrap: anywhere; text-decoration: none; }
 .public-home-qr-copy > a:hover { text-decoration: underline; }
-.public-home-qr-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 13px; }
+.public-home-qr-actions { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 7px; margin-top: 13px; }
 .public-home-qr-action { display: inline-flex; min-height: 34px; align-items: center; justify-content: center; gap: 6px; padding: 7px 9px; border: 1px solid rgba(122, 158, 205, .34); border-radius: 7px; color: #d9e9ff !important; background: rgba(9, 23, 47, .64); font: inherit; font-size: 10px !important; font-weight: 700; text-decoration: none; cursor: pointer; }
 .public-home-qr-action:hover { border-color: #6dd8ef; background: rgba(36, 116, 151, .2); }
 .public-home-qr-action:disabled { opacity: .5; cursor: wait; }
