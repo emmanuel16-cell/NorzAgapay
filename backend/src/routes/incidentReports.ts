@@ -415,6 +415,17 @@ async function fetchResidentReportById(id: string) {
   return mResult.data || bResult.data || null;
 }
 
+function canAccessResidentReport(report: any, req: AuthRequest, contactNumber: unknown): boolean {
+  if (!report || !['resident', 'guest'].includes(String(report.reporter_type))) return false;
+  if (report.reporter_id) {
+    return req.user?.role === 'resident' && req.user.userId === report.reporter_id;
+  }
+
+  const requestedPhone = String(contactNumber || '').replace(/\D/g, '');
+  const reportPhone = String(report.reporter_phone || '').replace(/\D/g, '');
+  return Boolean(requestedPhone && requestedPhone === reportPhone);
+}
+
 async function getResidentReportTimingHistory(barangayIds: string[]) {
   if (barangayIds.length === 0) return [];
   const select = 'barangay_id, type, severity, created_at, accepted_at, arrived_at, resolved_at, travel_distance_m';
@@ -930,26 +941,40 @@ router.get('/resident', optionalAuthenticate, async (req: AuthRequest, res: Resp
   }
 });
 
-router.get('/resident/:id', optionalAuthenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+router.get('/resident/:id/location-preview', optionalAuthenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const report = await fetchResidentReportById(req.params.id);
-    if (!report || !['resident', 'guest'].includes(String(report.reporter_type))) {
+    if (!canAccessResidentReport(report, req, req.query.contact_number)) {
       res.status(404).json({ error: 'Incident report not found.' });
       return;
     }
 
-    if (report.reporter_id) {
-      if (req.user?.role !== 'resident' || req.user.userId !== report.reporter_id) {
-        res.status(404).json({ error: 'Incident report not found.' });
-        return;
-      }
-    } else {
-      const requestedPhone = String(req.query.contact_number || '').replace(/\D/g, '');
-      const reportPhone = String(report.reporter_phone || '').replace(/\D/g, '');
-      if (!requestedPhone || requestedPhone !== reportPhone) {
-        res.status(404).json({ error: 'Incident report not found.' });
-        return;
-      }
+    const latitude = Number(report.latitude);
+    const longitude = Number(report.longitude);
+    if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 ||
+        !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+      res.json({ road: null, landmark: null, landmark_distance_meters: null });
+      return;
+    }
+
+    const location = await resolveIncidentLocation(latitude, longitude, [], null, true);
+    res.json({
+      road: location?.road || null,
+      landmark: location?.landmark || null,
+      landmark_distance_meters: location?.landmarkDistanceMeters ?? null,
+    });
+  } catch (error) {
+    console.error('Fetch tracked incident location preview error:', error);
+    res.status(500).json({ error: 'Could not look up this incident location.' });
+  }
+});
+
+router.get('/resident/:id', optionalAuthenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const report = await fetchResidentReportById(req.params.id);
+    if (!canAccessResidentReport(report, req, req.query.contact_number)) {
+      res.status(404).json({ error: 'Incident report not found.' });
+      return;
     }
     const bMap = await getBarangayNameMap();
     const timingHistory = await getResidentReportTimingHistory(

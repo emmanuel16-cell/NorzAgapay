@@ -75,6 +75,12 @@ type TrackedReport = {
   barangay_resolved_notes?: string | null;
 };
 
+type IncidentLocationPreview = {
+  road?: string | null;
+  landmark?: string | null;
+  landmark_distance_meters?: number | null;
+};
+
 function reportWasClosedAfterReview(report: TrackedReport) {
   return ['invalid', 'false_report'].includes(String(report.review_outcome || '').toLowerCase()) ||
     ['invalid', 'rejected', 'false_report'].includes(String(report.status || '').toLowerCase());
@@ -94,7 +100,9 @@ function incidentTimeLabel(report: TrackedReport) {
   return `${formatted} · ${precision === 'exact' ? 'Exact time' : 'Approximate time'}`;
 }
 
-function incidentLocation(report: TrackedReport) {
+function incidentLocation(report: TrackedReport, preview?: IncidentLocationPreview | null) {
+  const resolvedLocation = preview?.road?.trim() || preview?.landmark?.trim();
+  if (resolvedLocation) return resolvedLocation;
   const specific = [report.location_name, report.address]
     .map((value) => value?.trim())
     .find((value) => value && !/^(?:norzagaray(?:,?\s*bulacan)?|bulacan)$/i.test(value));
@@ -103,7 +111,7 @@ function incidentLocation(report: TrackedReport) {
   return coordinatesFor(report) ? 'Pinned incident location' : 'Location not provided';
 }
 
-function coordinatesFor(report: TrackedReport) {
+function coordinatesFor(report: Pick<TrackedReport, 'latitude' | 'longitude'>) {
   if (report.latitude == null || report.longitude == null ||
       String(report.latitude).trim() === '' || String(report.longitude).trim() === '') return null;
   const latitude = Number(report.latitude);
@@ -149,6 +157,8 @@ export default function TrackReportPage() {
   const [phone, setPhone] = useState(routeTracking?.phone || '');
   const [report, setReport] = useState<TrackedReport | null>(null);
   const [trackingCredentials, setTrackingCredentials] = useState<{ reference: string; phone: string } | null>(null);
+  const [locationPreview, setLocationPreview] = useState<IncidentLocationPreview | null>(null);
+  const [locationPreviewLoading, setLocationPreviewLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -223,13 +233,40 @@ export default function TrackReportPage() {
     };
   }, [trackedReportId, trackingCredentials]);
 
+  const trackedLatitude = report?.latitude;
+  const trackedLongitude = report?.longitude;
+  useEffect(() => {
+    const reportCoordinates = coordinatesFor({ latitude: trackedLatitude, longitude: trackedLongitude });
+    if (!trackedReportId || !trackingCredentials || !reportCoordinates) {
+      setLocationPreview(null);
+      setLocationPreviewLoading(false);
+      return;
+    }
+
+    let active = true;
+    setLocationPreview(null);
+    setLocationPreviewLoading(true);
+    reportAPI.trackGuestReportLocation(trackedReportId, trackingCredentials.phone)
+      .then((response) => {
+        if (active) setLocationPreview(response.data || null);
+      })
+      .catch(() => {
+        if (active) setLocationPreview(null);
+      })
+      .finally(() => {
+        if (active) setLocationPreviewLoading(false);
+      });
+
+    return () => { active = false; };
+  }, [trackedReportId, trackedLatitude, trackedLongitude, trackingCredentials]);
+
   const categoryLabel = INCIDENT_TYPE_OPTIONS.find((item) => item.value === report?.incident_type)?.label || report?.incident_type || 'Not provided';
   const reportEvidence = report ? evidenceFor(report) : [];
   const coordinates = report ? coordinatesFor(report) : null;
   const details = report?.title?.toLowerCase().startsWith('visual ')
     ? ''
     : report?.description?.trim();
-  const location = report ? incidentLocation(report) : '';
+  const location = report ? incidentLocation(report, locationPreview) : '';
 
   return <div className="public-report-page">
     <PublicHeader showActions={false} />
@@ -260,8 +297,10 @@ export default function TrackReportPage() {
             <div className="public-tracked-fact"><span>Incident occurred</span><strong>{incidentTimeLabel(report)}</strong></div>
             <div className="public-tracked-fact public-tracked-location">
               <span>Incident location</span>
-              <strong>{location}</strong>
-              {report.barangay_name && location !== `Barangay ${report.barangay_name.replace(/^(?:barangay|brgy\.?)\s*/i, '').trim()}` &&
+              <strong>{locationPreviewLoading ? 'Looking up the road and nearby places…' : location}</strong>
+              {!locationPreviewLoading && locationPreview?.road && locationPreview.landmark &&
+                <small>Near {locationPreview.landmark}{locationPreview.landmark_distance_meters != null ? ` · ${locationPreview.landmark_distance_meters} m` : ''}</small>}
+              {!locationPreviewLoading && report.barangay_name && location !== `Barangay ${report.barangay_name.replace(/^(?:barangay|brgy\.?)\s*/i, '').trim()}` &&
                 <small>Barangay {report.barangay_name.replace(/^(?:barangay|brgy\.?)\s*/i, '').trim()}</small>}
               {coordinates && <>
                 <a href={`https://www.google.com/maps/search/?api=1&query=${coordinates.latitude},${coordinates.longitude}`} target="_blank" rel="noreferrer">
