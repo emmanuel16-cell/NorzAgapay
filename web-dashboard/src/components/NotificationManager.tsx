@@ -16,6 +16,10 @@ export default function NotificationManager() {
     // Join room for real-time updates
     socket.emit('join:role', user.role);
 
+    const openIncidentInCommandCenter = (reportId: string) => {
+      navigate(`/command-center?report_id=${encodeURIComponent(reportId)}`);
+    };
+
     // Helper to show custom notification
     const showIncidentNotification = (reportId: string, title: string, severity?: string) => {
       const reportTitle = title?.trim() || 'Incident report';
@@ -26,7 +30,7 @@ export default function NotificationManager() {
         <div 
           onClick={() => {
             toast.dismiss(t.id);
-            navigate(`/reports?id=${reportId}`);
+            openIncidentInCommandCenter(reportId);
           }}
           style={{ width: '100%', cursor: 'pointer', padding: '10px' }}
         >
@@ -45,11 +49,41 @@ export default function NotificationManager() {
     };
 
     // Listen for new incident reports
-    socket.on('incident_report:new', (report: any) => {
+    const onMdrrmoNewReport = (report: any) => {
       if (['dispatcher', 'master_admin'].includes(user.role) && isVisibleToMdrrmo(report)) {
         showIncidentNotification(report.id, report.title, report.severity);
       }
-    });
+    };
+    socket.on('incident_report:new', onMdrrmoNewReport);
+
+    const onBarangayReportAssigned = (report: any) => {
+      if (user.account_kind !== 'barangay' || user.role !== 'dispatcher') return;
+      const reportId = String(report?.id || report?.report_id || '').trim();
+      if (!reportId) return;
+      const reportTitle = String(report?.title || '').trim() || 'Emergency incident';
+      playNotificationSound('incident');
+      toast((t) => (
+        <div
+          onClick={() => {
+            toast.dismiss(t.id);
+            openIncidentInCommandCenter(reportId);
+          }}
+          style={{ width: '100%', cursor: 'pointer', padding: '10px' }}
+        >
+          <div style={{ fontWeight: 'bold', color: 'white' }}>
+            Incident report assigned: {reportTitle}
+          </div>
+          <div style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.9)' }}>
+            MDRRMO assigned a report to your barangay. Click to select it on the command center map.
+          </div>
+        </div>
+      ), {
+        duration: 60000,
+        className: 'notification-emergency',
+        position: 'top-right',
+      });
+    };
+    socket.on('barangay:report_assigned', onBarangayReportAssigned);
 
     socket.on('resource:request', (request: any) => {
       if (!['dispatcher', 'master_admin'].includes(user.role)) return;
@@ -101,7 +135,7 @@ export default function NotificationManager() {
         <div
           onClick={() => {
             toast.dismiss(t.id);
-            navigate(`/reports?id=${encodeURIComponent(reportId)}`);
+            openIncidentInCommandCenter(reportId);
           }}
           style={{ width: '100%', cursor: 'pointer', padding: '10px' }}
         >
@@ -138,7 +172,7 @@ export default function NotificationManager() {
         <div
           onClick={() => {
             toast.dismiss(t.id);
-            if (payload?.reportId) navigate(`/reports?id=${encodeURIComponent(String(payload.reportId))}`);
+            if (payload?.reportId) openIncidentInCommandCenter(String(payload.reportId));
           }}
           style={{ width: '100%', cursor: 'pointer', padding: '10px' }}
         >
@@ -175,7 +209,8 @@ export default function NotificationManager() {
     };
 
     return () => {
-      socket.off('incident_report:new');
+      socket.off('incident_report:new', onMdrrmoNewReport);
+      socket.off('barangay:report_assigned', onBarangayReportAssigned);
       socket.off('resource:request');
       socket.off('incident_report:updated', onReportUpdated);
       socket.off('barangay:escalated', onEscalated);

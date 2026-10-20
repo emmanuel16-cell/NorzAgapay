@@ -64,12 +64,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const barangayId = user?.barangay_id;
-    if (!token || !barangayId) return;
-    const joinCoordinationRoom = () => socket.emit('join:coordination', barangayId);
-    socket.on('connect', joinCoordinationRoom);
-    if (socket.connected) joinCoordinationRoom();
-    return () => { socket.off('connect', joinCoordinationRoom); };
-  }, [token, user?.barangay_id]);
+    if (!token || user?.account_kind !== 'barangay' || !barangayId) return;
+    const joinBarangayRooms = () => {
+      socket.emit('join:barangay', barangayId);
+      socket.emit('join:coordination', barangayId);
+    };
+    socket.on('connect', joinBarangayRooms);
+    if (socket.connected) joinBarangayRooms();
+    return () => { socket.off('connect', joinBarangayRooms); };
+  }, [token, user?.account_kind, user?.barangay_id]);
 
   useEffect(() => {
     if (!token) return;
