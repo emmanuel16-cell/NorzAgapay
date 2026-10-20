@@ -8,14 +8,13 @@ import { z } from 'zod';
 import { randomInt } from 'crypto';
 import { config } from '../config';
 import { supabaseAdmin } from '../config/supabase';
-import { setOtp, getOtp, deleteOtp, getOtpResendCooldownSeconds, getBarangayResponderGpsLocation, RESPONDER_GPS_TTL_SECONDS } from '../config/redis';
+import { setOtp, getOtp, deleteOtp, getOtpResendCooldownSeconds } from '../config/redis';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { io } from '../server';
 import { DispatcherVerificationService, normalizePositionDesignation } from '../services/dispatcherVerificationService';
 import { smsService } from '../services/smsService';
 import {
   ARRIVAL_RADIUS_METERS,
-  distanceMeters,
   validateArrivalFix,
   validateRecentGpsFix,
 } from '../services/arrivalValidation';
@@ -431,21 +430,16 @@ router.delete('/location/icon', authenticateBarangay, requireRole(['admin', 'sta
 
 router.get('/location/available-responders', authenticateBarangay, requireRole(['admin','dispatcher']), async (req: any, res: Response): Promise<void> => {
   try {
-    const [{ data: barangay, error: barangayError }, { data: responders, error: respondersError }] = await Promise.all([
-      supabaseAdmin.from('barangays').select('location_latitude, location_longitude').eq('id', req.barangayUser.barangayId).maybeSingle(),
-      supabaseAdmin.from('barangay_users').select('id, full_name, phone, role')
-        .eq('barangay_id', req.barangayUser.barangayId).eq('role', 'responder').eq('is_active', true),
-    ]);
-    if (barangayError) throw barangayError;
+    const { data: responders, error: respondersError } = await supabaseAdmin.from('barangay_users').select('id, full_name, phone, role')
+      .eq('barangay_id', req.barangayUser.barangayId).eq('role', 'responder').eq('is_active', true);
     if (respondersError) throw respondersError;
-    if (barangay?.location_latitude == null || barangay?.location_longitude == null || !responders?.length) {
+    if (!responders?.length) {
       res.json({ responders: [] });
       return;
     }
-    const responderIds = responders.map((row: any) => row.id);
     const [{ data: centralAssignments, error: assignmentError }, { data: localReports, error: localError }] = await Promise.all([
       supabaseAdmin.from('mdrrmo_report_barangay_assignments').select('responder_ids')
-        .eq('barangay_id', req.barangayUser.barangayId).eq('assignment_status', 'active'),
+        .eq('assignment_status', 'active'),
       supabaseAdmin.from('barangay_reports').select('response_notes, responded_by, barangay_responded_by')
         .eq('barangay_id', req.barangayUser.barangayId).in('response_status', ['pending','responding']),
     ]);
@@ -459,18 +453,10 @@ router.get('/location/available-responders', authenticateBarangay, requireRole([
       const match = String(report.response_notes || '').match(/^\[ASSIGNED:([^\]]+)\]/);
       if (match) match[1].split(',').map((id) => id.trim()).filter(Boolean).forEach((id) => busy.add(id));
     }
-    const nowMs = Date.now();
-    const available = await Promise.all(responders.map(async (responder: any) => {
-      if (busy.has(responder.id)) return null;
-      const location = await getBarangayResponderGpsLocation(responder.id);
-      if (!location || !Number.isFinite(location.accuracyM) || Number(location.accuracyM) > 50) return null;
-      const ageMs = nowMs - Date.parse(location.timestamp);
-      if (!Number.isFinite(ageMs) || ageMs < 0 || ageMs > RESPONDER_GPS_TTL_SECONDS * 1000) return null;
-      const distanceM = distanceMeters(Number(barangay.location_latitude), Number(barangay.location_longitude), location.latitude, location.longitude);
-      if (distanceM > 100) return null;
-      return { id: responder.id, full_name: responder.full_name, phone: responder.phone, distance_m: Math.round(distanceM), last_seen: location.timestamp };
-    }));
-    res.json({ responders: available.filter(Boolean).sort((a: any, b: any) => a.distance_m - b.distance_m) });
+    const available = responders.filter((responder: any) => !busy.has(responder.id))
+      .sort((a: any, b: any) => String(a.full_name || '').localeCompare(String(b.full_name || '')))
+      .map((responder: any) => ({ id: responder.id, full_name: responder.full_name, phone: responder.phone }));
+    res.json({ responders: available });
   } catch (error) {
     console.error('Load barangay available responders failed:', error);
     res.status(500).json({ error: 'Could not load available barangay responders.' });

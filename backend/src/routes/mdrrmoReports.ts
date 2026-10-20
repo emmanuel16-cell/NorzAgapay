@@ -13,7 +13,6 @@ import { getBarangayCoordinates, getNearestBarangay, distanceMeters as distanceB
 import { getVerifiedResponseBarangays } from '../services/responseBarangay';
 import { resolveIncidentLocation } from '../services/incidentLocation';
 import { getVerifiedBarangayIds } from '../services/verifiedBarangayService';
-import { getBarangayResponderGpsLocation, getResponderGpsLocation, RESPONDER_GPS_TTL_SECONDS } from '../config/redis';
 import { isValidLocationIcon, removeStoredLocationIcon, storeLocationIcon } from '../services/locationIconStorage';
 
 const router = Router();
@@ -523,28 +522,23 @@ router.get('/available-responders', authenticate, authorize('dispatcher', 'admin
   try {
     const locationType = String(req.query.location_type || '');
     const barangayId = String(req.query.barangay_id || '');
-    let target: { latitude: number; longitude: number; label: string } | null = null;
+    let locationLabel = '';
     if (locationType === 'office') {
-      const { data, error } = await supabaseAdmin.from('mdrrmo_command_locations')
-        .select('latitude, longitude').eq('location_key', 'office').maybeSingle();
-      if (error) throw error;
-      if (data) target = { latitude: Number(data.latitude), longitude: Number(data.longitude), label: 'MDRRMO office' };
+      locationLabel = 'MDRRMO office';
     } else if (locationType === 'barangay') {
       if (!barangayId || !(await getVerifiedBarangayIds()).includes(barangayId)) {
         res.status(403).json({ error: 'This barangay location is unavailable.' });
         return;
       }
       const { data, error } = await supabaseAdmin.from('barangays')
-        .select('name, location_latitude, location_longitude').eq('id', barangayId).maybeSingle();
+        .select('name').eq('id', barangayId).maybeSingle();
       if (error) throw error;
-      if (data?.location_latitude != null && data.location_longitude != null) {
-        target = { latitude: Number(data.location_latitude), longitude: Number(data.location_longitude), label: `Barangay ${data.name}` };
-      }
+      if (data) locationLabel = `Barangay ${data.name}`;
     } else {
       res.status(400).json({ error: 'Choose an office or barangay location.' });
       return;
     }
-    if (!target) { res.json({ responders: [], location: null }); return; }
+    if (!locationLabel) { res.json({ responders: [], location: null }); return; }
 
     const isBarangayPin = locationType === 'barangay';
     const { data: responders, error: respondersError } = isBarangayPin
@@ -554,13 +548,13 @@ router.get('/available-responders', authenticate, authorize('dispatcher', 'admin
         .select('id, full_name, phone, unit_type').eq('role', 'responder').eq('status', 'active');
     if (respondersError) throw respondersError;
     const responderRows = responders || [];
-    if (!responderRows.length) { res.json({ responders: [], location: target.label }); return; }
+    if (!responderRows.length) { res.json({ responders: [], location: locationLabel }); return; }
     const ids = responderRows.map((row: any) => row.id);
     const busy = new Set<string>();
     if (isBarangayPin) {
       const [central, local] = await Promise.all([
         supabaseAdmin.from('mdrrmo_report_barangay_assignments').select('responder_ids')
-          .eq('barangay_id', barangayId).eq('assignment_status', 'active'),
+          .eq('assignment_status', 'active'),
         supabaseAdmin.from('barangay_reports').select('response_notes, barangay_response_notes, responded_by, barangay_responded_by')
           .eq('barangay_id', barangayId).in('response_status', ['pending', 'responding']),
       ]);
@@ -582,22 +576,10 @@ router.get('/available-responders', authenticate, authorize('dispatcher', 'admin
       if (activeError) throw activeError;
       for (const row of activeRows || []) busy.add(row.responder_id);
     }
-    const nowMs = Date.now();
-    const locations = await Promise.all(responderRows.map(async (responder: any) => ({
-      responder,
-      location: isBarangayPin
-        ? await getBarangayResponderGpsLocation(responder.id)
-        : await getResponderGpsLocation(responder.id),
-    })));
-    const available = locations.flatMap(({ responder, location }) => {
-      if (busy.has(responder.id) || !location || !Number.isFinite(location.accuracyM) || Number(location.accuracyM) > 50) return [];
-      const ageMs = nowMs - Date.parse(location.timestamp);
-      if (!Number.isFinite(ageMs) || ageMs < 0 || ageMs > RESPONDER_GPS_TTL_SECONDS * 1000) return [];
-      const distanceM = distanceMeters(target!.latitude, target!.longitude, location.latitude, location.longitude);
-      if (distanceM > 100) return [];
-      return [{ id: responder.id, full_name: responder.full_name, phone: responder.phone, unit_type: responder.unit_type || null, distance_m: Math.round(distanceM), last_seen: location.timestamp }];
-    }).sort((a: any, b: any) => a.distance_m - b.distance_m);
-    res.json({ responders: available, location: target.label });
+    const available = responderRows.filter((responder: any) => !busy.has(responder.id))
+      .sort((a: any, b: any) => String(a.full_name || '').localeCompare(String(b.full_name || '')))
+      .map((responder: any) => ({ id: responder.id, full_name: responder.full_name, phone: responder.phone, unit_type: responder.unit_type || null }));
+    res.json({ responders: available, location: locationLabel });
   } catch (error) {
     console.error('Load available MDRRMO responders failed:', error);
     res.status(500).json({ error: 'Could not load available responders.' });

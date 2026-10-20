@@ -225,8 +225,7 @@ interface AvailableResponderPin {
   id: string;
   full_name: string;
   phone?: string | null;
-  distance_m: number;
-  last_seen?: string;
+  unit_type?: string | null;
 }
 
 const commandOfficePinIcon = L.divIcon({ className: 'dashboard-command-pin office', html: '<span>MDRRMO</span>', iconSize: [82, 38], iconAnchor: [41, 19] });
@@ -1404,13 +1403,11 @@ export default function CommandCenter() {
     refreshAvailability();
     socket.on('connect', refreshAvailability);
     socket.on('mdrrmo:availability_changed', refreshAvailability);
-    socket.on('mdrrmo:responder_location', refreshAvailability);
     socket.on('barangay:availability_changed', refreshAvailability);
     socket.on('dashboard:data_changed', refreshAvailability);
     return () => {
       socket.off('connect', refreshAvailability);
       socket.off('mdrrmo:availability_changed', refreshAvailability);
-      socket.off('mdrrmo:responder_location', refreshAvailability);
       socket.off('barangay:availability_changed', refreshAvailability);
       socket.off('dashboard:data_changed', refreshAvailability);
     };
@@ -2177,7 +2174,7 @@ export default function CommandCenter() {
                 <div className="command-pin-popup">
                   <strong>{pin.name}</strong>
                   {pin.address && <span>{pin.address}</span>}
-                  <small>{isBarangayDashboard && pin.type === 'office' ? 'Responder availability is limited to the MDRRMO dashboard.' : 'Click this pin to see available responders within 100 meters.'}</small>
+                  <small>{isBarangayDashboard && pin.type === 'office' ? 'Responder availability is limited to the MDRRMO dashboard.' : 'Click this pin to see responders who are not currently responding.'}</small>
                 </div>
               </Popup>
             </Marker>
@@ -2228,12 +2225,12 @@ export default function CommandCenter() {
         </MapContainer>
 
         {selectedAvailabilityPin && <aside className="command-availability-panel" aria-live="polite">
-          <header><div><strong>{selectedAvailabilityPin.name}</strong><span>Available responders within 100 m</span></div><button type="button" aria-label="Close responder list" onClick={() => { setSelectedAvailabilityPin(null); setAvailableResponderPins([]); }}>×</button></header>
+          <header><div><strong>{selectedAvailabilityPin.name}</strong><span>Responders not currently responding</span></div><button type="button" aria-label="Close responder list" onClick={() => { setSelectedAvailabilityPin(null); setAvailableResponderPins([]); }}>×</button></header>
           {isBarangayDashboard && selectedAvailabilityPin.type === 'office'
             ? <p>Only MDRRMO command-center users can view MDRRMO responder availability.</p>
-            : availabilityLoading ? <p>Checking active assignments and fresh GPS…</p>
-              : availableResponderPins.length === 0 ? <p>No responders currently meet the availability and location requirements.</p>
-                : <ul>{availableResponderPins.map((responder) => <li key={responder.id}><span><strong>{responder.full_name}</strong>{responder.phone && <a href={`tel:${responder.phone}`}>{formatMobileNumber(responder.phone)}</a>}</span><small>{responder.distance_m} m away</small></li>)}</ul>}
+            : availabilityLoading ? <p>Checking active response assignments…</p>
+              : availableResponderPins.length === 0 ? <p>No responders are currently available.</p>
+                : <ul>{availableResponderPins.map((responder) => <li key={responder.id}><span><strong>{responder.full_name}</strong>{responder.phone && <a href={`tel:${responder.phone}`}>{formatMobileNumber(responder.phone)}</a>}</span>{responder.unit_type && <small>{responder.unit_type}</small>}</li>)}</ul>}
         </aside>}
 
         {!(activeModalType === 'escalated' || (activeModalType === 'incident' && selectedIncident?.status !== 'pending')) && <CurrentWeatherPanel />}
