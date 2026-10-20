@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { MapContainer, Marker, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
-import { ArrowLeft, CheckCircle2, CircleAlert, FileText, LocateFixed, MapPin, Phone, ShieldCheck, Siren, X } from 'lucide-react';
+import { ArrowLeft, CircleAlert, LocateFixed, MapPin, Phone, ShieldCheck, Siren, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { reportAPI } from '../lib/api';
 import { INCIDENT_TYPE_OPTIONS } from '../lib/incidentClassification';
@@ -12,6 +12,7 @@ import { createInitialIncidentTime, type IncidentTimeValue } from '../lib/incide
 import MobileNumberInput from '../components/MobileNumberInput';
 import CameraEvidenceCapture from '../components/CameraEvidenceCapture';
 import ReportModeChoices from '../components/ReportModeChoices';
+import ReportSubmittedModal from '../components/ReportSubmittedModal';
 import { isValidMobileNumber, normalizeMobileNumberInput } from '../lib/mobileNumber';
 
 const incidentTypes = [
@@ -145,8 +146,6 @@ export default function ResidentIncidentReportPage() {
     } finally { setBusy(false); }
   };
 
-  if (submitted) return <main className="resident-portal-page"><section className="resident-report-success"><span><CheckCircle2 size={28}/></span><div className="resident-kicker">REPORT RECEIVED</div><h1>Thank you for letting us know.</h1><p>{message}</p>{reference && <div className="resident-report-reference"><small>REPORT REFERENCE</small><strong>{reference}</strong></div>}<div className="resident-report-success-actions"><Link className="resident-button resident-button-danger" to="/my-reports"><FileText size={16}/> Track my report</Link><Link className="resident-button resident-button-outline" to="/resident-home">Back to home</Link><button className="resident-button resident-button-outline" type="button" onClick={() => { setSubmitted(false); setMessage(''); setReference(''); setReportMode(null); }}>Submit another</button></div></section></main>;
-
   return <main className="resident-portal-page resident-report-compose">
     <Link className="resident-back-link" to="/resident-report"><ArrowLeft size={15}/> Back to reporting options</Link>
     <header className="resident-page-heading"><div><span className="resident-kicker"><Siren size={15}/> {type === 'community' ? 'COMMUNITY INCIDENT' : 'EMERGENCY INCIDENT'}</span><h1>{type === 'community' ? 'Report a community concern' : 'Report an emergency'}</h1><p>{reportMode ? 'Your report will be sent to MDRRMO and linked to your resident account.' : 'Choose how you would like to submit your report.'}</p></div></header>
@@ -168,5 +167,11 @@ export default function ResidentIncidentReportPage() {
       <aside className="resident-compose-aside"><section><span className="resident-aside-icon"><ShieldCheck size={19}/></span><h2>What happens next?</h2><ol><li><span>1</span><div><strong>MDRRMO receives your report</strong><small>Your report is added to the review queue.</small></div></li><li><span>2</span><div><strong>A dispatcher reviews it</strong><small>They may coordinate a nearby barangay team.</small></div></li><li><span>3</span><div><strong>Follow updates here</strong><small>View dispatch progress and resolution in My Reports.</small></div></li></ol></section><Link className="resident-compose-emergency" to="/resident-hotlines" aria-label="Go to emergency hotlines"><Phone size={18}/><div><strong>Immediate danger?</strong><p>Call the emergency hotline for urgent help.</p><span className="resident-compose-emergency-link">Go to hotlines</span></div></Link></aside>
     </div>
     {mapOpen && <div className="resident-map-modal" role="dialog" aria-modal="true" aria-labelledby="resident-map-title"><section><header><div><h2 id="resident-map-title">Choose incident location</h2><p>Click or tap the map to place the pin.</p></div><button type="button" aria-label="Close map" onClick={() => setMapOpen(false)}><X size={18}/></button></header><button className="resident-map-use-location" type="button" onClick={() => requestCurrentLocation(true)}><LocateFixed size={15}/> Use my current location</button><div className="resident-map-picker"><MapContainer center={mapFocus} zoom={14} scrollWheelZoom style={{ width: '100%', height: '100%' }}><TileLayer url={CARTO_DARK_MAP_URL} attribution={CARTO_ATTRIBUTION}/><RecenterMap point={mapFocus}/><MapPickerEvents onPick={(point) => setMapPoint(point)}/>{mapPoint && <Marker position={[mapPoint.latitude, mapPoint.longitude]} icon={reportPin}/>}</MapContainer></div><p className="resident-map-coordinates">{mapPoint ? `${mapPoint.latitude.toFixed(5)}, ${mapPoint.longitude.toFixed(5)}` : 'No location pin selected'}</p><footer><button type="button" onClick={() => setMapOpen(false)}>Cancel</button><button type="button" onClick={confirmMapPoint} disabled={!mapPoint}>Use this location</button></footer></section></div>}
+    {submitted && reference && <ReportSubmittedModal
+      reference={reference}
+      message={message}
+      continueLabel="Track my report"
+      onContinue={() => navigate(`/my-reports?report=${encodeURIComponent(reference)}`)}
+    />}
   </main>;
 }

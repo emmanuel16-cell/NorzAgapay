@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { LocateFixed, MapPin, Phone, Siren, X } from 'lucide-react';
 import { MapContainer, Marker, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
-import { Link, Navigate, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import PublicHeader from '../components/PublicHeader';
 import { reportAPI } from '../lib/api';
 import { INCIDENT_TYPE_OPTIONS } from '../lib/incidentClassification';
@@ -13,6 +13,7 @@ import { createInitialIncidentTime, type IncidentTimeValue } from '../lib/incide
 import MobileNumberInput from '../components/MobileNumberInput';
 import CameraEvidenceCapture from '../components/CameraEvidenceCapture';
 import ReportModeChoices from '../components/ReportModeChoices';
+import ReportSubmittedModal from '../components/ReportSubmittedModal';
 import { formatMobileNumber, isValidMobileNumber, normalizeMobileNumberInput } from '../lib/mobileNumber';
 import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
 
@@ -72,6 +73,7 @@ function IncidentMapRecenter({ point }: { point: [number, number] }) {
 
 export default function PublicReportPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const reportType = searchParams.get('type') === 'community' ? 'community' : 'emergency';
   const [hotlines, setHotlines] = useState<PublicHotlines>(emptyHotlines);
@@ -97,6 +99,7 @@ export default function PublicReportPage() {
   const [message, setMessage] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [trackingReference, setTrackingReference] = useState('');
+  const [trackingPhone, setTrackingPhone] = useState('');
   const [submissionRequestId, setSubmissionRequestId] = useState(createGuestRequestId);
   const [submissionFingerprint, setSubmissionFingerprint] = useState('');
   const [submissionStartedAt, setSubmissionStartedAt] = useState('');
@@ -288,6 +291,7 @@ export default function PublicReportPage() {
       }, evidence);
       const reportId = response.data?.report?.id;
       if (typeof reportId === 'string') setTrackingReference(reportId);
+      setTrackingPhone(phone);
       setDescription('');
       setGuestPhone('');
       setIncidentCategory('not_sure');
@@ -346,7 +350,7 @@ export default function PublicReportPage() {
                 <div className="public-report-routing-choice"><span className="public-report-routing-indicator" aria-hidden="true" /><span><strong>MDRRMO</strong><small>A dispatcher can assign the report to a nearby active barangay.</small></span></div>
               </fieldset>
               <CameraEvidenceCapture files={evidence} onFilesChange={setEvidence} required={reportMode === 'visual'} />
-              {message && <p className={submitted ? 'public-report-success' : 'public-report-error'} role="status">{message}{submitted && trackingReference && <> <span>Keep this report reference: <strong>{trackingReference}</strong>.</span> <Link to={`/track-report?reference=${encodeURIComponent(trackingReference)}`}>Track this report</Link></>}</p>}
+              {message && !submitted && <p className="public-report-error" role="alert">{message}</p>}
               <button type="submit" className="btn btn-primary btn-lg public-report-submit" disabled={busy}>{busy ? 'Sending report…' : 'Send report to MDRRMO'}</button>
               </>}
             </form>
@@ -392,6 +396,13 @@ export default function PublicReportPage() {
           <footer><button type="button" className="public-location-cancel" onClick={() => setMapPickerOpen(false)}>Cancel</button><button type="button" className="public-location-confirm" onClick={confirmMapLocation} disabled={!mapLocation}>Use this location</button></footer>
         </section>
       </div>}
+      {submitted && trackingReference && <ReportSubmittedModal
+        reference={trackingReference}
+        message={message}
+        onContinue={() => navigate(`/track-report?reference=${encodeURIComponent(trackingReference)}`, {
+          state: { guestTracking: { reference: trackingReference, phone: trackingPhone } },
+        })}
+      />}
     </div>
   );
 }

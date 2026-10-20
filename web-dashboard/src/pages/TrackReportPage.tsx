@@ -1,5 +1,5 @@
-import { useEffect, useState, type FormEvent } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { AlertCircle, ArrowLeft, ExternalLink, FileText, MapPin, Search } from 'lucide-react';
 import PublicHeader from '../components/PublicHeader';
 import { reportAPI, socket } from '../lib/api';
@@ -230,22 +230,26 @@ function statusLabel(report: TrackedReport) {
 export default function TrackReportPage() {
   const liveConnected = useRealtimeConnection();
   const [searchParams] = useSearchParams();
-  const [reference, setReference] = useState(searchParams.get('reference') || '');
-  const [phone, setPhone] = useState('');
+  const routeLocation = useLocation();
+  const navigate = useNavigate();
+  const routeTracking = (routeLocation.state as { guestTracking?: { reference?: string; phone?: string } } | null)?.guestTracking;
+  const autoTrackingHandled = useRef(false);
+  const [reference, setReference] = useState(routeTracking?.reference || searchParams.get('reference') || '');
+  const [phone, setPhone] = useState(routeTracking?.phone || '');
   const [report, setReport] = useState<TrackedReport | null>(null);
   const [trackingCredentials, setTrackingCredentials] = useState<{ reference: string; phone: string } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const trackReport = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const loadGuestReport = useCallback(async (reportReference: string, reportPhone: string) => {
     setError('');
     setTrackingCredentials(null);
     setReport(null);
-    if (!isValidMobileNumber(phone)) { setError('Enter exactly 11 digits starting with 09.'); return; }
+    if (!reportReference.trim()) { setError('Enter the report reference.'); return; }
+    if (!isValidMobileNumber(reportPhone)) { setError('Enter exactly 11 digits starting with 09.'); return; }
     setLoading(true);
     try {
-      const credentials = { reference: reference.trim(), phone: normalizeMobileNumberInput(phone) };
+      const credentials = { reference: reportReference.trim(), phone: normalizeMobileNumberInput(reportPhone) };
       const response = await reportAPI.trackGuestReport(credentials.reference, credentials.phone);
       setReport(response.data);
       setTrackingCredentials(credentials);
@@ -256,7 +260,22 @@ export default function TrackReportPage() {
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  const trackReport = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    void loadGuestReport(reference, phone);
   };
+
+  useEffect(() => {
+    const tracking = (routeLocation.state as { guestTracking?: { reference?: string; phone?: string } } | null)?.guestTracking;
+    if (!tracking?.reference || !tracking.phone || autoTrackingHandled.current) return;
+    autoTrackingHandled.current = true;
+    setReference(tracking.reference);
+    setPhone(tracking.phone);
+    void loadGuestReport(tracking.reference, tracking.phone);
+    navigate(`${routeLocation.pathname}${routeLocation.search}`, { replace: true, state: null });
+  }, [loadGuestReport, navigate, routeLocation.pathname, routeLocation.search, routeLocation.state]);
 
   const trackedReportId = report?.id;
   useEffect(() => {

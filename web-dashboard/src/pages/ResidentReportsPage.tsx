@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { AlertCircle, FileText, RefreshCw, Siren } from 'lucide-react';
 import { reportAPI } from '../lib/api';
 import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
@@ -244,6 +244,9 @@ function isVideoEvidence(url: string, type: string) {
 
 export default function ResidentReportsPage() {
   const { user } = useAuth();
+  const [searchParams] = useSearchParams();
+  const requestedReportId = searchParams.get('report');
+  const focusedReportId = useRef('');
   const [reports, setReports] = useState<ResidentReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -266,6 +269,12 @@ export default function ResidentReportsPage() {
 
   useEffect(() => { void loadReports(); }, [loadReports]);
   useRealtimeRefresh(loadReports, { events: ['incident_report:updated', 'incident_report:reviewed', 'incident:lifecycle'] });
+
+  useEffect(() => {
+    if (!requestedReportId || focusedReportId.current === requestedReportId || loading || !reports.some((report) => report.id === requestedReportId)) return;
+    focusedReportId.current = requestedReportId;
+    document.getElementById(`resident-report-${requestedReportId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [loading, reports, requestedReportId]);
 
   const activeCount = reports.filter((report) => !['Resolved', 'Closed after review'].includes(reportStatus(report))).length;
   const resolvedCount = reports.filter((report) => reportStatus(report) === 'Resolved').length;
@@ -306,7 +315,7 @@ export default function ResidentReportsPage() {
               const details = report.title?.toLowerCase().startsWith('visual ')
                 ? ''
                 : report.description?.trim();
-              return <article className="resident-report-card" key={report.id}>
+              return <article id={`resident-report-${report.id}`} className={`resident-report-card${report.id === requestedReportId ? ' is-focus-target' : ''}`} key={report.id}>
                 <div className="resident-report-card-main">
                   <div className="resident-report-card-heading"><strong>{categoryLabel(report)}</strong><span className={`resident-status ${status === 'Resolved' ? 'resolved' : status === 'Response in progress' ? 'responding' : ''}`}>{status}</span></div>
                   {details && <p>{details}</p>}
@@ -321,7 +330,7 @@ export default function ResidentReportsPage() {
                   <section className="resident-report-evidence" aria-label="Photo or video evidence"><strong>Photo or video evidence</strong>{evidence.length ? <div>{evidence.map((item, index) => isVideoEvidence(item.url, item.type)
                     ? <video key={`${item.url}-${index}`} src={item.url} controls playsInline preload="metadata" aria-label={`Incident video ${index + 1}`} />
                     : <a key={`${item.url}-${index}`} href={item.url} target="_blank" rel="noreferrer" aria-label={`Open incident photo ${index + 1}`}><img src={item.url} alt={`Incident photo ${index + 1}`} loading="lazy" /></a>)}</div> : <p>{report.evidence_status === 'pending' ? 'Evidence is still uploading and will appear here when ready.' : report.evidence_status === 'failed' ? 'Photo or video evidence could not be attached to this report.' : 'No photo or video evidence was attached to this report.'}</p>}</section>
-                  <details className="resident-report-timeline">
+                  <details className="resident-report-timeline" open={report.id === requestedReportId}>
                     <summary>Track report history</summary>
                     <ol>
                       {reportTimeline(report).map((event, index) => <li key={`${event.label}-${event.at || index}`}>
