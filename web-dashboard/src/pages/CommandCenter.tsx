@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useState, useMemo, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Polyline, Popup, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -16,6 +16,7 @@ import { boundaryRings, isCoordinateInsideBoundary, type MunicipalityBoundary } 
 import { formatMobileNumber } from '../lib/mobileNumber';
 import toast from 'react-hot-toast';
 import { AlertTriangle, Siren, Users, CheckCircle2, MapPin, X } from 'lucide-react';
+import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
 
 type ReportKind = 'resident' | 'escalated';
 type MapReportCategory = 'resident' | 'barangay' | 'assigned' | 'community';
@@ -805,6 +806,8 @@ function ClusteredIncidentMarkers({
   });
 
   const groups = useMemo(() => {
+    // Viewport changes must rebuild pixel-based clusters even when reports are unchanged.
+    void viewportRevision;
     const projected = incidents.map((incident) => ({
       incident,
       point: map.latLngToContainerPoint([incident.latitude, incident.longitude]),
@@ -940,13 +943,19 @@ export default function CommandCenter() {
   const { user } = useAuth();
   const isBarangayDashboard = user?.account_kind === 'barangay';
   const { boundary } = useMunicipalityBoundary();
-  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Clock
   const [currentTime, setCurrentTime] = useState(new Date().toLocaleTimeString());
+  const [currentTimestamp, setCurrentTimestamp] = useState(0);
   useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date().toLocaleTimeString()), 1000);
+    const updateClock = () => {
+      const now = new Date();
+      setCurrentTime(now.toLocaleTimeString());
+      setCurrentTimestamp(now.getTime());
+    };
+    updateClock();
+    const timer = setInterval(updateClock, 1000);
     return () => clearInterval(timer);
   }, []);
 
@@ -1093,7 +1102,7 @@ export default function CommandCenter() {
   }, [activeModalType, selectedIncidentId, isBarangayDashboard]);
 
   // Fetch data
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       setLoading(true);
       const [reportsRes, unitsRes] = await Promise.allSettled([
@@ -1114,8 +1123,8 @@ export default function CommandCenter() {
           const mdrrmoStatus = String(r.mdrrmo_response_status || r.response_status || '').toLowerCase();
           const reportGroup = isBarangayDashboard ? 'resident' : getMdrrmoReportGroup(r);
           const mapCategory: MapReportCategory = isBarangayDashboard
-            ? (Boolean(r.is_central_assignment) || String(r.type || '').toLowerCase() !== 'community' ? 'assigned' : 'community')
-            : Boolean(r.is_central_assignment)
+            ? (r.is_central_assignment || String(r.type || '').toLowerCase() !== 'community' ? 'assigned' : 'community')
+            : r.is_central_assignment
               ? 'assigned'
               : reportGroup === 'escalated' ? 'barangay' : 'resident';
           const isEscalated = reportGroup === 'escalated';
@@ -1240,9 +1249,10 @@ export default function CommandCenter() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [isBarangayDashboard]);
+  useRealtimeRefresh(fetchData, { events: ['incident:new'] });
 
-  const openAvailabilityForPin = async (pin: CommandLocationPin) => {
+  const openAvailabilityForPin = useCallback(async (pin: CommandLocationPin) => {
     setSelectedAvailabilityPin(pin);
     setAvailableResponderPins([]);
     if (isBarangayDashboard && pin.type === 'office') return;
@@ -1255,7 +1265,7 @@ export default function CommandCenter() {
     } catch (error: any) {
       toast.error(error?.response?.data?.error || 'Could not load responders near this location.');
     } finally { setAvailabilityLoading(false); }
-  };
+  }, [isBarangayDashboard]);
 
   useEffect(() => {
     let active = true;
@@ -1373,7 +1383,7 @@ export default function CommandCenter() {
       socket.off('mdrrmo:responder_location', handleLiveLocation);
       socket.off('mdrrmo:responder_locations', handleLiveLocations);
     };
-  }, [isBarangayDashboard, selectedAvailabilityPin]);
+  }, [fetchData, isBarangayDashboard, openAvailabilityForPin, selectedAvailabilityPin]);
 
   useEffect(() => {
     const pin = selectedAvailabilityPin;
@@ -1388,8 +1398,19 @@ export default function CommandCenter() {
         console.error('Could not refresh pin-scoped responder availability:', error);
       }
     };
-    const timer = window.setInterval(() => void refreshAvailability(), 10_000);
-    return () => window.clearInterval(timer);
+    refreshAvailability();
+    socket.on('connect', refreshAvailability);
+    socket.on('mdrrmo:availability_changed', refreshAvailability);
+    socket.on('mdrrmo:responder_location', refreshAvailability);
+    socket.on('barangay:availability_changed', refreshAvailability);
+    socket.on('dashboard:data_changed', refreshAvailability);
+    return () => {
+      socket.off('connect', refreshAvailability);
+      socket.off('mdrrmo:availability_changed', refreshAvailability);
+      socket.off('mdrrmo:responder_location', refreshAvailability);
+      socket.off('barangay:availability_changed', refreshAvailability);
+      socket.off('dashboard:data_changed', refreshAvailability);
+    };
   }, [isBarangayDashboard, selectedAvailabilityPin]);
 
   // Stats calculation — real counts, no demo padding
@@ -1431,14 +1452,15 @@ export default function CommandCenter() {
   }), [dispatchUnits, visibleIncidents, boundary]);
 
   const visibleLiveResponders = useMemo(() => {
-    const now = Date.now();
     return liveResponderLocations.filter((location: LiveResponderLocation) => {
-      const age = now - Date.parse(location.timestamp);
-      if (!Number.isFinite(age) || age > LIVE_LOCATION_MAX_AGE_MS) return false;
+      if (currentTimestamp > 0) {
+        const age = currentTimestamp - Date.parse(location.timestamp);
+        if (!Number.isFinite(age) || age > LIVE_LOCATION_MAX_AGE_MS) return false;
+      }
       if (boundary.enabled && !isCoordinateInsideBoundary(location.latitude, location.longitude, boundary.geometry)) return false;
       return location.assignments.some((assignment) => visibleIncidents.some((incident) => incident.id === assignment.incidentId));
     });
-  }, [liveResponderLocations, visibleIncidents, boundary]);
+  }, [liveResponderLocations, visibleIncidents, boundary, currentTimestamp]);
 
   // Fit the initial and filtered map view to every report and visible unit point.
   const visiblePinPoints = useMemo((): [number, number][] => {
@@ -1475,7 +1497,7 @@ export default function CommandCenter() {
     setSelectedIncidentLocationError('');
   };
 
-  const loadSelectedIncidentLocation = (incident: IncidentItem) => {
+  const loadSelectedIncidentLocation = useCallback((incident: IncidentItem) => {
     const requestId = ++selectedIncidentLocationRequestId.current;
     setSelectedIncidentLocation(null);
     setSelectedIncidentLocationLoading(true);
@@ -1499,9 +1521,9 @@ export default function CommandCenter() {
       .finally(() => {
         if (requestId === selectedIncidentLocationRequestId.current) setSelectedIncidentLocationLoading(false);
       });
-  };
+  }, [isBarangayDashboard]);
 
-  const handleOpenIncidentPin = (item: IncidentItem, responderView: 'assessment' | 'assistance' = 'assessment') => {
+  const handleOpenIncidentPin = useCallback((item: IncidentItem, responderView: 'assessment' | 'assistance' = 'assessment') => {
     setSelectedAvailabilityPin(null);
     setAvailableResponderPins([]);
     setSelectedResponderId(null);
@@ -1521,7 +1543,7 @@ export default function CommandCenter() {
       : (item.proof_url || (item.responder_media && item.responder_media.length > 0 ? item.responder_media[0].url : null));
     setSelectedVisualUrl(firstVisual);
     setActiveModalType(item.report_kind === 'escalated' ? 'escalated' : 'incident');
-  };
+  }, [loadSelectedIncidentLocation]);
 
   useEffect(() => {
     const reportId = searchParams.get('report_id');

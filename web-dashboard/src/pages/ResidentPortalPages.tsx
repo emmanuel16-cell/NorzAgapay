@@ -11,12 +11,14 @@ import { useAuth } from '../context/AuthContext';
 import { broadcastAPI, evacuationAPI, reportAPI } from '../lib/api';
 import { CARTO_ATTRIBUTION, CARTO_DARK_MAP_URL } from '../lib/mapConfig';
 import CommunityAlertsBoard from '../components/CommunityAlertsBoard';
+import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
 
 type ResidentReport = {
   id: string; title?: string | null; description?: string | null; incident_type?: string | null;
   status?: string | null; assignment_status?: string | null; response_status?: string | null;
   mdrrmo_response_status?: string | null; barangay_response_status?: string | null;
   review_outcome?: string | null; created_at?: string | null; resolved_at?: string | null;
+  mdrrmo_dispatched_at?: string | null; barangay_dispatched_at?: string | null; dispatched_at?: string | null;
   latitude?: number | string | null; longitude?: number | string | null;
   barangay_name?: string | null; response_barangay_name?: string | null;
 };
@@ -58,10 +60,11 @@ function formatHotlineNumber(value: string) {
   return /^09\d{9}$/.test(digits) ? `${digits.slice(0, 4)}-${digits.slice(4, 7)}-${digits.slice(7)}` : value;
 }
 function reportState(report: ResidentReport) {
-  const status = String(report.mdrrmo_response_status || report.barangay_response_status || report.response_status || report.status || '').toLowerCase();
-  if (report.review_outcome === 'invalid' || ['invalid', 'rejected', 'false_report'].includes(status)) return 'Closed after review';
-  if (['resolved', 'closed', 'completed', 'complete'].includes(status)) return 'Resolved';
-  if (['responding', 'accepted', 'en_route', 'on_scene', 'arrived'].includes(status)) return 'Response in progress';
+  const statuses = [report.mdrrmo_response_status, report.barangay_response_status, report.response_status, report.status]
+    .map((value) => String(value || '').toLowerCase());
+  if (report.review_outcome === 'invalid' || statuses.some((status) => ['invalid', 'rejected', 'false_report'].includes(status))) return 'Closed after review';
+  if (statuses.some((status) => ['resolved', 'closed', 'completed', 'complete'].includes(status))) return 'Resolved';
+  if (statuses.some((status) => ['responding', 'accepted', 'en_route', 'on_scene', 'arrived'].includes(status)) || report.mdrrmo_dispatched_at || report.barangay_dispatched_at || report.dispatched_at) return 'Response in progress';
   if (report.assignment_status === 'active') return 'Assigned to barangay';
   return 'Received by MDRRMO';
 }
@@ -88,6 +91,7 @@ function useResidentFeed() {
   const [error, setError] = useState('');
   const [refreshKey, setRefreshKey] = useState(0);
   const refresh = () => setRefreshKey((value) => value + 1);
+  useRealtimeRefresh(refresh, { publicUpdates: true });
   useEffect(() => {
     let active = true;
     setLoading(true); setError('');
@@ -105,22 +109,32 @@ function useResidentFeed() {
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [refreshKey]);
-  const preferredBarangay = useMemo(() => barangays.find((name) => name.toLowerCase() === user?.barangay_name?.toLowerCase()) || barangays[0] || '', [barangays, user?.barangay_name]);
+  const preferredBarangay = useMemo(() => barangays.find((name) => name.toLowerCase() === user?.barangay_name?.toLowerCase()) || user?.barangay_name || barangays[0] || '', [barangays, user?.barangay_name]);
   return { posts, barangays, preferredBarangay, loading, error, refresh };
 }
 
 export function ResidentHomePage() {
   const { user } = useAuth();
-  const { posts, preferredBarangay, loading: feedLoading } = useResidentFeed();
+  const { posts, preferredBarangay, loading: feedLoading, error: feedError } = useResidentFeed();
   const [reports, setReports] = useState<ResidentReport[]>([]);
   const [reportsLoading, setReportsLoading] = useState(true);
-  useEffect(() => {
-    let active = true;
-    reportAPI.mine().then((response) => { if (active) setReports(Array.isArray(response.data) ? response.data : []); }).catch(() => undefined).finally(() => { if (active) setReportsLoading(false); });
-    return () => { active = false; };
+  const [reportsError, setReportsError] = useState('');
+  const refreshReports = useCallback(async () => {
+    try {
+      const response = await reportAPI.mine();
+      setReports(Array.isArray(response.data) ? response.data : []);
+      setReportsError('');
+    } catch {
+      setReportsError('Your report summary could not be loaded.');
+    } finally {
+      setReportsLoading(false);
+    }
   }, []);
-  const resolved = reports.filter((report) => reportState(report) === 'Resolved' || reportState(report) === 'Closed after review').length;
-  const active = reports.length - resolved;
+  useEffect(() => { void refreshReports(); }, [refreshReports]);
+  useRealtimeRefresh(refreshReports, { events: ['incident_report:updated', 'incident_report:reviewed', 'incident:lifecycle'] });
+  const resolved = reports.filter((report) => reportState(report) === 'Resolved').length;
+  const closedAfterReview = reports.filter((report) => reportState(report) === 'Closed after review').length;
+  const active = reports.length - resolved - closedAfterReview;
   const visiblePosts = posts.filter((post) => post.is_mdrrmo !== false || Boolean(preferredBarangay && post.barangay_name?.toLowerCase().replace(/^barangay\s+/i, '') === preferredBarangay.toLowerCase().replace(/^barangay\s+/i, '')));
   const urgentPost = visiblePosts.find((post) => ['disaster_red', 'disaster_orange'].includes(normalizeCategory(post.category)));
   const latestPosts = visiblePosts.slice(0, 2);
@@ -132,9 +146,9 @@ export function ResidentHomePage() {
     </section>
     {urgentPost && <Link className="resident-urgent-banner" to="/resident-alerts"><span><AlertTriangle size={18}/></span><div><strong>{categoryName(urgentPost.category)} · {urgentPost.author_name || urgentPost.barangay_name || 'MDRRMO'}</strong><p>{urgentPost.content || 'A priority alert is active. Open the alerts feed for details.'}</p></div><ArrowRight size={18}/></Link>}
     <section className="resident-stat-grid" aria-label="Your report summary">
-      <article><span className="resident-stat-icon"><FileText size={18}/></span><small>Your reports</small><strong>{reportsLoading ? '—' : reports.length}</strong><span className="resident-stat-note">Submitted from your account</span></article>
-      <article><span className="resident-stat-icon amber"><Clock3 size={18}/></span><small>In progress</small><strong>{reportsLoading ? '—' : active}</strong><span className="resident-stat-note">Awaiting or receiving a response</span></article>
-      <article><span className="resident-stat-icon green"><CheckCircle2 size={18}/></span><small>Resolved</small><strong>{reportsLoading ? '—' : resolved}</strong><span className="resident-stat-note">Reports with a completed outcome</span></article>
+      <article><span className="resident-stat-icon"><FileText size={18}/></span><small>Your reports</small><strong>{reportsLoading || reportsError ? '—' : reports.length}</strong><span className="resident-stat-note">Submitted from your account</span></article>
+      <article><span className="resident-stat-icon amber"><Clock3 size={18}/></span><small>In progress</small><strong>{reportsLoading || reportsError ? '—' : active}</strong><span className="resident-stat-note">Awaiting or receiving a response</span></article>
+      <article><span className="resident-stat-icon green"><CheckCircle2 size={18}/></span><small>Resolved</small><strong>{reportsLoading || reportsError ? '—' : resolved}</strong><span className="resident-stat-note">Reports with a completed outcome</span></article>
     </section>
     <div className="resident-home-columns">
       <section className="resident-home-section resident-quick-actions"><header><div><span className="resident-section-kicker">QUICK ACCESS</span><h2>What do you need?</h2></div></header><div className="resident-action-grid">
@@ -144,11 +158,11 @@ export function ResidentHomePage() {
         <Link to="/my-reports" className="resident-action-card"><span><FileText size={20}/></span><div><strong>Track my reports</strong><small>Review dispatch and resolution updates</small></div><ArrowRight size={17}/></Link>
       </div></section>
       <section className="resident-home-section resident-home-alerts"><header><div><span className="resident-section-kicker">COMMUNITY FEED</span><h2>Latest alerts</h2></div><Link to="/resident-alerts">All alerts <ArrowRight size={15}/></Link></header>
-        {feedLoading ? <p className="resident-loading-line">Loading community updates…</p> : latestPosts.length ? <div className="resident-mini-post-list">{latestPosts.map((post) => <article className="resident-mini-post" key={`${post.is_mdrrmo ? 'mdrrmo' : 'barangay'}-${post.id}`}><span className={`resident-post-dot ${normalizeCategory(post.category)}`}/><div><div className="resident-mini-post-meta"><strong>{post.is_mdrrmo === false ? `Brgy. ${post.barangay_name || 'community'}` : 'MDRRMO Norzagaray'}</strong><span>{categoryName(post.category)}</span></div><p>{post.content || 'Official community update.'}</p><time>{formatDate(post.created_at)}</time></div></article>)}</div> : <div className="resident-compact-empty"><Megaphone size={20}/><span>No current community posts.</span></div>}
+        {feedLoading ? <p className="resident-loading-line">Loading community updates…</p> : feedError ? <p className="resident-loading-line" role="status">Community updates could not be loaded.</p> : latestPosts.length ? <div className="resident-mini-post-list">{latestPosts.map((post) => <article className="resident-mini-post" key={`${post.is_mdrrmo ? 'mdrrmo' : 'barangay'}-${post.id}`}><span className={`resident-post-dot ${normalizeCategory(post.category)}`}/><div><div className="resident-mini-post-meta"><strong>{post.is_mdrrmo === false ? `Brgy. ${post.barangay_name || 'community'}` : 'MDRRMO Norzagaray'}</strong><span>{categoryName(post.category)}</span></div><p>{post.content || 'Official community update.'}</p><time>{formatDate(post.created_at)}</time></div></article>)}</div> : <div className="resident-compact-empty"><Megaphone size={20}/><span>No current community posts.</span></div>}
       </section>
     </div>
     <section className="resident-home-section resident-home-reports"><header><div><span className="resident-section-kicker">PERSONAL UPDATES</span><h2>Recent reports</h2></div><Link to="/my-reports">View all reports <ArrowRight size={15}/></Link></header>
-      {reportsLoading ? <p className="resident-loading-line">Loading your reports…</p> : latestReports.length ? <div className="resident-recent-report-grid">{latestReports.map((report) => <article key={report.id}><span className={`resident-report-state ${reportState(report) === 'Resolved' ? 'complete' : ''}`}>{reportState(report)}</span><strong>{report.title || report.incident_type?.replaceAll('_', ' ') || 'Incident report'}</strong><p>{report.description || 'No additional details.'}</p><footer><span><MapPin size={13}/>{report.response_barangay_name || report.barangay_name || 'Norzagaray'}</span><time>{formatDate(report.created_at)}</time></footer></article>)}</div> : <div className="resident-compact-empty"><Siren size={20}/><span>You haven’t submitted a report yet.</span><Link to="/resident-report">Create your first report</Link></div>}
+      {reportsLoading ? <p className="resident-loading-line">Loading your reports…</p> : reportsError ? <p className="resident-loading-line" role="status">{reportsError} <Link to="/my-reports">Open My Reports</Link></p> : latestReports.length ? <div className="resident-recent-report-grid">{latestReports.map((report) => <article key={report.id}><span className={`resident-report-state ${reportState(report) === 'Resolved' ? 'complete' : ''}`}>{reportState(report)}</span><strong>{report.title || report.incident_type?.replaceAll('_', ' ') || 'Incident report'}</strong><p>{report.title?.toLowerCase().startsWith('visual ') ? 'Visual report submitted. View captured evidence in My Reports.' : report.description || 'No additional details.'}</p><footer><span><MapPin size={13}/>{report.response_barangay_name || report.barangay_name || 'Norzagaray'}</span><time>{formatDate(report.created_at)}</time></footer></article>)}</div> : <div className="resident-compact-empty"><Siren size={20}/><span>You haven’t submitted a report yet.</span><Link to="/resident-report">Create your first report</Link></div>}
     </section>
     <p className="resident-portal-footnote"><ShieldCheck size={14}/> Your report history is private to your account. Public alerts and evacuation center listings are shared town-wide.</p>
   </main>;
@@ -183,6 +197,7 @@ export function ResidentEvacuationPage() {
   const [locationMessage, setLocationMessage] = useState('');
   const load = useCallback(async () => { setLoading(true); setError(''); try { const response = await evacuationAPI.list(); setCenters(Array.isArray(response.data) ? response.data : []); } catch (loadError: any) { setError(loadError?.response?.data?.error || 'Evacuation centers could not be loaded.'); } finally { setLoading(false); } }, []);
   useEffect(() => { void load(); }, [load]);
+  useRealtimeRefresh(load, { publicUpdates: true });
   const list = useMemo(() => centers.map((center) => ({ ...center, lat: Number(center.latitude), lng: Number(center.longitude), place: readRelationName(center.barangays) || 'Norzagaray', distance: currentLocation ? distanceKm(currentLocation, [Number(center.latitude), Number(center.longitude)]) : undefined })).filter((center) => Number.isFinite(center.lat) && Number.isFinite(center.lng)).filter((center) => !barangay || center.place === barangay).sort((a, b) => (a.distance ?? Number.POSITIVE_INFINITY) - (b.distance ?? Number.POSITIVE_INFINITY)), [centers, currentLocation, barangay]);
   useEffect(() => { if (list.length && !list.some((center) => center.id === selectedId)) setSelectedId(list[0].id); }, [list, selectedId]);
   const selected = list.find((center) => center.id === selectedId);
@@ -198,7 +213,7 @@ export function ResidentEvacuationPage() {
     {error && <div className="resident-feedback error" role="alert">{error}<button type="button" onClick={() => void load()}>Try again</button></div>}
     <section className="resident-evac-layout"><div className="resident-evac-map"><MapContainer center={mapPoint} zoom={12} scrollWheelZoom zoomControl style={{ width: '100%', height: '100%' }}><TileLayer url={CARTO_DARK_MAP_URL} attribution={CARTO_ATTRIBUTION}/><MapRecenter point={mapPoint}/>{list.map((center) => <Marker key={center.id} position={[center.lat, center.lng]} icon={mediaPin} eventHandlers={{ click: () => setSelectedId(center.id) }}><Popup><strong>{center.name}</strong><br/>{center.place}</Popup></Marker>)}{currentLocation && <Marker position={currentLocation} icon={residentPin}><Popup>Your current location</Popup></Marker>}</MapContainer><div className="resident-map-caption"><MapPin size={14}/>{currentLocation ? 'Map centered on the selected nearby center' : 'Verified evacuation centers in Norzagaray'}</div></div>
       <aside className="resident-evac-sidebar"><header><div><span className="resident-section-kicker">SAFE PLACES</span><h2>Nearby centers <span>{list.length}</span></h2></div><label className="resident-select-label compact"><select value={barangay} onChange={(event) => setBarangay(event.target.value)}><option value="">All barangays</option>{places.map((place) => <option key={place} value={place}>{place}</option>)}</select><ChevronDown size={13}/></label></header>
-        <div className="resident-center-list">{loading ? <p className="resident-loading-line">Loading centers…</p> : list.length ? list.map((center, index) => <button type="button" key={center.id} className={`resident-center-card ${center.id === selectedId ? 'selected' : ''}`} onClick={() => setSelectedId(center.id)}><span className="resident-center-number">{index + 1}</span><span className="resident-center-copy"><strong>{center.name}</strong><small>{center.address || center.place}</small><span>{center.distance != null ? `${center.distance.toFixed(1)} km away` : center.place}</span></span><ArrowRight size={16}/></button>) : <div className="resident-feed-empty small"><TentTree size={22}/><strong>No centers available</strong><span>There are no active verified centers in this area.</span></div>}</div>
+        <div className="resident-center-list">{loading ? <p className="resident-loading-line">Loading centers…</p> : list.length ? list.map((center, index) => <button type="button" key={center.id} className={`resident-center-card ${center.id === selectedId ? 'selected' : ''}`} onClick={() => setSelectedId(center.id)}><span className="resident-center-number">{index + 1}</span><span className="resident-center-copy"><strong>{center.name}</strong><small>{center.address || center.place}</small><span>{center.distance != null ? `${center.distance.toFixed(1)} km away` : center.place}</span></span><ArrowRight size={16}/></button>) : <div className="resident-feed-empty small"><TentTree size={22}/><strong>No centers available</strong><span>No active evacuation centers are published by verified barangays.</span></div>}</div>
         {selected && <div className="resident-selected-center"><span className="resident-section-kicker">SELECTED CENTER</span><h3>{selected.name}</h3><p>{selected.address || selected.place}</p>{selected.distance != null && <small><Navigation size={13}/>{selected.distance.toFixed(1)} km from your location</small>}<a href={`https://www.google.com/maps/dir/?api=1&destination=${selected.lat},${selected.lng}`} target="_blank" rel="noreferrer">Get directions <ExternalLink size={14}/></a></div>}
       </aside></section>
   </main>;
@@ -213,14 +228,15 @@ export function ResidentHotlinesPage() {
   const [copiedHotlineId, setCopiedHotlineId] = useState('');
   const load = useCallback(async () => { setLoading(true); setError(''); try { const response = await reportAPI.publicHotlines(); setData(response.data || { national: [], mdrrmo: [], barangays: [] }); } catch (loadError: any) { setError(loadError?.response?.data?.error || 'Hotline information could not be loaded.'); } finally { setLoading(false); } }, []);
   useEffect(() => { void load(); }, [load]);
+  useRealtimeRefresh(load, { publicUpdates: true });
   const barangayGroups = (data.barangays || []).filter((group) => (group.entries || []).some((line) => [line.phone, line.number, ...(line.numbers || [])].some((number) => Boolean(number))));
   const activeBarangay = barangayGroups.find((group) => group.barangay_name === selectedBarangay)
     || barangayGroups.find((group) => group.barangay_name === user?.barangay_name)
     || barangayGroups[0];
   const groups = [
     { id: 'mdrrmo', title: 'MDRRMO', subtitle: 'Municipal disaster risk reduction and management', icon: <ShieldCheck size={18}/>, entries: data.mdrrmo || [] },
-    { id: 'pnp', title: 'Philippine National Police (PNP)', subtitle: 'Norzagaray Municipal Police Station', icon: <ShieldCheck size={18}/>, entries: [{ label: 'Norzagaray Municipal Police Station', phone: '0998-598-5389' }] },
-    { id: 'bfp', title: 'Bureau of Fire Protection (BFP)', subtitle: 'Norzagaray Fire Station', icon: <Flame size={18}/>, entries: [{ label: 'Norzagaray Fire Station', phone: '0943-348-1854' }] },
+    { id: 'pnp', title: 'Philippine National Police (PNP)', subtitle: 'Norzagaray Municipal Police Station', icon: <ShieldCheck size={18}/>, entries: [{ label: 'Norzagaray Municipal Police Station', phone: '0998-598-5388' }] },
+    { id: 'bfp', title: 'Bureau of Fire Protection (BFP)', subtitle: 'Norzagaray Fire Station', icon: <Flame size={18}/>, entries: [{ label: 'Norzagaray Fire Station', phone: '0917-159-5831' }] },
   ];
   const hotlineRows = (lines: HotlineLine[], title: string) => lines.flatMap((line, index) => {
     const numbers = [line.phone, line.number, ...(line.numbers || [])].filter((value): value is string => Boolean(value));
@@ -247,6 +263,6 @@ export function ResidentHotlinesPage() {
         {activeBarangay ? renderHotlineList(activeBarangay.entries || [], activeBarangay.barangay_name) : <p className="resident-hotline-empty">No barangays have published hotline numbers yet.</p>}
       </section>
     </div>}
-    <div className="resident-hotline-footer"><span>Contact numbers are managed by MDRRMO and verified barangay teams.</span><Link to="/resident-report">Submit an incident report <ArrowRight size={14}/></Link></div>
+    <div className="resident-hotline-footer"><span>MDRRMO and barangay contacts are published by those offices. Call 911 for national emergency assistance.</span><Link to="/resident-report">Submit an incident report <ArrowRight size={14}/></Link></div>
   </main>;
 }

@@ -1,11 +1,12 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { AlertCircle, ArrowLeft, ExternalLink, FileText, MapPin, Search } from 'lucide-react';
 import PublicHeader from '../components/PublicHeader';
-import { reportAPI } from '../lib/api';
+import { reportAPI, socket } from '../lib/api';
 import { INCIDENT_TYPE_OPTIONS } from '../lib/incidentClassification';
 import MobileNumberInput from '../components/MobileNumberInput';
 import { isValidMobileNumber, normalizeMobileNumberInput } from '../lib/mobileNumber';
+import { useRealtimeConnection } from '../hooks/useRealtimeRefresh';
 
 type TrackedReport = {
   id: string;
@@ -23,6 +24,7 @@ type TrackedReport = {
   proof_type?: string | null;
   proof_urls?: string[] | null;
   proof_types?: string[] | null;
+  evidence_status?: string | null;
   send_to?: string | null;
   status?: string | null;
   assignment_status?: string | null;
@@ -30,6 +32,7 @@ type TrackedReport = {
   response_status?: string | null;
   review_outcome?: string | null;
   review_reason?: string | null;
+  reviewed_at?: string | null;
   created_at?: string | null;
   mdrrmo_response_status?: string | null;
   barangay_response_status?: string | null;
@@ -71,6 +74,11 @@ type TrackedReport = {
 
 type TimelineItem = { label: string; at?: string | null; detail?: string | null };
 
+function reportWasClosedAfterReview(report: TrackedReport) {
+  return ['invalid', 'false_report'].includes(String(report.review_outcome || '').toLowerCase()) ||
+    ['invalid', 'rejected', 'false_report'].includes(String(report.status || '').toLowerCase());
+}
+
 function timelineFor(report: TrackedReport): TimelineItem[] {
   const events: TimelineItem[] = [{
     label: 'Report received by MDRRMO',
@@ -78,9 +86,9 @@ function timelineFor(report: TrackedReport): TimelineItem[] {
     detail: 'MDRRMO received the report for review.',
   }];
   if (report.review_outcome) events.push({
-    label: report.review_outcome === 'invalid' ? 'Report closed after review' : 'Report reviewed',
-    at: null,
-    detail: report.review_reason || (report.review_outcome === 'invalid'
+    label: reportWasClosedAfterReview(report) ? 'Report closed after review' : 'Report reviewed',
+    at: report.reviewed_at,
+    detail: report.review_reason || (reportWasClosedAfterReview(report)
       ? 'MDRRMO closed the report after review.'
       : 'MDRRMO reviewed the report.'),
   });
@@ -211,7 +219,7 @@ function statusLabel(report: TrackedReport) {
   const mdrrmoStatus = String(report.mdrrmo_response_status || (report.send_to !== 'barangay' ? report.response_status || report.status : 'pending')).toLowerCase();
   const barangayStatus = String(report.barangay_response_status || '').toLowerCase();
   const resolvedStatuses = ['resolved', 'closed', 'complete', 'completed'];
-  if (report.review_outcome === 'invalid' || ['invalid', 'rejected', 'false_report'].includes(String(report.status || '').toLowerCase())) return 'Closed after review';
+  if (reportWasClosedAfterReview(report)) return 'Closed after review';
   if (resolvedStatuses.includes(mdrrmoStatus) || (!report.is_escalated && resolvedStatuses.includes(barangayStatus))) return 'Resolved';
   if (['responding', 'accepted', 'en_route', 'on_scene', 'arrived'].includes(mdrrmoStatus) || ['responding', 'accepted', 'en_route', 'on_scene', 'arrived'].includes(barangayStatus) || report.barangay_dispatched_at || report.mdrrmo_dispatched_at) return 'Response in progress';
   if (report.assignment_status === 'active') return 'Assigned to barangay';
@@ -220,22 +228,27 @@ function statusLabel(report: TrackedReport) {
 }
 
 export default function TrackReportPage() {
+  const liveConnected = useRealtimeConnection();
   const [searchParams] = useSearchParams();
   const [reference, setReference] = useState(searchParams.get('reference') || '');
   const [phone, setPhone] = useState('');
   const [report, setReport] = useState<TrackedReport | null>(null);
+  const [trackingCredentials, setTrackingCredentials] = useState<{ reference: string; phone: string } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   const trackReport = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError('');
+    setTrackingCredentials(null);
+    setReport(null);
     if (!isValidMobileNumber(phone)) { setError('Enter exactly 11 digits starting with 09.'); return; }
     setLoading(true);
-    setReport(null);
     try {
-      const response = await reportAPI.trackGuestReport(reference.trim(), normalizeMobileNumberInput(phone));
+      const credentials = { reference: reference.trim(), phone: normalizeMobileNumberInput(phone) };
+      const response = await reportAPI.trackGuestReport(credentials.reference, credentials.phone);
       setReport(response.data);
+      setTrackingCredentials(credentials);
     } catch (trackError: any) {
       setError(trackError?.response?.status === 404
         ? 'We could not find a report matching that reference and mobile number.'
@@ -244,6 +257,41 @@ export default function TrackReportPage() {
       setLoading(false);
     }
   };
+
+  const trackedReportId = report?.id;
+  useEffect(() => {
+    if (!trackedReportId || !trackingCredentials) return;
+    let active = true;
+    const refreshTrackedReport = async () => {
+      try {
+        const response = await reportAPI.trackGuestReport(trackingCredentials.reference, trackingCredentials.phone);
+        if (active && response.data?.id === trackedReportId) setReport(response.data);
+      } catch {
+        // Keep the last successful report visible if the API is temporarily unavailable.
+      }
+    };
+    const subscribe = () => {
+      socket.emit('guest-report:subscribe', { reportId: trackedReportId, phone: trackingCredentials.phone });
+      void refreshTrackedReport();
+    };
+    const onReportUpdate = (event: { reportId?: string }) => {
+      if (event?.reportId === trackedReportId) void refreshTrackedReport();
+    };
+    const onSubscribed = (event: { reportId?: string }) => {
+      if (event?.reportId === trackedReportId) void refreshTrackedReport();
+    };
+    socket.on('connect', subscribe);
+    socket.on('guest-report:updated', onReportUpdate);
+    socket.on('guest-report:subscribed', onSubscribed);
+    if (socket.connected) subscribe();
+    return () => {
+      active = false;
+      socket.off('connect', subscribe);
+      socket.off('guest-report:updated', onReportUpdate);
+      socket.off('guest-report:subscribed', onSubscribed);
+      socket.emit('guest-report:unsubscribe');
+    };
+  }, [trackedReportId, trackingCredentials]);
 
   const categoryLabel = INCIDENT_TYPE_OPTIONS.find((item) => item.value === report?.incident_type)?.label || report?.incident_type || 'Not provided';
   const reportEvidence = report ? evidenceFor(report) : [];
@@ -276,6 +324,7 @@ export default function TrackReportPage() {
         </form>
         {report && <article className="public-tracked-report" aria-live="polite">
           <header><div><span className="public-home-eyebrow">REPORT STATUS</span><h2>{statusLabel(report)}</h2></div><span className={`resident-status ${statusLabel(report) === 'Resolved' ? 'resolved' : statusLabel(report) === 'Response in progress' ? 'responding' : ''}`}>{statusLabel(report)}</span></header>
+          <p className="public-tracked-refresh-note" role="status">{liveConnected ? 'Live updates connected.' : 'Connecting to live updates…'}</p>
           <div className="public-tracked-facts" aria-label="Incident information">
             <div className="public-tracked-fact"><span>Incident category</span><strong>{categoryLabel}</strong>{report.incident_type === 'other' && report.specifics?.trim() && <small>{report.specifics.replace(/^Other emergency:\s*/i, '')}</small>}</div>
             <div className="public-tracked-fact"><span>Incident occurred</span><strong>{incidentTimeLabel(report)}</strong></div>
@@ -299,7 +348,11 @@ export default function TrackReportPage() {
             {reportEvidence.length ? <div className="public-tracked-evidence-grid">{reportEvidence.map((item, index) => isVideoEvidence(item.url, item.type)
               ? <video key={`${item.url}-${index}`} src={item.url} controls playsInline preload="metadata" aria-label={`Incident video evidence ${index + 1}`} />
               : <a key={`${item.url}-${index}`} href={item.url} target="_blank" rel="noreferrer" aria-label={`Open incident photo evidence ${index + 1}`}><img src={item.url} alt={`Incident photo evidence ${index + 1}`} loading="lazy" /></a>)}</div>
-              : <p>No photo or video evidence was attached to this report.</p>}
+              : report.evidence_status === 'pending'
+                ? <p>Evidence is still uploading and will appear here when ready.</p>
+                : report.evidence_status === 'failed'
+                  ? <p>Photo or video evidence could not be attached to this report.</p>
+                  : <p>No photo or video evidence was attached to this report.</p>}
           </section>
           <h3 className="public-tracked-timeline-title">Response timeline</h3>
           <p className="public-tracked-timeline-intro">Clear updates on when the report was received and how responders handled it.</p>

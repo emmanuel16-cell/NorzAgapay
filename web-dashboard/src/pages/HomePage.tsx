@@ -12,8 +12,8 @@ const quickAccessLinks = [
 const emergencyHotlines = [
   ['National Emergency Hotline', '911'],
   ['MDRRMO Rescue (Norzagaray)', '0905-247-0355'],
-  ['Philippine National Police (Norzagaray)', '0998-598-5389'],
-  ['Bureau of Fire Protection (Norzagaray)', '0943-348-1854'],
+  ['Philippine National Police (Norzagaray)', '0998-598-5388'],
+  ['Bureau of Fire Protection (Norzagaray)', '0917-159-5831'],
 ];
 
 const reportSteps = [

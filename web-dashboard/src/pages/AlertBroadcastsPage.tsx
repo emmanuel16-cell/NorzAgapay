@@ -18,7 +18,6 @@ import {
   CheckCircle,
   HandHeart,
   Pin,
-  Eye,
   Calendar,
   User,
   Play,
@@ -26,6 +25,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { broadcastAPI, socket } from '../lib/api';
+import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
 
 /* ─────────────────── Types ─────────────────── */
 type BroadcastCategory =
@@ -613,7 +613,9 @@ function PostCard({ post, onEdit, onDelete, onTogglePin }: { post: BroadcastPost
             let hostname = link;
             try {
               hostname = new URL(link).hostname;
-            } catch (_) {}
+            } catch {
+              // Keep rendering the original link when it is not a valid URL.
+            }
             return (
               <a
                 key={i}
@@ -1040,12 +1042,10 @@ function CreateModal({
 
 /* ─────────────────── Delete Modal ─────────────────── */
 function DeleteModal({
-  post,
   onClose,
   onConfirm,
   isDeleting,
 }: {
-  post: BroadcastPost;
   onClose: () => void;
   onConfirm: () => Promise<void>;
   isDeleting: boolean;
@@ -1107,6 +1107,7 @@ export default function AlertBroadcastsPage() {
   useEffect(() => {
     void loadPosts();
   }, [loadPosts]);
+  useRealtimeRefresh(loadPosts, { publicUpdates: true, events: ['broadcast:changed'] });
 
   useEffect(() => {
     const refresh = () => { void loadPosts(); };
@@ -1291,7 +1292,6 @@ export default function AlertBroadcastsPage() {
       )}
       {deletePost && (
         <DeleteModal
-          post={deletePost}
           onClose={() => setDeletePost(null)}
           onConfirm={handleDelete}
           isDeleting={deletingId === deletePost.id}

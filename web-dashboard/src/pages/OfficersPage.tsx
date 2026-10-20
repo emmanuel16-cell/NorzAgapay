@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 import MobileNumberInput from '../components/MobileNumberInput';
 import { formatMobileNumber, isValidMobileNumber, normalizeMobileNumberInput } from '../lib/mobileNumber';
+import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
 
 interface Officer {
   id: string;
@@ -64,6 +65,7 @@ export default function OfficersPage() {
   };
 
   useEffect(() => { void fetchOfficers(); }, []);
+  useRealtimeRefresh(fetchOfficers);
 
   const filteredOfficers = useMemo(() => officers.filter((officer) =>
     !specializationFilter || officer.specialization === specializationFilter,

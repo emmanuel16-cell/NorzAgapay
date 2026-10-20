@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { RefreshCw, ShieldAlert, Users } from 'lucide-react';
 import { respondUnitAPI } from '../lib/api';
 import { formatMobileNumber } from '../lib/mobileNumber';
+import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
 
 type UnitMember = {
   id: string;
@@ -41,6 +42,7 @@ export default function ResponderUnitTeamPage() {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+  useRealtimeRefresh(load);
 
   return (
     <div className="barangay-console-page">

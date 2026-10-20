@@ -57,13 +57,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (token) {
-      socket.auth = { token };
-      socket.connect();
-    } else {
-      socket.disconnect();
-    }
+    socket.disconnect();
+    socket.auth = token ? { token } : {};
+    socket.connect();
   }, [token]);
+
+  useEffect(() => {
+    const barangayId = user?.barangay_id;
+    if (!token || !barangayId) return;
+    const joinCoordinationRoom = () => socket.emit('join:coordination', barangayId);
+    socket.on('connect', joinCoordinationRoom);
+    if (socket.connected) joinCoordinationRoom();
+    return () => { socket.off('connect', joinCoordinationRoom); };
+  }, [token, user?.barangay_id]);
+
+  useEffect(() => {
+    if (!token) return;
+    const refreshCurrentUser = (event?: { resource?: string }) => {
+      if (event?.resource && !['auth', 'users', 'verification'].includes(event.resource)) return;
+      const request = accountKind === 'barangay' ? authAPI.barangayMe() : authAPI.me();
+      void request.then((response) => {
+        const freshUser = (accountKind === 'barangay' ? response.data : response.data.user) as User;
+        freshUser.account_kind = accountKind;
+        localStorage.setItem('norzagapay_user', JSON.stringify(freshUser));
+        setUser(freshUser);
+      }).catch(() => undefined);
+    };
+    socket.on('dashboard:data_changed', refreshCurrentUser);
+    socket.on('dispatcher:verified', refreshCurrentUser);
+    socket.on('dispatcher:rejected', refreshCurrentUser);
+    socket.on('dispatcher:correction', refreshCurrentUser);
+    return () => {
+      socket.off('dashboard:data_changed', refreshCurrentUser);
+      socket.off('dispatcher:verified', refreshCurrentUser);
+      socket.off('dispatcher:rejected', refreshCurrentUser);
+      socket.off('dispatcher:correction', refreshCurrentUser);
+    };
+  }, [accountKind, token]);
 
   useEffect(() => {
     if (!token) {

@@ -10,6 +10,7 @@ import { getMdrrmoReportGroup, isVisibleToMdrrmo } from '../lib/mdrrmoReportVisi
 import { createDemoResponderReport } from '../demoResponderReport';
 import ResponderLocationMapModal from '../components/ResponderLocationMapModal';
 import { formatMobileNumber } from '../lib/mobileNumber';
+import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
 
 type ReportGroup = 'resident' | 'escalated';
 type ReportTab = 'resident' | 'assigned';
@@ -205,7 +206,7 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
     localStorage.getItem('norzagapay_responder_demo_hidden') !== 'true' && !demoDismissed;
   const displayedReports = useMemo(() => showDemoPreview ? [...reports, demoReport] : reports, [demoReport, reports, showDemoPreview]);
 
-  const fetchReports = async () => {
+  const fetchReports = useCallback(async () => {
     try {
       setLoading(true);
       const response = isBarangay ? await reportAPI.barangayReports() : await reportAPI.mdrrmoQueue();
@@ -214,8 +215,9 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
       console.error('Failed to fetch reports', error);
       toast.error('Failed to load incident reports');
     } finally { setLoading(false); }
-  };
-  useEffect(() => { void fetchReports(); }, [isBarangay]);
+  }, [isBarangay]);
+  useEffect(() => { void fetchReports(); }, [fetchReports]);
+  useRealtimeRefresh(fetchReports, { events: ['incident:new'] });
   useEffect(() => {
     const timer = window.setInterval(() => setCurrentTime(new Date().toLocaleTimeString()), 1000);
     return () => window.clearInterval(timer);
@@ -253,7 +255,7 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
       socket.off('incident_report:new', handleLifecycle);
       socket.off('barangay:escalated', handleLifecycle);
     };
-  }, [isBarangay, isReadOnlyResponder]);
+  }, [fetchReports, isBarangay, isReadOnlyResponder]);
   useEffect(() => {
     const id = searchParams.get('id');
     if (!id || !reports.length) return;
@@ -292,7 +294,7 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
 
   useEffect(() => {
     if (selected) void loadLocationPreview(selected);
-  }, [selected?.id, selected?.latitude, selected?.longitude, loadLocationPreview]);
+  }, [selected, loadLocationPreview]);
 
   useEffect(() => {
     const list = queueListRef.current;

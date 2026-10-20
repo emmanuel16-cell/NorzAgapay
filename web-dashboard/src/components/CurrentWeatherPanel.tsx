@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { weatherAPI } from '../lib/api';
+import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
 
 interface CurrentWeather {
   temperature?: number;
@@ -23,8 +24,11 @@ function getWeatherIcon(condition = ''): string {
   const normalized = condition.toLowerCase();
   if (normalized.includes('thunder')) return '⛈️';
   if (normalized.includes('rain') || normalized.includes('drizzle')) return '🌧️';
-  if (normalized.includes('cloud')) return normalized.includes('partly') ? '⛅' : '☁️';
-  return '☀️';
+  if (normalized.includes('snow') || normalized.includes('sleet')) return '🌨️';
+  if (normalized.includes('fog') || normalized.includes('mist') || normalized.includes('haze')) return '🌫️';
+  if (normalized.includes('cloud') || normalized.includes('overcast')) return normalized.includes('partly') ? '⛅' : '☁️';
+  if (normalized.includes('clear') || normalized.includes('sun')) return '☀️';
+  return '🌡️';
 }
 
 export default function CurrentWeatherPanel() {
@@ -33,36 +37,26 @@ export default function CurrentWeatherPanel() {
   const [loading, setLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
 
-  useEffect(() => {
-    let active = true;
-
-    const refreshWeather = async () => {
-      try {
-        const response = await weatherAPI.getCurrent();
-        if (!response.data?.success || !response.data?.data) {
-          throw new Error('Current weather is unavailable');
-        }
-
-        if (!active) return;
-        setWeather(response.data.data);
-        setLastFetchedAt(new Date());
-        setHasError(false);
-      } catch (error) {
-        if (!active) return;
-        console.error('Failed to load current weather:', error);
-        setHasError(true);
-      } finally {
-        if (active) setLoading(false);
+  const refreshWeather = useCallback(async () => {
+    try {
+      const response = await weatherAPI.getCurrent();
+      if (!response.data?.success || !response.data?.data) {
+        throw new Error('Current weather is unavailable');
       }
-    };
 
-    refreshWeather();
-    const interval = window.setInterval(refreshWeather, 300000);
-    return () => {
-      active = false;
-      window.clearInterval(interval);
-    };
+      setWeather(response.data.data);
+      setLastFetchedAt(new Date());
+      setHasError(false);
+    } catch (error) {
+      console.error('Failed to load current weather:', error);
+      setHasError(true);
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => { void refreshWeather(); }, [refreshWeather]);
+  useRealtimeRefresh(refreshWeather, { publicUpdates: true });
 
   const updatedAt = weather?.last_updated || lastFetchedAt?.toISOString();
   const displayDate = updatedAt

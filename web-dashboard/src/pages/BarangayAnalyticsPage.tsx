@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Activity, BarChart3, RefreshCw } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { useAuth } from '../context/AuthContext';
+import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
 import { barangayAPI } from '../lib/api';
 
 type MonthlyRow = { label: string; community: number; emergency: number };
@@ -34,12 +35,8 @@ export default function BarangayAnalyticsPage() {
   }, [type]);
 
   useEffect(() => { void load(); }, [load]);
+  useRealtimeRefresh(load);
   const status = stats?.status_distribution || {};
-  const statusRows = [
-    { label: 'Pending', count: status.pending || 0 },
-    { label: 'Responding', count: status.responding || 0 },
-    { label: 'Resolved', count: status.resolved || 0 },
-  ];
   const maxHeat = Math.max(1, ...(stats?.activity_heatmap?.counts || []).flat());
 
   return (

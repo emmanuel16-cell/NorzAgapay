@@ -36,6 +36,10 @@ async function publishEvent(io: SocketIOServer, event: OutboxEvent): Promise<voi
   }
 
   const rooms = new Set<string>();
+  const guestTrackingRoom = report.reporter_type === 'guest' && !report.reporter_id
+    ? `guest-report:${report.id}`
+    : null;
+  if (guestTrackingRoom) rooms.add(guestTrackingRoom);
   if (report.reporter_type === 'resident') addUserRoom(rooms, report.reporter_id);
 
   const routedToMdrrmo = isVisibleToMdrrmo(report);
@@ -106,7 +110,14 @@ async function publishEvent(io: SocketIOServer, event: OutboxEvent): Promise<voi
     occurred_at: event.created_at,
     state: event.payload || {},
   };
-  io.to([...rooms]).emit('incident:lifecycle', envelope);
+  const lifecycleRooms = [...rooms].filter((room) => room !== guestTrackingRoom);
+  if (lifecycleRooms.length) io.to(lifecycleRooms).emit('incident:lifecycle', envelope);
+  if (guestTrackingRoom) {
+    io.to(guestTrackingRoom).emit('guest-report:updated', {
+      reportId: report.id,
+      changedAt: event.created_at,
+    });
+  }
   console.info('Incident lifecycle event published', {
     event_id: event.event_id,
     report_id: event.report_id,

@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { barangayAPI, socket } from '../lib/api';
 import PasswordInput from '../components/PasswordInput';
 import MobileNumberInput from '../components/MobileNumberInput';
+import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
 import { formatMobileNumber, isValidMobileNumber, normalizeMobileNumberInput } from '../lib/mobileNumber';
 
 type Member = { id: string; full_name: string; phone: string; role: 'admin' | 'dispatcher' | 'responder' | 'staff'; is_active: boolean; created_at?: string };
@@ -37,6 +38,7 @@ export default function BarangayTeamPage({ embedded = false }: { embedded?: bool
   }, []);
 
   useEffect(() => { if (user?.coordination_verified) void load(); else setLoading(false); }, [load, user?.coordination_verified]);
+  useRealtimeRefresh(load);
   useEffect(() => {
     socket.on('team:member_added', load);
     socket.on('team:member_updated', load);

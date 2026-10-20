@@ -7,6 +7,7 @@ import { reportAPI } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { CARTO_DARK_MAP_URL, CARTO_ATTRIBUTION } from '../lib/mapConfig';
 import { createLocationMapIcon } from '../lib/locationMapIcon';
+import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
 import LocationIconEditorModal from '../components/LocationIconEditorModal';
 import 'leaflet/dist/leaflet.css';
 
@@ -23,7 +24,7 @@ function PinPicker({ enabled, onPick }: { enabled: boolean; onPick: (pin: DraftP
 
 function MapSizeAndFocus({ point }: { point: [number, number] }) {
   const map = useMap();
-  useEffect(() => { map.invalidateSize(); map.setView(point, Math.max(map.getZoom(), 13), { animate: false }); }, [map, point[0], point[1]]);
+  useEffect(() => { map.invalidateSize(); map.setView(point, Math.max(map.getZoom(), 13), { animate: false }); }, [map, point]);
   return null;
 }
 
@@ -71,6 +72,7 @@ export default function CommandLocationsPage() {
   }, [isBarangay]);
 
   useEffect(() => { void load(); }, [load]);
+  useRealtimeRefresh(load, { publicUpdates: true });
 
   const officePoint = readPin(office);
   const ownBarangayPoint = readPin(barangay);

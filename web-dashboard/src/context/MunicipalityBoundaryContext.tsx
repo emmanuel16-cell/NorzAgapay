@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { municipalityBoundaryAPI } from '../lib/api';
 import { configFromUnknown, EMPTY_BOUNDARY, type MunicipalityBoundary } from '../lib/municipalityBoundary';
+import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
 
 const CACHE_KEY = 'norzagapay_municipality_boundary';
 interface BoundaryContextValue {
@@ -40,18 +41,8 @@ export function MunicipalityBoundaryProvider({ children }: { children: ReactNode
 
   useEffect(() => {
     refresh().catch(() => undefined).finally(() => setLoading(false));
-    const interval = window.setInterval(() => {
-      if (document.visibilityState === 'visible') refresh().catch(() => undefined);
-    }, 60_000);
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible') refresh().catch(() => undefined);
-    };
-    document.addEventListener('visibilitychange', handleVisibility);
-    return () => {
-      window.clearInterval(interval);
-      document.removeEventListener('visibilitychange', handleVisibility);
-    };
   }, [refresh]);
+  useRealtimeRefresh(refresh, { publicUpdates: true });
 
   const value = useMemo(() => ({ boundary, loading, refresh, setBoundary }), [boundary, loading, refresh, setBoundary]);
   return <BoundaryContext.Provider value={value}>{children}</BoundaryContext.Provider>;

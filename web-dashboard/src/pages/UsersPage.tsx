@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { userAPI } from '../lib/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
@@ -6,6 +6,7 @@ import PasswordInput from '../components/PasswordInput';
 import { CircleUserRound, Edit3, Plus, RefreshCw, UserRoundX, UsersRound } from 'lucide-react';
 import MobileNumberInput from '../components/MobileNumberInput';
 import { formatMobileNumber, isValidMobileNumber, normalizeMobileNumberInput } from '../lib/mobileNumber';
+import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
 
 interface User {
   id: string; full_name: string; phone: string;
@@ -28,15 +29,16 @@ export default function UsersPage() {
   const [createForm, setCreateForm] = useState({ full_name:'', password:'', phone:'', unit_type:'', role:'logistics' });
   const [creating, setCreating] = useState(false);
 
-  const fetchUsers = () => {
+  const fetchUsers = useCallback(() => {
     setLoading(true);
     userAPI.list(roleFilter ? { role: roleFilter } : undefined)
       .then(r => setUsers(r.data.users || []))
       .catch(() => toast.error('Failed to load users'))
       .finally(() => setLoading(false));
-  };
+  }, [roleFilter]);
 
-  useEffect(() => { fetchUsers(); }, [roleFilter]);
+  useEffect(() => { fetchUsers(); }, [fetchUsers]);
+  useRealtimeRefresh(fetchUsers);
 
   const openEdit = (u: User) => {
     setEditUser(u);

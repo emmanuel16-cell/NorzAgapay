@@ -241,7 +241,8 @@ const calculateMunicipalityRisk = async () => {
 // Weather endpoints
 // ============================================
 
-const CURRENT_WEATHER_CACHE_TTL_MS = 10 * 60 * 1000;
+// Expire before the five-minute monitoring publish so live clients can fetch fresh conditions.
+const CURRENT_WEATHER_CACHE_TTL_MS = 4 * 60 * 1000;
 const CURRENT_WEATHER_MAX_STALE_MS = 60 * 60 * 1000;
 let currentWeatherCache: { data: Record<string, unknown>; cachedAt: number } | null = null;
 let currentWeatherRequest: Promise<Awaited<ReturnType<typeof fetchOpenMeteoWeather>>> | null = null;

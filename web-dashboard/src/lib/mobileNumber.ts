@@ -1,6 +1,6 @@
 /** Convert an entered value to a local Philippine mobile number while typing. */
 export function sanitizeMobileNumberInput(value: string): string {
-  let digits = String(value || '').replace(/\D/g, '');
+  const digits = String(value || '').replace(/\D/g, '');
 
   if (!digits) return '';
   if (digits[0] !== '0') return '';

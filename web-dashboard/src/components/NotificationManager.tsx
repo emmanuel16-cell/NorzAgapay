@@ -18,6 +18,7 @@ export default function NotificationManager() {
 
     // Helper to show custom notification
     const showIncidentNotification = (reportId: string, title: string, severity?: string) => {
+      const reportTitle = title?.trim() || 'Incident report';
       const isCritical = /critical|life.?threatening/i.test(title) ||
         ['critical', 'life-threatening', 'life_threatening'].includes(String(severity || '').toLowerCase());
       playNotificationSound(isCritical ? 'criticalIncident' : 'incident');
@@ -30,9 +31,11 @@ export default function NotificationManager() {
           style={{ width: '100%', cursor: 'pointer', padding: '10px' }}
         >
           <div style={{ fontWeight: 'bold', color: 'white' }}>
-            🚨 URGENT: {title}
+            {isCritical ? '🚨 URGENT: ' : 'New incident report: '}{reportTitle}
           </div>
-          <div style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.9)' }}>New report from Resident. Click to view.</div>
+          <div style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.9)' }}>
+            {isCritical ? 'Critical incident reported. Click to review.' : 'A new incident report was submitted. Click to review.'}
+          </div>
         </div>
       ), {
         duration: 60000,

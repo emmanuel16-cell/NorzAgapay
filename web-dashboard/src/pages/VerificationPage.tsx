@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { verificationAPI, API_BASE, socket } from '../lib/api';
 import toast from 'react-hot-toast';
 import { formatMobileNumber } from '../lib/mobileNumber';
+import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
 
 interface PendingUser {
   id: string;
@@ -68,7 +69,7 @@ export default function VerificationPage({ category }: { category: 'officers' | 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [actionLoading, setActionLoading] = useState(false);
 
-  const fetchVerifications = async () => {
+  const fetchVerifications = useCallback(async () => {
     setLoading(true);
     try {
       const [dispPendingRes, dispArchivedRes, dispApprovedRes] = await Promise.allSettled([
@@ -106,11 +107,12 @@ export default function VerificationPage({ category }: { category: 'officers' | 
     } finally {
       setLoading(false);
     }
-  };
+  }, [category]);
 
   useEffect(() => {
-    fetchVerifications();
-  }, []);
+    void fetchVerifications();
+  }, [fetchVerifications]);
+  useRealtimeRefresh(fetchVerifications);
 
   useEffect(() => {
     if (category !== 'barangay') return;
@@ -122,12 +124,10 @@ export default function VerificationPage({ category }: { category: 'officers' | 
       socket.off('verification:barangay_account_request_submitted', refreshAccountRequests);
       socket.off('verification:dispatcher_submitted', refreshAccountRequests);
     };
-  }, [category]);
+  }, [category, fetchVerifications]);
 
   // Officer list
   const currentOfficerList = viewMode === 'archived' ? archived : pending;
-  const officerCount = currentOfficerList.length;
-
   // Dispatcher list
   const currentDispatcherList = viewMode === 'pending'
     ? pendingDispatchers

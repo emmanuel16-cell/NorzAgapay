@@ -4,6 +4,7 @@ import { officerAPI, respondUnitAPI } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import MobileNumberInput from '../components/MobileNumberInput';
 import { formatMobileNumber, isValidMobileNumber, normalizeMobileNumberInput } from '../lib/mobileNumber';
+import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
 import toast from 'react-hot-toast';
 import './RespondUnitsPage.css';
 
@@ -133,6 +134,7 @@ export default function RespondUnitsPage() {
   };
 
   useEffect(() => { void fetchUnits(); }, []);
+  useRealtimeRefresh(() => fetchUnits());
 
   const loadLeaderAccounts = async (unitId?: string) => {
     setLeaderAccounts([]);

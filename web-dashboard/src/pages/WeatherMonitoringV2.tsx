@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { weatherAPI } from '../lib/api';
+import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
 
 export default function WeatherMonitoringV2() {
   const [currentWeather, setCurrentWeather] = useState<any>(null);
@@ -76,9 +77,8 @@ export default function WeatherMonitoringV2() {
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 300000); // Refresh every 5 minutes
-    return () => clearInterval(interval);
   }, []);
+  useRealtimeRefresh(fetchData, { publicUpdates: true });
 
   if (loading) {
     return (

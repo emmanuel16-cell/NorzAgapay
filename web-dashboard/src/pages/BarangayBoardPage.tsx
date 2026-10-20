@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import { barangayAPI, broadcastAPI, reportAPI, socket } from '../lib/api';
 import CommunityAlertsBoard, { type CommunityAlert } from '../components/CommunityAlertsBoard';
+import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
 
 type MediaItem = { url: string; type: 'image' | 'video' };
 type Post = CommunityAlert & { reposted_by?: string | null };
@@ -59,6 +60,7 @@ export default function BarangayBoardPage() {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+  useRealtimeRefresh(load, { publicUpdates: true });
   useEffect(() => {
     socket.on('broadcast:new', load);
     socket.on('broadcast:removed', load);

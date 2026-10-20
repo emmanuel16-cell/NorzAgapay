@@ -4,7 +4,7 @@ import { AlertCircle, ArrowLeft, ArrowRight, BadgeCheck, Check, Clock3, Download
 import MobileNumberInput from '../components/MobileNumberInput';
 import PasswordInput from '../components/PasswordInput';
 import { useAuth } from '../context/AuthContext';
-import { API_BASE, authAPI, barangayAPI } from '../lib/api';
+import { API_BASE, authAPI, barangayAPI, socket } from '../lib/api';
 import { formatMobileNumber, isValidMobileNumber, normalizeMobileNumberInput } from '../lib/mobileNumber';
 
 type BarangayOption = { id: string; name: string; municipality?: string };
@@ -57,6 +57,7 @@ function StepIndicator({ activeStep }: { activeStep: 1 | 2 | 3 }) {
 
 export default function BarangayRegistrationPage() {
   const { user, loading: authLoading, setSession, updateUser, logout } = useAuth();
+  const userPositionDesignation = user?.position_designation;
   const navigate = useNavigate();
   const [form, setForm] = useState<RegistrationForm>(initialForm);
   const [barangays, setBarangays] = useState<BarangayOption[]>([]);
@@ -127,10 +128,14 @@ export default function BarangayRegistrationPage() {
     };
     window.addEventListener('focus', refreshEligibleBarangays);
     document.addEventListener('visibilitychange', refreshEligibleBarangays);
+    socket.on('connect', refreshEligibleBarangays);
+    socket.on('public:data_changed', refreshEligibleBarangays);
     return () => {
       cancelled = true;
       window.removeEventListener('focus', refreshEligibleBarangays);
       document.removeEventListener('visibilitychange', refreshEligibleBarangays);
+      socket.off('connect', refreshEligibleBarangays);
+      socket.off('public:data_changed', refreshEligibleBarangays);
     };
   }, [authLoading, user]);
 
@@ -147,7 +152,7 @@ export default function BarangayRegistrationPage() {
         setOfficial({
           official_name: record?.punong_barangay_name || '',
           official_position: record?.punong_barangay_position || '',
-          position_designation: record?.position_designation || user?.position_designation || '',
+          position_designation: record?.position_designation || userPositionDesignation || '',
         });
       }
       updateUser({ coordination_verified: isActive, verification_status: record?.status || 'pending_document' });
@@ -157,13 +162,20 @@ export default function BarangayRegistrationPage() {
     } finally {
       if (!quiet) setRequestLoading(false);
     }
-  }, [navigate, updateUser, user?.position_designation]);
+  }, [navigate, updateUser, userPositionDesignation]);
 
   useEffect(() => {
     if (!isReviewStage) return;
     void loadAccountRequest();
-    const refreshTimer = window.setInterval(() => { void loadAccountRequest(true); }, 30000);
-    return () => window.clearInterval(refreshTimer);
+    const refreshAccountRequest = () => { void loadAccountRequest(true); };
+    socket.on('dispatcher:coordination_access_changed', refreshAccountRequest);
+    socket.on('barangay:account_access_changed', refreshAccountRequest);
+    socket.on('dashboard:data_changed', refreshAccountRequest);
+    return () => {
+      socket.off('dispatcher:coordination_access_changed', refreshAccountRequest);
+      socket.off('barangay:account_access_changed', refreshAccountRequest);
+      socket.off('dashboard:data_changed', refreshAccountRequest);
+    };
   }, [isReviewStage, loadAccountRequest]);
 
   const sendCode = async (event?: FormEvent<HTMLFormElement>) => {

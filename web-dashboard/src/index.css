@@ -3992,6 +3992,7 @@ tbody tr:last-child td { border-bottom: none; }
 .public-tracked-report { min-width: 0; padding-top: 18px; border-top: 1px solid rgba(186, 213, 242, .18); }
 .public-tracked-report > header { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .public-tracked-report h2 { margin: 8px 0 0; color: #f4f7fc; font-size: clamp(20px, 3vw, 26px); }
+.public-tracked-refresh-note { margin: 5px 0 12px; color: #8faaca; font-size: 10px; line-height: 1.5; }
 .public-tracked-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: 10px; margin: 16px 0; }
 .public-tracked-fact { display: grid; min-width: 0; align-content: start; gap: 6px; padding: 12px; border: 1px solid rgba(186, 213, 242, .16); border-radius: 10px; background: rgba(14, 34, 64, .64); }
 .public-tracked-fact > span, .public-tracked-evidence h3, .public-tracked-timeline-title { color: #8faaca; font-size: 10px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
@@ -4099,6 +4100,8 @@ tbody tr:last-child td { border-bottom: none; }
 .incident-time-choice, .incident-time-precision-choice { display: inline-flex; min-height: 36px; align-items: center; justify-content: center; gap: 6px; padding: 7px 10px; border: 1px solid; border-radius: 9px; font: inherit; font-size: 12px; font-weight: 650; cursor: pointer; }
 .incident-time-choice:focus-visible, .incident-time-precision-choice:focus-visible { outline: 2px solid #44c5e3; outline-offset: 2px; }
 .incident-time-details { display: grid; gap: 8px; min-width: 0; }
+.incident-time-datetime { display: grid; min-width: 0; gap: 4px; font-size: 10px; font-weight: 650; }
+.incident-time-datetime input { width: 100%; box-sizing: border-box; min-height: 38px; padding: 7px 8px; border: 1px solid; border-radius: 8px; font: inherit; font-size: 12px; }
 .incident-time-age, .incident-time-hint { margin: 0; font-size: 11px; line-height: 1.45; }
 .incident-time-duration { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .incident-time-duration label { display: grid; min-width: 0; gap: 4px; font-size: 10px; font-weight: 650; }
@@ -4111,6 +4114,9 @@ tbody tr:last-child td { border-bottom: none; }
 .public-report-form .incident-time-age, .public-report-form .incident-time-hint, .public-report-form .incident-time-precision { color: #a9bddb; }
 .public-report-form .incident-time-duration select { border-color: #385276; color: #f3f7ff; background: #0b1b35; }
 .public-report-form .incident-time-duration select:focus { border-color: #44c5e3; outline: 0; box-shadow: 0 0 0 3px #26b7dd25; }
+.public-report-form .incident-time-datetime { color: #a9bddb; }
+.public-report-form .incident-time-datetime input { border-color: #385276; color: #f3f7ff; background: #0b1b35; }
+.public-report-form .incident-time-datetime input:focus { border-color: #44c5e3; outline: 0; box-shadow: 0 0 0 3px #26b7dd25; }
 .public-report-form > input:not([type=file]), .public-report-form > textarea, .public-report-form > select { width: 100%; min-width: 0; padding: 11px 12px; border: 1px solid #385276; border-radius: 9px; outline: none; color: #f3f7ff; background: #0b1b35; font: inherit; font-size: 16px; }
 .public-report-form > input:focus, .public-report-form > textarea:focus, .public-report-form > select:focus { border-color: #44c5e3; box-shadow: 0 0 0 3px #26b7dd25; }
 .public-report-form > textarea { resize: vertical; }
@@ -4301,6 +4307,16 @@ tbody tr:last-child td { border-bottom: none; }
 .resident-report-card .resident-report-other-emergency { margin-top: -5px; font-size: 12px; }
 .resident-report-meta { display: flex; flex-wrap: wrap; gap: 12px 18px; color: var(--text-muted); font-size: 11px; }
 .resident-report-meta span { display: inline-flex; align-items: center; gap: 5px; }
+.resident-report-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 9px 14px; margin: 12px 0; }
+.resident-report-facts > div { min-width: 0; }
+.resident-report-facts dt { margin-bottom: 3px; color: var(--text-muted); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.resident-report-facts dd { margin: 0; color: var(--text-secondary); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.resident-report-facts a { color: var(--primary-light); font-weight: 700; }
+.resident-report-evidence { margin-top: 12px; }
+.resident-report-evidence > strong { color: var(--text-primary); font-size: 11px; }
+.resident-report-evidence > div { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 150px)); gap: 8px; margin-top: 7px; }
+.resident-report-evidence a, .resident-report-evidence video { display: block; width: 100%; aspect-ratio: 4 / 3; overflow: hidden; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-primary); object-fit: cover; }
+.resident-report-evidence p { margin: 5px 0 0; color: var(--text-muted); font-size: 11px; }
 .resident-report-timeline { margin-top: 12px; border-top: 1px solid var(--border-color); }
 .resident-report-timeline summary { width: fit-content; padding: 10px 0 2px; color: var(--primary-light); font-size: 12px; font-weight: 700; cursor: pointer; }
 .resident-report-timeline ol { display: grid; gap: 0; margin: 11px 0 0; padding: 0; list-style: none; }
@@ -5415,6 +5431,9 @@ body.responder-map-open { overflow: hidden; }
 .resident-compose-form .incident-time-duration label { color: var(--text-secondary); }
 .resident-compose-form .incident-time-duration select { border-color: var(--border-color); color: var(--text-primary); background: var(--bg-primary); }
 .resident-compose-form .incident-time-duration select:focus { border-color: var(--primary-light); outline: 0; box-shadow: 0 0 0 2px rgba(49, 192, 217, .14); }
+.resident-compose-form .incident-time-datetime { color: var(--text-secondary); }
+.resident-compose-form .incident-time-datetime input { border-color: var(--border-color); color: var(--text-primary); background: var(--bg-primary); }
+.resident-compose-form .incident-time-datetime input:focus { border-color: var(--primary-light); outline: 0; box-shadow: 0 0 0 2px rgba(49, 192, 217, .14); }
 .resident-location-field { display: grid; gap: 8px; min-width: 0; margin: 0; padding: 12px; border: 1px solid var(--border-color); border-radius: 9px; }
 .resident-location-field legend { padding: 0 4px; color: var(--text-primary); font-size: 11px; font-weight: 750; }
 .resident-location-field legend b { margin-left: 4px; color: #ef8985; font-size: 9px; text-transform: uppercase; }

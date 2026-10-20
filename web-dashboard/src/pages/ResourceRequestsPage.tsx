@@ -5,6 +5,7 @@ import { AlertTriangle, ClipboardList, Phone, UserRound } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { requestAPI, socket } from '../lib/api';
 import { formatMobileNumber } from '../lib/mobileNumber';
+import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
 
 type RequestStatus = 'pending' | 'approved' | 'rejected' | 'fulfilled';
 
@@ -141,6 +142,7 @@ export default function ResourceRequestsPage() {
   }, [incidentId]);
 
   useEffect(() => { void fetchRequests(); }, [fetchRequests]);
+  useRealtimeRefresh(fetchRequests, { events: ['incident:new'] });
 
   useEffect(() => {
     const timer = window.setInterval(() => setCurrentTime(new Date().toLocaleTimeString()), 1000);

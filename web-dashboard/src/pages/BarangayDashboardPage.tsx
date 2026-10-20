@@ -4,6 +4,7 @@ import { Activity, AlertTriangle, ArrowRight, Bell, CheckCircle2, ClipboardList,
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { useAuth } from '../context/AuthContext';
 import { barangayAPI, reportAPI, socket } from '../lib/api';
+import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
 
 type ReportRow = {
   id: string;
@@ -132,6 +133,7 @@ export default function BarangayDashboardPage() {
   }, [canViewIncidents, isDispatcher]);
 
   useEffect(() => { void load(); }, [load]);
+  useRealtimeRefresh(load, { events: ['incident:lifecycle', 'incident:new'] });
   useEffect(() => {
     socket.on('barangay:report_updated', load);
     socket.on('barangay:report_escalated', load);

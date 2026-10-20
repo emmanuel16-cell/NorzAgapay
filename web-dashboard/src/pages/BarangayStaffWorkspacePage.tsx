@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import { reportAPI } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import ReportsPage from './ReportsPage';
+import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
 
 type ResolvedReport = {
   id: string;
@@ -57,6 +58,7 @@ function ResolvedReportHistoryPage() {
   }, []);
 
   useEffect(() => { void loadReports(); }, [loadReports]);
+  useRealtimeRefresh(loadReports);
 
   const downloadResolution = async (report: ResolvedReport) => {
     setDownloadingId(report.id);

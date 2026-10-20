@@ -122,6 +122,87 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use('/uploads', express.static(path.join(__dirname, '../data/uploads')));
 
+// API writes publish a metadata-only invalidation after the response succeeds.
+// Clients refetch through their normal authenticated API, so the socket never
+// carries report or account data and can safely prompt other active screens.
+app.use('/api', (req, res, next) => {
+  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+    next();
+    return;
+  }
+
+  res.once('finish', () => {
+    if (res.statusCode < 200 || res.statusCode >= 300) return;
+
+    const route = req.originalUrl.split('?')[0].replace(/^\/api\/?/, '');
+    const resource = route.split('/').filter(Boolean)[0] || 'api';
+    const action = req.method.toLowerCase();
+    const changedAt = new Date().toISOString();
+    const payload = { resource, action, changedAt };
+    const authorization = req.header('authorization') || '';
+    const token = authorization.replace(/^Bearer\s+/i, '');
+    let decoded: any = null;
+    try {
+      if (token) decoded = jwt.verify(token, config.jwtSecret) as any;
+    } catch {
+      // Invalid or expired tokens cannot target a private room.
+    }
+
+    const rooms = new Set<string>();
+    const userId = typeof decoded?.userId === 'string' ? decoded.userId : '';
+    const role = typeof decoded?.role === 'string' ? normalizeSocketRole(decoded.role) : '';
+    const barangayId = typeof decoded?.barangayId === 'string' ? decoded.barangayId : '';
+    if (userId) rooms.add(`user:${userId}`);
+
+    if (barangayId) {
+      rooms.add(`barangay:${barangayId}`);
+    } else if (['master_admin', 'admin', 'logistics', 'dispatcher'].includes(role)) {
+      rooms.add('dashboard_staff');
+    } else if (['resident', 'responder'].includes(role) &&
+        ['incident-reports', 'mdrrmo', 'barangay', 'requests', 'tasks'].includes(resource)) {
+      // Notify the operational queue that can already access these records.
+      rooms.add('dashboard_staff');
+    }
+    if (['respond-units', 'tasks'].includes(resource)) rooms.add('role:responder');
+
+    const targetUserId = route.match(/^users\/([^/]+)(?:\/|$)/)?.[1];
+    if (targetUserId && targetUserId !== 'me' && /^[0-9a-f-]{36}$/i.test(targetUserId)) {
+      rooms.add(`user:${targetUserId}`);
+    }
+
+    if (rooms.size) io.to([...rooms]).emit('dashboard:data_changed', payload);
+
+    // Public pages may refresh only public directories and published content.
+    // The payload contains no record values or identifiers.
+    if (['broadcasts', 'evacuation-centers', 'municipality-boundary', 'verification', 'weather'].includes(resource) ||
+        (resource === 'barangay' && /hotline|location|broadcast/i.test(route))) {
+      io.emit('public:data_changed', payload);
+    }
+
+    // A guest tracker can join this room only after separately proving the
+    // report reference and phone number, so the invalidation reveals no data.
+    const reportId = route.match(/^incident-reports\/([^/]+)(?:\/|$)/)?.[1] ||
+      route.match(/^mdrrmo\/reports\/([^/]+)(?:\/|$)/)?.[1] ||
+      route.match(/^barangay\/(?:assigned-)?reports\/([^/]+)(?:\/|$)/)?.[1];
+    if (reportId && /^[0-9a-f-]{36}$/i.test(reportId)) {
+      void Promise.all([
+        supabaseAdmin.from('barangay_reports').select('reporter_type, reporter_id').eq('id', reportId).maybeSingle(),
+        supabaseAdmin.from('mdrrmo_reports').select('reporter_type, reporter_id').eq('id', reportId).maybeSingle(),
+      ]).then(([barangayReport, mdrrmoReport]) => {
+        if (barangayReport.error || mdrrmoReport.error) return;
+        const report = mdrrmoReport.data || barangayReport.data;
+        if (report?.reporter_type === 'guest') {
+          io.to(`guest-report:${reportId}`).emit('guest-report:updated', { reportId, changedAt });
+        } else if (report?.reporter_type === 'resident' && report.reporter_id) {
+          io.to(`user:${report.reporter_id}`).emit('dashboard:data_changed', payload);
+        }
+      }).catch((error) => console.error('Could not target report-change notification:', error));
+    }
+  });
+
+  next();
+});
+
 // Rate limiting on login (Increased for development/testing)
 const loginLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, // Reduced to 1 minute for testing
@@ -223,6 +304,47 @@ io.on('connection', (socket) => {
       socket.join(`barangay:coordination:${decoded.barangayId}`);
     }
   })().catch((error) => console.error('Socket room initialization failed:', error));
+
+  // Public guest tracking is authorized per report using the same reference
+  // and mobile number check as the HTTP tracking endpoint.
+  socket.on('guest-report:subscribe', (credentials: { reportId?: unknown; phone?: unknown }) => {
+    void (async () => {
+      const reportId = typeof credentials?.reportId === 'string' ? credentials.reportId : '';
+      const phone = typeof credentials?.phone === 'string' ? credentials.phone.replace(/\D/g, '') : '';
+      if (!/^[0-9a-f-]{36}$/i.test(reportId) || !/^09\d{9}$/.test(phone)) return;
+
+      const now = Date.now();
+      const attemptWindow = socket.data.guestTrackingAttemptWindow as { startedAt: number; count: number } | undefined;
+      const currentWindow = !attemptWindow || now - attemptWindow.startedAt >= 60_000
+        ? { startedAt: now, count: 0 }
+        : attemptWindow;
+      if (currentWindow.count >= 10) return;
+      currentWindow.count += 1;
+      socket.data.guestTrackingAttemptWindow = currentWindow;
+
+      const [barangayResult, mdrrmoResult] = await Promise.all([
+        supabaseAdmin.from('barangay_reports').select('id, reporter_type, reporter_phone').eq('id', reportId).maybeSingle(),
+        supabaseAdmin.from('mdrrmo_reports').select('id, reporter_type, reporter_phone').eq('id', reportId).maybeSingle(),
+      ]);
+      if (barangayResult.error || mdrrmoResult.error) return;
+      const report = mdrrmoResult.data || barangayResult.data;
+      const savedPhone = String(report?.reporter_phone || '').replace(/\D/g, '');
+      if (!report || report.reporter_type !== 'guest' || savedPhone !== phone) return;
+
+      const previousReportId = socket.data.guestTrackingReportId;
+      if (previousReportId) socket.leave(`guest-report:${previousReportId}`);
+      socket.data.guestTrackingReportId = reportId;
+      socket.join(`guest-report:${reportId}`);
+      socket.emit('guest-report:subscribed', { reportId });
+    })().catch((error) => console.error('Guest report socket subscription failed:', error));
+  });
+
+  socket.on('guest-report:unsubscribe', () => {
+    const reportId = socket.data.guestTrackingReportId;
+    if (!reportId) return;
+    socket.leave(`guest-report:${reportId}`);
+    delete socket.data.guestTrackingReportId;
+  });
 
   // Only a signed command-center token may join dashboard role rooms. A
   // barangay dispatcher token must never gain dashboard-wide visibility.
@@ -540,6 +662,11 @@ const runScheduledUpdates = async () => {
       console.log('River level data updated successfully');
     }
 
+    io.emit('public:data_changed', {
+      resource: 'weather',
+      action: 'update',
+      changedAt: new Date().toISOString(),
+    });
     console.log('All scheduled updates completed');
   } catch (error) {
     console.error('Error in scheduled updates:', error);

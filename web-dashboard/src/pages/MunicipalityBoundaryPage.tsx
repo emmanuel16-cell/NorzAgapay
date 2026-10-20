@@ -9,6 +9,7 @@ import { boundaryPolygons, type BoundaryGeometry, type MunicipalityBoundary } fr
 import { useMunicipalityBoundary } from '../context/MunicipalityBoundaryContext';
 import MunicipalityBoundaryMapLayer from '../components/MunicipalityBoundaryMapLayer';
 import { CARTO_ATTRIBUTION, CARTO_DARK_MAP_URL } from '../lib/mapConfig';
+import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
 
 type Point = [number, number]; // latitude, longitude for Leaflet
 type DraftPart = Point[];
@@ -130,6 +131,7 @@ export default function MunicipalityBoundaryPage() {
   useEffect(() => {
     void loadHistory();
   }, [loadHistory]);
+  useRealtimeRefresh(loadHistory, { publicUpdates: true });
 
   const valid = isValidParts(parts);
   const fitKey = `${boundary.revision}-${editing}-${parts.length}-${savedGeometryLoaded}`;
@@ -346,7 +348,7 @@ export default function MunicipalityBoundaryPage() {
     setEditOriginalGeometry(null);
   };
 
-  const useVersion = (version: MunicipalityBoundary) => {
+  const activateSavedVersion = (version: MunicipalityBoundary) => {
     if (!version.geometry) return;
     setConfirmation({
       title: `Use boundary ${version.revision}?`,
@@ -572,7 +574,7 @@ export default function MunicipalityBoundaryPage() {
           <button className="btn btn-outline" type="button" onClick={() => editVersion(selectedVersion)} disabled={!selectedVersion.geometry || saving}>
             <Pencil size={16} /> Edit
           </button>
-          <button className="btn btn-primary" type="button" onClick={() => useVersion(selectedVersion)} disabled={!selectedVersion.geometry || saving || (selectedVersion.revision === boundary.revision && boundary.enabled)}>
+          <button className="btn btn-primary" type="button" onClick={() => activateSavedVersion(selectedVersion)} disabled={!selectedVersion.geometry || saving || (selectedVersion.revision === boundary.revision && boundary.enabled)}>
             {saving ? <LoaderCircle className="boundary-spinner" size={16} /> : <Check size={16} />}
             {selectedVersion.revision === boundary.revision && boundary.enabled ? 'Already in use' : 'Use boundary'}
           </button>

@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { LocateFixed, MapPin, Phone, Siren, X } from 'lucide-react';
 import { MapContainer, Marker, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
@@ -8,11 +8,13 @@ import { reportAPI } from '../lib/api';
 import { INCIDENT_TYPE_OPTIONS } from '../lib/incidentClassification';
 import { CARTO_ATTRIBUTION, CARTO_DARK_MAP_URL } from '../lib/mapConfig';
 import { useAuth } from '../context/AuthContext';
-import IncidentTimeInput, { createInitialIncidentTime, type IncidentTimeValue } from '../components/IncidentTimeInput';
+import IncidentTimeInput from '../components/IncidentTimeInput';
+import { createInitialIncidentTime, type IncidentTimeValue } from '../lib/incidentTime';
 import MobileNumberInput from '../components/MobileNumberInput';
 import CameraEvidenceCapture from '../components/CameraEvidenceCapture';
 import ReportModeChoices from '../components/ReportModeChoices';
 import { formatMobileNumber, isValidMobileNumber, normalizeMobileNumberInput } from '../lib/mobileNumber';
+import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
 
 function createGuestRequestId() {
   const bytes = new Uint8Array(16);
@@ -39,8 +41,8 @@ type PublicHotlineRow = {
 type PublicBarangayOption = { id: string; name: string };
 const emptyHotlines: PublicHotlines = { national: [], mdrrmo: [], barangays: [] };
 const localEmergencyHotlines = [
-  { id: 'pnp-norzagaray', label: 'Philippine National Police (PNP)', detail: 'Norzagaray Municipal Police Station', phone: '0998-598-5389' },
-  { id: 'bfp-norzagaray', label: 'Bureau of Fire Protection (BFP)', detail: 'Norzagaray Fire Station', phone: '0943-348-1854' },
+  { id: 'pnp-norzagaray', label: 'Philippine National Police (PNP)', detail: 'Norzagaray Municipal Police Station', phone: '0998-598-5388' },
+  { id: 'bfp-norzagaray', label: 'Bureau of Fire Protection (BFP)', detail: 'Norzagaray Fire Station', phone: '0917-159-5831' },
 ];
 const incidentPinIcon = L.divIcon({ className: 'public-incident-pin', html: '<span></span>', iconSize: [24, 24], iconAnchor: [12, 12] });
 const defaultMapCenter: [number, number] = [14.9133, 121.0436];
@@ -103,29 +105,37 @@ export default function PublicReportPage() {
     if (user?.phone) setGuestPhone((current) => current || normalizePhilippineMobile(user.phone));
   }, [user?.phone]);
 
-  useEffect(() => {
-    reportAPI.publicHotlines()
-      .then((response) => {
-        const data = response.data || {};
-        setHotlines({
-          national: Array.isArray(data.national) ? data.national : [],
-          mdrrmo: Array.isArray(data.mdrrmo) ? data.mdrrmo : [],
-          barangays: Array.isArray(data.barangays) ? data.barangays : [],
-        });
-      })
-      .catch(() => setHotlines({ ...emptyHotlines, national: [{ label: 'National Emergency Hotline', phone: '911' }] }));
+  const loadHotlines = useCallback(async () => {
+    try {
+      const response = await reportAPI.publicHotlines();
+      const data = response.data || {};
+      setHotlines({
+        national: Array.isArray(data.national) ? data.national : [],
+        mdrrmo: Array.isArray(data.mdrrmo) ? data.mdrrmo : [],
+        barangays: Array.isArray(data.barangays) ? data.barangays : [],
+      });
+    } catch {
+      setHotlines({ ...emptyHotlines, national: [{ label: 'National Emergency Hotline', phone: '911' }] });
+    }
+  }, []);
+
+  const loadBarangays = useCallback(async () => {
+    try {
+      const response = await reportAPI.verifiedBarangays();
+      const rows = Array.isArray(response.data) ? response.data : [];
+      setPublicBarangays(rows
+        .filter((barangay: any) => typeof barangay?.name === 'string' && barangay.name.trim())
+        .map((barangay: any) => ({ id: String(barangay.id || barangay.name), name: barangay.name.trim() })));
+    } catch {
+      setPublicBarangays([]);
+    }
   }, []);
 
   useEffect(() => {
-    reportAPI.verifiedBarangays()
-      .then((response) => {
-        const rows = Array.isArray(response.data) ? response.data : [];
-        setPublicBarangays(rows
-          .filter((barangay: any) => typeof barangay?.name === 'string' && barangay.name.trim())
-          .map((barangay: any) => ({ id: String(barangay.id || barangay.name), name: barangay.name.trim() })));
-      })
-      .catch(() => setPublicBarangays([]));
-  }, []);
+    void loadHotlines();
+    void loadBarangays();
+  }, [loadHotlines, loadBarangays]);
+  useRealtimeRefresh(() => Promise.all([loadHotlines(), loadBarangays()]), { publicUpdates: true });
 
   const requestLocation = () => {
     setMessage('');

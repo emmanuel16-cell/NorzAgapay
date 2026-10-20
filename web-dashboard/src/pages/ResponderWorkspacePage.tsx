@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Activity, AlertCircle, CheckCircle2, ClipboardList, MapPin, RefreshCw, ShieldAlert, Upload, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { reportAPI, respondUnitAPI } from '../lib/api';
+import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
 import { useAuth } from '../context/AuthContext';
 import { createDemoResponderReport } from '../demoResponderReport';
 
@@ -113,6 +114,13 @@ export default function ResponderWorkspacePage() {
   }, [isBarangay, user?.id]);
 
   useEffect(() => { void loadWorkspace(); }, [loadWorkspace]);
+  useRealtimeRefresh(loadWorkspace, {
+    events: [
+      'incident:lifecycle', 'incident_report:updated', 'incident_report:reviewed', 'mdrrmo:report_updated',
+      'barangay:report_updated', 'barangay:report_assigned', 'incident:alert',
+      'task:statusChanged', 'task:membersUpdated',
+    ],
+  });
 
   useEffect(() => {
     if (!crewEditorReportId) return;

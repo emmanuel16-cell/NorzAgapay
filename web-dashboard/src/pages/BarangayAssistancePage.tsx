@@ -3,6 +3,7 @@ import { ClipboardList, Check, HandHelping, RefreshCw, Send, X } from 'lucide-re
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import { barangayAPI, reportAPI, requestAPI, socket } from '../lib/api';
+import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
 
 type Incident = { id: string; title?: string; incident_type?: string; description?: string; response_status?: string; barangay_response_status?: string; created_at?: string };
 type Assistance = {
@@ -56,6 +57,7 @@ function BarangayAssistanceWorkspace() {
   }, [isResponder]);
 
   useEffect(() => { void load(); }, [load]);
+  useRealtimeRefresh(load, { events: ['incident:new'] });
   useEffect(() => {
     socket.on('assistance:new_request', load);
     socket.on('assistance:decision', load);
@@ -189,6 +191,7 @@ function MdrrmoResponderAssistanceWorkspace() {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+  useRealtimeRefresh(load, { events: ['incident:new'] });
   useEffect(() => {
     socket.on('resource:request', load);
     socket.on('incident_report:updated', load);

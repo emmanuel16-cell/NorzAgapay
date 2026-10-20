@@ -477,6 +477,20 @@ async function persistIncidentEvidence(
     supabaseAdmin.from('mdrrmo_reports').update(evidenceUpdate).eq('id', reportId),
   ]);
 
+  const [barangayReport, mdrrmoReport] = await Promise.all([
+    supabaseAdmin.from('barangay_reports').select('reporter_type, reporter_id').eq('id', reportId).maybeSingle(),
+    supabaseAdmin.from('mdrrmo_reports').select('reporter_type, reporter_id').eq('id', reportId).maybeSingle(),
+  ]);
+  const report = mdrrmoReport.data || barangayReport.data;
+  const changedAt = new Date().toISOString();
+  const invalidation = { resource: 'incident-reports', action: 'patch', changedAt };
+  io.to('dashboard_staff').emit('dashboard:data_changed', invalidation);
+  if (report?.reporter_type === 'guest') {
+    io.to(`guest-report:${reportId}`).emit('guest-report:updated', { reportId, changedAt });
+  } else if (report?.reporter_type === 'resident' && report.reporter_id) {
+    io.to(`user:${report.reporter_id}`).emit('dashboard:data_changed', invalidation);
+  }
+
   return { proofUrls, proofTypes };
 }
 

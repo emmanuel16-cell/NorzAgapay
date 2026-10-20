@@ -1,40 +1,65 @@
+import { Component, lazy, Suspense, type ReactNode } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import DashboardLayout from './components/DashboardLayout';
 import NotificationManager from './components/NotificationManager';
-import LoginPage from './pages/LoginPage';
-import HomePage from './pages/HomePage';
-import PublicReportPage from './pages/PublicReportPage';
-import TrackReportPage from './pages/TrackReportPage';
-import CommandCenter from './pages/CommandCenter';
-import VerificationPage from './pages/VerificationPage';
-import ResourceRequestsPage from './pages/ResourceRequestsPage';
-import RespondUnitsPage from './pages/RespondUnitsPage';
-import UsersPage from './pages/UsersPage';
-import AlertBroadcastsPage from './pages/AlertBroadcastsPage';
-import OfficersPage from './pages/OfficersPage';
-import AnalyticsPage from './pages/AnalyticsPage';
-import ReportsPage from './pages/ReportsPage';
-import ResidentReportsPage from './pages/ResidentReportsPage';
-import { ResidentAlertsPage, ResidentEvacuationPage, ResidentHomePage, ResidentHotlinesPage, ResidentReportHubPage } from './pages/ResidentPortalPages';
-import ResidentIncidentReportPage from './pages/ResidentIncidentReportPage';
-import ResponderWorkspacePage from './pages/ResponderWorkspacePage';
-import BarangayStaffWorkspacePage from './pages/BarangayStaffWorkspacePage';
-import MunicipalityBoundaryPage from './pages/MunicipalityBoundaryPage';
-import CommandLocationsPage from './pages/CommandLocationsPage';
-import BarangayDashboardPage from './pages/BarangayDashboardPage';
-import BarangayAdministrationPage from './pages/BarangayAdministrationPage';
-import BarangayTeamPage from './pages/BarangayTeamPage';
-import BarangayBoardPage from './pages/BarangayBoardPage';
-import BarangayAssistancePage from './pages/BarangayAssistancePage';
-import BarangayAnalyticsPage from './pages/BarangayAnalyticsPage';
-import BarangayRegistrationPage from './pages/BarangayRegistrationPage';
-import ResponderUnitTeamPage from './pages/ResponderUnitTeamPage';
-import ResidentRegistrationPage from './pages/ResidentRegistrationPage';
 import { MunicipalityBoundaryProvider } from './context/MunicipalityBoundaryContext';
 
 import './index.css';
+
+class RouteErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
+  state = { hasError: false };
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error) {
+    console.error('Page failed to load:', error);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return <main className="loading-overlay" role="alert"><section className="card"><h1>Page unavailable</h1><p>This page could not be loaded. Reload and try again.</p><button className="btn btn-primary" type="button" onClick={() => window.location.reload()}>Reload page</button></section></main>;
+    }
+    return this.props.children;
+  }
+}
+
+const LoginPage = lazy(() => import('./pages/LoginPage'));
+const HomePage = lazy(() => import('./pages/HomePage'));
+const PublicReportPage = lazy(() => import('./pages/PublicReportPage'));
+const TrackReportPage = lazy(() => import('./pages/TrackReportPage'));
+const CommandCenter = lazy(() => import('./pages/CommandCenter'));
+const VerificationPage = lazy(() => import('./pages/VerificationPage'));
+const ResourceRequestsPage = lazy(() => import('./pages/ResourceRequestsPage'));
+const RespondUnitsPage = lazy(() => import('./pages/RespondUnitsPage'));
+const UsersPage = lazy(() => import('./pages/UsersPage'));
+const AlertBroadcastsPage = lazy(() => import('./pages/AlertBroadcastsPage'));
+const OfficersPage = lazy(() => import('./pages/OfficersPage'));
+const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
+const ReportsPage = lazy(() => import('./pages/ReportsPage'));
+const ResidentReportsPage = lazy(() => import('./pages/ResidentReportsPage'));
+const ResidentAlertsPage = lazy(() => import('./pages/ResidentPortalPages').then((pages) => ({ default: pages.ResidentAlertsPage })));
+const ResidentEvacuationPage = lazy(() => import('./pages/ResidentPortalPages').then((pages) => ({ default: pages.ResidentEvacuationPage })));
+const ResidentHomePage = lazy(() => import('./pages/ResidentPortalPages').then((pages) => ({ default: pages.ResidentHomePage })));
+const ResidentHotlinesPage = lazy(() => import('./pages/ResidentPortalPages').then((pages) => ({ default: pages.ResidentHotlinesPage })));
+const ResidentReportHubPage = lazy(() => import('./pages/ResidentPortalPages').then((pages) => ({ default: pages.ResidentReportHubPage })));
+const ResidentIncidentReportPage = lazy(() => import('./pages/ResidentIncidentReportPage'));
+const ResponderWorkspacePage = lazy(() => import('./pages/ResponderWorkspacePage'));
+const BarangayStaffWorkspacePage = lazy(() => import('./pages/BarangayStaffWorkspacePage'));
+const MunicipalityBoundaryPage = lazy(() => import('./pages/MunicipalityBoundaryPage'));
+const CommandLocationsPage = lazy(() => import('./pages/CommandLocationsPage'));
+const BarangayDashboardPage = lazy(() => import('./pages/BarangayDashboardPage'));
+const BarangayAdministrationPage = lazy(() => import('./pages/BarangayAdministrationPage'));
+const BarangayTeamPage = lazy(() => import('./pages/BarangayTeamPage'));
+const BarangayBoardPage = lazy(() => import('./pages/BarangayBoardPage'));
+const BarangayAssistancePage = lazy(() => import('./pages/BarangayAssistancePage'));
+const BarangayAnalyticsPage = lazy(() => import('./pages/BarangayAnalyticsPage'));
+const BarangayRegistrationPage = lazy(() => import('./pages/BarangayRegistrationPage'));
+const ResponderUnitTeamPage = lazy(() => import('./pages/ResponderUnitTeamPage'));
+const ResidentRegistrationPage = lazy(() => import('./pages/ResidentRegistrationPage'));
 
 function landingPath(user: { role?: string; account_kind?: string; coordination_verified?: boolean } | null) {
   if (user?.account_kind === 'barangay') {
@@ -131,6 +156,8 @@ function BarangayAssistanceRoute() {
 
 function AppRoutes() {
   return (
+    <RouteErrorBoundary>
+    <Suspense fallback={<div className="loading-overlay" role="status" aria-label="Loading page"><div className="spinner" /></div>}>
     <Routes>
       <Route path="/" element={<HomePage />} />
       <Route path="/report" element={<PublicReportPage />} />
@@ -173,6 +200,8 @@ function AppRoutes() {
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </Suspense>
+    </RouteErrorBoundary>
   );
 }
 

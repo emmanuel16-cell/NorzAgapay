@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import { API_BASE, barangayAPI, reportAPI, socket } from '../lib/api';
 import { CARTO_ATTRIBUTION, CARTO_DARK_MAP_URL } from '../lib/mapConfig';
 import { createLocationMapIcon } from '../lib/locationMapIcon';
+import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
 import LocationIconEditorModal from '../components/LocationIconEditorModal';
 import { formatMobileNumber, isValidMobileNumber, normalizeMobileNumberInput, sanitizeMobileNumberInput } from '../lib/mobileNumber';
 
@@ -30,7 +31,7 @@ function BarangayLocationMapFocus({ point }: { point: CoordinatePoint }) {
   useEffect(() => {
     map.invalidateSize();
     map.setView(point, Math.max(map.getZoom(), 15), { animate: true });
-  }, [map, point[0], point[1]]);
+  }, [map, point]);
   return null;
 }
 
@@ -96,6 +97,9 @@ type BarangayAdministrationPageProps = { embedded?: boolean; section?: BarangayS
 
 export default function BarangayAdministrationPage({ embedded = false, section = 'all' }: BarangayAdministrationPageProps) {
   const { user, updateUser } = useAuth();
+  const userBarangayId = user?.barangay_id;
+  const userPositionDesignation = user?.position_designation;
+  const userVerificationStatus = user?.verification_status;
   const isAdmin = user?.role === 'admin';
   const canManageLocation = user?.role === 'admin' || user?.role === 'staff';
   const canManageHotlines = user?.role === 'admin' || user?.role === 'staff';
@@ -151,8 +155,8 @@ export default function BarangayAdministrationPage({ embedded = false, section =
       const tasks: Promise<any>[] = [];
       if (isAdmin) tasks.push(barangayAPI.accountRequest());
       if (active && canManageLocation) tasks.push(reportAPI.barangayLocation());
-      if (active && canViewHotlines && user?.barangay_id) {
-        tasks.push(canManageHotlines ? barangayAPI.hotlineSettings() : barangayAPI.publishedHotlines(user.barangay_id));
+      if (active && canViewHotlines && userBarangayId) {
+        tasks.push(canManageHotlines ? barangayAPI.hotlineSettings() : barangayAPI.publishedHotlines(userBarangayId));
       }
       const results = await Promise.all(tasks);
       let index = 0;
@@ -162,12 +166,12 @@ export default function BarangayAdministrationPage({ embedded = false, section =
         setVerification(record);
         updateUser({
           coordination_verified: Boolean(response.data?.coordination_verified),
-          verification_status: record?.status || user?.verification_status || 'pending_document',
+          verification_status: record?.status || userVerificationStatus || 'pending_document',
         });
         setOfficial({
           official_name: record?.punong_barangay_name || '',
           official_position: record?.punong_barangay_position || '',
-          position_designation: record?.position_designation || user?.position_designation || '',
+          position_designation: record?.position_designation || userPositionDesignation || '',
         });
       }
       if (active && canManageLocation) {
@@ -191,9 +195,10 @@ export default function BarangayAdministrationPage({ embedded = false, section =
     } finally {
       setLoading(false);
     }
-  }, [active, canManageHotlines, canManageLocation, canViewHotlines, isAdmin, updateUser, user?.barangay_id, user?.position_designation, user?.verification_status]);
+  }, [active, canManageHotlines, canManageLocation, canViewHotlines, isAdmin, updateUser, userBarangayId, userPositionDesignation, userVerificationStatus]);
 
   useEffect(() => { void load(); }, [load]);
+  useRealtimeRefresh(load, { publicUpdates: true });
   useEffect(() => {
     socket.on('hotlines:updated', load);
     socket.on('command:locations_updated', load);

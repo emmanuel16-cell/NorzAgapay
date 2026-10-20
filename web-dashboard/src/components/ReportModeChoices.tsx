@@ -3,9 +3,11 @@ import { Link } from 'react-router-dom';
 
 type ReportModeChoicesProps = {
   onSelect: (mode: 'standard' | 'visual') => void;
+  trackTo?: string;
+  trackText?: string;
 };
 
-export default function ReportModeChoices({ onSelect }: ReportModeChoicesProps) {
+export default function ReportModeChoices({ onSelect, trackTo = '/track-report', trackText = 'Track it' }: ReportModeChoicesProps) {
   return <section className="report-mode-choices" aria-labelledby="report-mode-title">
     <div className="report-mode-intro"><h2 id="report-mode-title">How would you like to report?</h2><p>Choose a report format to continue.</p></div>
     <div className="report-mode-choice-grid">
@@ -20,6 +22,6 @@ export default function ReportModeChoices({ onSelect }: ReportModeChoicesProps) 
         <small>No incident details needed. Capture at least one photo or video with your camera.</small>
       </button>
     </div>
-    <p className="report-mode-track-note">Already submitted a report? <Link to="/track-report">Track it</Link></p>
+    <p className="report-mode-track-note">Already submitted a report? <Link to={trackTo}>{trackText}</Link></p>
   </section>;
 }

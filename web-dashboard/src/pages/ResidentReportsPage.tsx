@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertCircle, FileText, MapPin, RefreshCw, Siren } from 'lucide-react';
+import { AlertCircle, FileText, RefreshCw, Siren } from 'lucide-react';
 import { reportAPI } from '../lib/api';
+import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
 import { INCIDENT_TYPE_OPTIONS } from '../lib/incidentClassification';
 import { useAuth } from '../context/AuthContext';
 
@@ -26,6 +27,17 @@ type ResidentReport = {
   review_outcome?: string | null;
   review_reason?: string | null;
   reviewed_at?: string | null;
+  incident_occurred_at?: string | null;
+  incident_time_precision?: 'exact' | 'approximate' | 'unknown' | null;
+  latitude?: number | string | null;
+  longitude?: number | string | null;
+  address?: string | null;
+  location_name?: string | null;
+  proof_url?: string | null;
+  proof_type?: string | null;
+  proof_urls?: string[] | null;
+  proof_types?: string[] | null;
+  evidence_status?: string | null;
   dispatched_at?: string | null;
   accepted_at?: string | null;
   arrived_at?: string | null;
@@ -66,15 +78,20 @@ type ResidentReport = {
 
 type ReportTimelineEvent = { label: string; at: string | null; detail?: string | null };
 
+function reportWasClosedAfterReview(report: ResidentReport) {
+  return ['invalid', 'false_report'].includes(String(report.review_outcome || '').toLowerCase()) ||
+    ['rejected', 'invalid', 'false_report'].includes(String(report.status || '').toLowerCase());
+}
+
 function reportTimeline(report: ResidentReport): ReportTimelineEvent[] {
   const events: ReportTimelineEvent[] = [
-    { label: 'Report received by MDRRMO', at: report.created_at || null },
+    { label: 'Report received by MDRRMO', at: report.created_at || null, detail: 'MDRRMO received the report for review.' },
   ];
   if (report.review_outcome) {
     events.push({
-      label: report.review_outcome === 'invalid' ? 'Report closed after review' : 'Report reviewed',
+      label: reportWasClosedAfterReview(report) ? 'Report closed after review' : 'Report reviewed',
       at: report.reviewed_at || null,
-      detail: report.review_reason || null,
+      detail: report.review_reason || (reportWasClosedAfterReview(report) ? 'MDRRMO closed the report after review.' : 'MDRRMO reviewed the report.'),
     });
   }
 
@@ -88,8 +105,9 @@ function reportTimeline(report: ResidentReport): ReportTimelineEvent[] {
     (report.send_to !== 'barangay' ? report.resolved_at : null);
   if (mdrrmoDispatchedAt || mdrrmoAcceptedAt) {
     events.push({
-      label: 'MDRRMO response dispatched and accepted automatically',
+      label: 'MDRRMO responders dispatched',
       at: mdrrmoDispatchedAt || mdrrmoAcceptedAt || null,
+      detail: 'MDRRMO sent a response team to the incident.',
     });
   }
   if (mdrrmoArrivedAt) events.push({ label: 'MDRRMO responders arrived', at: mdrrmoArrivedAt });
@@ -106,13 +124,22 @@ function reportTimeline(report: ResidentReport): ReportTimelineEvent[] {
       const label = event.event_type === 'assigned' ? `Assigned to a barangay${destination}`
         : event.event_type === 'reassigned' ? `Reassigned${from ? ` from ${from}` : ''}${to ? ` to ${to}` : ''}`
           : event.event_type === 'recalled' ? `Barangay assignment recalled${from ? ` · ${from}` : ''}`
-            : event.event_type === 'dispatched' ? `Barangay responders dispatched and accepted automatically${destination}`
+        : event.event_type === 'dispatched' ? `Barangay responders dispatched${destination}`
               : event.event_type === 'responding' ? `Barangay response underway${destination}`
                 : event.event_type === 'arrived' ? `Barangay responders arrived${destination}`
                   : event.event_type === 'resolved' ? `Resolved by barangay${destination}`
                     : event.event_type === 'escalated' ? `Escalated to MDRRMO${from ? ` · ${from}` : ''}`
                       : null;
-      if (label) events.push({ label, at: event.created_at || null, detail: event.notes || null });
+      const detail = event.notes || (event.event_type === 'dispatched'
+        ? 'The barangay response team was sent to the incident.'
+        : event.event_type === 'responding'
+          ? 'The barangay team is responding to the incident.'
+          : event.event_type === 'arrived'
+            ? 'The barangay team confirmed arrival at the incident location.'
+            : event.event_type === 'resolved'
+              ? 'The barangay team marked its response complete.'
+              : null);
+      if (label) events.push({ label, at: event.created_at || null, detail });
     }
   } else if ((report.barangay_assignments || []).length > 0) {
     const assignments = report.barangay_assignments || [];
@@ -121,8 +148,9 @@ function reportTimeline(report: ResidentReport): ReportTimelineEvent[] {
       if (assignment.assigned_at) events.push({ label: `Assigned to a barangay${destination}`, at: assignment.assigned_at });
       if (assignment.dispatched_at || assignment.accepted_at) {
         events.push({
-          label: `Barangay responders dispatched and accepted automatically${destination}`,
+          label: `Barangay responders dispatched${destination}`,
           at: assignment.dispatched_at || assignment.accepted_at || null,
+          detail: 'The barangay response team was sent to the incident.',
         });
       }
       if (assignment.arrived_at) events.push({ label: `Barangay responders arrived${destination}`, at: assignment.arrived_at });
@@ -139,8 +167,9 @@ function reportTimeline(report: ResidentReport): ReportTimelineEvent[] {
     if (report.barangay_assigned_at) events.push({ label: `Assigned to a barangay${destination ? ` · ${destination}` : ''}`, at: report.barangay_assigned_at });
     if (report.barangay_dispatched_at || report.barangay_accepted_at || legacyBarangayDispatch) {
       events.push({
-        label: `Barangay responders dispatched and accepted automatically${destination ? ` · ${destination}` : ''}`,
+        label: `Barangay responders dispatched${destination ? ` · ${destination}` : ''}`,
         at: report.barangay_dispatched_at || report.barangay_accepted_at || legacyBarangayDispatch || null,
+        detail: 'The barangay response team was sent to the incident.',
       });
     }
     if (report.barangay_arrived_at) events.push({ label: `Barangay responders arrived${destination ? ` · ${destination}` : ''}`, at: report.barangay_arrived_at });
@@ -161,9 +190,9 @@ function reportStatus(report: ResidentReport) {
   const mdrrmoStatus = String(report.mdrrmo_response_status || (report.send_to !== 'barangay' ? report.response_status || report.status : 'pending')).toLowerCase();
   const barangayStatus = String(report.barangay_response_status || '').toLowerCase();
   const closedStatuses = ['resolved', 'closed', 'complete', 'completed'];
-  if (report.review_outcome === 'invalid' || ['rejected', 'invalid', 'false_report'].includes(String(report.status || '').toLowerCase())) return 'Closed after review';
+  if (reportWasClosedAfterReview(report)) return 'Closed after review';
   if (closedStatuses.includes(mdrrmoStatus) || (!report.is_escalated && closedStatuses.includes(barangayStatus))) return 'Resolved';
-  if (['responding', 'accepted', 'en_route', 'on_scene', 'arrived'].includes(mdrrmoStatus) || ['responding', 'accepted', 'en_route', 'on_scene', 'arrived'].includes(barangayStatus)) return 'Response in progress';
+  if (['responding', 'accepted', 'en_route', 'on_scene', 'arrived'].includes(mdrrmoStatus) || ['responding', 'accepted', 'en_route', 'on_scene', 'arrived'].includes(barangayStatus) || report.mdrrmo_dispatched_at || report.barangay_dispatched_at || (report.send_to !== 'barangay' && report.dispatched_at) || (report.send_to === 'barangay' && report.dispatched_at)) return 'Response in progress';
   if (report.assignment_status === 'active') return 'Assigned to barangay';
   if (closedStatuses.includes(String(report.status || '').toLowerCase())) return 'Resolved';
   return 'Received by MDRRMO';
@@ -178,6 +207,39 @@ function formatReportDate(value?: string | null) {
   if (!value) return 'Date unavailable';
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? 'Date unavailable' : new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+}
+
+function incidentTimeLabel(report: ResidentReport) {
+  if (!report.incident_occurred_at || !['exact', 'approximate'].includes(String(report.incident_time_precision))) return 'Unknown';
+  const formatted = formatReportDate(report.incident_occurred_at);
+  return formatted === 'Date unavailable' ? 'Unknown' : `${formatted} · ${report.incident_time_precision === 'exact' ? 'Exact time' : 'Approximate time'}`;
+}
+
+function reportLocation(report: ResidentReport) {
+  const specific = [report.location_name, report.address].map((value) => value?.trim())
+    .find((value) => value && !/^(?:norzagaray(?:,?\s*bulacan)?|bulacan)$/i.test(value));
+  if (specific) return specific;
+  if (report.barangay_name?.trim()) return `Barangay ${report.barangay_name.replace(/^(?:barangay|brgy\.?)\s*/i, '').trim()}`;
+  if (reportCoordinates(report)) return 'Pinned incident location';
+  return 'Location not provided';
+}
+
+function reportCoordinates(report: ResidentReport) {
+  if (report.latitude == null || report.longitude == null || String(report.latitude).trim() === '' || String(report.longitude).trim() === '') return null;
+  const latitude = Number(report.latitude);
+  const longitude = Number(report.longitude);
+  if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180 || (latitude === 0 && longitude === 0)) return null;
+  return { latitude, longitude };
+}
+
+function reportEvidence(report: ResidentReport) {
+  const urls = [...(report.proof_urls || [])].filter(Boolean);
+  if (urls.length === 0 && report.proof_url) urls.push(report.proof_url);
+  return urls.map((url, index) => ({ url, type: report.proof_types?.[index] || (index === 0 ? report.proof_type : '') || '' }));
+}
+
+function isVideoEvidence(url: string, type: string) {
+  return type.toLowerCase() === 'video' || /\.(mp4|mov|webm|3gp|mkv|avi)(?:\?|$)/i.test(url);
 }
 
 export default function ResidentReportsPage() {
@@ -203,9 +265,10 @@ export default function ResidentReportsPage() {
   }, []);
 
   useEffect(() => { void loadReports(); }, [loadReports]);
+  useRealtimeRefresh(loadReports, { events: ['incident_report:updated', 'incident_report:reviewed', 'incident:lifecycle'] });
 
   const activeCount = reports.filter((report) => !['Resolved', 'Closed after review'].includes(reportStatus(report))).length;
-  const resolvedCount = reports.length - activeCount;
+  const resolvedCount = reports.filter((report) => reportStatus(report) === 'Resolved').length;
 
   return (
     <div className="resident-workspace">
@@ -215,13 +278,13 @@ export default function ResidentReportsPage() {
           <h1>Hello, {user?.full_name?.split(' ')[0] || 'there'}</h1>
           <p>Submit a report and follow updates from MDRRMO and the responding team.</p>
         </div>
-        <Link className="workspace-primary-action" to="/report"><Siren size={17} /> Report an incident</Link>
+        <Link className="workspace-primary-action" to="/resident-report"><Siren size={17} /> Report an incident</Link>
       </header>
 
       <section className="resident-summary-grid" aria-label="Report summary">
-        <article><span>All reports</span><strong>{reports.length}</strong></article>
-        <article><span>In progress</span><strong>{activeCount}</strong></article>
-        <article><span>Resolved</span><strong>{resolvedCount}</strong></article>
+        <article><span>All reports</span><strong>{loading || error ? '—' : reports.length}</strong></article>
+        <article><span>In progress</span><strong>{loading || error ? '—' : activeCount}</strong></article>
+        <article><span>Resolved</span><strong>{loading || error ? '—' : resolvedCount}</strong></article>
       </section>
 
       <section className="resident-reports-panel">
@@ -232,17 +295,32 @@ export default function ResidentReportsPage() {
 
         {error && <div className="workspace-message workspace-message-error" role="alert"><AlertCircle size={17} />{error}<button type="button" onClick={() => void loadReports()}>Try again</button></div>}
         {loading ? <p className="resident-reports-state">Loading your reports…</p> : reports.length === 0 && !error ? (
-          <div className="resident-reports-empty"><Siren size={23} /><strong>No reports yet</strong><span>New emergency reports are received by MDRRMO for review and coordination.</span><Link to="/report">Start a report</Link></div>
+          <div className="resident-reports-empty"><Siren size={23} /><strong>No reports yet</strong><span>New emergency reports are received by MDRRMO for review and coordination.</span><Link to="/resident-report">Start a report</Link></div>
         ) : (
           <div className="resident-report-list">
             {reports.map((report) => {
               const status = reportStatus(report);
+              const location = reportLocation(report);
+              const coordinates = reportCoordinates(report);
+              const evidence = reportEvidence(report);
+              const details = report.title?.toLowerCase().startsWith('visual ')
+                ? ''
+                : report.description?.trim();
               return <article className="resident-report-card" key={report.id}>
                 <div className="resident-report-card-main">
                   <div className="resident-report-card-heading"><strong>{categoryLabel(report)}</strong><span className={`resident-status ${status === 'Resolved' ? 'resolved' : status === 'Response in progress' ? 'responding' : ''}`}>{status}</span></div>
-                  <p>{report.description?.trim() || report.title || 'No incident details were provided.'}</p>
+                  {details && <p>{details}</p>}
+                  {!details && report.title?.toLowerCase().startsWith('visual ') && <p>Visual report submitted. See the captured evidence below.</p>}
+                  {!details && !report.title?.toLowerCase().startsWith('visual ') && <p>No written incident details were provided.</p>}
                   {report.incident_type === 'other' && report.specifics?.trim() && <p className="resident-report-other-emergency"><strong>Other emergency:</strong> {report.specifics.replace(/^Other emergency:\s*/i, '')}</p>}
-                  <div className="resident-report-meta"><span><FileText size={14} /> {formatReportDate(report.created_at)}</span><span><MapPin size={14} /> {report.response_barangay_name || report.barangay_name || 'Norzagaray'}</span></div>
+                  <dl className="resident-report-facts">
+                    <div><dt>Incident occurred</dt><dd>{incidentTimeLabel(report)}</dd></div>
+                    <div><dt>Incident location</dt><dd>{location}{report.barangay_name && !location.toLowerCase().includes(report.barangay_name.toLowerCase()) ? ` · Barangay ${report.barangay_name.replace(/^(?:barangay|brgy\.?)\s*/i, '')}` : ''}{coordinates && <> · <a href={`https://www.google.com/maps/search/?api=1&query=${coordinates.latitude},${coordinates.longitude}`} target="_blank" rel="noreferrer">Open map</a></>}</dd></div>
+                  </dl>
+                  <div className="resident-report-meta"><span><FileText size={14} /> Received {formatReportDate(report.created_at)}</span></div>
+                  <section className="resident-report-evidence" aria-label="Photo or video evidence"><strong>Photo or video evidence</strong>{evidence.length ? <div>{evidence.map((item, index) => isVideoEvidence(item.url, item.type)
+                    ? <video key={`${item.url}-${index}`} src={item.url} controls playsInline preload="metadata" aria-label={`Incident video ${index + 1}`} />
+                    : <a key={`${item.url}-${index}`} href={item.url} target="_blank" rel="noreferrer" aria-label={`Open incident photo ${index + 1}`}><img src={item.url} alt={`Incident photo ${index + 1}`} loading="lazy" /></a>)}</div> : <p>{report.evidence_status === 'pending' ? 'Evidence is still uploading and will appear here when ready.' : report.evidence_status === 'failed' ? 'Photo or video evidence could not be attached to this report.' : 'No photo or video evidence was attached to this report.'}</p>}</section>
                   <details className="resident-report-timeline">
                     <summary>Track report history</summary>
                     <ol>

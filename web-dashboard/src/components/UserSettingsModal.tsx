@@ -1,12 +1,10 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { lazy, Suspense, useEffect, useState, type FormEvent } from 'react';
 import { FileText, KeyRound, LogOut, Map as MapIcon, MapPin, Moon, Phone, Save, ScrollText, Settings, ShieldCheck, Sun, UserRound, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import PasswordInput from './PasswordInput';
 import MobileNumberInput from './MobileNumberInput';
-import BarangayAdministrationPage, { type BarangaySettingsSection } from '../pages/BarangayAdministrationPage';
-import CommandLocationsPage from '../pages/CommandLocationsPage';
-import MunicipalityBoundaryPage from '../pages/MunicipalityBoundaryPage';
+import type { BarangaySettingsSection } from '../pages/BarangayAdministrationPage';
 import { authAPI, barangayAPI, reportAPI } from '../lib/api';
 import { formatMobileNumber, isValidMobileNumber, normalizeMobileNumberInput } from '../lib/mobileNumber';
 
@@ -18,6 +16,10 @@ type UserSettingsModalProps = {
 };
 
 type SettingsSection = 'general' | 'profile' | 'security' | 'commandLocations' | 'municipalityBoundary' | BarangaySettingsSection;
+
+const BarangayAdministrationPage = lazy(() => import('../pages/BarangayAdministrationPage'));
+const CommandLocationsPage = lazy(() => import('../pages/CommandLocationsPage'));
+const MunicipalityBoundaryPage = lazy(() => import('../pages/MunicipalityBoundaryPage'));
 
 const emptyPasswordForm = { otp: '', currentPassword: '', newPassword: '', confirmPassword: '' };
 const messageOf = (error: any, fallback: string) => error?.response?.data?.error || fallback;
@@ -317,7 +319,9 @@ export default function UserSettingsModal({ theme, onThemeChange, onClose, onSig
                 <div className="user-settings-form-actions"><button className="btn btn-primary" disabled={savingPassword}><KeyRound size={15} /> Update password</button><button type="button" className="workspace-secondary-action" disabled={savingPassword} onClick={() => { setPasswordOtpSent(false); setPasswordForm(emptyPasswordForm); }}>Cancel</button><button type="button" className="workspace-secondary-action" disabled={savingPassword} onClick={() => void sendPasswordCode()}>Send a new code</button></div>
               </form>}
             </section>
-          </div> : activeSection === 'commandLocations' ? <div className="user-settings-content user-settings-content-tools"><CommandLocationsPage /></div> : activeSection === 'municipalityBoundary' ? <div className="user-settings-content user-settings-content-tools"><MunicipalityBoundaryPage /></div> : <div className="user-settings-content user-settings-content-barangay"><BarangayAdministrationPage embedded section={activeSection as BarangaySettingsSection} /></div>}
+          </div> : <Suspense fallback={<div className="user-settings-content-tools" role="status">Loading settings…</div>}>
+            {activeSection === 'commandLocations' ? <div className="user-settings-content user-settings-content-tools"><CommandLocationsPage /></div> : activeSection === 'municipalityBoundary' ? <div className="user-settings-content user-settings-content-tools"><MunicipalityBoundaryPage /></div> : <div className="user-settings-content user-settings-content-barangay"><BarangayAdministrationPage embedded section={activeSection as BarangaySettingsSection} /></div>}
+          </Suspense>}
           </div>
         </div>
 
