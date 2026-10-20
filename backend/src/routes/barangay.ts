@@ -29,6 +29,7 @@ import { isValidLocationIcon, removeStoredLocationIcon, storeLocationIcon } from
 import { formatIncidentReport } from './incidentReports';
 import { isReportResolved, reportStageDurations, summarizeReportTimings } from '../services/reportTiming';
 import { resolveIncidentLocation } from '../services/incidentLocation';
+import { findNearestVerifiedResponseBarangayName } from '../services/responseBarangay';
 import { isDirectMdrrmoReport } from '../services/mdrrmoReportVisibility';
 import { isMobileNumberRegistryConflict, normalizeMobileNumber } from '../services/mobileNumberService';
 import { countPasswordMatchesForPhone, hasPasswordReuseForPhone, hasPhoneInAccountType, withPhoneAccountLock } from '../services/accountAuthService';
@@ -2130,10 +2131,12 @@ router.get('/reports/:id/location-preview', authenticateBarangay, requireRole(['
     }
 
     const location = await resolveIncidentLocation(latitude, longitude, [], null, true);
+    const nearestResponseBarangayName = await findNearestVerifiedResponseBarangayName({ latitude, longitude });
     res.json({
       road: location?.road || null,
       landmark: location?.landmark || null,
       landmark_distance_meters: location?.landmarkDistanceMeters ?? null,
+      nearest_response_barangay_name: nearestResponseBarangayName,
     });
   } catch (error) {
     console.error('Barangay incident location preview failed:', error);

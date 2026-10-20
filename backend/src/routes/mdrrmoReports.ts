@@ -10,6 +10,7 @@ import { IncidentResolutionPdfService, IncompleteResolutionReportError } from '.
 import { isEscalatedForMdrrmo, isVisibleToMdrrmo } from '../services/mdrrmoReportVisibility';
 import { getDispatchableRespondUnits } from '../services/respondUnitAvailability';
 import { getBarangayCoordinates, getNearestBarangay, distanceMeters as distanceBetweenCoordinates } from '../services/nearestBarangay';
+import { getVerifiedResponseBarangays } from '../services/responseBarangay';
 import { resolveIncidentLocation } from '../services/incidentLocation';
 import { getVerifiedBarangayIds } from '../services/verifiedBarangayService';
 import { getBarangayResponderGpsLocation, getResponderGpsLocation, RESPONDER_GPS_TTL_SECONDS } from '../config/redis';
@@ -313,13 +314,7 @@ router.get('/barangay-destinations', authenticate, authorize('dispatcher', 'admi
       }
       origin = { latitude, longitude };
     }
-    const verifiedIds = await getVerifiedBarangayIds();
-    if (!verifiedIds.length) { res.json({ barangays: [] }); return; }
-    const { data, error } = await supabaseAdmin.from('barangays')
-      .select('id, name, latitude, longitude, location_latitude, location_longitude')
-      .in('id', verifiedIds).order('name', { ascending: true });
-    if (error) throw error;
-    const destinations = (data || []).map((barangay: any) => {
+    const destinations = (await getVerifiedResponseBarangays()).map((barangay: any) => {
       const location = getBarangayCoordinates(barangay);
       const distance = origin && location ? distanceBetweenCoordinates(origin, location) : null;
       return { ...barangay, distance_meters: distance };
@@ -427,16 +422,14 @@ router.post('/:id/recall-barangay', authenticate, authorize('dispatcher', 'admin
 
 router.get('/command-locations', authenticate, authorize('dispatcher', 'admin', 'logistics'), async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const [{ data: office, error: officeError }, { data: barangays, error: barangaysError }] = await Promise.all([
+    const [{ data: office, error: officeError }, barangays] = await Promise.all([
       supabaseAdmin.from('mdrrmo_command_locations').select('location_key, latitude, longitude, address, icon_url').eq('location_key', 'office').maybeSingle(),
-      supabaseAdmin.from('barangays').select('id, name, location_latitude, location_longitude, location_address, location_icon_url').order('name', { ascending: true }),
+      getVerifiedResponseBarangays(),
     ]);
     if (officeError) throw officeError;
-    if (barangaysError) throw barangaysError;
-    const eligibleIds = new Set(await getVerifiedBarangayIds());
     res.json({
       office: office || null,
-      barangays: (barangays || []).filter((row: any) => eligibleIds.has(row.id)),
+      barangays,
     });
   } catch (error) {
     console.error('Load command locations failed:', error);

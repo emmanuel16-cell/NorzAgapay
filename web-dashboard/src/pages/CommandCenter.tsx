@@ -150,6 +150,7 @@ type IncidentLocationPreview = {
   road?: string | null;
   landmark?: string | null;
   landmark_distance_meters?: number | null;
+  nearest_response_barangay_name?: string | null;
 };
 
 function IncidentLocationCard({
@@ -177,6 +178,8 @@ function IncidentLocationCard({
         <strong>Incident location</strong>
         <p>{loading ? 'Looking up the road and nearby places…' : primary}</p>
         {!loading && landmarkText && <small>{landmarkText}</small>}
+        {!loading && location?.nearest_response_barangay_name &&
+          <small>Closest response barangay: {location.nearest_response_barangay_name.replace(/^(?:barangay|brgy\.?)\s*/i, '')}</small>}
         {!loading && error && <small className="incident-location-message">{error} · {coordinates}</small>}
         {!loading && !error && !location?.road && !location?.landmark && !fallback &&
           <small className="incident-location-message">{coordinates}</small>}

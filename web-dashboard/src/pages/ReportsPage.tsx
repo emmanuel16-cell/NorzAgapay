@@ -33,6 +33,7 @@ type IncidentLocationPreview = {
   road?: string | null;
   landmark?: string | null;
   landmark_distance_meters?: number | null;
+  nearest_response_barangay_name?: string | null;
 };
 
 interface IncidentReport {
@@ -524,6 +525,7 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
                       <MapPin size={14} />
                       <span><strong>{reportLocationName}</strong>
                         {locationPreview?.road && nearbyLandmarkLabel(locationPreview) && <small>{nearbyLandmarkLabel(locationPreview)}</small>}
+                        {locationPreview?.nearest_response_barangay_name && <small>Closest response barangay: {locationPreview.nearest_response_barangay_name.replace(/^(?:barangay|brgy\.?)\s*/i, '')}</small>}
                         {!report.is_demo && locationPreviewLoading[report.id] && !locationPreview && <small>Looking up road and nearby places…</small>}
                       </span>
                     </span>
@@ -575,7 +577,7 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
                 <div className="reports-info-card-v2"><span>Priority</span><strong>{priority || 'Not classified'}</strong></div>
               </div></section>}
 
-              {!isReadOnlyResponder && <section className="reports-detail-section-v2"><h3>Reported location</h3><div className="reports-location-card-v2"><MapPin size={20} /><div><strong>{locationName}</strong><span>{locationPreviewLoading[selected.id] && !selectedLocationPreview ? 'Looking up the road and nearby places…' : locationNote}</span></div>{hasPin(selected) && ['pending', 'responding'].includes(stage) && <Link className="reports-view-map-link-v2" to={`/command-center?report_id=${encodeURIComponent(selected.id)}`}>View in map</Link>}</div></section>}
+              {!isReadOnlyResponder && <section className="reports-detail-section-v2"><h3>Reported location</h3><div className="reports-location-card-v2"><MapPin size={20} /><div><strong>{locationName}</strong><span>{locationPreviewLoading[selected.id] && !selectedLocationPreview ? 'Looking up the road and nearby places…' : locationNote}</span>{selectedLocationPreview?.nearest_response_barangay_name && <small>Closest response barangay: {selectedLocationPreview.nearest_response_barangay_name.replace(/^(?:barangay|brgy\.?)\s*/i, '')}</small>}</div>{hasPin(selected) && ['pending', 'responding'].includes(stage) && <Link className="reports-view-map-link-v2" to={`/command-center?report_id=${encodeURIComponent(selected.id)}`}>View in map</Link>}</div></section>}
 
               {!isBarangay && Boolean(selected.barangay_assignments?.length) && <section className="reports-detail-section-v2">
                 <h3>Barangay assignment history</h3>

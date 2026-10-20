@@ -82,6 +82,7 @@ type IncidentLocationPreview = {
   road?: string | null;
   landmark?: string | null;
   landmark_distance_meters?: number | null;
+  nearest_response_barangay_name?: string | null;
 };
 
 function reportWasClosedAfterReview(report: ResidentReport) {
@@ -267,7 +268,7 @@ export default function ResidentReportsPage() {
                   {report.incident_type === 'other' && report.specifics?.trim() && <p className="resident-report-other-emergency"><strong>Other emergency:</strong> {report.specifics.replace(/^Other emergency:\s*/i, '')}</p>}
                   <dl className="resident-report-facts">
                     <div><dt>Incident occurred</dt><dd>{incidentTimeLabel(report)}</dd></div>
-                    <div><dt>Incident location</dt><dd>{locationPreviewLoading ? 'Looking up the road and nearby places…' : location}{!locationPreviewLoading && locationPreview?.road && locationPreview.landmark ? ` · Near ${locationPreview.landmark}${locationPreview.landmark_distance_meters != null ? ` (${locationPreview.landmark_distance_meters} m)` : ''}` : ''}{!locationPreviewLoading && report.barangay_name && !location.toLowerCase().includes(report.barangay_name.toLowerCase()) ? ` · Barangay ${report.barangay_name.replace(/^(?:barangay|brgy\.?)\s*/i, '')}` : ''}{coordinates && <> · <a href={`https://www.google.com/maps/search/?api=1&query=${coordinates.latitude},${coordinates.longitude}`} target="_blank" rel="noreferrer">Open map</a></>}</dd></div>
+                    <div><dt>Incident location</dt><dd>{locationPreviewLoading ? 'Looking up the road and nearby places…' : location}{!locationPreviewLoading && locationPreview?.road && locationPreview.landmark ? ` · Near ${locationPreview.landmark}${locationPreview.landmark_distance_meters != null ? ` (${locationPreview.landmark_distance_meters} m)` : ''}` : ''}{!locationPreviewLoading && locationPreview?.nearest_response_barangay_name ? ` · Closest response barangay: ${locationPreview.nearest_response_barangay_name.replace(/^(?:barangay|brgy\.?)\s*/i, '')}` : ''}{coordinates && <> · <a href={`https://www.google.com/maps/search/?api=1&query=${coordinates.latitude},${coordinates.longitude}`} target="_blank" rel="noreferrer">Open map</a></>}</dd></div>
                   </dl>
                   <div className="resident-report-meta"><span><FileText size={14} /> Received {formatReportDate(report.created_at)}</span></div>
                   <section className="resident-report-evidence" aria-label="Photo or video evidence"><strong>Photo or video evidence</strong>{evidence.length ? <div>{evidence.map((item, index) => isVideoEvidence(item.url, item.type)

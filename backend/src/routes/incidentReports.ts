@@ -9,6 +9,7 @@ import { io } from '../server';
 import { isEscalatedForMdrrmo, isVisibleToMdrrmo } from '../services/mdrrmoReportVisibility';
 import { estimateReportTimings } from '../services/reportTiming';
 import { resolveIncidentLocation } from '../services/incidentLocation';
+import { findNearestVerifiedResponseBarangayName } from '../services/responseBarangay';
 import {
   getMunicipalityBoundaryConfiguration,
   isPointInBoundary,
@@ -958,10 +959,12 @@ router.get('/resident/:id/location-preview', optionalAuthenticate, async (req: A
     }
 
     const location = await resolveIncidentLocation(latitude, longitude, [], null, true);
+    const nearestResponseBarangayName = await findNearestVerifiedResponseBarangayName({ latitude, longitude });
     res.json({
       road: location?.road || null,
       landmark: location?.landmark || null,
       landmark_distance_meters: location?.landmarkDistanceMeters ?? null,
+      nearest_response_barangay_name: nearestResponseBarangayName,
     });
   } catch (error) {
     console.error('Fetch tracked incident location preview error:', error);
@@ -1007,10 +1010,12 @@ router.post('/location-preview', authenticate, authorize('dispatcher', 'admin'),
 
   try {
     const location = await resolveIncidentLocation(latitude, longitude, [], null, true);
+    const nearestResponseBarangayName = await findNearestVerifiedResponseBarangayName({ latitude, longitude });
     res.json({
       road: location?.road || null,
       landmark: location?.landmark || null,
       landmark_distance_meters: location?.landmarkDistanceMeters ?? null,
+      nearest_response_barangay_name: nearestResponseBarangayName,
     });
   } catch (error) {
     console.warn('Could not resolve dispatch location preview:', error);

@@ -79,6 +79,7 @@ type IncidentLocationPreview = {
   road?: string | null;
   landmark?: string | null;
   landmark_distance_meters?: number | null;
+  nearest_response_barangay_name?: string | null;
 };
 
 function reportWasClosedAfterReview(report: TrackedReport) {
@@ -300,8 +301,8 @@ export default function TrackReportPage() {
               <strong>{locationPreviewLoading ? 'Looking up the road and nearby places…' : location}</strong>
               {!locationPreviewLoading && locationPreview?.road && locationPreview.landmark &&
                 <small>Near {locationPreview.landmark}{locationPreview.landmark_distance_meters != null ? ` · ${locationPreview.landmark_distance_meters} m` : ''}</small>}
-              {!locationPreviewLoading && report.barangay_name && location !== `Barangay ${report.barangay_name.replace(/^(?:barangay|brgy\.?)\s*/i, '').trim()}` &&
-                <small>Barangay {report.barangay_name.replace(/^(?:barangay|brgy\.?)\s*/i, '').trim()}</small>}
+              {!locationPreviewLoading && locationPreview?.nearest_response_barangay_name &&
+                <small>Closest response barangay: {locationPreview.nearest_response_barangay_name.replace(/^(?:barangay|brgy\.?)\s*/i, '')}</small>}
               {coordinates && <>
                 <a href={`https://www.google.com/maps/search/?api=1&query=${coordinates.latitude},${coordinates.longitude}`} target="_blank" rel="noreferrer">
                   <MapPin size={14} aria-hidden="true" /> Open incident location in map <ExternalLink size={13} aria-hidden="true" />
