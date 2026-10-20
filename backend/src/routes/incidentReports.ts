@@ -319,7 +319,7 @@ async function attachResidentBarangayAssignmentState(reports: any[]) {
   if (!reportIds.length) return reports;
   const [assignmentResult, eventResult] = await Promise.all([
     supabaseAdmin.from('mdrrmo_report_barangay_assignments')
-      .select('id, report_id, barangay_id, assignment_status, response_status, assigned_at, dispatched_at, accepted_at, arrived_at, resolved_at, resolved_notes, escalated_at, responder_name')
+      .select('id, report_id, barangay_id, assignment_status, response_status, assigned_at, dispatched_at, accepted_at, arrived_at, resolved_at, resolved_notes, escalated_at, updated_at, responder_name')
       .in('report_id', reportIds)
       .order('assigned_at', { ascending: false }),
     supabaseAdmin.from('mdrrmo_report_barangay_assignment_events')
@@ -377,6 +377,7 @@ async function attachResidentBarangayAssignmentState(reports: any[]) {
       resolved_at: item.resolved_at,
       resolved_notes: item.resolved_notes,
       escalated_at: item.escalated_at,
+      updated_at: item.updated_at,
     }));
     return {
       ...report,

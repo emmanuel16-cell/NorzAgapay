@@ -4,6 +4,7 @@ import { AlertCircle, FileText, RefreshCw, Siren } from 'lucide-react';
 import { reportAPI } from '../lib/api';
 import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
 import { INCIDENT_TYPE_OPTIONS } from '../lib/incidentClassification';
+import { buildIncidentTimeline } from '../lib/reportTimeline';
 import { useAuth } from '../context/AuthContext';
 
 type ResidentReport = {
@@ -65,6 +66,7 @@ type ResidentReport = {
     resolved_at?: string | null;
     resolved_notes?: string | null;
     escalated_at?: string | null;
+    updated_at?: string | null;
   }>;
   barangay_assignment_events?: Array<{
     event_type?: string | null;
@@ -76,114 +78,9 @@ type ResidentReport = {
   created_at?: string | null;
 };
 
-type ReportTimelineEvent = { label: string; at: string | null; detail?: string | null };
-
 function reportWasClosedAfterReview(report: ResidentReport) {
   return ['invalid', 'false_report'].includes(String(report.review_outcome || '').toLowerCase()) ||
     ['rejected', 'invalid', 'false_report'].includes(String(report.status || '').toLowerCase());
-}
-
-function reportTimeline(report: ResidentReport): ReportTimelineEvent[] {
-  const events: ReportTimelineEvent[] = [
-    { label: 'Report received by MDRRMO', at: report.created_at || null, detail: 'MDRRMO received the report for review.' },
-  ];
-  if (report.review_outcome) {
-    events.push({
-      label: reportWasClosedAfterReview(report) ? 'Report closed after review' : 'Report reviewed',
-      at: report.reviewed_at || null,
-      detail: report.review_reason || (reportWasClosedAfterReview(report) ? 'MDRRMO closed the report after review.' : 'MDRRMO reviewed the report.'),
-    });
-  }
-
-  const mdrrmoDispatchedAt = report.mdrrmo_dispatched_at ||
-    (report.send_to !== 'barangay' ? report.dispatched_at : null);
-  const mdrrmoAcceptedAt = report.mdrrmo_accepted_at ||
-    (report.send_to !== 'barangay' ? report.accepted_at : null);
-  const mdrrmoArrivedAt = report.mdrrmo_arrived_at ||
-    (report.send_to !== 'barangay' ? report.arrived_at : null);
-  const mdrrmoResolvedAt = report.mdrrmo_resolved_at ||
-    (report.send_to !== 'barangay' ? report.resolved_at : null);
-  if (mdrrmoDispatchedAt || mdrrmoAcceptedAt) {
-    events.push({
-      label: 'MDRRMO responders dispatched',
-      at: mdrrmoDispatchedAt || mdrrmoAcceptedAt || null,
-      detail: 'MDRRMO sent a response team to the incident.',
-    });
-  }
-  if (mdrrmoArrivedAt) events.push({ label: 'MDRRMO responders arrived', at: mdrrmoArrivedAt });
-  if (mdrrmoResolvedAt && report.mdrrmo_response_status === 'resolved') {
-    events.push({ label: 'MDRRMO response resolved', at: mdrrmoResolvedAt });
-  }
-
-  const assignmentEvents = report.barangay_assignment_events || [];
-  if (assignmentEvents.length > 0) {
-    for (const event of assignmentEvents) {
-      const from = event.from_barangay_name;
-      const to = event.to_barangay_name;
-      const destination = to ? ` · ${to}` : '';
-      const label = event.event_type === 'assigned' ? `Assigned to a barangay${destination}`
-        : event.event_type === 'reassigned' ? `Reassigned${from ? ` from ${from}` : ''}${to ? ` to ${to}` : ''}`
-          : event.event_type === 'recalled' ? `Barangay assignment recalled${from ? ` · ${from}` : ''}`
-        : event.event_type === 'dispatched' ? `Barangay responders dispatched${destination}`
-              : event.event_type === 'responding' ? `Barangay response underway${destination}`
-                : event.event_type === 'arrived' ? `Barangay responders arrived${destination}`
-                  : event.event_type === 'resolved' ? `Resolved by barangay${destination}`
-                    : event.event_type === 'escalated' ? `Escalated to MDRRMO${from ? ` · ${from}` : ''}`
-                      : null;
-      const detail = event.notes || (event.event_type === 'dispatched'
-        ? 'The barangay response team was sent to the incident.'
-        : event.event_type === 'responding'
-          ? 'The barangay team is responding to the incident.'
-          : event.event_type === 'arrived'
-            ? 'The barangay team confirmed arrival at the incident location.'
-            : event.event_type === 'resolved'
-              ? 'The barangay team marked its response complete.'
-              : null);
-      if (label) events.push({ label, at: event.created_at || null, detail });
-    }
-  } else if ((report.barangay_assignments || []).length > 0) {
-    const assignments = report.barangay_assignments || [];
-    for (const assignment of assignments) {
-      const destination = assignment.barangay_name ? ` · ${assignment.barangay_name}` : '';
-      if (assignment.assigned_at) events.push({ label: `Assigned to a barangay${destination}`, at: assignment.assigned_at });
-      if (assignment.dispatched_at || assignment.accepted_at) {
-        events.push({
-          label: `Barangay responders dispatched${destination}`,
-          at: assignment.dispatched_at || assignment.accepted_at || null,
-          detail: 'The barangay response team was sent to the incident.',
-        });
-      }
-      if (assignment.arrived_at) events.push({ label: `Barangay responders arrived${destination}`, at: assignment.arrived_at });
-      if (assignment.escalated_at) events.push({ label: `Escalated to MDRRMO${destination}`, at: assignment.escalated_at });
-      if (assignment.resolved_at) events.push({
-        label: `Resolved by barangay${destination}`,
-        at: assignment.resolved_at,
-        detail: assignment.resolved_notes || null,
-      });
-    }
-  } else {
-    const destination = report.response_barangay_name || report.barangay_name;
-    const legacyBarangayDispatch = report.send_to === 'barangay' ? report.dispatched_at : null;
-    if (report.barangay_assigned_at) events.push({ label: `Assigned to a barangay${destination ? ` · ${destination}` : ''}`, at: report.barangay_assigned_at });
-    if (report.barangay_dispatched_at || report.barangay_accepted_at || legacyBarangayDispatch) {
-      events.push({
-        label: `Barangay responders dispatched${destination ? ` · ${destination}` : ''}`,
-        at: report.barangay_dispatched_at || report.barangay_accepted_at || legacyBarangayDispatch || null,
-        detail: 'The barangay response team was sent to the incident.',
-      });
-    }
-    if (report.barangay_arrived_at) events.push({ label: `Barangay responders arrived${destination ? ` · ${destination}` : ''}`, at: report.barangay_arrived_at });
-    if (report.barangay_escalated_at) events.push({ label: 'Escalated to MDRRMO', at: report.barangay_escalated_at });
-    if (report.barangay_resolved_at) events.push({ label: 'Resolved by barangay', at: report.barangay_resolved_at, detail: report.barangay_resolved_notes || null });
-  }
-
-  return events
-    .map((event, index) => ({ ...event, index, timestamp: event.at ? new Date(event.at).getTime() : Number.NaN }))
-    .sort((a, b) => {
-      if (!Number.isFinite(a.timestamp)) return Number.isFinite(b.timestamp) ? 1 : a.index - b.index;
-      if (!Number.isFinite(b.timestamp)) return -1;
-      return a.timestamp - b.timestamp || a.index - b.index;
-    });
 }
 
 function reportStatus(report: ResidentReport) {
@@ -333,7 +230,7 @@ export default function ResidentReportsPage() {
                   <details className="resident-report-timeline" open={report.id === requestedReportId}>
                     <summary>Track report history</summary>
                     <ol>
-                      {reportTimeline(report).map((event, index) => <li key={`${event.label}-${event.at || index}`}>
+                      {buildIncidentTimeline(report).map((event, index) => <li key={`${event.label}-${event.at || index}`}>
                         <span className="resident-timeline-marker" aria-hidden="true" />
                         <div><strong>{event.label}</strong><time>{formatReportDate(event.at)}</time>{event.detail && <p>{event.detail}</p>}</div>
                       </li>)}
