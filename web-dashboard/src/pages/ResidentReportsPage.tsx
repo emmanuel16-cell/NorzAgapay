@@ -78,6 +78,12 @@ type ResidentReport = {
   created_at?: string | null;
 };
 
+type IncidentLocationPreview = {
+  road?: string | null;
+  landmark?: string | null;
+  landmark_distance_meters?: number | null;
+};
+
 function reportWasClosedAfterReview(report: ResidentReport) {
   return ['invalid', 'false_report'].includes(String(report.review_outcome || '').toLowerCase()) ||
     ['rejected', 'invalid', 'false_report'].includes(String(report.status || '').toLowerCase());
@@ -112,7 +118,9 @@ function incidentTimeLabel(report: ResidentReport) {
   return formatted === 'Date unavailable' ? 'Unknown' : `${formatted} · ${report.incident_time_precision === 'exact' ? 'Exact time' : 'Approximate time'}`;
 }
 
-function reportLocation(report: ResidentReport) {
+function reportLocation(report: ResidentReport, preview?: IncidentLocationPreview | null) {
+  const resolvedLocation = preview?.road?.trim() || preview?.landmark?.trim();
+  if (resolvedLocation) return resolvedLocation;
   const specific = [report.location_name, report.address].map((value) => value?.trim())
     .find((value) => value && !/^(?:norzagaray(?:,?\s*bulacan)?|bulacan)$/i.test(value));
   if (specific) return specific;
@@ -144,7 +152,11 @@ export default function ResidentReportsPage() {
   const [searchParams] = useSearchParams();
   const requestedReportId = searchParams.get('report');
   const focusedReportId = useRef('');
+  const requestedLocationPreviewIds = useRef(new Set<string>());
+  const componentMounted = useRef(false);
   const [reports, setReports] = useState<ResidentReport[]>([]);
+  const [locationPreviews, setLocationPreviews] = useState<Record<string, IncidentLocationPreview | null>>({});
+  const [locationPreviewLoadingIds, setLocationPreviewLoadingIds] = useState<Set<string>>(() => new Set());
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
@@ -166,6 +178,38 @@ export default function ResidentReportsPage() {
 
   useEffect(() => { void loadReports(); }, [loadReports]);
   useRealtimeRefresh(loadReports, { events: ['incident_report:updated', 'incident_report:reviewed', 'incident:lifecycle'] });
+
+  useEffect(() => {
+    componentMounted.current = true;
+    return () => { componentMounted.current = false; };
+  }, []);
+
+  useEffect(() => {
+    reports.forEach((report) => {
+      if (!reportCoordinates(report) || requestedLocationPreviewIds.current.has(report.id)) return;
+      requestedLocationPreviewIds.current.add(report.id);
+      setLocationPreviewLoadingIds((current) => new Set(current).add(report.id));
+      void reportAPI.residentReportLocationPreview(report.id)
+        .then((response) => {
+          if (componentMounted.current) {
+            setLocationPreviews((current) => ({ ...current, [report.id]: response.data || null }));
+          }
+        })
+        .catch(() => {
+          requestedLocationPreviewIds.current.delete(report.id);
+        })
+        .finally(() => {
+          if (componentMounted.current) {
+            setLocationPreviewLoadingIds((current) => {
+              if (!current.has(report.id)) return current;
+              const next = new Set(current);
+              next.delete(report.id);
+              return next;
+            });
+          }
+        });
+    });
+  }, [reports]);
 
   useEffect(() => {
     if (!requestedReportId || focusedReportId.current === requestedReportId || loading || !reports.some((report) => report.id === requestedReportId)) return;
@@ -206,7 +250,9 @@ export default function ResidentReportsPage() {
           <div className="resident-report-list">
             {reports.map((report) => {
               const status = reportStatus(report);
-              const location = reportLocation(report);
+              const locationPreview = locationPreviews[report.id];
+              const location = reportLocation(report, locationPreview);
+              const locationPreviewLoading = locationPreviewLoadingIds.has(report.id);
               const coordinates = reportCoordinates(report);
               const evidence = reportEvidence(report);
               const details = report.title?.toLowerCase().startsWith('visual ')
@@ -221,7 +267,7 @@ export default function ResidentReportsPage() {
                   {report.incident_type === 'other' && report.specifics?.trim() && <p className="resident-report-other-emergency"><strong>Other emergency:</strong> {report.specifics.replace(/^Other emergency:\s*/i, '')}</p>}
                   <dl className="resident-report-facts">
                     <div><dt>Incident occurred</dt><dd>{incidentTimeLabel(report)}</dd></div>
-                    <div><dt>Incident location</dt><dd>{location}{report.barangay_name && !location.toLowerCase().includes(report.barangay_name.toLowerCase()) ? ` · Barangay ${report.barangay_name.replace(/^(?:barangay|brgy\.?)\s*/i, '')}` : ''}{coordinates && <> · <a href={`https://www.google.com/maps/search/?api=1&query=${coordinates.latitude},${coordinates.longitude}`} target="_blank" rel="noreferrer">Open map</a></>}</dd></div>
+                    <div><dt>Incident location</dt><dd>{locationPreviewLoading ? 'Looking up the road and nearby places…' : location}{!locationPreviewLoading && locationPreview?.road && locationPreview.landmark ? ` · Near ${locationPreview.landmark}${locationPreview.landmark_distance_meters != null ? ` (${locationPreview.landmark_distance_meters} m)` : ''}` : ''}{!locationPreviewLoading && report.barangay_name && !location.toLowerCase().includes(report.barangay_name.toLowerCase()) ? ` · Barangay ${report.barangay_name.replace(/^(?:barangay|brgy\.?)\s*/i, '')}` : ''}{coordinates && <> · <a href={`https://www.google.com/maps/search/?api=1&query=${coordinates.latitude},${coordinates.longitude}`} target="_blank" rel="noreferrer">Open map</a></>}</dd></div>
                   </dl>
                   <div className="resident-report-meta"><span><FileText size={14} /> Received {formatReportDate(report.created_at)}</span></div>
                   <section className="resident-report-evidence" aria-label="Photo or video evidence"><strong>Photo or video evidence</strong>{evidence.length ? <div>{evidence.map((item, index) => isVideoEvidence(item.url, item.type)

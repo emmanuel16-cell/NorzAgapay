@@ -314,7 +314,9 @@ export const reportAPI = {
     return api.post('/incident-reports', body, { headers: { 'Content-Type': 'multipart/form-data' } });
   },
   trackGuestReport: (id: string, contactNumber: string) => api.get(`/incident-reports/resident/${encodeURIComponent(id)}`, { params: { contact_number: contactNumber } }),
-  trackGuestReportLocation: (id: string, contactNumber: string) => api.get(`/incident-reports/resident/${encodeURIComponent(id)}/location-preview`, { params: { contact_number: contactNumber } }),
+  residentReportLocationPreview: (id: string, contactNumber?: string) => api.get(`/incident-reports/resident/${encodeURIComponent(id)}/location-preview`, {
+    params: contactNumber ? { contact_number: contactNumber } : undefined,
+  }),
   publicHotlines: () => api.get('/barangay/public-hotlines'),
   downloadMdrrmoResolutionPdf: (id: string) => api.get(`/mdrrmo/reports/${id}/resolution-pdf`, { responseType: 'blob' }),
   mdrrmoResponders: () => api.get<{ responders: Array<{ id: string; full_name: string; phone?: string | null; unit_type?: string | null; unit_id: string; unit_name: string }> }>('/mdrrmo/reports/responders'),

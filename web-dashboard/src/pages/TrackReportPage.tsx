@@ -246,7 +246,7 @@ export default function TrackReportPage() {
     let active = true;
     setLocationPreview(null);
     setLocationPreviewLoading(true);
-    reportAPI.trackGuestReportLocation(trackedReportId, trackingCredentials.phone)
+    reportAPI.residentReportLocationPreview(trackedReportId, trackingCredentials.phone)
       .then((response) => {
         if (active) setLocationPreview(response.data || null);
       })
