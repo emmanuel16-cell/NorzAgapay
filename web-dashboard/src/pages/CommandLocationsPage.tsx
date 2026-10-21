@@ -44,8 +44,8 @@ export default function CommandLocationsPage() {
 
   const readPin = (pin: LocationPin | null | undefined): DraftPin => {
     if (!pin) return null;
-    const latitude = Number(pin.latitude ?? pin.location_latitude);
-    const longitude = Number(pin.longitude ?? pin.location_longitude);
+    const latitude = Number(pin.location_latitude ?? pin.latitude);
+    const longitude = Number(pin.location_longitude ?? pin.longitude);
     return Number.isFinite(latitude) && Number.isFinite(longitude) ? { latitude, longitude } : null;
   };
 
@@ -147,7 +147,7 @@ export default function CommandLocationsPage() {
               <button className="command-location-current" type="button" onClick={useCurrentLocation}><LocateFixed size={16} /> Use current location</button>
               <label htmlFor="command-location-address">Address or landmark <span>(optional)</span></label>
               <input id="command-location-address" value={address} onChange={(event) => setAddress(event.target.value)} maxLength={240} placeholder="Office or barangay hall address" />
-              <div className="command-location-icon-setting"><div className="command-location-icon-preview">{(isBarangay ? barangay?.location_icon_url : office?.icon_url) ? <img src={(isBarangay ? barangay?.location_icon_url : office?.icon_url) || ''} alt="Current map icon" /> : <ImagePlus size={21} />}</div><div><strong>{(isBarangay ? barangay?.location_icon_url : office?.icon_url) ? 'Map icon set' : 'Location map icon'}</strong><span>Use your barangay or MDRRMO badge on the map.</span></div><button type="button" onClick={() => setIconTarget(isBarangay ? 'barangay' : 'office')} disabled={!readPin(isBarangay ? barangay : office)} title={!readPin(isBarangay ? barangay : office) ? 'Save the map location first' : undefined}><Pencil size={15} />{(isBarangay ? barangay?.location_icon_url : office?.icon_url) ? 'Edit' : 'Add icon'}</button></div>
+              <div className="command-location-icon-setting"><div className="command-location-icon-preview">{(isBarangay ? barangay?.location_icon_url : office?.icon_url) ? <img src={(isBarangay ? barangay?.location_icon_url : office?.icon_url) || ''} alt="Current map icon" /> : <ImagePlus size={21} />}</div><div><strong>{(isBarangay ? barangay?.location_icon_url : office?.icon_url) ? 'Map icon set' : 'Location map icon'}</strong><span>{isBarangay ? 'Your badge marks this saved location on response maps.' : 'The MDRRMO badge marks this office; barangay badges mark their saved locations.'}</span></div><button type="button" onClick={() => setIconTarget(isBarangay ? 'barangay' : 'office')} disabled={!readPin(isBarangay ? barangay : office)} title={!readPin(isBarangay ? barangay : office) ? 'Save the map location first' : undefined}><Pencil size={15} />{(isBarangay ? barangay?.location_icon_url : office?.icon_url) ? 'Edit' : 'Add icon'}</button></div>
               {!readPin(isBarangay ? barangay : office) && <p className="command-location-instruction">Save the location pin before adding its map icon.</p>}
               <button className="btn btn-primary command-location-save" type="button" disabled={saving || !draft} onClick={() => void save()}><Save size={16} />{saving ? 'Saving…' : 'Save official location'}</button>
             </> : <div className="command-location-readonly">Only the account administrator can update this location pin.</div>}
@@ -163,7 +163,11 @@ export default function CommandLocationsPage() {
             {officePoint && (isBarangay || !canEdit) && <Marker position={[officePoint.latitude, officePoint.longitude]} icon={createLocationMapIcon(office?.icon_url, 'office', officeIcon)}><Popup>MDRRMO office{office?.address ? ` · ${office.address}` : ''}</Popup></Marker>}
             {isBarangay && ownBarangayPoint && !canEdit && <Marker position={[ownBarangayPoint.latitude, ownBarangayPoint.longitude]} icon={createLocationMapIcon(barangay?.location_icon_url, 'barangay', barangayIcon)}><Popup>Barangay {barangay?.name || user?.barangay_name}</Popup></Marker>}
             {displayedPins.map((row) => {
-              const pin = readPin(row);
+              // Only show a barangay badge when it has an explicitly configured
+              // command location; the general barangay centroid is not precise enough.
+              const pin = row.location_latitude != null && row.location_longitude != null
+                ? readPin({ location_latitude: row.location_latitude, location_longitude: row.location_longitude })
+                : null;
               return pin ? <Marker key={row.id} position={[pin.latitude, pin.longitude]} icon={createLocationMapIcon(row.location_icon_url, 'barangay', barangayIcon)}><Popup>Barangay {row.name}{row.location_address ? ` · ${row.location_address}` : ''}</Popup></Marker> : null;
             })}
             {canEdit && draft && <Marker position={[draft.latitude, draft.longitude]} icon={createLocationMapIcon(editableMarkerIconUrl, isBarangay ? 'barangay' : 'office', editableMarkerFallback)} draggable eventHandlers={{ dragend: moveDraftMarker }}><Popup>{isBarangay ? `Barangay ${barangay?.name || user?.barangay_name || ''}` : 'MDRRMO office'} · selected location</Popup></Marker>}
