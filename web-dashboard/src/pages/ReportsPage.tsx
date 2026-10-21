@@ -191,9 +191,9 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
     const handleUpdate = (updated: IncidentReport) => {
       if (!updated?.id) return;
       void fetchReports();
-      // Refetch the responder-scoped queue instead of merging a possibly unrelated
-      // incident event into the signed-in responder's queue.
-      if (isReadOnlyResponder) return;
+      // Read-only workspaces rely on the server-filtered refetch instead of
+      // merging an event that may be outside their visible report scope.
+      if (isReadOnlyBarangay || isReadOnlyResponder) return;
       setReports((current) => {
         if (!isBarangay && !isVisibleToMdrrmo(updated)) return current.filter((item) => item.id !== updated.id);
         return current.some((item) => item.id === updated.id)
@@ -220,7 +220,7 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
       socket.off('incident_report:new', handleLifecycle);
       socket.off('barangay:escalated', handleLifecycle);
     };
-  }, [fetchReports, isBarangay, isReadOnlyResponder]);
+  }, [fetchReports, isBarangay, isReadOnlyBarangay, isReadOnlyResponder]);
   useEffect(() => {
     const id = searchParams.get('id');
     if (!id || !reports.length) return;

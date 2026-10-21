@@ -1841,11 +1841,8 @@ router.delete('/team/:id', authenticateBarangay, requireRole(['admin']), async (
 // are excluded from its metrics.
 router.get('/reports/statistics', authenticateBarangay, requireRole(['admin']), async (req: any, res: Response): Promise<void> => {
   try {
-    const requestedType = typeof req.query.type === 'string' ? req.query.type : undefined;
-    if (requestedType && !['community', 'emergency'].includes(requestedType)) {
-      res.status(400).json({ error: 'Report type must be community or emergency.' });
-      return;
-    }
+    // Barangay Admin analytics are limited to emergency reports.
+    const requestedType = 'emergency';
 
     const [{ data: allBarangayReports, error: barangayReportsError }, { data: assignments, error: assignmentsError }] = await Promise.all([
       supabaseAdmin
@@ -1940,7 +1937,6 @@ router.get('/reports/statistics', authenticateBarangay, requireRole(['admin']), 
       return {
         period: `${year}-${String(monthNumber).padStart(2, '0')}`,
         label: monthNames[month.getUTCMonth()],
-        community: 0,
         emergency: 0,
       };
     });
@@ -1991,14 +1987,13 @@ router.get('/reports/statistics', authenticateBarangay, requireRole(['admin']), 
       monthlyVolume.map((month, index) => [month.period, index] as const),
     );
     for (const report of recentReports as any[]) {
-      if (report.type !== 'community' && report.type !== 'emergency') continue;
+      if (report.type !== 'emergency') continue;
       const createdAt = new Date(new Date(report.created_at).getTime() + philippinesOffsetMs);
       if (!Number.isFinite(createdAt.getTime())) continue;
       const period = `${createdAt.getUTCFullYear()}-${String(createdAt.getUTCMonth() + 1).padStart(2, '0')}`;
       const monthIndex = monthIndexes.get(period);
       if (monthIndex === undefined) continue;
-      if (report.type === 'community') monthlyVolume[monthIndex].community += 1;
-      else monthlyVolume[monthIndex].emergency += 1;
+      monthlyVolume[monthIndex].emergency += 1;
     }
     const reports = resolvedReports
       .sort((first: any, second: any) => Date.parse(second.barangay_resolved_at || second.resolved_at || second.created_at || '') - Date.parse(first.barangay_resolved_at || first.resolved_at || first.created_at || ''))
@@ -2357,6 +2352,9 @@ router.get('/reports', authenticateBarangay, requireRole(['admin', 'dispatcher',
       })];
     });
     let scopedReports = [...legacyReports.filter((report: any) => !centralIds.has(report.id) && !centralSourceIds.has(report.id)), ...centralReports];
+    if (req.barangayUser.role === 'admin') {
+      scopedReports = scopedReports.filter((report: any) => String(report.type || '').toLowerCase() !== 'community');
+    }
     if (req.barangayUser.role === 'responder') {
       const responderId = req.barangayUser.userId;
       scopedReports = scopedReports.filter((report: any) =>
