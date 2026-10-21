@@ -11,7 +11,8 @@ import { isEscalatedForMdrrmo, isVisibleToMdrrmo } from '../services/mdrrmoRepor
 import { getDispatchableRespondUnits } from '../services/respondUnitAvailability';
 import { getBarangayCoordinates, getNearestBarangay, distanceMeters as distanceBetweenCoordinates } from '../services/nearestBarangay';
 import { findNearestVerifiedResponseBarangayName, getVerifiedResponseBarangays } from '../services/responseBarangay';
-import { resolveIncidentLocation } from '../services/incidentLocation';
+import { findNearbyHospitals, resolveIncidentLocation, searchHospitalsByName } from '../services/incidentLocation';
+import { parseTransportDestination, readFieldResponseValues, requiredTriageClosureFields, upsertFieldAssessmentNotes, upsertTransportNotes } from '../services/fieldResponseNotes';
 import { getVerifiedBarangayIds } from '../services/verifiedBarangayService';
 import { isValidLocationIcon, removeStoredLocationIcon, storeLocationIcon } from '../services/locationIconStorage';
 
@@ -1020,15 +1021,99 @@ const arrivalSchema = z.object({
   fix_at: z.string().optional(),
 }).refine((data) => (data.latitude === undefined) === (data.longitude === undefined), 'Send both coordinates or neither.');
 
+const hospitalQuerySchema = z.object({
+  latitude: z.coerce.number().min(-90).max(90),
+  longitude: z.coerce.number().min(-180).max(180),
+});
+
+async function verifyArrivedMdrrmoResponder(reportId: string, responderId: string) {
+  const report = await reportForAction(reportId);
+  if (!report) return { error: 'MDRRMO report not found.', status: 404 as const };
+  if (isResolved(report)) return { error: 'This report is already resolved.', status: 409 as const };
+  const assignment = await findAssignment(reportId, responderId);
+  if (!assignment || assignment.status !== 'responding') return { error: 'This report is not an active response assigned to your responder account.', status: 403 as const };
+  if (!assignment.arrived_at) return { error: 'Record arrival before assessing injuries or arranging transport.', status: 409 as const };
+  return { report, assignment };
+}
+
+router.get('/:id/transport-hospitals', authenticate, authorize('responder'), async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const access = await verifyArrivedMdrrmoResponder(req.params.id, req.user!.userId);
+    if ((access as any).error) { res.status(Number((access as any).status) || 409).json({ error: (access as any).error }); return; }
+    const values = readFieldResponseValues(access.report.response_notes, 'mdrrmo');
+    if (values['triage outcome'] !== 'severe_injuries') { res.status(409).json({ error: 'Choose severe injuries in the field assessment before selecting a hospital.' }); return; }
+    const parsed = hospitalQuerySchema.safeParse(req.query);
+    if (!parsed.success) { res.status(400).json({ error: 'Current responder GPS coordinates are required to find nearby hospitals.' }); return; }
+    res.json({ hospitals: await findNearbyHospitals(parsed.data.latitude, parsed.data.longitude) });
+  } catch (error) {
+    console.error('MDRRMO nearby hospital lookup failed:', error);
+    res.status(502).json({ error: 'Nearby OpenStreetMap hospitals could not be loaded. You can search by hospital name instead.' });
+  }
+});
+
+router.get('/:id/transport-hospitals/search', authenticate, authorize('responder'), async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const access = await verifyArrivedMdrrmoResponder(req.params.id, req.user!.userId);
+    if ((access as any).error) { res.status(Number((access as any).status) || 409).json({ error: (access as any).error }); return; }
+    const values = readFieldResponseValues(access.report.response_notes, 'mdrrmo');
+    if (values['triage outcome'] !== 'severe_injuries') { res.status(409).json({ error: 'Choose severe injuries in the field assessment before selecting a hospital.' }); return; }
+    const parsed = hospitalQuerySchema.extend({ q: z.string().trim().min(2).max(120) }).safeParse(req.query);
+    if (!parsed.success) { res.status(400).json({ error: 'Enter a hospital name and allow location access to place it on the map.' }); return; }
+    res.json({ hospitals: await searchHospitalsByName(parsed.data.q, parsed.data.latitude, parsed.data.longitude) });
+  } catch (error) {
+    console.error('MDRRMO hospital name search failed:', error);
+    res.status(502).json({ error: 'OpenStreetMap could not find that hospital. Check the name and try again.' });
+  }
+});
+
+router.patch('/:id/transport', authenticate, authorize('responder'), async (req: AuthRequest, res: Response): Promise<void> => {
+  const parsed = z.discriminatedUnion('status', [
+    z.object({ status: z.literal('in_transit'), hospital_name: z.string().trim().min(2).max(180), hospital_address: z.string().trim().max(300).optional(), hospital_latitude: z.number().min(-90).max(90), hospital_longitude: z.number().min(-180).max(180) }),
+    z.object({ status: z.literal('delivered') }),
+  ]).safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: 'Select a mapped hospital destination before starting transport.' }); return; }
+  try {
+    const access = await verifyArrivedMdrrmoResponder(req.params.id, req.user!.userId);
+    if ((access as any).error) { res.status(Number((access as any).status) || 409).json({ error: (access as any).error }); return; }
+    const report = access.report;
+    const previousNotes = String(report.response_notes || report.mdrrmo_response_notes || '');
+    const existing = parseTransportDestination(previousNotes, 'mdrrmo');
+    if (existing.triage_outcome !== 'severe_injuries') { res.status(409).json({ error: 'Severe injuries must be recorded before starting transport.' }); return; }
+    if (parsed.data.status === 'in_transit' && existing.transport_status === 'in_transit') { res.status(409).json({ error: 'Transport is already in progress.' }); return; }
+    if (parsed.data.status === 'in_transit' && existing.transport_status === 'delivered') { res.status(409).json({ error: 'Transport has already been completed for this response.' }); return; }
+    const now = new Date().toISOString();
+    if (parsed.data.status === 'delivered' && existing.transport_status !== 'in_transit') {
+      res.status(409).json({ error: 'Start transport before marking the injured person delivered.' }); return;
+    }
+    const responseNotes = upsertTransportNotes(previousNotes, 'mdrrmo', parsed.data.status === 'in_transit'
+      ? { ...parsed.data, transport_status: 'in_transit', transport_started_at: existing.transport_started_at || now }
+      : { ...existing, transport_status: 'delivered', transport_completed_at: now });
+    const { data: updated, error } = await supabaseAdmin.from('mdrrmo_reports').update({
+      response_notes: responseNotes,
+      lifecycle_actor_id: req.user!.userId,
+      lifecycle_actor_role: 'responder',
+    }).eq('id', report.id).eq('response_status', 'responding').select('id').maybeSingle();
+    if (error) throw error;
+    if (!updated) { res.status(409).json({ error: 'The response changed. Refresh before updating transport.' }); return; }
+    const latest = await reportForAction(report.id);
+    if (!latest) { res.status(404).json({ error: 'MDRRMO report not found.' }); return; }
+    res.json(await emitReportUpdate(latest, await getAssignments([report.id])));
+  } catch (error) {
+    console.error('MDRRMO transport update failed:', error);
+    res.status(500).json({ error: 'Could not save the transport update.' });
+  }
+});
+
 router.patch('/:id/field-assessment', authenticate, authorize('responder'), async (req: AuthRequest, res: Response): Promise<void> => {
   const parsed = z.object({
     situation: z.string().trim().min(1).max(1500),
     affected_people: z.string().trim().min(1).max(1000),
     actions_taken: z.string().trim().min(1).max(1000),
     risks_resources: z.string().trim().min(1).max(1000),
+    triage_outcome: z.enum(['safe', 'mild_injuries', 'severe_injuries']),
   }).safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: 'Complete all four field assessment sections before saving. Enter “Not applicable” when a section does not apply.', details: parsed.error.flatten() });
+    res.status(400).json({ error: 'Complete all four assessment sections and choose a triage outcome before saving. Enter “Not applicable” when a section does not apply.', details: parsed.error.flatten() });
     return;
   }
   try {
@@ -1037,23 +1122,15 @@ router.patch('/:id/field-assessment', authenticate, authorize('responder'), asyn
     if (isResolved(report)) { res.status(409).json({ error: 'This report is already resolved.' }); return; }
     const assignment = await findAssignment(report.id, req.user!.userId);
     if (!assignment || assignment.status !== 'responding') { res.status(403).json({ error: 'Field assessment is available only during your active response.' }); return; }
+    if (!assignment.arrived_at) { res.status(409).json({ error: 'Record arrival before completing the field assessment.' }); return; }
 
-    const now = new Date().toISOString();
     const previousResponseNotes = String(report.response_notes || report.mdrrmo_response_notes || '').trim();
-    const taggedAssessmentStart = previousResponseNotes.toUpperCase().indexOf('[MDRRMO FIELD ASSESSMENT]');
-    const legacyAssessmentStart = previousResponseNotes.toUpperCase().indexOf('FIELD ASSESSMENT');
-    const assessmentStart = taggedAssessmentStart >= 0 ? taggedAssessmentStart : legacyAssessmentStart;
-    const coordinationNotes = assessmentStart >= 0
-      ? previousResponseNotes.slice(0, assessmentStart).trim()
-      : previousResponseNotes;
-    const responseNotes = [
-      coordinationNotes,
-      '[MDRRMO FIELD ASSESSMENT]',
-      `Situation: ${parsed.data.situation}`,
-      parsed.data.affected_people ? `People affected / urgency: ${parsed.data.affected_people}` : '',
-      parsed.data.actions_taken ? `Actions taken: ${parsed.data.actions_taken}` : '',
-      parsed.data.risks_resources ? `Risks / resources: ${parsed.data.risks_resources}` : '',
-    ].filter(Boolean).join('\n\n');
+    const savedTriage = parseTransportDestination(previousResponseNotes, 'mdrrmo');
+    if (savedTriage.transport_status && parsed.data.triage_outcome !== savedTriage.triage_outcome) {
+      res.status(409).json({ error: 'Triage cannot be changed after transport has started.' }); return;
+    }
+    const responseNotes = upsertFieldAssessmentNotes(previousResponseNotes, 'mdrrmo', parsed.data);
+    const now = new Date().toISOString();
 
     // Write to new mdrrmo_reports table
     if (report._source === 'mdrrmo_reports' || !report._source) {
@@ -1253,6 +1330,7 @@ router.post('/:id/close', authenticate, authorize('responder', 'dispatcher'), as
       'mdrrmo',
       parsed.data.resolved_notes,
     );
+    missingFields.push(...requiredTriageClosureFields(report.response_notes || report.mdrrmo_response_notes, 'mdrrmo').map((field) => `field assessment: ${field}`));
     if (report.barangay_response_status === 'resolved') {
       missingFields.push(...IncidentResolutionPdfService.missingFields(report, 'barangay'));
     }

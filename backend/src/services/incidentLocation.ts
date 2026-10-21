@@ -22,11 +22,21 @@ export type ResolvedIncidentLocation = {
 
 type NearbyLandmark = { name: string; distanceMeters: number };
 type OverpassElement = {
+  type?: string;
+  id?: number;
   lat?: number;
   lon?: number;
   center?: { lat?: number; lon?: number };
   tags?: Record<string, string>;
 };
+
+export interface HospitalLocation {
+  name: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+  distance_meters: number;
+}
 
 const RESULT_TTL_MS = 24 * 60 * 60 * 1000;
 const FAILURE_TTL_MS = 60 * 1000;
@@ -35,6 +45,7 @@ const resultCache = new Map<string, { value: ReverseGeocodeResult | null; expire
 const pendingLookups = new Map<string, Promise<ReverseGeocodeResult | null>>();
 const landmarkCache = new Map<string, { value: NearbyLandmark | null; expiresAt: number }>();
 const pendingLandmarkLookups = new Map<string, Promise<NearbyLandmark | null>>();
+const hospitalCache = new Map<string, { value: HospitalLocation[]; expiresAt: number }>();
 let requestQueue: Promise<void> = Promise.resolve();
 let lastRequestAt = 0;
 
@@ -335,4 +346,109 @@ export async function resolveIncidentLocation(
     landmark,
     landmarkDistanceMeters,
   } : null;
+}
+
+function validCoordinates(latitude: number, longitude: number): boolean {
+  return Number.isFinite(latitude) && latitude >= -90 && latitude <= 90 &&
+    Number.isFinite(longitude) && longitude >= -180 && longitude <= 180 && !(latitude === 0 && longitude === 0);
+}
+
+function hospitalAddress(tags: Record<string, string> = {}): string {
+  const address = [tags['addr:housenumber'], tags['addr:street'], tags['addr:suburb'] || tags['addr:quarter'],
+    tags['addr:city'] || tags['addr:town'] || tags['addr:village'], tags['addr:state']]
+    .map(locationPart).filter(Boolean).join(', ');
+  return (address || 'Address not listed in OpenStreetMap').slice(0, 300);
+}
+
+async function queuedRequest(url: string, init: RequestInit): Promise<Response> {
+  const request = requestQueue.then(async () => {
+    const waitMs = MIN_REQUEST_INTERVAL_MS - (Date.now() - lastRequestAt);
+    if (waitMs > 0) await new Promise((resolve) => setTimeout(resolve, waitMs));
+    lastRequestAt = Date.now();
+    return fetch(url, init);
+  });
+  requestQueue = request.then(() => undefined, () => undefined);
+  return request;
+}
+
+export async function findNearbyHospitals(latitude: number, longitude: number): Promise<HospitalLocation[]> {
+  if (!validCoordinates(latitude, longitude)) return [];
+  const cacheKey = `nearby-hospitals:${latitude.toFixed(3)},${longitude.toFixed(3)}`;
+  const cached = hospitalCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+  const query = `[out:json][timeout:12];(nwr(around:50000,${latitude},${longitude})["amenity"="hospital"];nwr(around:50000,${latitude},${longitude})["healthcare"="hospital"];);out center tags 250;`;
+  try {
+    const response = await queuedRequest('https://overpass-api.de/api/interpreter', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+        'User-Agent': 'NorzAgapay/1.0 (hospital lookup)',
+      },
+      body: new URLSearchParams({ data: query }),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!response.ok) throw new Error(`OpenStreetMap hospital lookup returned HTTP ${response.status}.`);
+    const payload = await response.json() as { elements?: OverpassElement[] };
+    const unique = new Map<string, HospitalLocation>();
+    for (const element of payload.elements || []) {
+      const tags = element.tags || {};
+      const name = (locationPart(tags.name) || locationPart(tags['name:en'])).slice(0, 180);
+      const pointLatitude = Number(element.lat ?? element.center?.lat);
+      const pointLongitude = Number(element.lon ?? element.center?.lon);
+      if (!name || !validCoordinates(pointLatitude, pointLongitude)) continue;
+      const distance = Math.round(distanceMeters(latitude, longitude, pointLatitude, pointLongitude));
+      const item = { name, address: hospitalAddress(tags), latitude: pointLatitude, longitude: pointLongitude, distance_meters: distance };
+      const key = `${normalizePlace(name)}:${pointLatitude.toFixed(4)},${pointLongitude.toFixed(4)}`;
+      unique.set(key, item);
+    }
+    const hospitals = [...unique.values()].sort((first, second) => first.distance_meters - second.distance_meters).slice(0, 10);
+    hospitalCache.set(cacheKey, { value: hospitals, expiresAt: Date.now() + 10 * 60 * 1000 });
+    return hospitals;
+  } catch (error) {
+    console.warn('Could not load nearby OpenStreetMap hospitals:', error);
+    throw error;
+  }
+}
+
+export async function searchHospitalsByName(queryValue: string, latitude: number, longitude: number): Promise<HospitalLocation[]> {
+  const query = queryValue.trim().slice(0, 120);
+  if (!query || !validCoordinates(latitude, longitude)) return [];
+  const cacheKey = `hospital-search:${normalizePlace(query)}:${latitude.toFixed(3)},${longitude.toFixed(3)}`;
+  const cached = hospitalCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+  const url = new URL('https://nominatim.openstreetmap.org/search');
+  url.searchParams.set('format', 'jsonv2');
+  url.searchParams.set('q', `${query}, Bulacan, Philippines`);
+  url.searchParams.set('countrycodes', 'ph');
+  url.searchParams.set('limit', '10');
+  url.searchParams.set('addressdetails', '1');
+  url.searchParams.set('viewbox', `${longitude - 0.8},${latitude + 0.8},${longitude + 0.8},${latitude - 0.8}`);
+  url.searchParams.set('bounded', '0');
+  try {
+    const response = await queuedRequest(url.toString(), {
+      headers: { 'Accept-Language': 'en', 'User-Agent': 'NorzAgapay/1.0 (hospital name search)' },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!response.ok) throw new Error(`OpenStreetMap name search returned HTTP ${response.status}.`);
+    const payload = await response.json() as Array<{ display_name?: string; name?: string; lat?: string; lon?: string; address?: Record<string, string> }>;
+    const unique = new Map<string, HospitalLocation>();
+    for (const result of payload) {
+      const pointLatitude = Number(result.lat);
+      const pointLongitude = Number(result.lon);
+      if (!validCoordinates(pointLatitude, pointLongitude)) continue;
+      const name = (locationPart(result.name) || locationPart(result.display_name).split(',')[0]).slice(0, 180);
+      if (!name) continue;
+      const address = (locationPart(result.display_name) || hospitalAddress(result.address)).slice(0, 300);
+      const distance = Math.round(distanceMeters(latitude, longitude, pointLatitude, pointLongitude));
+      const item = { name, address, latitude: pointLatitude, longitude: pointLongitude, distance_meters: distance };
+      unique.set(`${normalizePlace(name)}:${pointLatitude.toFixed(4)},${pointLongitude.toFixed(4)}`, item);
+    }
+    const hospitals = [...unique.values()].sort((first, second) => first.distance_meters - second.distance_meters).slice(0, 10);
+    hospitalCache.set(cacheKey, { value: hospitals, expiresAt: Date.now() + 5 * 60 * 1000 });
+    return hospitals;
+  } catch (error) {
+    console.warn('Could not search OpenStreetMap for the entered hospital:', error);
+    throw error;
+  }
 }

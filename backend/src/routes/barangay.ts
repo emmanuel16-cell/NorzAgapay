@@ -27,7 +27,8 @@ import { IncidentResolutionPdfService, IncompleteResolutionReportError } from '.
 import { isValidLocationIcon, removeStoredLocationIcon, storeLocationIcon } from '../services/locationIconStorage';
 import { formatIncidentReport } from './incidentReports';
 import { isReportResolved, reportStageDurations, summarizeReportTimings } from '../services/reportTiming';
-import { resolveIncidentLocation } from '../services/incidentLocation';
+import { findNearbyHospitals, resolveIncidentLocation, searchHospitalsByName } from '../services/incidentLocation';
+import { parseTransportDestination, readFieldResponseValues, requiredTriageClosureFields, upsertFieldAssessmentNotes, upsertTransportNotes } from '../services/fieldResponseNotes';
 import { findNearestVerifiedResponseBarangayName } from '../services/responseBarangay';
 import { isDirectMdrrmoReport } from '../services/mdrrmoReportVisibility';
 import { isMobileNumberRegistryConflict, normalizeMobileNumber } from '../services/mobileNumberService';
@@ -2307,6 +2308,34 @@ router.get('/reports', authenticateBarangay, requireRole(['admin', 'dispatcher',
 async function updateCentralBarangayAssignment(req: any, res: Response, action: string, payload: Record<string, unknown>): Promise<void> {
   try {
     let actionPayload = payload;
+    if (action === 'resolve') {
+      const { data: activeAssignment, error: activeError } = await supabaseAdmin.from('mdrrmo_report_barangay_assignments')
+        .select('id, response_status, response_notes, arrived_at')
+        .eq('report_id', req.params.id).eq('barangay_id', req.barangayUser.barangayId)
+        .eq('assignment_status', 'active').maybeSingle();
+      if (activeError) throw activeError;
+      if (!activeAssignment) { res.status(404).json({ error: 'Active incident assignment not found.' }); return; }
+      if (activeAssignment.response_status !== 'responding' || !activeAssignment.arrived_at) {
+        res.status(409).json({ error: 'A responder must arrive and complete the field assessment before resolving the incident.' }); return;
+      }
+      const responseNotes = String(activeAssignment.response_notes || '');
+      const [{ data: report, error: reportError }] = await Promise.all([
+        supabaseAdmin.from('mdrrmo_reports').select('*').eq('id', req.params.id).maybeSingle(),
+      ]);
+      if (reportError) throw reportError;
+      if (!report) { res.status(404).json({ error: 'Assigned incident not found.' }); return; }
+      const missingFields = IncidentResolutionPdfService.missingFields({
+        ...report,
+        is_central_assignment: true,
+        barangay_response_status: activeAssignment.response_status,
+        barangay_response_notes: responseNotes,
+        barangay_arrived_at: activeAssignment.arrived_at,
+      }, 'barangay', typeof payload.notes === 'string' ? payload.notes : '');
+      missingFields.push(...requiredTriageClosureFields(responseNotes, 'barangay').map((field) => `field assessment: ${field}`));
+      if (missingFields.length) {
+        res.status(409).json({ error: `Complete the required assessment and transport details before resolving: ${missingFields.join(', ')}.`, missing_fields: [...new Set(missingFields)] }); return;
+      }
+    }
     if (action === 'dispatch') {
       const { data: report, error: reportError } = await supabaseAdmin.from('mdrrmo_reports')
         .select('incident_type, severity').eq('id', req.params.id).maybeSingle();
@@ -2339,7 +2368,7 @@ async function updateCentralBarangayAssignment(req: any, res: Response, action: 
     if (barangayError) throw barangayError;
     if (responderError) throw responderError;
     const responderNames = (responderRows || []).map((row: any) => row.full_name).filter(Boolean).join(', ');
-    const result = formatIncidentReport({
+    let result = formatIncidentReport({
       ...report,
       is_central_assignment: true,
       assignment_id: assignment?.id || assignmentId,
@@ -2362,6 +2391,17 @@ async function updateCentralBarangayAssignment(req: any, res: Response, action: 
       incident_barangay_id: report.barangay_id,
       incident_barangay_name: report.barangay_name || null,
     });
+    let resolutionPdfStatus: 'ready' | 'failed' | undefined;
+    if (action === 'resolve') {
+      try {
+        await IncidentResolutionPdfService.generateAndStore(report.id, assignment?.id || assignmentId);
+        resolutionPdfStatus = 'ready';
+      } catch (pdfError) {
+        console.error('Could not create incident resolution PDF after central Barangay close:', pdfError);
+        await supabaseAdmin.from('mdrrmo_reports').update({ resolution_pdf_status: 'failed' }).eq('id', report.id);
+        resolutionPdfStatus = 'failed';
+      }
+    }
     io.to('dashboard_staff').emit('mdrrmo:report_updated', result);
     io.to('dashboard_staff').emit('incident_report:updated', result);
     if (action === 'escalate') {
@@ -2371,7 +2411,7 @@ async function updateCentralBarangayAssignment(req: any, res: Response, action: 
       io.to(`barangay:${req.barangayUser.barangayId}`).emit('incident:lifecycle', result);
     }
     if (report.reporter_id) io.to(`user:${report.reporter_id}`).emit('incident_report:updated', result);
-    res.json(result);
+    res.json(resolutionPdfStatus ? { ...result, resolution_pdf_status: resolutionPdfStatus } : result);
   } catch (error: any) {
     console.error(`Barangay central assignment ${action} failed:`, error);
     const code = String(error?.code || '');
@@ -2476,23 +2516,140 @@ router.patch('/assigned-reports/:id/crew', authenticateBarangay, requireRole(['r
   }
 });
 
+async function arrivedBarangayResponderCase(req: any) {
+  const barangayId = req.barangayUser.barangayId;
+  const responderId = req.barangayUser.userId;
+  const { data: assignment, error: assignmentError } = await supabaseAdmin.from('mdrrmo_report_barangay_assignments')
+    .select('*').eq('report_id', req.params.id).eq('barangay_id', barangayId).eq('assignment_status', 'active').maybeSingle();
+  if (assignmentError) throw assignmentError;
+  if (assignment) {
+    if (!(assignment.responder_ids || []).includes(responderId)) throw Object.assign(new Error('This incident is not assigned to your responder account.'), { status: 403 });
+    if (assignment.response_status !== 'responding') throw Object.assign(new Error('Field response is no longer active.'), { status: 409 });
+    if (!assignment.arrived_at) throw Object.assign(new Error('Record arrival before assessing injuries or arranging transport.'), { status: 409 });
+    const { data: report, error } = await supabaseAdmin.from('mdrrmo_reports').select('*').eq('id', req.params.id).maybeSingle();
+    if (error) throw error;
+    if (!report) throw Object.assign(new Error('Assigned incident not found.'), { status: 404 });
+    return { central: true, assignment, report, notes: String(assignment.response_notes || '') };
+  }
+  const { data: report, error: reportError } = await supabaseAdmin.from('barangay_reports')
+    .select('*').eq('id', req.params.id).eq('barangay_id', barangayId).maybeSingle();
+  if (reportError) throw reportError;
+  if (!report) throw Object.assign(new Error('Assigned incident not found.'), { status: 404 });
+  const notes = String(report.response_notes || report.barangay_response_notes || '');
+  const assignedIds = notes.match(/^\[ASSIGNED:([^\]]+)\]/i)?.[1].split(',').map((id: string) => id.trim()) || [];
+  if (report.responded_by !== responderId && report.barangay_responded_by !== responderId && !assignedIds.includes(responderId)) {
+    throw Object.assign(new Error('This incident is not assigned to your responder account.'), { status: 403 });
+  }
+  if (String(report.response_status || report.barangay_response_status || '').toLowerCase() !== 'responding') throw Object.assign(new Error('Field response is no longer active.'), { status: 409 });
+  if (!(report.arrived_at || report.barangay_arrived_at)) throw Object.assign(new Error('Record arrival before assessing injuries or arranging transport.'), { status: 409 });
+  return { central: false, assignment: null, report, notes };
+}
+
+async function emitBarangayTransportUpdate(req: any, res: Response, caseData: any, notes: string) {
+  const { report, assignment, central } = caseData;
+  let payload: any;
+  if (central) {
+    const now = new Date().toISOString();
+    const { data: updatedAssignment, error } = await supabaseAdmin.from('mdrrmo_report_barangay_assignments').update({
+      response_notes: notes, responded_by: req.barangayUser.userId, responded_at: assignment.responded_at || now, updated_at: now,
+    }).eq('id', assignment.id).eq('response_status', 'responding').select('id').maybeSingle();
+    if (error) throw error;
+    if (!updatedAssignment) throw Object.assign(new Error('The response changed. Refresh before updating transport.'), { status: 409 });
+    const { error: actorError } = await supabaseAdmin.from('mdrrmo_reports')
+      .update({ lifecycle_actor_id: req.barangayUser.userId, lifecycle_actor_role: 'barangay_responder' }).eq('id', report.id);
+    if (actorError) throw actorError;
+    payload = formatIncidentReport({
+      ...report, is_central_assignment: true, assignment_id: assignment.id,
+      assignment_status: assignment.assignment_status, assignment_notes: assignment.assignment_notes,
+      response_status: assignment.response_status, barangay_response_status: assignment.response_status,
+      barangay_response_notes: notes, barangay_responded_by: req.barangayUser.userId,
+      barangay_responded_at: assignment.responded_at || now, barangay_dispatched_at: assignment.dispatched_at,
+      barangay_accepted_at: assignment.accepted_at, barangay_arrived_at: assignment.arrived_at,
+      barangay_resolved_at: assignment.resolved_at, barangay_resolved_notes: assignment.resolved_notes,
+      assigned_team_leader_ids: assignment.responder_ids || [], response_barangay_id: req.barangayUser.barangayId,
+    });
+  } else {
+    const { data: updated, error } = await supabaseAdmin.from('barangay_reports').update({
+      response_notes: notes, lifecycle_actor_id: req.barangayUser.userId, lifecycle_actor_role: 'barangay_responder',
+    }).eq('id', report.id).eq('barangay_id', req.barangayUser.barangayId).eq('response_status', 'responding').select('*').maybeSingle();
+    if (error) throw error;
+    if (!updated) throw Object.assign(new Error('The response changed. Refresh before updating transport.'), { status: 409 });
+    payload = formatIncidentReport({ ...updated, barangay_response_status: updated.response_status, barangay_response_notes: notes, barangay_responded_by: updated.responded_by });
+  }
+  io.to('dashboard_staff').emit('mdrrmo:report_updated', payload);
+  io.to('dashboard_staff').emit('incident_report:updated', payload);
+  io.to(`barangay:${req.barangayUser.barangayId}`).emit('barangay:report_updated', payload);
+  io.to(`barangay:${req.barangayUser.barangayId}`).emit('incident:lifecycle', payload);
+  if (report.reporter_id) io.to(`user:${report.reporter_id}`).emit('incident_report:updated', payload);
+  res.json(payload);
+}
+
+router.get('/assigned-reports/:id/transport-hospitals', authenticateBarangay, requireRole(['responder']), async (req: any, res: Response): Promise<void> => {
+  try {
+    const caseData = await arrivedBarangayResponderCase(req);
+    const values = readFieldResponseValues(caseData.notes, 'barangay');
+    if (values['triage outcome'] !== 'severe_injuries') { res.status(409).json({ error: 'Choose severe injuries in the field assessment before selecting a hospital.' }); return; }
+    const parsed = z.object({ latitude: z.coerce.number().min(-90).max(90), longitude: z.coerce.number().min(-180).max(180) }).safeParse(req.query);
+    if (!parsed.success) { res.status(400).json({ error: 'Current responder GPS coordinates are required to find nearby hospitals.' }); return; }
+    res.json({ hospitals: await findNearbyHospitals(parsed.data.latitude, parsed.data.longitude) });
+  } catch (error: any) {
+    const status = Number(error?.status) || 502;
+    if (status >= 500) console.error('Barangay nearby hospital lookup failed:', error);
+    res.status(status).json({ error: error?.message || 'Nearby OpenStreetMap hospitals could not be loaded.' });
+  }
+});
+
+router.get('/assigned-reports/:id/transport-hospitals/search', authenticateBarangay, requireRole(['responder']), async (req: any, res: Response): Promise<void> => {
+  try {
+    const caseData = await arrivedBarangayResponderCase(req);
+    const values = readFieldResponseValues(caseData.notes, 'barangay');
+    if (values['triage outcome'] !== 'severe_injuries') { res.status(409).json({ error: 'Choose severe injuries in the field assessment before selecting a hospital.' }); return; }
+    const parsed = z.object({ q: z.string().trim().min(2).max(120), latitude: z.coerce.number().min(-90).max(90), longitude: z.coerce.number().min(-180).max(180) }).safeParse(req.query);
+    if (!parsed.success) { res.status(400).json({ error: 'Enter a hospital name and allow location access to place it on the map.' }); return; }
+    res.json({ hospitals: await searchHospitalsByName(parsed.data.q, parsed.data.latitude, parsed.data.longitude) });
+  } catch (error: any) {
+    const status = Number(error?.status) || 502;
+    if (status >= 500) console.error('Barangay hospital search failed:', error);
+    res.status(status).json({ error: error?.message || 'OpenStreetMap could not find that hospital.' });
+  }
+});
+
+router.patch('/assigned-reports/:id/transport', authenticateBarangay, requireRole(['responder']), async (req: any, res: Response): Promise<void> => {
+  const parsed = z.discriminatedUnion('status', [
+    z.object({ status: z.literal('in_transit'), hospital_name: z.string().trim().min(2).max(180), hospital_address: z.string().trim().max(300).optional(), hospital_latitude: z.number().min(-90).max(90), hospital_longitude: z.number().min(-180).max(180) }),
+    z.object({ status: z.literal('delivered') }),
+  ]).safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: 'Select a mapped hospital destination before starting transport.' }); return; }
+  try {
+    const caseData = await arrivedBarangayResponderCase(req);
+    const existing = parseTransportDestination(caseData.notes, 'barangay');
+    if (existing.triage_outcome !== 'severe_injuries') { res.status(409).json({ error: 'Severe injuries must be recorded before starting transport.' }); return; }
+    if (parsed.data.status === 'in_transit' && existing.transport_status === 'in_transit') { res.status(409).json({ error: 'Transport is already in progress.' }); return; }
+    if (parsed.data.status === 'in_transit' && existing.transport_status === 'delivered') { res.status(409).json({ error: 'Transport has already been completed for this response.' }); return; }
+    if (parsed.data.status === 'delivered' && existing.transport_status !== 'in_transit') { res.status(409).json({ error: 'Start transport before marking the injured person delivered.' }); return; }
+    const now = new Date().toISOString();
+    const notes = upsertTransportNotes(caseData.notes, 'barangay', parsed.data.status === 'in_transit'
+      ? { ...parsed.data, transport_status: 'in_transit', transport_started_at: existing.transport_started_at || now }
+      : { ...existing, transport_status: 'delivered', transport_completed_at: now });
+    await emitBarangayTransportUpdate(req, res, caseData, notes);
+  } catch (error: any) {
+    console.error('Barangay transport update failed:', error);
+    res.status(Number(error?.status) || 500).json({ error: error?.message || 'Could not save the transport update.' });
+  }
+});
+
 router.patch('/assigned-reports/:id/field-notes', authenticateBarangay, requireRole(['responder']), async (req: any, res: Response): Promise<void> => {
   const parsed = z.object({
     situation: z.string().trim().min(1).max(1250),
     affected_people: z.string().trim().min(1).max(1250),
     actions_taken: z.string().trim().min(1).max(1250),
     risks_resources: z.string().trim().min(1).max(1250),
+    triage_outcome: z.enum(['safe', 'mild_injuries', 'severe_injuries']),
   }).strict().safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: 'Complete all four field assessment sections before saving. Enter “Not applicable” when a section does not apply.', details: parsed.error.flatten() });
+    res.status(400).json({ error: 'Complete all four assessment sections and choose a triage outcome before saving. Enter “Not applicable” when a section does not apply.', details: parsed.error.flatten() });
     return;
   }
-  const assessmentNotes = [
-    `Situation: ${parsed.data.situation}`,
-    `People affected / urgency: ${parsed.data.affected_people}`,
-    `Actions taken: ${parsed.data.actions_taken}`,
-    `Risks / resources: ${parsed.data.risks_resources}`,
-  ].join('\n');
   try {
     const { data: assignment, error: assignmentError } = await supabaseAdmin
       .from('mdrrmo_report_barangay_assignments')
@@ -2518,8 +2675,8 @@ router.patch('/assigned-reports/:id/field-notes', authenticateBarangay, requireR
         res.status(403).json({ error: 'This report is not assigned to your responder account.' });
         return;
       }
-      const preservedNotes = legacyNotes.replace(/\n?\[BARANGAY FIELD (?:NOTES|ASSESSMENT)\][\s\S]*$/i, '').trim();
-      const responseNotes = [preservedNotes, `[BARANGAY FIELD ASSESSMENT]\n${assessmentNotes}`].filter(Boolean).join('\n');
+      if (!(legacy.arrived_at || legacy.barangay_arrived_at)) { res.status(409).json({ error: 'Record arrival before completing the field assessment.' }); return; }
+      const responseNotes = upsertFieldAssessmentNotes(legacyNotes, 'barangay', parsed.data);
       const { data: updated, error: updateError } = await supabaseAdmin.from('barangay_reports')
         .update({ response_notes: responseNotes, lifecycle_actor_id: req.barangayUser.userId, lifecycle_actor_role: 'barangay_responder' })
         .eq('id', req.params.id).eq('barangay_id', req.barangayUser.barangayId).select('*').maybeSingle();
@@ -2545,9 +2702,9 @@ router.patch('/assigned-reports/:id/field-notes', authenticateBarangay, requireR
       res.status(403).json({ error: 'This report is not assigned to your responder account.' });
       return;
     }
+    if (!assignment.arrived_at) { res.status(409).json({ error: 'Record arrival before completing the field assessment.' }); return; }
     const previous = String(assignment.response_notes || '');
-    const dispatcherNotes = previous.replace(/\n?\[BARANGAY FIELD (?:NOTES|ASSESSMENT)\][\s\S]*$/i, '').trim();
-    const responseNotes = [dispatcherNotes, `[BARANGAY FIELD ASSESSMENT]\n${assessmentNotes}`].filter(Boolean).join('\n');
+    const responseNotes = upsertFieldAssessmentNotes(previous, 'barangay', parsed.data);
     const now = new Date().toISOString();
     const { error: updateError } = await supabaseAdmin.from('mdrrmo_report_barangay_assignments')
       .update({ response_notes: responseNotes, responded_by: req.barangayUser.userId, responded_at: now, updated_at: now })
@@ -3363,6 +3520,7 @@ router.post('/reports/:id/close', authenticateBarangay, requireRole(['dispatcher
       'barangay',
       resolved_notes.trim(),
     );
+    missingFields.push(...requiredTriageClosureFields(currentNotes, 'barangay').map((field) => `field assessment: ${field}`));
     if (currentReport.mdrrmo_response_status === 'resolved') {
       missingFields.push(...IncidentResolutionPdfService.missingFields(currentReport, 'mdrrmo'));
     }

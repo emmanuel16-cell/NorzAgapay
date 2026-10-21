@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '../config/supabase';
 import { getBarangayResponderGpsLocation, getResponderGpsLocation, RESPONDER_GPS_TTL_SECONDS } from '../config/redis';
+import { parseTransportDestination } from './fieldResponseNotes';
 
 export type ResponderAccountKind = 'mdrrmo' | 'barangay';
 
@@ -9,6 +10,11 @@ export interface ResponderIncidentTarget {
   latitude: number;
   longitude: number;
   crew: ResponderCrewMember[];
+  transportStatus?: string;
+  hospitalName?: string;
+  hospitalAddress?: string;
+  hospitalLatitude?: number | null;
+  hospitalLongitude?: number | null;
 }
 
 export interface ResponderCrewMember {
@@ -45,9 +51,8 @@ function validTargetCoordinates(latitudeValue: unknown, longitudeValue: unknown)
 export async function getActiveResponderTargets(responderId?: string): Promise<Map<string, ResponderIncidentTarget[]>> {
   let assignmentQuery = supabaseAdmin
     .from('mdrrmo_report_assignments')
-    .select('id, report_id, responder_id')
-    .eq('status', 'responding')
-    .is('arrived_at', null);
+    .select('id, report_id, responder_id, arrived_at')
+    .eq('status', 'responding');
   if (responderId) assignmentQuery = assignmentQuery.eq('responder_id', responderId);
 
   const { data: assignments, error: assignmentError } = await assignmentQuery;
@@ -76,7 +81,7 @@ export async function getActiveResponderTargets(responderId?: string): Promise<M
   const reportIds = [...new Set(assignmentRows.map((row: any) => row.report_id))];
   const { data: mdrrmoRows, error: mdrrmoErr } = await supabaseAdmin
     .from('mdrrmo_reports')
-    .select('id, title, latitude, longitude, response_status')
+    .select('id, title, latitude, longitude, response_status, response_notes')
     .in('id', reportIds);
   if (mdrrmoErr) throw mdrrmoErr;
 
@@ -86,12 +91,18 @@ export async function getActiveResponderTargets(responderId?: string): Promise<M
     const latitude = coordinate(r.latitude);
     const longitude = coordinate(r.longitude);
     if (latitude === null || longitude === null || latitude === 0 || longitude === 0) continue;
+    const transport = parseTransportDestination(r.response_notes, 'mdrrmo');
     reportById.set(r.id, {
       incidentId: r.id,
       title: r.title || 'Emergency Incident',
       latitude,
       longitude,
       crew: [],
+      transportStatus: transport.transport_status,
+      hospitalName: transport.hospital_name,
+      hospitalAddress: transport.hospital_address,
+      hospitalLatitude: transport.hospital_latitude,
+      hospitalLongitude: transport.hospital_longitude,
     });
   }
 
@@ -99,6 +110,7 @@ export async function getActiveResponderTargets(responderId?: string): Promise<M
   for (const assignment of assignmentRows) {
     const target = reportById.get(assignment.report_id);
     if (!target) continue;
+    if (assignment.arrived_at && target.transportStatus !== 'in_transit') continue;
     const current = targetsByResponder.get(assignment.responder_id) || [];
     if (!current.some((item) => item.incidentId === target.incidentId)) {
       current.push({
@@ -117,17 +129,15 @@ export async function getActiveBarangayResponderTargets(
   responderId?: string,
 ): Promise<Map<string, ResponderIncidentTarget[]>> {
   let centralQuery = supabaseAdmin.from('mdrrmo_report_barangay_assignments')
-    .select('id, report_id, barangay_id, responder_ids')
+    .select('id, report_id, barangay_id, responder_ids, arrived_at, response_notes')
     .eq('assignment_status', 'active')
-    .eq('response_status', 'responding')
-    .is('arrived_at', null);
+    .eq('response_status', 'responding');
   if (barangayId) centralQuery = centralQuery.eq('barangay_id', barangayId);
   if (responderId) centralQuery = centralQuery.contains('responder_ids', [responderId]);
 
   let localQuery = supabaseAdmin.from('barangay_reports')
     .select('*')
     .eq('response_status', 'responding')
-    .is('arrived_at', null)
     .is('resolved_at', null);
   if (barangayId) localQuery = localQuery.eq('barangay_id', barangayId);
 
@@ -162,16 +172,28 @@ export async function getActiveBarangayResponderTargets(
   for (const assignment of centralAssignments || []) {
     const target = targetsById.get(assignment.report_id);
     if (!target) continue;
+    const transport = parseTransportDestination(assignment.response_notes, 'barangay');
+    if (assignment.arrived_at && transport.transport_status !== 'in_transit') continue;
+    const transportTarget: ResponderIncidentTarget = {
+      ...target,
+      transportStatus: transport.transport_status,
+      hospitalName: transport.hospital_name,
+      hospitalAddress: transport.hospital_address,
+      hospitalLatitude: transport.hospital_latitude,
+      hospitalLongitude: transport.hospital_longitude,
+    };
     for (const id of (assignment.responder_ids || []) as string[]) {
-      if (!responderId || responderId === id) addTarget(id, target);
+      if (!responderId || responderId === id) addTarget(id, transportTarget);
     }
   }
 
   for (const report of localReports || []) {
-    if (report.arrived_at || report.resolved_at || String(report.response_status || '').toLowerCase() !== 'responding') continue;
+    if (report.resolved_at || String(report.response_status || '').toLowerCase() !== 'responding') continue;
     const point = validTargetCoordinates(report.latitude, report.longitude);
     if (!point) continue;
     const notes = String(report.barangay_response_notes || report.response_notes || '');
+    const transport = parseTransportDestination(notes, 'barangay');
+    if (report.arrived_at && transport.transport_status !== 'in_transit') continue;
     const assigned = notes.match(/^\[ASSIGNED:([^\]]+)\]/)?.[1]
       ?.split(',').map((id: string) => id.trim()).filter(Boolean) || [];
     const primary = report.barangay_responded_by || report.responded_by;
@@ -181,6 +203,11 @@ export async function getActiveBarangayResponderTargets(
       title: report.title || report.type || 'Emergency Incident',
       ...point,
       crew: [],
+      transportStatus: transport.transport_status,
+      hospitalName: transport.hospital_name,
+      hospitalAddress: transport.hospital_address,
+      hospitalLatitude: transport.hospital_latitude,
+      hospitalLongitude: transport.hospital_longitude,
     };
     for (const id of assigned) {
       if (!responderId || responderId === id) addTarget(id, target);

@@ -91,6 +91,11 @@ interface IncidentItem {
   arrived_at?: string | null;
   resolved_notes?: string | null;
   map_closed_at?: string | null;
+  transport_in_progress?: boolean;
+  transport_hospital_name?: string | null;
+  transport_hospital_address?: string | null;
+  transport_hospital_latitude?: number | null;
+  transport_hospital_longitude?: number | null;
 }
 
 const incidentTimeText = (occurredAt?: string | null, precision?: string | null) => {
@@ -168,6 +173,11 @@ interface LiveResponderAssignment {
   latitude: number;
   longitude: number;
   crew: LiveResponderCrewMember[];
+  transportStatus?: string;
+  hospitalName?: string;
+  hospitalAddress?: string;
+  hospitalLatitude?: number | null;
+  hospitalLongitude?: number | null;
 }
 
 interface LiveResponderCrewMember {
@@ -226,6 +236,11 @@ function normalizeLiveResponderLocation(value: any): LiveResponderLocation | nul
       title: assignment.title,
       latitude: assignment.latitude,
       longitude: assignment.longitude,
+      transportStatus: typeof assignment.transportStatus === 'string' ? assignment.transportStatus : undefined,
+      hospitalName: typeof assignment.hospitalName === 'string' ? assignment.hospitalName : undefined,
+      hospitalAddress: typeof assignment.hospitalAddress === 'string' ? assignment.hospitalAddress : undefined,
+      hospitalLatitude: Number.isFinite(assignment.hospitalLatitude) ? assignment.hospitalLatitude : null,
+      hospitalLongitude: Number.isFinite(assignment.hospitalLongitude) ? assignment.hospitalLongitude : null,
       crew: Array.isArray(assignment.crew) ? assignment.crew
         .filter((member: any) => typeof member?.name === 'string' && typeof member?.memberRole === 'string')
         .map((member: any) => ({ name: member.name, memberRole: member.memberRole })) : [],
@@ -244,6 +259,21 @@ function normalizeLiveResponderLocation(value: any): LiveResponderLocation | nul
     accuracyM: Number.isFinite(value.accuracyM) ? value.accuracyM : null,
     timestamp: value.timestamp,
     assignments,
+  };
+}
+
+function transportNotes(notesValue?: string | null) {
+  const values: Record<string, string> = {};
+  String(notesValue || '').split(/\r?\n/).forEach((line) => {
+    const separator = line.indexOf(':');
+    if (separator > 0) values[line.slice(0, separator).trim().toLowerCase()] = line.slice(separator + 1).trim();
+  });
+  return {
+    active: values['transport status'] === 'in_transit',
+    hospitalName: values['hospital destination'] || null,
+    hospitalAddress: values['hospital address'] || null,
+    hospitalLatitude: Number.isFinite(Number(values['hospital latitude'])) ? Number(values['hospital latitude']) : null,
+    hospitalLongitude: Number.isFinite(Number(values['hospital longitude'])) ? Number(values['hospital longitude']) : null,
   };
 }
 
@@ -351,8 +381,19 @@ function parseFieldAssessment(notes?: string) {
     people: fields['people affected / urgency'] || '',
     actions: fields['action taken'] || fields['actions taken'] || '',
     risks: fields['risk / resource'] || fields['risks / resources'] || '',
+    triage: fields['triage outcome'] || '',
+    transportStatus: fields['transport status'] || '',
+    hospital: fields['hospital destination'] || '',
+    hospitalAddress: fields['hospital address'] || '',
+    transportStartedAt: fields['transport started at'] || '',
+    transportCompletedAt: fields['transport completed at'] || '',
   };
 }
+
+const formatResponseTimestamp = (value: string) => {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : formatDispatcherDateTime(date);
+};
 
 function isMdrrmoMedia(media: NonNullable<IncidentItem['responder_media']>[number]): boolean {
   return Boolean(media.id?.startsWith('mdrrmo_') || /mdrrmo/i.test(`${media.role || ''} ${media.uploader_role || ''}`));
@@ -365,6 +406,12 @@ function AssessmentSections({ notes }: { notes?: string }) {
     { label: 'People Affected / Urgency', value: assessment.people },
     { label: 'Action Taken', value: assessment.actions },
     { label: 'Risk / Resource', value: assessment.risks },
+    ...(assessment.triage ? [{ label: 'Triage outcome', value: assessment.triage.replaceAll('_', ' ') }] : []),
+    ...(assessment.hospital ? [{ label: 'Transport destination', value: assessment.hospital }] : []),
+    ...(assessment.hospitalAddress ? [{ label: 'Destination address', value: assessment.hospitalAddress }] : []),
+    ...(assessment.transportStatus ? [{ label: 'Transport status', value: assessment.transportStatus.replaceAll('_', ' ') }] : []),
+    ...(assessment.transportStartedAt ? [{ label: 'Transport started', value: formatResponseTimestamp(assessment.transportStartedAt) }] : []),
+    ...(assessment.transportCompletedAt ? [{ label: 'Transport completed', value: formatResponseTimestamp(assessment.transportCompletedAt) }] : []),
   ];
 
   return (
@@ -693,6 +740,18 @@ const createTeardropPin = (category: MapReportCategory, status: ReportStage, sel
   });
 };
 
+const createTransportIncidentIcon = () => L.divIcon({
+  html: '<div class="command-transport-incident-marker"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M8 21v-5a8 8 0 0 1 16 0v5M6 21h20v4H6zM12 5V2m8 3V2M5 11l-2-2m24 2 2-2"/></svg></div>',
+  className: 'command-transport-marker-icon',
+  iconSize: [66, 66], iconAnchor: [33, 33],
+});
+
+const createTransportHospitalIcon = () => L.divIcon({
+  html: '<div class="command-transport-hospital-marker"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M13 7h6v6h6v6h-6v6h-6v-6H7v-6h6z"/></svg></div>',
+  className: 'command-transport-marker-icon',
+  iconSize: [58, 58], iconAnchor: [29, 29],
+});
+
 const createResponderUnitBadge = (selected = false) => {
   const size = 64;
   return L.divIcon({
@@ -901,7 +960,7 @@ function ClusteredIncidentMarkers({
           <Marker
             key={incident.id}
             position={[incident.latitude, incident.longitude]}
-            icon={createTeardropPin(incident.map_category, incident.status, selectedId === incident.id, barangayDashboard, pendingAssistanceIncidentIds.has(incident.id))}
+            icon={incident.transport_in_progress ? createTransportIncidentIcon() : createTeardropPin(incident.map_category, incident.status, selectedId === incident.id, barangayDashboard, pendingAssistanceIncidentIds.has(incident.id))}
             zIndexOffset={selectedId === incident.id ? 1600 : 0}
             eventHandlers={{ click: () => onSelect(incident) }}
           />
@@ -971,6 +1030,22 @@ function LiveResponderOverlays({
             interactive={false}
             keyboard={false}
           />;
+        }),
+        ...targets.flatMap((target) => {
+          const assignment = location.assignments.find((item) => item.incidentId === target.id);
+          if (assignment?.transportStatus !== 'in_transit' || !Number.isFinite(assignment.hospitalLatitude) || !Number.isFinite(assignment.hospitalLongitude)) return [];
+          const responderPosition: [number, number] = [location.latitude, location.longitude];
+          const hospitalPosition: [number, number] = [Number(assignment.hospitalLatitude), Number(assignment.hospitalLongitude)];
+          return [
+            <Polyline
+              key={`transport-route-${location.responderKey}-${target.id}`}
+              positions={[responderPosition, hospitalPosition]}
+              pathOptions={{ color: '#635bff', weight: 4, dashArray: '8, 8', opacity: 0.95 }}
+            />,
+            <Marker key={`transport-hospital-${location.responderKey}-${target.id}`} position={hospitalPosition} icon={createTransportHospitalIcon()} zIndexOffset={1900}>
+              <Popup className="command-map-cluster-popup"><strong>{assignment.hospitalName || 'Transport destination'}</strong>{assignment.hospitalAddress && <p>{assignment.hospitalAddress}</p>}</Popup>
+            </Marker>,
+          ];
         }),
         <Marker
           key={`live-responder-${location.responderKey}`}
@@ -1256,6 +1331,11 @@ export default function CommandCenter() {
           metrics.push({ map_category: mapCategory, status: stage, dispatched, active_assignment: activeAssignment });
           if (!Number.isFinite(lat) || !Number.isFinite(lng)) return; // keep coordinate-less reports in the metrics, but not on the map
 
+          const transport = [
+            transportNotes(r.barangay_response_notes),
+            transportNotes(r.mdrrmo_response_notes),
+          ].find((flow) => flow.active) || transportNotes(r.barangay_response_notes || r.mdrrmo_response_notes);
+
           items.push({
             id: r.id,
             title: r.title || 'Emergency Incident',
@@ -1309,6 +1389,11 @@ export default function CommandCenter() {
             arrived_at: r.arrived_at || null,
             resolved_notes: r.resolved_notes || null,
             map_closed_at: r.map_closed_at || null,
+            transport_in_progress: transport.active,
+            transport_hospital_name: transport.hospitalName,
+            transport_hospital_address: transport.hospitalAddress,
+            transport_hospital_latitude: transport.hospitalLatitude,
+            transport_hospital_longitude: transport.hospitalLongitude,
           });
         });
       }
@@ -1568,6 +1653,11 @@ export default function CommandCenter() {
     commandLocationPins.forEach((pin) => points.push([pin.latitude, pin.longitude]));
     visibleDispatchUnits.forEach((unit) => points.push([unit.latitude, unit.longitude]));
     visibleLiveResponders.forEach((responder) => points.push([responder.latitude, responder.longitude]));
+    visibleLiveResponders.forEach((responder) => responder.assignments.forEach((assignment) => {
+      if (assignment.transportStatus === 'in_transit' && Number.isFinite(assignment.hospitalLatitude) && Number.isFinite(assignment.hospitalLongitude)) {
+        points.push([Number(assignment.hospitalLatitude), Number(assignment.hospitalLongitude)]);
+      }
+    }));
     return points;
   }, [visibleIncidents, commandLocationPins, visibleDispatchUnits, visibleLiveResponders]);
 

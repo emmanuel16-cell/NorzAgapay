@@ -15,6 +15,17 @@ const assessmentLabels: Record<string, string> = {
   risks: 'Risks / resources',
 };
 
+const transportAssessmentLabels: Record<string, string> = {
+  triage: 'People affected triage',
+  transport_status: 'Injured person transport status',
+  hospital: 'Transport destination',
+  hospital_address: 'Destination address',
+  hospital_latitude: 'Destination latitude',
+  hospital_longitude: 'Destination longitude',
+  transport_started: 'Transport started at',
+  transport_completed: 'Transport completed at',
+};
+
 export class IncompleteResolutionReportError extends Error {
   missingFields: string[];
 
@@ -140,6 +151,14 @@ function parseAssessment(notesValue: unknown, channel: ResolutionCycle): Assessm
     people: /(?:^|\n)\s*People affected\s*\/\s*urgency\s*:\s*/i,
     actions: /(?:^|\n)\s*Actions taken\s*:\s*/i,
     risks: /(?:^|\n)\s*Risks\s*\/\s*resources(?: needed)?\s*:\s*/i,
+    triage: /(?:^|\n)\s*Triage outcome\s*:\s*/i,
+    transport_status: /(?:^|\n)\s*Transport status\s*:\s*/i,
+    hospital: /(?:^|\n)\s*Hospital destination\s*:\s*/i,
+    hospital_address: /(?:^|\n)\s*Hospital address\s*:\s*/i,
+    hospital_latitude: /(?:^|\n)\s*Hospital latitude\s*:\s*/i,
+    hospital_longitude: /(?:^|\n)\s*Hospital longitude\s*:\s*/i,
+    transport_started: /(?:^|\n)\s*Transport started at\s*:\s*/i,
+    transport_completed: /(?:^|\n)\s*Transport completed at\s*:\s*/i,
   };
   const matches = Object.entries(aliases)
     .map(([key, regex]) => {
@@ -428,6 +447,14 @@ async function toBuffer(report: any, resident: any, assistance: any[]): Promise<
       const assessment = parseAssessment(notes, cycle);
       section(`${title} Field Assessment`, responseSectionHeadingX);
       for (const [key, label] of Object.entries(assessmentLabels)) row(label, assessment[key]);
+      for (const [key, label] of Object.entries(transportAssessmentLabels)) {
+        let value = assessment[key];
+        if (!value) continue;
+        if (key === 'triage') value = value.replaceAll('_', ' ');
+        if (key === 'transport_status') value = value.replaceAll('_', ' ');
+        if (key === 'transport_started' || key === 'transport_completed') value = phDateTimeWithSeconds(value);
+        row(label, value);
+      }
       const resolvedNotes = cycle === 'barangay'
         ? report.barangay_resolved_notes || report.resolved_notes
         : report.mdrrmo_resolved_notes || report.resolved_notes;

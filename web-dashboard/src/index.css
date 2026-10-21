@@ -2984,6 +2984,11 @@ tbody tr:last-child td { border-bottom: none; }
 }
 .command-map-cluster-alert { position: absolute; top: -3px; right: -3px; width: 12px; height: 12px; border: 2px solid #fff; border-radius: 50%; background: #ef4444; }
 .command-map-dot-icon { background: transparent !important; border: 0 !important; }
+.command-transport-marker-icon { background: transparent !important; border: 0 !important; }
+.command-transport-incident-marker, .command-transport-hospital-marker { display: grid; place-items: center; width: 100%; height: 100%; border: 2px solid #111827; border-radius: 50%; background: #ffe600; box-shadow: 0 3px 9px #0008; }
+.command-transport-incident-marker::before, .command-transport-hospital-marker::before { content: ''; grid-area: 1 / 1; width: 82%; height: 82%; border: 2px solid #111827; border-radius: 50%; background: #ff3b3b; }
+.command-transport-incident-marker svg, .command-transport-hospital-marker svg { grid-area: 1 / 1; z-index: 1; width: 55%; height: 55%; fill: none; stroke: #fff; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.command-transport-hospital-marker svg { width: 58%; height: 58%; stroke: none; fill: #fff; }
 .command-map-route-arrow-icon { background: transparent !important; border: 0 !important; }
 .command-map-route-arrow {
   display: grid;
@@ -4425,6 +4430,32 @@ tbody tr:last-child td { border-bottom: none; }
 .upload-action input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 .responder-resolution-form { display: grid; gap: 9px; padding-top: 10px; border-top: 1px solid var(--border-color); }
 .responder-resolution-form small { color: var(--warning-light); font-size: 11px; }
+.responder-triage-choice { display: grid; gap: 8px; margin: 12px 0; padding: 10px; border: 1px solid var(--border-color); border-radius: 10px; }
+.responder-triage-choice legend { padding: 0 5px; color: var(--text-secondary); font-size: 11px; font-weight: 800; }
+.responder-triage-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.responder-triage-options label { display: flex; align-items: flex-start; gap: 8px; padding: 10px; border: 1px solid var(--border-color); border-radius: 9px; background: var(--bg-primary); cursor: pointer; }
+.responder-triage-options label.selected { border-color: var(--accent, #22c5dd); box-shadow: 0 0 0 1px var(--accent, #22c5dd); }
+.responder-triage-options input { margin-top: 3px; accent-color: var(--accent, #22c5dd); }
+.responder-triage-options span { display: grid; gap: 3px; }
+.responder-triage-options strong { color: var(--text-primary); font-size: 12px; }
+.responder-triage-options small, .responder-transport-panel small { color: var(--text-secondary); font-size: 10px; }
+.responder-transport-panel { display: grid; gap: 10px; margin-top: 12px; padding: 12px; border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-secondary); }
+.responder-transport-panel h4 { margin: 0; color: var(--text-primary); font-size: 13px; }
+.responder-transport-active { margin: 0; color: var(--text-secondary); font-size: 12px; }
+.responder-transport-active strong { color: var(--text-primary); }
+.responder-hospital-options { display: grid; gap: 6px; max-height: 260px; overflow-y: auto; }
+.responder-hospital-options button { display: grid; gap: 3px; padding: 9px 10px; border: 1px solid var(--border-color); border-radius: 8px; text-align: left; color: var(--text-secondary); background: var(--bg-primary); cursor: pointer; }
+.responder-hospital-options button.selected { border-color: var(--accent, #22c5dd); box-shadow: 0 0 0 1px var(--accent, #22c5dd); }
+.responder-hospital-options strong { color: var(--text-primary); font-size: 12px; }
+.responder-hospital-options span { font-size: 11px; }
+.responder-hospital-options small { color: var(--accent, #22c5dd); }
+.responder-manual-hospital { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: end; }
+.responder-manual-hospital label { display: grid; gap: 5px; color: var(--text-secondary); font-size: 11px; font-weight: 700; }
+.responder-manual-hospital input { width: 100%; min-height: 38px; padding: 8px 10px; border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-primary); background: var(--bg-primary); font: inherit; font-size: 12px; }
+.responder-hospital-selection { display: grid; gap: 6px; padding-top: 8px; border-top: 1px solid var(--border-color); }
+.responder-hospital-selection span { color: var(--text-secondary); font-size: 10px; }
+.responder-hospital-selection strong { color: var(--text-primary); }
+.responder-transport-guidance { padding: 10px; border: 1px dashed var(--border-color); border-radius: 8px; color: var(--text-secondary); font-size: 12px; }
 .workspace-message { display: flex; align-items: center; gap: 9px; padding: 12px 14px; border: 1px solid var(--border-color); border-radius: 9px; color: var(--text-secondary); background: var(--bg-card); font-size: 12px; }
 .workspace-message-error { border-color: rgba(231, 76, 60, .36); color: #ffc4c0; background: rgba(111, 31, 28, .2); }
 .workspace-message button { margin-left: auto; color: inherit; border: 0; background: transparent; font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
@@ -4448,6 +4479,8 @@ tbody tr:last-child td { border-bottom: none; }
   .resident-reports-heading { align-items: flex-start; padding: 14px; }
   .resident-report-list { padding: 10px; }
   .responder-assessment-grid { grid-template-columns: minmax(0, 1fr); }
+  .responder-triage-options { grid-template-columns: minmax(0, 1fr); }
+  .responder-manual-hospital { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 420px) {
   .resident-summary-grid { grid-template-columns: minmax(0, 1fr); }
