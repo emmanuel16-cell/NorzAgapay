@@ -42,12 +42,10 @@ String _createClientRequestId() {
 }
 
 class ReportingScreen extends StatefulWidget {
-  final String reportType;
   final Map<String, dynamic>? initialDraft;
 
   const ReportingScreen({
     super.key,
-    required this.reportType,
     this.initialDraft,
   });
 
@@ -60,9 +58,6 @@ class _ReportingScreenState extends State<ReportingScreen> {
     final token = OfflineService.getProfile()?['token']?.toString();
     return token != null && token.isNotEmpty;
   }
-  late final String _reportType;
-  String? _selectedCategory;
-  String? _selectedSpecific;
   final List<_ProofItem> _proofs = [];
   int _selectedProofIndex = 0;
   bool _isUploading = false;
@@ -89,38 +84,9 @@ class _ReportingScreenState extends State<ReportingScreen> {
   String get _locationSourceLabel =>
       _locationSource == 'map' ? 'Chosen on map' : 'Current location';
 
-  final Map<String, List<String>> _communityCategories = {
-    'Community Safety Concerns': [
-      'Minor Flooding',
-      'Drainage Blockage',
-      'Small Fire Incident',
-      'Fallen Tree Report',
-      'Road Damage Report',
-      'Damaged House Report',
-      'Cracked Road Report',
-      'Unsafe Electrical Wiring',
-      'River Water Level Report',
-    ],
-    'Environmental Concerns': [
-      'Illegal Dumping',
-      'River Pollution Report',
-      'Smoke Pollution',
-      'Animal Carcass Disposal',
-      'Flood-Prone Area Report',
-    ],
-    'Weather & Monitoring Reports': [
-      'Heavy Rain Monitoring',
-      'Strong Wind Monitoring',
-      'Rising Water Level Monitoring',
-      'Landslide-Prone Area Report',
-      'Earthquake Damage Observation',
-    ],
-  };
-
   @override
   void initState() {
     super.initState();
-    _reportType = widget.reportType;
     _restoreDraft(widget.initialDraft);
     if (_currentLocation == null) _getLocation();
   }
@@ -168,8 +134,6 @@ class _ReportingScreenState extends State<ReportingScreen> {
         _earlierMinutes = elapsedMinutes % 60;
       }
     }
-    _selectedCategory = draft['category']?.toString();
-    _selectedSpecific = draft['specifics']?.toString();
     _descController.text = draft['description']?.toString() ?? '';
     _guestPhoneController.text = draft['guest_phone']?.toString() ?? '';
     final latitude = double.tryParse(draft['latitude']?.toString() ?? '');
@@ -215,18 +179,12 @@ class _ReportingScreenState extends State<ReportingScreen> {
 
   bool get _hasDraftableContent =>
       _descController.text.trim().isNotEmpty ||
-      _selectedCategory != null ||
-      _selectedSpecific != null ||
       _proofs.isNotEmpty;
 
   Map<String, dynamic> _draftData() => {
     'client_request_id': _clientRequestId,
-    'type': _reportType,
-    'category': _selectedCategory,
-    'title': _reportType == 'emergency'
-        ? 'Emergency Incident'
-        : _selectedCategory,
-    'specifics': _selectedSpecific,
+    'type': 'emergency',
+    'title': 'Emergency Incident',
     'description': _descController.text,
     'latitude': _currentLocation?.latitude,
     'longitude': _currentLocation?.longitude,
@@ -779,12 +737,6 @@ class _ReportingScreenState extends State<ReportingScreen> {
       );
       return;
     }
-    if (_reportType == 'community' && _selectedCategory == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Please select a Category')));
-      return;
-    }
     final profile = OfflineService.getProfile();
     final token = profile?['token']?.toString();
     final isSignedIn = token != null && token.isNotEmpty;
@@ -828,11 +780,9 @@ class _ReportingScreenState extends State<ReportingScreen> {
         'incident_time_choice': _incidentTimeChoice,
         'incident_occurred_at': _incidentOccurredAt?.toUtc().toIso8601String(),
         'incident_time_precision': _incidentTimePrecision,
-        'type': _reportType,
-        'title': _reportType == 'emergency'
-            ? 'Emergency Incident'
-            : _selectedCategory!,
-        'specifics': _selectedSpecific ?? '',
+        'type': 'emergency',
+        'title': 'Emergency Incident',
+        'specifics': '',
         'description': _descController.text,
         'latitude': _currentLocation!.latitude.toString(),
         'longitude': _currentLocation!.longitude.toString(),
@@ -952,10 +902,7 @@ class _ReportingScreenState extends State<ReportingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final categories = _communityCategories;
-    final headerColor = _reportType == 'emergency'
-        ? const Color(0xFFE53935)
-        : const Color(0xFFF39C12);
+    const headerColor = Color(0xFFE53935);
 
     return PopScope<void>(
       canPop: _allowPop,
@@ -965,13 +912,9 @@ class _ReportingScreenState extends State<ReportingScreen> {
       child: Scaffold(
         backgroundColor: Colors.white,
         appBar: ResidentGradientAppBar(
-          colors: _reportType == 'emergency'
-              ? ResidentHeaderGradients.emergency
-              : ResidentHeaderGradients.community,
+          colors: ResidentHeaderGradients.emergency,
           title: Text(
-            _reportType == 'emergency'
-                ? 'Emergency Incident'
-                : 'Community Incident',
+            'Emergency Incident',
             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
           ),
           actions: [
@@ -1099,64 +1042,6 @@ class _ReportingScreenState extends State<ReportingScreen> {
                       ),
                     ),
                     const SizedBox(height: 12),
-
-                    if (_reportType == 'community') ...[
-                      DropdownButtonFormField<String>(
-                        value: _selectedCategory,
-                        decoration: InputDecoration(
-                          labelText: 'Category',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            borderSide: BorderSide(color: Colors.grey.shade300),
-                          ),
-                        ),
-                        items: categories.keys
-                            .map(
-                              (c) => DropdownMenuItem<String>(
-                                value: c,
-                                child: Text(c),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: (v) => setState(() {
-                          _selectedCategory = v;
-                          _selectedSpecific = null;
-                        }),
-                      ),
-
-                      if (_selectedCategory != null) ...[
-                        const SizedBox(height: 14),
-                        DropdownButtonFormField<String>(
-                          value: _selectedSpecific,
-                          decoration: InputDecoration(
-                            labelText: 'Specifics (Optional)',
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              borderSide: BorderSide(
-                                color: Colors.grey.shade300,
-                              ),
-                            ),
-                          ),
-                          items: categories[_selectedCategory]!
-                              .map(
-                                (s) => DropdownMenuItem<String>(
-                                  value: s,
-                                  child: Text(s),
-                                ),
-                              )
-                              .toList(),
-                          onChanged: (v) =>
-                              setState(() => _selectedSpecific = v),
-                        ),
-                      ],
-                      const SizedBox(height: 14),
-                    ],
 
                     _buildIncidentTimeInput(),
                     const SizedBox(height: 18),
@@ -1401,9 +1286,7 @@ class _ReportingScreenState extends State<ReportingScreen> {
                       maxLines: 4,
                       decoration: InputDecoration(
                         hintText: 'Description',
-                        labelText: _reportType == 'emergency'
-                            ? 'Description'
-                            : 'Description (Optional)',
+                        labelText: 'Description',
                         alignLabelWithHint: true,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),

@@ -21,7 +21,7 @@ By accessing or using the Norz-Agapay Resident Application, you agree to comply 
 MDRRMO and Barangay administrators broadcast verified public safety advisories, disaster alerts (Red, Orange, Yellow), relief distributions, and all-clear notices. While information is provided with utmost urgency and accuracy, citizens should follow official evacuation orders and emergency responder directives at all times.
 
 3. Incident Reporting & Proof Requirement
-Citizens reporting emergencies or community concerns are required to provide genuine photo or video proof alongside real-time GPS location data. Submitting fraudulent reports, prank calls, or fabricated disaster media is strictly prohibited under Philippine Law (including Republic Act 10121 and Cybercrime Prevention Act) and will be reported to the Philippine National Police (PNP).
+Citizens reporting emergencies are required to provide genuine photo or video proof alongside real-time GPS location data. Submitting fraudulent reports, prank calls, or fabricated disaster media is strictly prohibited under Philippine Law (including Republic Act 10121 and Cybercrime Prevention Act) and will be reported to the Philippine National Police (PNP).
 
 4. Responder Follow-ups & Interviews
 To facilitate rapid assessment and rescue documentation, MDRRMO dispatchers and Barangay responders may contact you via phone or SMS for additional context or post-incident interviews. By submitting reports, you consent to receiving verified responder inquiries.

@@ -18,7 +18,6 @@ class ReportingScreen extends StatefulWidget {
 }
 
 class _ReportingScreenState extends State<ReportingScreen> {
-  String _reportType = 'emergency';
   String? _selectedCategory;
   String? _selectedSpecific;
   File? _proofFile;
@@ -66,34 +65,6 @@ class _ReportingScreenState extends State<ReportingScreen> {
       'Road Obstruction',
       'Bridge Damage Incident',
       'Evacuation Incident'
-    ],
-  };
-
-  final Map<String, List<String>> _communityCategories = {
-    'Community Safety Concerns': [
-      'Minor Flooding',
-      'Drainage Blockage',
-      'Small Fire Incident',
-      'Fallen Tree Report',
-      'Road Damage Report',
-      'Damaged House Report',
-      'Cracked Road Report',
-      'Unsafe Electrical Wiring',
-      'River Water Level Report'
-    ],
-    'Environmental Concerns': [
-      'Illegal Dumping',
-      'River Pollution Report',
-      'Smoke Pollution',
-      'Animal Carcass Disposal',
-      'Flood-Prone Area Report'
-    ],
-    'Weather & Monitoring Reports': [
-      'Heavy Rain Monitoring',
-      'Strong Wind Monitoring',
-      'Rising Water Level Monitoring',
-      'Landslide-Prone Area Report',
-      'Earthquake Damage Observation'
     ],
   };
 
@@ -202,7 +173,7 @@ class _ReportingScreenState extends State<ReportingScreen> {
 
       // Add Fields
       final Map<String, String> fields = {
-        'type': _reportType,
+        'type': 'emergency',
         'title': _selectedCategory!,
         'specifics': _selectedSpecific ?? '',
         'description': _descController.text,
@@ -271,7 +242,7 @@ class _ReportingScreenState extends State<ReportingScreen> {
 
         if (shouldSaveOffline == true) {
           await OfflineService.savePendingReport({
-            'type': _reportType,
+            'type': 'emergency',
             'title': _selectedCategory,
             'specifics': _selectedSpecific,
             'description': _descController.text,
@@ -301,7 +272,7 @@ class _ReportingScreenState extends State<ReportingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final categories = _reportType == 'emergency' ? _emergencyCategories : _communityCategories;
+    final categories = _emergencyCategories;
     
     return Scaffold(
       appBar: AppBar(title: const Text('Submit Report')),
@@ -310,39 +281,7 @@ class _ReportingScreenState extends State<ReportingScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Incident Type', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-            Row(
-              children: [
-                Expanded(
-                  child: RadioListTile<String>(
-                    title: const Text('Emergency'),
-                    value: 'emergency',
-                    groupValue: _reportType,
-                    onChanged: (v) => setState(() {
-                      _reportType = v!;
-                      _selectedCategory = null;
-                      _selectedSpecific = null;
-                    }),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-                    dense: true,
-                  ),
-                ),
-                Expanded(
-                  child: RadioListTile<String>(
-                    title: const Text('Community'),
-                    value: 'community',
-                    groupValue: _reportType,
-                    onChanged: (v) => setState(() {
-                      _reportType = v!;
-                      _selectedCategory = null;
-                      _selectedSpecific = null;
-                    }),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-                    dense: true,
-                  ),
-                ),
-              ],
-            ),
+            const Text('Emergency incident', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             
             const SizedBox(height: 20),
             DropdownButtonFormField<String>(
@@ -472,7 +411,7 @@ class _ReportingScreenState extends State<ReportingScreen> {
               child: ElevatedButton(
                 onPressed: _isUploading ? null : _submitReport,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: _reportType == 'emergency' ? const Color(AppColors.accent) : const Color(AppColors.primary),
+                  backgroundColor: const Color(AppColors.accent),
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),

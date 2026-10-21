@@ -5402,7 +5402,7 @@ body.responder-map-open { overflow: hidden; }
 .resident-reporting-hero h2 { margin: 8px 0; color: var(--text-primary); font-size: clamp(21px, 3vw, 30px); }
 .resident-reporting-hero p { max-width: 580px; margin: 0; color: var(--text-secondary); font-size: 12px; line-height: 1.5; }
 .resident-reporting-hero-icon { display: grid; width: 60px; height: 60px; flex: 0 0 auto; place-items: center; border: 1px solid rgba(255, 122, 116, .3); border-radius: 17px; color: #ff9c94; background: rgba(205, 64, 72, .12); }
-.resident-report-kind-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; }
+.resident-report-kind-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 13px; }
 .resident-report-kind { display: grid; align-content: start; gap: 10px; min-height: 230px; padding: 19px; border: 1px solid var(--border-color); border-radius: 13px; color: var(--text-primary); background: var(--bg-secondary); text-decoration: none; transition: transform .15s ease, border-color .15s ease; }
 .resident-report-kind:hover { border-color: var(--primary-light); transform: translateY(-2px); }
 .resident-kind-icon { display: grid; width: 39px; height: 39px; place-items: center; border-radius: 11px; color: var(--primary-light); background: rgba(55, 189, 216, .12); }

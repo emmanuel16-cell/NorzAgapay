@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { MapContainer, Marker, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import { ArrowLeft, CircleAlert, LocateFixed, MapPin, Phone, ShieldCheck, Siren, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { reportAPI } from '../lib/api';
-import { COMMUNITY_CONCERN_INCIDENT_TYPES, COMMUNITY_CONCERN_OPTIONS, INCIDENT_TYPE_OPTIONS } from '../lib/incidentClassification';
+import { INCIDENT_TYPE_OPTIONS } from '../lib/incidentClassification';
 import { CARTO_ATTRIBUTION, CARTO_DARK_MAP_URL } from '../lib/mapConfig';
 import IncidentTimeInput from '../components/IncidentTimeInput';
 import { createInitialIncidentTime, type IncidentTimeValue } from '../lib/incidentTime';
@@ -41,12 +41,9 @@ function RecenterMap({ point }: { point: [number, number] }) {
 export default function ResidentIncidentReportPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [params] = useSearchParams();
-  const type = params.get('type') === 'community' ? 'community' : 'emergency';
   const [category, setCategory] = useState<string>(INCIDENT_TYPE_OPTIONS[0]?.value || 'not_sure');
   const [incidentTime, setIncidentTime] = useState<IncidentTimeValue>(createInitialIncidentTime);
   const [otherEmergency, setOtherEmergency] = useState('');
-  const [communityCategory, setCommunityCategory] = useState<string>('not_sure');
   const [reportMode, setReportMode] = useState<'standard' | 'visual' | null>(null);
   const [phone, setPhone] = useState(() => normalizeMobile(user?.phone));
   const [description, setDescription] = useState('');
@@ -64,9 +61,7 @@ export default function ResidentIncidentReportPage() {
   const requestIdRef = useRef(requestId());
   const requestFingerprintRef = useRef('');
   const requestStartedAtRef = useRef('');
-  const selectedCategory = type === 'community' ? communityCategory : category;
-  const selectedCategoryOptions = type === 'community' ? COMMUNITY_CONCERN_OPTIONS : INCIDENT_TYPE_OPTIONS;
-  const selectedCategoryLabel = selectedCategoryOptions.find((item) => item.value === selectedCategory)?.label || selectedCategory;
+  const selectedCategory = category;
   const selectedCategoryNeedsDescription = selectedCategory === 'other';
 
   useEffect(() => { if (user?.phone) setPhone((current) => current || normalizeMobile(user.phone)); }, [user?.phone]);
@@ -94,7 +89,7 @@ export default function ResidentIncidentReportPage() {
     event.preventDefault(); setError(''); setMessage(''); setSubmitted(false);
     const normalizedPhone = normalizeMobile(phone);
     if (!isValidMobileNumber(normalizedPhone)) { setError('Enter exactly 11 digits starting with 09.'); return; }
-    if (selectedCategoryNeedsDescription && !otherEmergency.trim()) { setError(type === 'community' ? 'Describe the other concern.' : 'Describe the other emergency.'); return; }
+    if (selectedCategoryNeedsDescription && !otherEmergency.trim()) { setError('Describe the other emergency.'); return; }
     if (!location) { setError('Add the incident location before submitting.'); return; }
     if (reportMode === 'standard' && description.trim().length < 8) { setError('Describe what happened in at least 8 characters.'); return; }
     if (reportMode === 'visual' && evidence.length === 0) { setError('Capture at least one photo or video for a visual report.'); return; }
@@ -104,24 +99,20 @@ export default function ResidentIncidentReportPage() {
       const reportDescription = reportMode === 'visual'
         ? `Visual report submitted with ${evidence.filter((file) => file.type.startsWith('image/')).length} photo(s) and ${evidence.filter((file) => file.type.startsWith('video/')).length} video(s).`
         : description.trim();
-      const title = reportMode === 'visual'
-        ? type === 'community' ? 'Visual Community Report' : 'Visual Incident Report'
-        : type === 'community' ? selectedCategoryLabel : 'Resident Incident Report';
+      const title = reportMode === 'visual' ? 'Visual Incident Report' : 'Resident Incident Report';
       const incidentTimeFingerprint = [incidentTime.choice, incidentTime.choice === 'earlier' ? incidentTime.occurredAt : null, incidentTime.choice === 'earlier' ? incidentTime.precision : null];
-      const fingerprint = JSON.stringify([type, reportMode, title, selectedCategory, selectedCategoryNeedsDescription ? otherEmergency.trim() : '', normalizedPhone, reportDescription, location.latitude, location.longitude, evidence.map((file) => [file.name, file.size, file.lastModified]), incidentTimeFingerprint]);
+      const fingerprint = JSON.stringify([reportMode, title, selectedCategory, selectedCategoryNeedsDescription ? otherEmergency.trim() : '', normalizedPhone, reportDescription, location.latitude, location.longitude, evidence.map((file) => [file.name, file.size, file.lastModified]), incidentTimeFingerprint]);
       if (requestFingerprintRef.current !== fingerprint) {
         requestIdRef.current = requestId();
         requestStartedAtRef.current = new Date().toISOString();
         requestFingerprintRef.current = fingerprint;
       }
       const response = await reportAPI.guestReport({
-        type, title, specifics: selectedCategoryNeedsDescription && otherEmergency.trim()
-          ? `${type === 'community' ? 'Other concern' : 'Other emergency'}: ${otherEmergency.trim()}`
-          : type === 'community' ? selectedCategoryLabel : '', description: reportDescription,
+        type: 'emergency', title, specifics: selectedCategoryNeedsDescription && otherEmergency.trim()
+          ? `Other emergency: ${otherEmergency.trim()}`
+          : '', description: reportDescription,
         latitude: location.latitude, longitude: location.longitude, contact_number: normalizedPhone,
-        send_to: 'mdrrmo', incident_type: type === 'community'
-          ? COMMUNITY_CONCERN_INCIDENT_TYPES[selectedCategory] || 'other'
-          : selectedCategory,
+        send_to: 'mdrrmo', incident_type: selectedCategory,
         incident_time_choice: incidentTime.choice,
         incident_occurred_at: incidentTime.choice === 'just_now'
           ? requestStartedAtRef.current
@@ -132,9 +123,8 @@ export default function ResidentIncidentReportPage() {
       const reportId = response.data?.report?.id;
       setReference(typeof reportId === 'string' ? reportId : '');
       setSubmitted(true);
-      setMessage(type === 'community' ? 'Your community concern was sent to MDRRMO for review.' : 'Your report was sent to MDRRMO for review and coordination.');
+      setMessage('Your report was sent to MDRRMO for review and coordination.');
       setDescription(''); setOtherEmergency(''); setLocation(null); setLocationSource(null); setEvidence([]);
-      setCommunityCategory('not_sure');
       setIncidentTime(createInitialIncidentTime());
       requestIdRef.current = requestId(); requestFingerprintRef.current = ''; requestStartedAtRef.current = '';
     } catch (submitError: any) {
@@ -144,7 +134,7 @@ export default function ResidentIncidentReportPage() {
 
   return <main className="resident-portal-page resident-report-compose">
     <Link className="resident-back-link" to="/resident-report"><ArrowLeft size={15}/> Back to reporting options</Link>
-    <header className="resident-page-heading"><div><span className="resident-kicker"><Siren size={15}/> {type === 'community' ? 'COMMUNITY INCIDENT' : 'EMERGENCY INCIDENT'}</span><h1>{type === 'community' ? 'Report a community concern' : 'Report an emergency'}</h1><p>{reportMode ? 'Your report will be sent to MDRRMO and linked to your resident account.' : 'Choose how you would like to submit your report.'}</p></div></header>
+    <header className="resident-page-heading"><div><span className="resident-kicker"><Siren size={15}/> EMERGENCY INCIDENT</span><h1>Report an emergency</h1><p>{reportMode ? 'Your report will be sent to MDRRMO and linked to your resident account.' : 'Choose how you would like to submit your report.'}</p></div></header>
     <div className="resident-compose-layout"><section className="resident-compose-card">
       <div className="resident-compose-account"><span><ShieldCheck size={18}/></span><div><strong>{user?.full_name || 'Resident account'}</strong><small>{user?.barangay_name ? `Resident · ${user.barangay_name}` : 'Resident report'}</small></div><button type="button" onClick={() => navigate('/my-reports')}>My reports <ArrowLeft size={13}/></button></div>
       <form className="resident-compose-form" onSubmit={(event) => void submit(event)}>
@@ -156,24 +146,24 @@ export default function ResidentIncidentReportPage() {
               Incident category
               <select
                 value={selectedCategory}
-                onChange={(event) => type === 'community' ? setCommunityCategory(event.target.value) : setCategory(event.target.value)}
+                onChange={(event) => setCategory(event.target.value)}
               >
-                {selectedCategoryOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                {INCIDENT_TYPE_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
               </select>
             </label>
             {selectedCategoryNeedsDescription && <label>
-              <span className="required-inline-label">{type === 'community' ? 'Describe the concern' : 'Describe the emergency'} <b>Required</b></span>
-              <input type="text" required maxLength={120} value={otherEmergency} onChange={(event) => setOtherEmergency(event.target.value)} placeholder={type === 'community' ? 'Describe the concern' : 'Describe the emergency'} />
+              <span className="required-inline-label">Describe the emergency <b>Required</b></span>
+              <input type="text" required maxLength={120} value={otherEmergency} onChange={(event) => setOtherEmergency(event.target.value)} placeholder="Describe the emergency" />
             </label>}
           </div>
           <IncidentTimeInput value={incidentTime} onChange={setIncidentTime} />
         </div>
         <label>Mobile number <MobileNumberInput value={phone} onValueChange={setPhone} placeholder="09XXXXXXXXX" required/><small>Responders may use this number to contact you about the report.</small></label>
-        {reportMode === 'standard' && <label>Incident details<textarea rows={5} minLength={8} maxLength={2000} placeholder={type === 'community' ? 'Describe the hazard and where it is affecting the community…' : 'Describe what happened, who needs help, and any immediate danger…'} value={description} onChange={(event) => setDescription(event.target.value)} required/></label>}
+        {reportMode === 'standard' && <label>Incident details<textarea rows={5} minLength={8} maxLength={2000} placeholder="Describe what happened, who needs help, and any immediate danger…" value={description} onChange={(event) => setDescription(event.target.value)} required/></label>}
         <fieldset className="resident-location-field"><legend>Incident location <b>Required</b></legend><p>Place the pin at the incident site. This helps responders find the right location.</p><div className="resident-location-actions"><button type="button" onClick={() => requestCurrentLocation()}><LocateFixed size={15}/>{locationSource === 'current' ? 'Update current location' : 'Use current location'}</button><button type="button" onClick={openMapPicker}><MapPin size={15}/>{locationSource === 'map' ? 'Change map location' : 'Choose on map'}</button></div><div className={`resident-picked-location ${location ? 'located' : ''}`}><MapPin size={15}/>{location ? `${locationSource === 'map' ? 'Map pin' : 'Current location'} · ${location.latitude.toFixed(5)}, ${location.longitude.toFixed(5)}` : 'No location selected yet'}</div></fieldset>
         <CameraEvidenceCapture files={evidence} onFilesChange={setEvidence} required={reportMode === 'visual'} />
         {error && <div className="resident-feedback error" role="alert"><CircleAlert size={16}/>{error}</div>}
-        <button className="resident-submit-report" type="submit" disabled={busy}><Siren size={17}/>{busy ? 'Sending report…' : type === 'community' ? 'Submit community report' : 'Send emergency report'}</button>
+        <button className="resident-submit-report" type="submit" disabled={busy}><Siren size={17}/>{busy ? 'Sending report…' : 'Send emergency report'}</button>
         </>}
       </form>
     </section>

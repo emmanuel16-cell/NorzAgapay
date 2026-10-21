@@ -536,9 +536,7 @@ class _MyReportsScreenState extends State<MyReportsScreen> {
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  '${draft['type'] == 'community' ? 'Community' : 'Emergency'} · $proofCount proof file(s)',
-                ),
+                Text('Emergency · $proofCount proof file(s)'),
                 if ((draft['description'] ?? '').toString().isNotEmpty)
                   Text(draft['description'].toString()),
                 IncidentOccurrenceText(
@@ -570,7 +568,6 @@ class _MyReportsScreenState extends State<MyReportsScreen> {
                   context,
                   MaterialPageRoute(
                     builder: (_) => ReportingScreen(
-                      reportType: draft['type'].toString(),
                       initialDraft: draft,
                     ),
                   ),

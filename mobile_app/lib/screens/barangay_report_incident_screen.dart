@@ -17,9 +17,6 @@ class BarangayReportIncidentScreen extends StatefulWidget {
 }
 
 class _BarangayReportIncidentScreenState extends State<BarangayReportIncidentScreen> {
-  String _reportType = 'emergency'; // 'emergency' or 'community'
-  String? _selectedCategory;
-  String? _selectedSpecific;
   final _descController = TextEditingController();
 
   File? _proofFile;
@@ -29,34 +26,6 @@ class _BarangayReportIncidentScreenState extends State<BarangayReportIncidentScr
   LocationData? _currentLocation;
   final Location _location = Location();
   bool _gettingLocation = false;
-
-  final Map<String, List<String>> _communityCategories = {
-    'Community Safety Concerns': [
-      'Minor Flooding',
-      'Drainage Blockage',
-      'Small Fire Incident',
-      'Fallen Tree Report',
-      'Road Damage Report',
-      'Damaged House Report',
-      'Cracked Road Report',
-      'Unsafe Electrical Wiring',
-      'River Water Level Report',
-    ],
-    'Environmental Concerns': [
-      'Illegal Dumping',
-      'River Pollution Report',
-      'Smoke Pollution',
-      'Animal Carcass Disposal',
-      'Flood-Prone Area Report',
-    ],
-    'Weather & Monitoring Reports': [
-      'Heavy Rain Monitoring',
-      'Strong Wind Monitoring',
-      'Rising Water Level Monitoring',
-      'Landslide-Prone Area Report',
-      'Earthquake Damage Observation',
-    ],
-  };
 
   @override
   void initState() {
@@ -199,13 +168,6 @@ class _BarangayReportIncidentScreenState extends State<BarangayReportIncidentScr
   }
 
   Future<void> _submitReport() async {
-    if (_reportType == 'community' && _selectedCategory == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select an incident category'), backgroundColor: Colors.amber),
-      );
-      return;
-    }
-
     if (_currentLocation == null) {
       await _getLocation();
       if (_currentLocation == null) {
@@ -233,11 +195,9 @@ class _BarangayReportIncidentScreenState extends State<BarangayReportIncidentScr
         'ngrok-skip-browser-warning': 'true',
       });
 
-      request.fields['type'] = _reportType;
-      request.fields['title'] = _reportType == 'emergency'
-          ? 'Field Emergency Report'
-          : (_selectedCategory ?? 'Barangay Field Report');
-      request.fields['specifics'] = _selectedSpecific ?? '';
+      request.fields['type'] = 'emergency';
+      request.fields['title'] = 'Field Emergency Report';
+      request.fields['specifics'] = '';
       request.fields['description'] = _descController.text.trim();
       request.fields['latitude'] = _currentLocation!.latitude.toString();
       request.fields['longitude'] = _currentLocation!.longitude.toString();
@@ -282,8 +242,7 @@ class _BarangayReportIncidentScreenState extends State<BarangayReportIncidentScr
 
   @override
   Widget build(BuildContext context) {
-    final isEmergency = _reportType == 'emergency';
-    final primaryColor = isEmergency ? const Color(0xFFEF4444) : const Color(0xFF0284C7);
+    const primaryColor = Color(0xFFEF4444);
 
     return Scaffold(
       backgroundColor: const Color(0xFF0F172A),
@@ -297,142 +256,8 @@ class _BarangayReportIncidentScreenState extends State<BarangayReportIncidentScr
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Report Type Selector
-            Row(
-              children: [
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () => setState(() {
-                      _reportType = 'emergency';
-                      _selectedCategory = null;
-                      _selectedSpecific = null;
-                    }),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      decoration: BoxDecoration(
-                        color: isEmergency ? const Color(0xFFEF4444).withOpacity(0.2) : const Color(0xFF1E293B),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: isEmergency ? const Color(0xFFEF4444) : const Color(0xFF334155),
-                          width: isEmergency ? 2 : 1,
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.warning_amber_rounded, color: isEmergency ? const Color(0xFFEF4444) : Colors.grey, size: 20),
-                          const SizedBox(width: 8),
-                          Text(
-                            'EMERGENCY',
-                            style: TextStyle(
-                              color: isEmergency ? Colors.white : Colors.grey,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () => setState(() => _reportType = 'community'),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      decoration: BoxDecoration(
-                        color: !isEmergency ? const Color(0xFF0284C7).withOpacity(0.2) : const Color(0xFF1E293B),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: !isEmergency ? const Color(0xFF0284C7) : const Color(0xFF334155),
-                          width: !isEmergency ? 2 : 1,
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.assignment_outlined, color: !isEmergency ? const Color(0xFF0284C7) : Colors.grey, size: 20),
-                          const SizedBox(width: 8),
-                          Text(
-                            'COMMUNITY',
-                            style: TextStyle(
-                              color: !isEmergency ? Colors.white : Colors.grey,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+            const Text('Emergency incident', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
             const SizedBox(height: 20),
-
-            // Category Selection (for community reports)
-            if (!isEmergency) ...[
-              const Text('Incident Category', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1E293B),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFF334155)),
-                ),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: _selectedCategory,
-                    isExpanded: true,
-                    dropdownColor: const Color(0xFF1E293B),
-                    hint: const Text('Select Incident Category', style: TextStyle(color: Color(0xFF64748B), fontSize: 13)),
-                    items: _communityCategories.keys.map((cat) {
-                      return DropdownMenuItem<String>(
-                        value: cat,
-                        child: Text(cat, style: const TextStyle(color: Colors.white, fontSize: 13)),
-                      );
-                    }).toList(),
-                    onChanged: (val) {
-                      setState(() {
-                        _selectedCategory = val;
-                        _selectedSpecific = null;
-                      });
-                    },
-                  ),
-                ),
-              ),
-              const SizedBox(height: 14),
-              if (_selectedCategory != null) ...[
-                const Text('Specific Incident', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1E293B),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: const Color(0xFF334155)),
-                  ),
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      value: _selectedSpecific,
-                      isExpanded: true,
-                      dropdownColor: const Color(0xFF1E293B),
-                      hint: const Text('Select Specific Type', style: TextStyle(color: Color(0xFF64748B), fontSize: 13)),
-                      items: _communityCategories[_selectedCategory]!.map((item) {
-                        return DropdownMenuItem<String>(
-                          value: item,
-                          child: Text(item, style: const TextStyle(color: Colors.white, fontSize: 13)),
-                        );
-                      }).toList(),
-                      onChanged: (val) => setState(() => _selectedSpecific = val),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 20),
-              ],
-            ],
 
             // Visual Proof (Take or Upload Photo / Video)
             const Text(

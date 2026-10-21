@@ -1011,7 +1011,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           const SizedBox(height: 6),
           const Text(
-            'Login is required before reporting emergencies and community incidents to MDRRMO and Barangay.',
+            'Login is required before reporting emergencies to MDRRMO.',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 13, color: Color(0xFF64748B), height: 1.4),
           ),

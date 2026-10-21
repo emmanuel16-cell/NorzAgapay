@@ -246,7 +246,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       illustration: _buildReportIllustration(),
       title: 'Report Incidents with Proof & GPS',
       description:
-          'Submit emergency and community incidents with instant photo or video proof and your exact GPS coordinates attached for rapid dispatch.',
+          'Submit emergencies with photo or video proof and your GPS coordinates for rapid dispatch.',
       extraWidget: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(

@@ -642,6 +642,10 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
       res.status(400).json({ error: 'Missing required fields: type, title, latitude, longitude' });
       return;
     }
+    if (String(type).trim().toLowerCase() !== 'emergency') {
+      res.status(400).json({ error: 'Only emergency incident reports can be submitted.' });
+      return;
+    }
 
     let residentProfile: { full_name?: string | null; phone?: string | null } | null = null;
     if (req.user?.role === 'resident' && req.user.userId) {

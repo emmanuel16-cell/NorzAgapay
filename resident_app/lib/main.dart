@@ -85,7 +85,7 @@ class _ResidentAppState extends State<ResidentApp> {
       routes: {
         '/home': (context) => const MainNavigationScreen(initialIndex: 0),
         '/evacuation-centers': (context) => const EvacuationCentersScreen(),
-        '/report': (context) => const ReportingScreen(reportType: 'emergency'),
+        '/report': (context) => const ReportingScreen(),
         '/my-reports': (context) => const MyReportsScreen(),
         '/hotlines': (context) => const HotlinesScreen(),
         '/profile': (context) => const ProfileScreen(),

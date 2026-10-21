@@ -113,26 +113,7 @@ class ReportHubScreen extends StatelessWidget {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => const ReportingScreen(reportType: 'emergency'),
-                  ),
-                );
-              },
-            ),
-            const SizedBox(height: 14),
-
-            // 2. Community Incident Action Card
-            _ReportingOptionCard(
-              title: 'Community Incident',
-              subtitle:
-                  'Non-life threatening community concerns: drainage blocks, fallen trees, road hazards, cracked pavement, or minor flooding. MDRRMO may assign it to your barangay for local response.',
-              badge: 'MDRRMO Intake',
-              icon: Icons.home_repair_service_rounded,
-              accentColor: const Color(0xFFD97706),
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const ReportingScreen(reportType: 'community'),
+                    builder: (_) => const ReportingScreen(),
                   ),
                 );
               },
