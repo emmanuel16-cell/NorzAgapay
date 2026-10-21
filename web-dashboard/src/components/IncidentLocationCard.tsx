@@ -8,6 +8,9 @@ type Props = {
   error?: string;
   coordinates?: string | null;
   onOpenMap?: () => void;
+  showTitle?: boolean;
+  compact?: boolean;
+  showLandmarkDistance?: boolean;
 };
 
 export default function IncidentLocationCard({
@@ -17,19 +20,22 @@ export default function IncidentLocationCard({
   error = '',
   coordinates,
   onOpenMap,
+  showTitle = true,
+  compact = false,
+  showLandmarkDistance = true,
 }: Props) {
   const primary = location?.road || location?.landmark || fallbackLabel || 'Pinned incident location';
   const hasNearbyLandmark = Boolean(location?.landmark && location.landmark !== primary);
   const landmarkText = hasNearbyLandmark
-    ? `Near ${location!.landmark}${location!.landmark_distance_meters != null ? ` · ${location!.landmark_distance_meters} m` : ''}`
+    ? `Near ${location!.landmark}${showLandmarkDistance && location!.landmark_distance_meters != null ? ` · ${location!.landmark_distance_meters} m` : ''}`
     : '';
   const nearestBarangay = location?.nearest_response_barangay_name?.replace(/^(?:barangay|brgy\.?)\s*/i, '');
 
   return (
-    <div className="panel-details-box incident-location-card">
+    <div className={`panel-details-box incident-location-card ${compact ? 'compact' : ''}`}>
       <MapPin size={18} aria-hidden="true" />
       <div className="reporter-note-content">
-        <strong>Incident location</strong>
+        {showTitle && <strong>Incident location</strong>}
         <p>{loading ? 'Looking up the road and nearby places…' : primary}</p>
         {!loading && landmarkText && <small>{landmarkText}</small>}
         {!loading && nearestBarangay && <small>Closest response barangay: {nearestBarangay}</small>}

@@ -1,14 +1,17 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { ArrowLeft, Check, ClipboardList, HandHelping, MapPin, RefreshCw, Send, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import { barangayAPI, reportAPI, requestAPI, socket } from '../lib/api';
 import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
+import IncidentLocationCard from '../components/IncidentLocationCard';
+import { formatIncidentLocation, hasIncidentPin, type IncidentLocationPreview } from '../lib/incidentLocation';
 
 type Incident = {
   id: string; title?: string; incident_type?: string; description?: string;
   response_status?: string; barangay_response_status?: string; created_at?: string;
   address?: string | null; barangay_name?: string | null;
+  latitude?: number | string | null; longitude?: number | string | null; location_name?: string | null;
 };
 type Assistance = {
   id: string; requested_by?: string; requested_by_user?: { full_name?: string; role?: string };
@@ -39,6 +42,34 @@ const dateTime = (value?: string) => {
   return Number.isNaN(date.getTime()) ? 'Time unavailable' : new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
 };
 const requestLabel = (request: Assistance) => [request.needs_more_manpower && 'Additional responders', request.needs_resources && 'Supplies or resources', request.needs_equipment && 'Equipment', request.beyond_barangay_capability && 'MDRRMO coordination'].filter(Boolean).join(' · ') || 'General assistance';
+
+function useIncidentLocationPreviews(incidents: Incident[], isBarangay: boolean) {
+  const [previews, setPreviews] = useState<Record<string, IncidentLocationPreview>>({});
+  const [loading, setLoading] = useState<Record<string, boolean>>({});
+  const requested = useRef(new Set<string>());
+
+  const loadPreview = useCallback(async (incident: Incident) => {
+    if (!hasIncidentPin(incident)) return;
+    const key = `${incident.id}:${incident.latitude}:${incident.longitude}`;
+    if (requested.current.has(key)) return;
+    requested.current.add(key);
+    setLoading((current) => ({ ...current, [incident.id]: true }));
+    try {
+      const response = isBarangay
+        ? await reportAPI.barangayLocationPreview(incident.id)
+        : await reportAPI.mdrrmoReportLocationPreview(incident.id);
+      setPreviews((current) => ({ ...current, [incident.id]: response.data || {} }));
+    } catch (error) {
+      requested.current.delete(key);
+      console.warn(`Could not load incident location details for ${incident.id}:`, error);
+    } finally {
+      setLoading((current) => ({ ...current, [incident.id]: false }));
+    }
+  }, [isBarangay]);
+
+  useEffect(() => { incidents.forEach((incident) => void loadPreview(incident)); }, [incidents, loadPreview]);
+  return { previews, loading };
+}
 
 function RequestFields({ form, setForm, incident }: { form: RequestForm; setForm: (update: (value: RequestForm) => RequestForm) => void; incident?: Incident | null }) {
   return <>
@@ -120,6 +151,7 @@ function BarangayAssistanceWorkspace() {
     const linkedIds = new Set(requests.map((request) => request.incident_report_id).filter((id): id is string => Boolean(id)));
     return incidents.filter((incident) => isActiveIncident(incident) || linkedIds.has(incident.id));
   }, [incidents, requests]);
+  const incidentLocations = useIncidentLocationPreviews(isResponder ? incidentQueue : [], true);
   const selectedIncident = selectedIncidentId && selectedIncidentId !== 'general' ? incidents.find((incident) => incident.id === selectedIncidentId) || null : null;
   const incidentRequests = selectedIncidentId === 'general'
     ? requests.filter((request) => !request.incident_report_id)
@@ -212,7 +244,7 @@ function BarangayAssistanceWorkspace() {
                 return <button key={incident.id} type="button" className={`reports-queue-item-v2 ${incidentStatusClass(incident)} ${selectedIncidentId === incident.id ? 'selected' : ''}`} onClick={() => setSelectedIncidentId(incident.id)}>
                   <span className="reports-queue-item-top"><strong>{incidentTitle(incident)}</strong><span className={`report-status-chip-v2 ${incidentStatusClass(incident)}`}>{statusLabel(incidentStatus(incident))}</span></span>
                   <span className="reports-queue-time">Incident occurred · {dateTime(incident.created_at)}</span>
-                  <span className="reports-queue-meta"><span className="reports-queue-location-v2"><MapPin size={14} /><span><strong>{incident.address || incident.barangay_name || 'Location not provided'}</strong></span></span></span>
+                  <IncidentLocationCard compact showTitle={false} showLandmarkDistance={false} location={incidentLocations.previews[incident.id]} fallbackLabel={formatIncidentLocation(incident)} loading={Boolean(incidentLocations.loading[incident.id])} coordinates={hasIncidentPin(incident) ? `${Number(incident.latitude).toFixed(5)}, ${Number(incident.longitude).toFixed(5)}` : null} />
                   {incident.description && <span className="reports-queue-time assistance-request-preview">{incident.description}</span>}
                   <span className="reports-queue-time">{count} assistance {count === 1 ? 'request' : 'requests'}</span>
                 </button>;
@@ -247,7 +279,7 @@ function BarangayAssistanceWorkspace() {
                   <div><span className="reports-eyebrow-v2">Selected incident</span><h2>{selectedIncident ? incidentTitle(selectedIncident) : 'General assistance'}</h2><p>{selectedIncident ? `${statusLabel(incidentStatus(selectedIncident))} · ${dateTime(selectedIncident.created_at)}` : 'Requests submitted without an incident link'}</p></div>
                   <div className="reports-detail-heading-actions-v2"><span className={`report-status-chip-v2 detail ${selectedIncident ? incidentStatusClass(selectedIncident) : 'pending'}`}>{selectedIncident ? statusLabel(incidentStatus(selectedIncident)) : 'History'}</span><button className="workspace-primary-action" type="button" onClick={startNewRequest} disabled={!isSelectedActive}><HandHelping size={16} /> Request assistance</button></div>
                 </header>
-                {selectedIncident && <section className="reports-detail-section-v2"><h3>Incident location</h3><div className="reports-location-card-v2"><MapPin size={19} /><div><strong>{selectedIncident.address || 'Location not provided'}</strong><span>{selectedIncident.barangay_name || user?.barangay_name || 'Your barangay'}</span></div></div>{selectedIncident.description && <div className="reports-text-card-v2" style={{ marginTop: 10 }}>{selectedIncident.description}</div>}</section>}
+                {selectedIncident && <section className="reports-detail-section-v2"><h3>Incident location</h3><IncidentLocationCard showTitle={false} showLandmarkDistance={false} location={incidentLocations.previews[selectedIncident.id]} fallbackLabel={formatIncidentLocation(selectedIncident)} loading={Boolean(incidentLocations.loading[selectedIncident.id])} coordinates={hasIncidentPin(selectedIncident) ? `${Number(selectedIncident.latitude).toFixed(5)}, ${Number(selectedIncident.longitude).toFixed(5)}` : null} />{selectedIncident.description && <div className="reports-text-card-v2" style={{ marginTop: 10 }}>{selectedIncident.description}</div>}</section>}
                 <section className="reports-detail-section-v2 assistance-history-section">
                   <div className="reports-section-heading-v2"><h3>Request history</h3><span>{incidentRequests.length} requests</span></div>
                   {incidentRequests.length ? <div className="assistance-history-list">{incidentRequests.map((request) => <article className="assistance-history-card" key={request.id}>
@@ -325,6 +357,7 @@ function MdrrmoResponderAssistanceWorkspace() {
     const requestIds = new Set(requests.map((request) => request.incident_id));
     return incidents.filter((incident) => isActiveIncident(incident) || requestIds.has(incident.id));
   }, [incidents, requests]);
+  const incidentLocations = useIncidentLocationPreviews(incidentQueue, false);
   const selectedIncident = incidents.find((incident) => incident.id === selectedIncidentId) || null;
   const incidentRequests = requests.filter((request) => request.incident_id === selectedIncidentId);
   const isSelectedActive = Boolean(selectedIncident && isActiveIncident(selectedIncident));
@@ -378,7 +411,7 @@ function MdrrmoResponderAssistanceWorkspace() {
             return <button key={incident.id} type="button" className={`reports-queue-item-v2 ${incidentStatusClass(incident)} ${selectedIncidentId === incident.id ? 'selected' : ''}`} onClick={() => setSelectedIncidentId(incident.id)}>
               <span className="reports-queue-item-top"><strong>{incidentTitle(incident)}</strong><span className={`report-status-chip-v2 ${incidentStatusClass(incident)}`}>{statusLabel(incidentStatus(incident))}</span></span>
               <span className="reports-queue-time">Incident occurred · {dateTime(incident.created_at)}</span>
-              <span className="reports-queue-meta"><span className="reports-queue-location-v2"><MapPin size={14} /><span><strong>{incident.address || incident.barangay_name || 'Location not provided'}</strong></span></span></span>
+              <IncidentLocationCard compact showTitle={false} showLandmarkDistance={false} location={incidentLocations.previews[incident.id]} fallbackLabel={formatIncidentLocation(incident)} loading={Boolean(incidentLocations.loading[incident.id])} coordinates={hasIncidentPin(incident) ? `${Number(incident.latitude).toFixed(5)}, ${Number(incident.longitude).toFixed(5)}` : null} />
               {incident.description && <span className="reports-queue-time assistance-request-preview">{incident.description}</span>}
               <span className="reports-queue-time">{count} assistance {count === 1 ? 'request' : 'requests'}</span>
             </button>;
@@ -386,7 +419,7 @@ function MdrrmoResponderAssistanceWorkspace() {
         </aside>
         <section className="reports-detail-v2">{!selectedIncident ? <div className="reports-detail-empty-v2"><div><ClipboardList size={28} /></div><strong>Select a responding incident</strong><p>Choose an incident assigned to your unit to review requests and ask for support.</p></div> : <>
           <div className="reports-detail-scroll-v2"><header className="reports-detail-heading-v2 reports-detail-heading-responder-v2"><button type="button" className="reports-mobile-back-v2" onClick={() => setSelectedIncidentId(null)}><ArrowLeft size={16} /> Responding incidents</button><div><span className="reports-eyebrow-v2">Selected incident</span><h2>{incidentTitle(selectedIncident)}</h2><p>{statusLabel(incidentStatus(selectedIncident))} · {dateTime(selectedIncident.created_at)}</p></div><div className="reports-detail-heading-actions-v2"><span className={`report-status-chip-v2 detail ${incidentStatusClass(selectedIncident)}`}>{statusLabel(incidentStatus(selectedIncident))}</span><button className="workspace-primary-action" type="button" onClick={startRequest} disabled={!isSelectedActive}><HandHelping size={16} /> Request assistance</button></div></header>
-            <section className="reports-detail-section-v2"><h3>Incident location</h3><div className="reports-location-card-v2"><MapPin size={19} /><div><strong>{selectedIncident.address || 'Location not provided'}</strong><span>{selectedIncident.barangay_name || 'MDRRMO coverage area'}</span></div></div>{selectedIncident.description && <div className="reports-text-card-v2" style={{ marginTop: 10 }}>{selectedIncident.description}</div>}</section>
+            <section className="reports-detail-section-v2"><h3>Incident location</h3><IncidentLocationCard showTitle={false} showLandmarkDistance={false} location={incidentLocations.previews[selectedIncident.id]} fallbackLabel={formatIncidentLocation(selectedIncident)} loading={Boolean(incidentLocations.loading[selectedIncident.id])} coordinates={hasIncidentPin(selectedIncident) ? `${Number(selectedIncident.latitude).toFixed(5)}, ${Number(selectedIncident.longitude).toFixed(5)}` : null} />{selectedIncident.description && <div className="reports-text-card-v2" style={{ marginTop: 10 }}>{selectedIncident.description}</div>}</section>
             <section className="reports-detail-section-v2 assistance-history-section"><div className="reports-section-heading-v2"><h3>Request history</h3><span>{incidentRequests.length} requests</span></div>{incidentRequests.length ? <div className="assistance-history-list">{incidentRequests.map((request) => <article className="assistance-history-card" key={request.id}>
               <header><div><span className="assistance-history-sos">SOS</span><strong>{mdrrmoRequestLabel(request)}</strong></div><span className={`assistance-status-chip ${statusClass(request.status)}`}>{request.status === 'fulfilled' ? 'Received' : statusLabel(request.status)}</span></header>
               <div className="assistance-history-entry"><strong>{incidentTitle(selectedIncident)}</strong><div className="assistance-history-meta"><span>{mdrrmoRequestLabel(request)}</span><time>{dateTime(request.created_at)}</time></div><p>{request.details || 'No request details provided.'}</p></div>

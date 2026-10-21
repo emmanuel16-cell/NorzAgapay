@@ -3463,6 +3463,11 @@ tbody tr:last-child td { border-bottom: none; }
 .incident-location-card .reporter-note-content p { min-height: 18px; color: #8bdcf0; font-size: 13px; font-weight: 700; overflow-wrap: anywhere; }
 .incident-location-card .reporter-note-content small { color: #9ab1d2; font-size: 11px; }
 .incident-location-card .incident-location-message { color: #f1b1ad; }
+.reports-queue-item-v2 .incident-location-card.compact { min-height: 0; padding: 0; border: 0; background: transparent; }
+.reports-queue-item-v2 .incident-location-card.compact > svg { margin-top: 2px; }
+.reports-queue-item-v2 .incident-location-card.compact .reporter-note-content { gap: 2px; }
+.reports-queue-item-v2 .incident-location-card.compact .reporter-note-content p { color: #b8d0f2; font-size: 12px; font-weight: 600; }
+.reports-queue-item-v2 .incident-location-card.compact .reporter-note-content small { font-size: 11px; }
 .incident-location-map-link { width: max-content; padding: 0; border: 0; color: #69c8e7; background: transparent; font: inherit; font-size: 11px; text-align: left; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 .resident-selection-overlay .panel-resident .incident-location-card,
 .escalated-selection-overlay .panel-resident .incident-location-card { order: 2; }
