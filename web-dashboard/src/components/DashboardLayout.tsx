@@ -46,7 +46,7 @@ const navItems: NavItem[] = [
   { label: 'Barangay Operations', section: true },
   { path: '/barangay-dashboard', icon: <Building2 size={19} strokeWidth={1.8} />, label: 'Barangay Overview' },
   { path: '/barangay-assistance', icon: <Handshake size={19} strokeWidth={1.8} />, label: 'Assistance Requests' },
-  { path: '/barangay-board', icon: <MessageSquareText size={19} strokeWidth={1.8} />, label: 'Barangay Board' },
+  { path: '/barangay-board', icon: <MessageSquareText size={19} strokeWidth={1.8} />, label: 'Board' },
   { label: 'Barangay Administration', section: true },
   { path: '/barangay-team', icon: <Users size={19} strokeWidth={1.8} />, label: 'Barangay Team' },
   { path: '/barangay-analytics', icon: <BarChart3 size={19} strokeWidth={1.8} />, label: 'Barangay Analytics' },
@@ -143,7 +143,7 @@ function navigationForRole(role?: string, accountKind?: string, isMasterAdmin = 
       item('/reports'),
       { ...item('/barangay-assistance'), label: 'Assistance Requests' },
       { label: 'MDRRMO Operations', section: true },
-      { ...item('/barangay-board'), label: 'MDRRMO Board' },
+      { ...item('/barangay-board'), label: 'Board' },
       { ...item('/barangay-team'), label: 'Response Unit' },
     ];
   }
