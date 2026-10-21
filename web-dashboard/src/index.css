@@ -4100,8 +4100,6 @@ tbody tr:last-child td { border-bottom: none; }
 .incident-time-choice, .incident-time-precision-choice { display: inline-flex; min-height: 36px; align-items: center; justify-content: center; gap: 6px; padding: 7px 10px; border: 1px solid; border-radius: 9px; font: inherit; font-size: 12px; font-weight: 650; cursor: pointer; }
 .incident-time-choice:focus-visible, .incident-time-precision-choice:focus-visible { outline: 2px solid #44c5e3; outline-offset: 2px; }
 .incident-time-details { display: grid; gap: 8px; min-width: 0; }
-.incident-time-datetime { display: grid; min-width: 0; gap: 4px; font-size: 10px; font-weight: 650; }
-.incident-time-datetime input { width: 100%; box-sizing: border-box; min-height: 38px; padding: 7px 8px; border: 1px solid; border-radius: 8px; font: inherit; font-size: 12px; }
 .incident-time-age, .incident-time-hint { margin: 0; font-size: 11px; line-height: 1.45; }
 .incident-time-duration { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .incident-time-duration label { display: grid; min-width: 0; gap: 4px; font-size: 10px; font-weight: 650; }
@@ -4114,9 +4112,6 @@ tbody tr:last-child td { border-bottom: none; }
 .public-report-form .incident-time-age, .public-report-form .incident-time-hint, .public-report-form .incident-time-precision { color: #a9bddb; }
 .public-report-form .incident-time-duration select { border-color: #385276; color: #f3f7ff; background: #0b1b35; }
 .public-report-form .incident-time-duration select:focus { border-color: #44c5e3; outline: 0; box-shadow: 0 0 0 3px #26b7dd25; }
-.public-report-form .incident-time-datetime { color: #a9bddb; }
-.public-report-form .incident-time-datetime input { border-color: #385276; color: #f3f7ff; background: #0b1b35; }
-.public-report-form .incident-time-datetime input:focus { border-color: #44c5e3; outline: 0; box-shadow: 0 0 0 3px #26b7dd25; }
 .public-report-form > input:not([type=file]), .public-report-form > textarea, .public-report-form > select { width: 100%; min-width: 0; padding: 11px 12px; border: 1px solid #385276; border-radius: 9px; outline: none; color: #f3f7ff; background: #0b1b35; font: inherit; font-size: 16px; }
 .public-report-form > input:focus, .public-report-form > textarea:focus, .public-report-form > select:focus { border-color: #44c5e3; box-shadow: 0 0 0 3px #26b7dd25; }
 .public-report-form > textarea { resize: vertical; }
@@ -5446,9 +5441,6 @@ body.responder-map-open { overflow: hidden; }
 .resident-compose-form .incident-time-duration label { color: var(--text-secondary); }
 .resident-compose-form .incident-time-duration select { border-color: var(--border-color); color: var(--text-primary); background: var(--bg-primary); }
 .resident-compose-form .incident-time-duration select:focus { border-color: var(--primary-light); outline: 0; box-shadow: 0 0 0 2px rgba(49, 192, 217, .14); }
-.resident-compose-form .incident-time-datetime { color: var(--text-secondary); }
-.resident-compose-form .incident-time-datetime input { border-color: var(--border-color); color: var(--text-primary); background: var(--bg-primary); }
-.resident-compose-form .incident-time-datetime input:focus { border-color: var(--primary-light); outline: 0; box-shadow: 0 0 0 2px rgba(49, 192, 217, .14); }
 .resident-location-field { display: grid; gap: 8px; min-width: 0; margin: 0; padding: 12px; border: 1px solid var(--border-color); border-radius: 9px; }
 .resident-location-field legend { padding: 0 4px; color: var(--text-primary); font-size: 11px; font-weight: 750; }
 .resident-location-field legend b { margin-left: 4px; color: #ef8985; font-size: 9px; text-transform: uppercase; }

@@ -2,9 +2,17 @@ import { useId } from 'react';
 import { Check } from 'lucide-react';
 import { type IncidentTimeChoice, type IncidentTimeValue } from '../lib/incidentTime';
 
-function toLocalDateTimeValue(value: Date) {
-  const offset = value.getTimezoneOffset() * 60_000;
-  return new Date(value.getTime() - offset).toISOString().slice(0, 16);
+const MINUTE_MS = 60_000;
+
+function formatElapsedTime(totalMinutes: number) {
+  if (totalMinutes === 0) return 'Less than a minute ago';
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  const parts = [
+    ...(hours ? [`${hours} ${hours === 1 ? 'hour' : 'hours'}`] : []),
+    ...(minutes ? [`${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`] : []),
+  ];
+  return `${parts.join(' ')} ago`;
 }
 
 export default function IncidentTimeInput({
@@ -15,6 +23,14 @@ export default function IncidentTimeInput({
   onChange: (next: IncidentTimeValue) => void;
 }) {
   const titleId = useId();
+  const now = new Date();
+  const occurredAtMs = value.occurredAt ? new Date(value.occurredAt).getTime() : Number.NaN;
+  const elapsedMinutes = Number.isFinite(occurredAtMs)
+    ? Math.max(0, Math.floor((now.getTime() - occurredAtMs) / MINUTE_MS))
+    : 0;
+  const maxEarlierMinutes = Math.max(now.getHours() * 60 + now.getMinutes(), elapsedMinutes);
+  const earlierHours = Math.min(Math.floor(elapsedMinutes / 60), Math.floor(maxEarlierMinutes / 60));
+  const earlierMinutes = Math.min(elapsedMinutes % 60, Math.min(59, maxEarlierMinutes - earlierHours * 60));
 
   const selectChoice = (choice: IncidentTimeChoice) => {
     const now = new Date();
@@ -28,18 +44,40 @@ export default function IncidentTimeInput({
     }
     if (value.choice === 'earlier') return;
 
+    const availableMinutes = now.getHours() * 60 + now.getMinutes();
+    const initialMinutes = Math.min(30, availableMinutes);
+    let hours = Math.floor(initialMinutes / 60);
+    let minutes = initialMinutes % 60;
+    if (initialMinutes === 0 && availableMinutes > 0) minutes = 1;
+    const occurredAt = new Date(now.getTime() - (hours * 60 + minutes) * MINUTE_MS);
+
     onChange({
       ...value,
       choice,
-      occurredAt: new Date(now.getTime() - 30 * 60_000).toISOString(),
+      occurredAt: occurredAt.toISOString(),
       precision: 'approximate',
     });
   };
 
-  const updateEarlierTime = (input: string) => {
-    const parsed = new Date(input);
-    if (!input || !Number.isFinite(parsed.getTime()) || parsed.getTime() > Date.now()) return;
-    onChange({ ...value, choice: 'earlier', occurredAt: parsed.toISOString() });
+  const updateEarlierTime = ({ hours, minutes }: { hours?: number; minutes?: number }) => {
+    const currentTime = new Date();
+    const currentOccurredAt = value.occurredAt ? new Date(value.occurredAt).getTime() : Number.NaN;
+    const existingElapsedMinutes = Number.isFinite(currentOccurredAt)
+      ? Math.max(0, Math.floor((currentTime.getTime() - currentOccurredAt) / MINUTE_MS))
+      : 0;
+    const maxMinutes = Math.max(currentTime.getHours() * 60 + currentTime.getMinutes(), existingElapsedMinutes);
+    const nextHours = Math.max(0, Math.min(hours ?? earlierHours, Math.floor(maxMinutes / 60)));
+    const maxMinutesForHour = Math.min(59, maxMinutes - nextHours * 60);
+    let nextMinutes = Math.max(0, Math.min(minutes ?? earlierMinutes, maxMinutesForHour));
+    if (nextHours === 0 && nextMinutes === 0 && maxMinutes > 0) nextMinutes = 1;
+
+    const occurredAt = new Date(currentTime.getTime() - (nextHours * 60 + nextMinutes) * MINUTE_MS);
+    onChange({
+      ...value,
+      choice: 'earlier',
+      occurredAt: occurredAt.toISOString(),
+      precision: value.precision === 'unknown' ? 'approximate' : value.precision,
+    });
   };
 
   return (
@@ -68,16 +106,25 @@ export default function IncidentTimeInput({
       </div>
       {value.choice === 'earlier' ? (
         <div className="incident-time-details">
-          <label className="incident-time-datetime">
-            Date and time
-            <input
-              type="datetime-local"
-              max={toLocalDateTimeValue(new Date())}
-              value={value.occurredAt ? toLocalDateTimeValue(new Date(value.occurredAt)) : ''}
-              onChange={(event) => updateEarlierTime(event.target.value)}
-              required
-            />
-          </label>
+          <p className="incident-time-age">{formatElapsedTime(earlierHours * 60 + earlierMinutes)}</p>
+          <div className="incident-time-duration">
+            <label>
+              Hours ago
+              <select value={earlierHours} onChange={(event) => updateEarlierTime({ hours: Number(event.target.value) })}>
+                {Array.from({ length: Math.floor(maxEarlierMinutes / 60) + 1 }, (_, hour) => (
+                  <option key={hour} value={hour}>{hour} {hour === 1 ? 'hour' : 'hours'}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Minutes ago
+              <select value={earlierMinutes} onChange={(event) => updateEarlierTime({ minutes: Number(event.target.value) })}>
+                {Array.from({ length: Math.min(59, maxEarlierMinutes - earlierHours * 60) + 1 }, (_, minute) => (
+                  <option key={minute} value={minute}>{minute} {minute === 1 ? 'minute' : 'minutes'}</option>
+                ))}
+              </select>
+            </label>
+          </div>
           <div className="incident-time-precision" role="group" aria-label="Time precision">
             <span>Time precision</span>
             <div>
