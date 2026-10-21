@@ -391,7 +391,7 @@ export default function TrackReportPage() {
             {followUpError && <p className="public-follow-up-error" role="alert"><AlertCircle size={14} /> {followUpError}</p>}
             {followUpOpen && canSendFollowUp && <form className="public-follow-up-form" onSubmit={(event) => void submitFollowUp(event)}>
               <p>Send an additional emergency update to dispatch. Photo or video evidence is optional.</p>
-              <CameraEvidenceCapture files={followUpFiles} onFilesChange={(files) => { followUpFilesRef.current = files; setFollowUpFiles(files); }} />
+              <CameraEvidenceCapture files={followUpFiles} onFilesChange={(files) => { followUpFilesRef.current = files; setFollowUpFiles(files); }} allowFileSelection={false} />
               <button className="btn btn-primary public-follow-up-submit" type="submit" disabled={followUpSubmitting}>
                 <Send size={15} aria-hidden="true" /> {followUpSubmitting ? 'Sending follow-up…' : 'Send follow-up request'}
               </button>

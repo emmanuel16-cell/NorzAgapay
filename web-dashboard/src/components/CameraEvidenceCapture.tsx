@@ -17,6 +17,7 @@ type CameraEvidenceCaptureProps = {
   files: File[];
   onFilesChange: (files: File[]) => void;
   required?: boolean;
+  allowFileSelection?: boolean;
 };
 
 function fileExtension(mimeType: string) {
@@ -31,7 +32,7 @@ function createCaptureName(mimeType: string, kind: 'photo' | 'video') {
   return `${kind}-${timestamp}.${fileExtension(mimeType)}`;
 }
 
-export default function CameraEvidenceCapture({ files, onFilesChange, required = false }: CameraEvidenceCaptureProps) {
+export default function CameraEvidenceCapture({ files, onFilesChange, required = false, allowFileSelection = true }: CameraEvidenceCaptureProps) {
   const [cameraOpen, setCameraOpen] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [cameraMessage, setCameraMessage] = useState('');
@@ -242,20 +243,22 @@ export default function CameraEvidenceCapture({ files, onFilesChange, required =
   return <div className="camera-evidence-control">
     <div className="camera-evidence-heading">
       <strong>Photo or video evidence {required ? <b>Required</b> : <span>Optional</span>}</strong>
-      <small>Capture with your camera or choose photos and videos from this device. Up to five files, 50 MB each.</small>
+      <small>{allowFileSelection ? 'Capture with your camera or choose photos and videos from this device.' : 'Capture photos and videos with your camera.'} Up to five files, 50 MB each.</small>
     </div>
-    <input
-      ref={fileInputRef}
-      className="camera-evidence-file-input"
-      type="file"
-      accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/gif,image/avif,video/mp4,video/webm,video/quicktime,video/3gpp,video/x-matroska"
-      multiple
-      onChange={(event) => addSelectedFiles(event.currentTarget.files)}
-      aria-label="Choose photos or videos"
-    />
-    <button className="camera-evidence-open" type="button" onClick={() => fileInputRef.current?.click()}>
-      <ImagePlus size={17} aria-hidden="true" /> Choose photo or video
-    </button>
+    {allowFileSelection && <>
+      <input
+        ref={fileInputRef}
+        className="camera-evidence-file-input"
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/gif,image/avif,video/mp4,video/webm,video/quicktime,video/3gpp,video/x-matroska"
+        multiple
+        onChange={(event) => addSelectedFiles(event.currentTarget.files)}
+        aria-label="Choose photos or videos"
+      />
+      <button className="camera-evidence-open" type="button" onClick={() => fileInputRef.current?.click()}>
+        <ImagePlus size={17} aria-hidden="true" /> Choose photo or video
+      </button>
+    </>}
     <button className="camera-evidence-open" type="button" onClick={() => void openCamera()}>
       <Camera size={17} aria-hidden="true" /> Open camera
     </button>
@@ -270,7 +273,7 @@ export default function CameraEvidenceCapture({ files, onFilesChange, required =
     {cameraOpen && <div className="camera-capture-backdrop" role="presentation">
       <section className="camera-capture-dialog" role="dialog" aria-modal="true" aria-labelledby="camera-capture-title">
         <header>
-          <div><h2 id="camera-capture-title">Capture report evidence</h2><p>Take a photo or record a video, or choose media from your device.</p></div>
+          <div><h2 id="camera-capture-title">Capture report evidence</h2><p>{allowFileSelection ? 'Take a photo or record a video, or choose media from your device.' : 'Take a photo or record a video.'}</p></div>
           <button type="button" className="camera-capture-close" aria-label="Close camera" onClick={closeCamera}><X size={18} /></button>
         </header>
         {stream
