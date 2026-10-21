@@ -9,6 +9,7 @@ import { buildIncidentTimeline } from '../lib/reportTimeline';
 import MobileNumberInput from '../components/MobileNumberInput';
 import { isValidMobileNumber, normalizeMobileNumberInput } from '../lib/mobileNumber';
 import { useRealtimeConnection } from '../hooks/useRealtimeRefresh';
+import EditAndResubmitReportForm from '../components/EditAndResubmitReportForm';
 
 type TrackedReport = {
   id: string;
@@ -16,6 +17,7 @@ type TrackedReport = {
   description?: string | null;
   specifics?: string | null;
   incident_type?: string | null;
+  severity?: string | null;
   incident_occurred_at?: string | null;
   incident_time_precision?: 'exact' | 'approximate' | 'unknown' | null;
   latitude?: number | string | null;
@@ -35,6 +37,8 @@ type TrackedReport = {
   review_outcome?: string | null;
   review_reason?: string | null;
   reviewed_at?: string | null;
+  resubmission_count?: number | null;
+  resubmitted_at?: string | null;
   created_at?: string | null;
   mdrrmo_response_status?: string | null;
   barangay_response_status?: string | null;
@@ -85,7 +89,7 @@ type IncidentLocationPreview = {
 };
 
 function reportWasClosedAfterReview(report: TrackedReport) {
-  return ['invalid', 'false_report'].includes(String(report.review_outcome || '').toLowerCase()) ||
+  return ['invalid', 'inconclusive', 'false_report'].includes(String(report.review_outcome || '').toLowerCase()) ||
     ['invalid', 'rejected', 'false_report'].includes(String(report.status || '').toLowerCase());
 }
 
@@ -141,6 +145,8 @@ function statusLabel(report: TrackedReport) {
   const mdrrmoStatus = String(report.mdrrmo_response_status || (report.send_to !== 'barangay' ? report.response_status || report.status : 'pending')).toLowerCase();
   const barangayStatus = String(report.barangay_response_status || '').toLowerCase();
   const resolvedStatuses = ['resolved', 'closed', 'complete', 'completed'];
+  if (report.review_outcome === 'inconclusive') return 'Marked inconclusive';
+  if (report.review_outcome === 'false_report') return 'Marked false reporter';
   if (reportWasClosedAfterReview(report)) return 'Closed after review';
   if (resolvedStatuses.includes(mdrrmoStatus) || (!report.is_escalated && resolvedStatuses.includes(barangayStatus))) return 'Resolved';
   if (['responding', 'accepted', 'en_route', 'on_scene', 'arrived'].includes(mdrrmoStatus) || ['responding', 'accepted', 'en_route', 'on_scene', 'arrived'].includes(barangayStatus) || report.barangay_dispatched_at || report.mdrrmo_dispatched_at) return 'Response in progress';
@@ -183,6 +189,8 @@ export default function TrackReportPage() {
   const [followUpSubmitting, setFollowUpSubmitting] = useState(false);
   const [followUpError, setFollowUpError] = useState('');
   const [followUpSuccess, setFollowUpSuccess] = useState('');
+  const [editingResubmission, setEditingResubmission] = useState(false);
+  const [resubmissionSuccess, setResubmissionSuccess] = useState('');
 
   const loadGuestReport = useCallback(async (reportReference: string, reportPhone: string) => {
     setError('');
@@ -329,6 +337,7 @@ export default function TrackReportPage() {
   const categoryLabel = INCIDENT_TYPE_OPTIONS.find((item) => item.value === report?.incident_type)?.label || report?.incident_type || 'Not provided';
   const reportEvidence = report ? evidenceFor(report) : [];
   const canSendFollowUp = Boolean(report && trackingCredentials && !followUpIsClosed(report));
+  const canResubmit = Boolean(report && trackingCredentials && ['inconclusive', 'false_report'].includes(String(report.review_outcome || '')));
   const coordinates = report ? coordinatesFor(report) : null;
   const details = report?.title?.toLowerCase().startsWith('visual ')
     ? ''
@@ -358,7 +367,20 @@ export default function TrackReportPage() {
         </form>
         {report && <article className="public-tracked-report" aria-live="polite">
           <header><div><span className="public-home-eyebrow">REPORT STATUS</span><h2>{statusLabel(report)}</h2></div><span className={`resident-status ${statusLabel(report) === 'Resolved' ? 'resolved' : statusLabel(report) === 'Response in progress' ? 'responding' : ''}`}>{statusLabel(report)}</span></header>
+          {report.review_outcome && <section className="public-report-review-notice" aria-label="MDRRMO report review">
+            <strong>{report.review_outcome === 'inconclusive' ? 'MDRRMO marked this report inconclusive' : 'MDRRMO marked this report False Reporter'}</strong>
+            {report.review_reason && <p>{report.review_reason}</p>}
+            <p>Correct the report details and resubmit it using this same reference.</p>
+            {canResubmit && (editingResubmission
+              ? <EditAndResubmitReportForm report={report} guestPhone={trackingCredentials?.phone} onCancel={() => setEditingResubmission(false)} onSubmitted={() => {
+                setEditingResubmission(false);
+                setResubmissionSuccess('Your corrected report was sent to MDRRMO for review.');
+                if (trackingCredentials) void loadGuestReport(trackingCredentials.reference, trackingCredentials.phone);
+              }} />
+              : <button type="button" className="btn btn-primary" onClick={() => { setFollowUpOpen(false); setEditingResubmission(true); }}>Edit and resubmit</button>)}
+          </section>}
           <p className="public-tracked-refresh-note" role="status">{liveConnected ? 'Live updates connected.' : 'Connecting to live updates…'}</p>
+          {resubmissionSuccess && <p className="public-follow-up-status" role="status">{resubmissionSuccess}</p>}
           <div className="public-tracked-facts" aria-label="Incident information">
             <div className="public-tracked-fact"><span>Incident category</span><strong>{categoryLabel}</strong>{report.incident_type === 'other' && report.specifics?.trim() && <small>{report.specifics.replace(/^Other emergency:\s*/i, '')}</small>}</div>
             <div className="public-tracked-fact"><span>Incident occurred</span><strong>{incidentTimeLabel(report)}</strong></div>

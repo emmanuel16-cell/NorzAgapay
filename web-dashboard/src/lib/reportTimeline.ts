@@ -26,6 +26,8 @@ type IncidentTimelineSource = {
   review_outcome?: string | null;
   review_reason?: string | null;
   reviewed_at?: string | null;
+  resubmission_count?: number | null;
+  resubmitted_at?: string | null;
   send_to?: string | null;
   status?: string | null;
   response_status?: string | null;
@@ -80,14 +82,18 @@ export function buildIncidentTimeline(report: IncidentTimelineSource): IncidentT
   }];
 
   if (report.review_outcome) {
-    const closed = ['invalid', 'false_report'].includes(String(report.review_outcome).toLowerCase()) ||
-      ['invalid', 'rejected', 'false_report'].includes(String(report.status || '').toLowerCase());
+    const inconclusive = String(report.review_outcome).toLowerCase() === 'inconclusive';
     events.push({
-      label: closed ? 'Report closed after review' : 'Report reviewed',
+      label: inconclusive ? 'Report marked inconclusive' : 'Report marked False Reporter',
       at: report.reviewed_at,
-      detail: report.review_reason || (closed ? 'MDRRMO closed the report after review.' : 'MDRRMO reviewed the report.'),
+      detail: report.review_reason || (inconclusive ? 'MDRRMO could not confirm the report.' : 'MDRRMO marked the report as false.'),
     });
   }
+  if (Number(report.resubmission_count || 0) > 0) events.push({
+    label: 'Report resubmitted for review',
+    at: report.resubmitted_at,
+    detail: 'The reporter corrected and resubmitted this report.',
+  });
 
   const assignmentEvents = report.barangay_assignment_events || [];
   const assignments = report.barangay_assignments || [];

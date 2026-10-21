@@ -39,6 +39,11 @@ import debugRoutes from './routes/debug';
 import broadcastRoutes from './routes/broadcasts';
 
 // Helper to determine river level status
+const normalizeReportPhone = (value: unknown) => {
+  const digits = String(value || '').replace(/\D/g, '');
+  return digits.startsWith('63') && digits.length === 12 ? `0${digits.slice(2)}` : digits;
+};
+
 const getRiverLevelStatus = (level: number, warning: number, critical: number) => {
   if (level >= critical) return 'critical';
   if (level >= warning) return 'warning';
@@ -313,7 +318,7 @@ io.on('connection', (socket) => {
   socket.on('guest-report:subscribe', (credentials: { reportId?: unknown; phone?: unknown }) => {
     void (async () => {
       const reportId = typeof credentials?.reportId === 'string' ? credentials.reportId : '';
-      const phone = typeof credentials?.phone === 'string' ? credentials.phone.replace(/\D/g, '') : '';
+      const phone = normalizeReportPhone(credentials?.phone);
       if (!/^[0-9a-f-]{36}$/i.test(reportId) || !/^09\d{9}$/.test(phone)) return;
 
       const now = Date.now();
@@ -326,13 +331,13 @@ io.on('connection', (socket) => {
       socket.data.guestTrackingAttemptWindow = currentWindow;
 
       const [barangayResult, mdrrmoResult] = await Promise.all([
-        supabaseAdmin.from('barangay_reports').select('id, reporter_type, reporter_phone').eq('id', reportId).maybeSingle(),
-        supabaseAdmin.from('mdrrmo_reports').select('id, reporter_type, reporter_phone').eq('id', reportId).maybeSingle(),
+        supabaseAdmin.from('barangay_reports').select('id, reporter_type, reporter_id, reporter_phone').eq('id', reportId).maybeSingle(),
+        supabaseAdmin.from('mdrrmo_reports').select('id, reporter_type, reporter_id, reporter_phone').eq('id', reportId).maybeSingle(),
       ]);
       if (barangayResult.error || mdrrmoResult.error) return;
       const report = mdrrmoResult.data || barangayResult.data;
-      const savedPhone = String(report?.reporter_phone || '').replace(/\D/g, '');
-      if (!report || report.reporter_type !== 'guest' || savedPhone !== phone) return;
+      const savedPhone = normalizeReportPhone(report?.reporter_phone);
+      if (!report || report.reporter_type !== 'guest' || report.reporter_id || savedPhone !== phone) return;
 
       const previousReportId = socket.data.guestTrackingReportId;
       if (previousReportId) socket.leave(`guest-report:${previousReportId}`);

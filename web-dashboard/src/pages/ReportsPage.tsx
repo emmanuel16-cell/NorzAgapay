@@ -13,6 +13,7 @@ import IncidentLocationCard from '../components/IncidentLocationCard';
 import { formatMobileNumber } from '../lib/mobileNumber';
 import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
 import { formatIncidentLocation, hasIncidentPin, type IncidentLocationPreview } from '../lib/incidentLocation';
+import InvalidReportReviewDialog, { type ReportReviewOutcome } from '../components/InvalidReportReviewDialog';
 
 type ReportGroup = 'resident' | 'escalated';
 type ReportTab = 'resident' | 'assigned';
@@ -43,6 +44,8 @@ interface IncidentReport {
   proof_url?: string | null; proof_type?: string | null; proof_urls?: string[]; proof_types?: string[];
   responder_media?: Array<{ url: string; type?: string; uploader_name?: string; role?: string; uploader_role?: string; created_at?: string }>;
   reporter_type?: string; reporter_name?: string | null; reporter_phone?: string | null;
+  review_outcome?: 'inconclusive' | 'false_report' | null; review_reason?: string | null;
+  false_report_review_count?: number; reporter_false_report_count?: number; reporter_id?: string | null;
   barangay_responder_name?: string | null; barangay_response_notes?: string | null; mdrrmo_coordination_notes?: string | null;
   response_notes?: string | null; mdrrmo_response_notes?: string | null; mdrrmo_dispatch_notes?: string | null; mdrrmo_responder_name?: string | null;
   resolved_notes?: string | null; created_at: string; dispatcher_reviewed_at?: string | null;
@@ -147,6 +150,8 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
   });
   const [demoDismissed, setDemoDismissed] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [reviewDialogReport, setReviewDialogReport] = useState<IncidentReport | null>(null);
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
   const [group, setGroup] = useState<ReportTab>('resident');
   const [stage, setStage] = useState<ReportStage>(() => isReadOnlyResponder &&
     localStorage.getItem('norzagapay_debug_session') === 'true' &&
@@ -409,13 +414,25 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
       toast.error(error?.response?.data?.error || 'Could not return this report to MDRRMO.');
     } finally { setSaving(false); }
   };
-  const markInvalid = async (report: IncidentReport) => {
-    if (!window.confirm('Mark this report as invalid? This decision will be recorded for the report.')) return;
+  const saveReview = async (report: IncidentReport, outcome: ReportReviewOutcome, reason: string) => {
+    if (reviewSubmitting) return;
+    setReviewSubmitting(true);
     try {
-      await reportAPI.review(report.id, { outcome: 'false_report', reason: '' });
-      toast.success('Report marked invalid.');
-      setReports((current) => current.filter((item) => item.id !== report.id)); setSelectedId(null);
-    } catch (error) { console.error('Invalid-report review failed', error); toast.error('Could not mark this report invalid'); }
+      const response = await reportAPI.review(report.id, { outcome, reason });
+      const updated = response.data?.report as IncidentReport | undefined;
+      if (updated) setReports((current) => current.map((item) => item.id === report.id ? { ...item, ...updated } : item));
+      if (outcome === 'false_report') {
+        toast.success(`Report marked False Reporter (${Number(response.data?.false_report_review_count || 1)} mark${Number(response.data?.false_report_review_count || 1) === 1 ? '' : 's'} on this report).`);
+        setSelectedId(null);
+      } else {
+        toast.success('Report marked inconclusive. The reporter can correct and resubmit it.');
+      }
+      setReviewDialogReport(null);
+      await fetchReports();
+    } catch (error: any) {
+      console.error('Invalid-report review failed', error);
+      toast.error(error?.response?.data?.error || 'Could not save the report review.');
+    } finally { setReviewSubmitting(false); }
   };
 
   const downloadResolutionPdf = async (report: IncidentReport) => {
@@ -499,7 +516,7 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
                   ? 'Demo location'
                   : locationPreview?.road || locationPreview?.landmark || formatIncidentLocation(report);
                 return <button key={report.id} type="button" className={'reports-queue-item-v2 ' + stage + (active ? ' selected' : '')} onClick={() => selectReport(report)}>
-                  <span className="reports-queue-item-top"><strong>{report.is_demo ? 'Demo: ' : ''}{report.description?.trim() || 'No report details provided.'}</strong><span className={'report-status-chip-v2 ' + stage}>{report.is_demo ? 'Demo preview' : stage === 'responding' ? 'Responding' : stage === 'resolved' ? 'Resolved' : 'Pending'}</span></span>
+                  <span className="reports-queue-item-top"><strong>{report.is_demo ? 'Demo: ' : ''}{report.description?.trim() || 'No report details provided.'}</strong><span className={'report-status-chip-v2 ' + stage}>{report.is_demo ? 'Demo preview' : report.review_outcome === 'inconclusive' ? 'Inconclusive' : stage === 'responding' ? 'Responding' : stage === 'resolved' ? 'Resolved' : 'Pending'}</span></span>
                   <span className="reports-queue-time">Report received {timeAgo(report.created_at)}</span>
                   <span className="reports-queue-time">{incidentTimeLabel(report)}</span>
                   <span className="reports-queue-meta">
@@ -527,7 +544,7 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
               <header className={`reports-detail-heading-v2 ${isReadOnlyResponder ? 'reports-detail-heading-responder-v2' : ''}`}>
                 {isReadOnlyResponder && <button type="button" className="reports-mobile-back-v2" onClick={() => { setSelectedId(null); clearLink(); }}><ArrowLeft size={17} /> Reports</button>}
                 <div><span className="reports-eyebrow-v2">Selected report</span><h2>Report details</h2><p>{stage === 'pending' ? 'Report received ' : stage === 'responding' ? 'Accepted ' : 'Resolved '}{timeAgo(stage === 'resolved' ? selected.resolved_at : stage === 'responding' ? selected.accepted_at || selected.dispatched_at : selected.created_at)} · {selected.barangay_name || 'Norzagaray'}</p></div>
-                <div className="reports-detail-heading-actions-v2"><span className={'report-status-chip-v2 detail ' + stage}>{stage === 'responding' ? 'Responding' : stage === 'resolved' ? 'Resolved' : 'Pending'}</span>{isReadOnlyResponder && hasPin(selected) && <button type="button" className="reports-view-location-v2" onClick={() => setShowLocationMap(true)}><MapPin size={15} /> View location</button>}</div>
+                <div className="reports-detail-heading-actions-v2"><span className={'report-status-chip-v2 detail ' + stage}>{selected.review_outcome === 'inconclusive' ? 'Inconclusive' : stage === 'responding' ? 'Responding' : stage === 'resolved' ? 'Resolved' : 'Pending'}</span>{isReadOnlyResponder && hasPin(selected) && <button type="button" className="reports-view-location-v2" onClick={() => setShowLocationMap(true)}><MapPin size={15} /> View location</button>}</div>
               </header>
 
               <section className="reports-detail-section-v2"><h3>Reporter details</h3><div className="reports-info-grid-v2">
@@ -618,8 +635,10 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
                 {stage === 'resolved' && <section className="reports-resolve-notes-v2"><strong>Resolve notes</strong><p>{selected.resolved_notes?.trim() || selected.barangay_assignments?.[0]?.resolved_notes?.trim() || 'No resolve notes provided.'}</p></section>}
               </>}
             </div>
-            {!isReadOnlyWorkspace && stage === 'pending' && <footer className="reports-detail-actions-v2">
-                {!isBarangay && getGroup(selected) === 'resident' && !isAssignedToBarangay(selected) && !selected.mdrrmo_dispatched_at && <button type="button" className="reports-invalid-button-v2" onClick={() => void markInvalid(selected)}>Mark invalid</button>}
+            {selected.review_outcome === 'inconclusive' && <section className="reports-detail-section-v2 reports-review-state-v2"><h3>Marked inconclusive</h3><div className="reports-text-card-v2">{selected.review_reason || 'No reason was provided.'}<p>The reporter can edit and resubmit this report. Dispatch is paused until then.</p></div></section>}
+            {!selected.review_outcome && Number(selected.false_report_review_count || 0) > 0 && <section className="reports-detail-section-v2"><h3>False Reporter review count</h3><div className="reports-text-card-v2">{selected.false_report_review_count} false mark{selected.false_report_review_count === 1 ? '' : 's'} on this report. This count clears when the report is dispatched or a responder begins responding.</div></section>}
+            {!isReadOnlyWorkspace && stage === 'pending' && !selected.review_outcome && <footer className="reports-detail-actions-v2">
+                {!isBarangay && getGroup(selected) === 'resident' && !isAssignedToBarangay(selected) && !selected.mdrrmo_dispatched_at && <button type="button" className="reports-invalid-button-v2" onClick={() => setReviewDialogReport(selected)}>Invalid report</button>}
                 {isBarangay && selected.is_central_assignment ? <>
                   <button type="button" className="reports-invalid-button-v2" onClick={() => void escalateBarangayAssignment(selected)} disabled={saving}>Return to MDRRMO</button>
                   <button type="button" className="reports-dispatch-button-v2" onClick={() => void openDispatch(selected)} disabled={saving}><Send size={17} /> Dispatch to barangay responders</button>
@@ -709,6 +728,15 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
         <button type="button" aria-label="Close preview" onClick={() => setPreview(null)}><X size={22} /></button>
         {preview.video ? <video src={preview.url} controls autoPlay onClick={(event) => event.stopPropagation()} /> : <img src={preview.url} alt="Report attachment preview" onClick={(event) => event.stopPropagation()} />}
       </div>}
+      {reviewDialogReport && <InvalidReportReviewDialog
+        reporterName={reviewDialogReport.reporter_name}
+        falseReportCount={reviewDialogReport.false_report_review_count || 0}
+        residentStrikeCount={reviewDialogReport.reporter_false_report_count || 0}
+        linkedResident={reviewDialogReport.reporter_type === 'resident' && Boolean(reviewDialogReport.reporter_id)}
+        submitting={reviewSubmitting}
+        onClose={() => !reviewSubmitting && setReviewDialogReport(null)}
+        onSubmit={(outcome, reason) => void saveReview(reviewDialogReport, outcome, reason)}
+      />}
     </main>
   );
 }

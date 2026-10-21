@@ -18,10 +18,19 @@ import {
 } from '../utils/norzagarayBoundary';
 
 const router = Router();
+
+function normalizeReportPhone(value: unknown): string {
+  const digits = String(value || '').replace(/\D/g, '');
+  return digits.startsWith('63') && digits.length === 12 ? `0${digits.slice(2)}` : digits;
+}
 const upload = multer({ storage: multer.memoryStorage() });
 const reporterFollowUpUpload = multer({
   storage: multer.memoryStorage(),
   limits: { files: 5, fileSize: 50 * 1024 * 1024 },
+});
+const reportResubmissionUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { files: 10, fileSize: 50 * 1024 * 1024 },
 });
 
 const parseReporterFollowUpFiles = (req: Request, res: Response, next: NextFunction) => {
@@ -29,6 +38,17 @@ const parseReporterFollowUpFiles = (req: Request, res: Response, next: NextFunct
     if (error) {
       const tooLarge = error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE';
       res.status(tooLarge ? 413 : 400).json({ error: tooLarge ? 'Each photo or video must be 50 MB or smaller.' : 'Choose up to five photo or video files.' });
+      return;
+    }
+    next();
+  });
+};
+
+const parseReportResubmissionFiles = (req: Request, res: Response, next: NextFunction) => {
+  reportResubmissionUpload.array('proof', 10)(req, res, (error: any) => {
+    if (error) {
+      const tooLarge = error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE';
+      res.status(tooLarge ? 413 : 400).json({ error: tooLarge ? 'Each photo or video must be 50 MB or smaller.' : 'Choose up to ten photo or video files.' });
       return;
     }
     next();
@@ -435,12 +455,14 @@ async function fetchResidentReportById(id: string) {
 
 function canAccessResidentReport(report: any, req: AuthRequest, contactNumber: unknown): boolean {
   if (!report || !['resident', 'guest'].includes(String(report.reporter_type))) return false;
-  if (report.reporter_id) {
+  if (report.reporter_type === 'resident') {
+    if (!report.reporter_id) return false;
     return req.user?.role === 'resident' && req.user.userId === report.reporter_id;
   }
+  if (report.reporter_id) return false;
 
-  const requestedPhone = String(contactNumber || '').replace(/\D/g, '');
-  const reportPhone = String(report.reporter_phone || '').replace(/\D/g, '');
+  const requestedPhone = normalizeReportPhone(contactNumber);
+  const reportPhone = normalizeReportPhone(report.reporter_phone);
   return Boolean(requestedPhone && requestedPhone === reportPhone);
 }
 
@@ -516,7 +538,7 @@ async function ensureReporterFollowUpIsOpen(target: {
     ['resolved', 'closed', 'completed'].includes(String(report.status || '').toLowerCase()) ||
     ['resolved', 'closed', 'completed'].includes(String(report.response_status || '').toLowerCase()) ||
     ['resolved', 'closed', 'completed'].includes(String(report.mdrrmo_response_status || '').toLowerCase()) ||
-    ['invalid', 'false_report'].includes(String(report.review_outcome || '').toLowerCase());
+    ['invalid', 'inconclusive', 'false_report'].includes(String(report.review_outcome || '').toLowerCase());
   if (assignmentHasArrived || reportIsClosed) {
     const error: any = new Error('Follow-up requests are unavailable after a responder arrives.');
     error.code = 'P0001';
@@ -663,8 +685,9 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
     const profilePhone = typeof residentProfile?.phone === 'string' && !residentProfile.phone.includes('@')
       ? residentProfile.phone.trim()
       : '';
-    const submittedPhoneDigits = submittedContact.replace(/\D/g, '');
-    const reporterPhone = profilePhone || (submittedContact.includes('@') ? null : submittedPhoneDigits || null);
+    const submittedPhoneDigits = normalizeReportPhone(submittedContact);
+    const normalizedProfilePhone = normalizeReportPhone(profilePhone);
+    const reporterPhone = normalizedProfilePhone || (submittedContact.includes('@') ? null : submittedPhoneDigits || null);
     const isSignedInResident = req.user?.role === 'resident' && Boolean(req.user.userId);
     if (!isSignedInResident && !/^09\d{9}$/.test(submittedPhoneDigits)) {
       res.status(400).json({ error: 'A valid 11-digit mobile number starting with 09 is required to submit a report without an account.' });
@@ -747,7 +770,7 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
       if (existing) {
         const isOwner = existing.reporter_id
           ? req.user?.role === 'resident' && req.user.userId === existing.reporter_id
-          : String(existing.reporter_phone || '').replace(/\D/g, '') === submittedContact.replace(/\D/g, '');
+          : normalizeReportPhone(existing.reporter_phone) === normalizeReportPhone(submittedContact);
         if (!isOwner) {
           res.status(409).json({ error: 'This request identifier is already in use.' });
           return;
@@ -1014,10 +1037,14 @@ router.get('/resident', optionalAuthenticate, async (req: AuthRequest, res: Resp
       bQuery = bQuery.eq('reporter_id', req.user.userId);
       mQuery = mQuery.eq('reporter_id', req.user.userId);
     } else {
+      const normalizedPhone = normalizeReportPhone(contact_number);
+      if (!/^09\d{9}$/.test(normalizedPhone)) {
+        return res.status(400).json({ error: 'A valid mobile number is required to look up guest reports.' });
+      }
       bQuery = supabaseAdmin.from('barangay_reports').select('*')
-        .in('reporter_type', ['resident', 'guest']).eq('reporter_phone', String(contact_number));
+        .eq('reporter_type', 'guest').is('reporter_id', null).eq('reporter_phone', normalizedPhone);
       mQuery = supabaseAdmin.from('mdrrmo_reports').select('*')
-        .in('reporter_type', ['resident', 'guest']).eq('reporter_phone', String(contact_number));
+        .eq('reporter_type', 'guest').is('reporter_id', null).eq('reporter_phone', normalizedPhone);
     }
 
     const [bRes, mRes, bMap] = await Promise.all([bQuery, mQuery, getBarangayNameMap()]);
@@ -1340,8 +1367,8 @@ router.post('/:id/evidence', optionalAuthenticate, upload.any(), async (req: Aut
         return;
       }
     } else {
-      const submittedPhone = String(req.body.contact_number || '').replace(/\D/g, '');
-      const reportPhone = String(report.reporter_phone || '').replace(/\D/g, '');
+      const submittedPhone = normalizeReportPhone(req.body.contact_number);
+      const reportPhone = normalizeReportPhone(report.reporter_phone);
       if (!submittedPhone || submittedPhone !== reportPhone) {
         res.status(403).json({ error: 'Report ownership could not be verified.' });
         return;
@@ -1375,8 +1402,8 @@ router.patch('/:id/evidence-failed', optionalAuthenticate, async (req: AuthReque
       res.status(404).json({ error: 'Incident report not found.' });
       return;
     }
-    const submittedPhone = String(req.body.contact_number || '').replace(/\D/g, '');
-    const reportPhone = String(report.reporter_phone || '').replace(/\D/g, '');
+    const submittedPhone = normalizeReportPhone(req.body.contact_number);
+    const reportPhone = normalizeReportPhone(report.reporter_phone);
     const isOwner = report.reporter_id
       ? req.user?.role === 'resident' && req.user.userId === report.reporter_id
       : Boolean(submittedPhone && submittedPhone === reportPhone);
@@ -1440,8 +1467,7 @@ router.get('/', authenticate, authorize('dispatcher', 'admin'), async (req: Auth
         }
         // Only resident reports explicitly routed to MDRRMO and reports
         // escalated by a barangay are visible in the municipal dashboard.
-        const mdrrmoReports = formatted.filter((report) =>
-          !report.review_outcome && isVisibleToMdrrmo(report));
+        const mdrrmoReports = formatted.filter((report) => isVisibleToMdrrmo(report));
 
         res.json(await attachResidentBarangayAssignmentState(mdrrmoReports));
     } catch (err) {
@@ -1631,69 +1657,293 @@ router.post('/:id/field-media', optionalAuthenticate, upload.single('media'), as
 
 /**
  * PATCH /api/incident-reports/:id/review
- * Record an MDRRMO decision for a pending report that appears invalid.
+ * Dispatchers may record either review outcome. Assigned MDRRMO responders
+ * may mark only False Reporter while their assignment is still unresolved.
  */
 const invalidReportReviewSchema = z.object({
-    outcome: z.enum(['inconclusive', 'false_report']),
-    reason: z.string().trim().max(1000).optional().default(''),
+  outcome: z.enum(['inconclusive', 'false_report']),
+  reason: z.string().trim().max(1000).optional().default(''),
 });
 
-router.patch('/:id/review', authenticate, authorize('admin', 'dispatcher'), async (req: AuthRequest, res: Response): Promise<void> => {
-    const parsed = invalidReportReviewSchema.safeParse(req.body);
-    if (!parsed.success) {
-        res.status(400).json({ error: 'Choose a valid report review outcome.', details: parsed.error.flatten() });
-        return;
-    }
-    const { outcome, reason } = parsed.data;
-    if (outcome === 'inconclusive' && !reason.trim()) {
-        res.status(400).json({ error: 'Enter a reason for marking the report inconclusive.' });
-        return;
+router.patch('/:id/review', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+  const parsed = invalidReportReviewSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Choose a valid report review outcome.', details: parsed.error.flatten() });
+    return;
+  }
+  const role = String(req.user?.role || '');
+  const dispatcherRole = ['dispatcher', 'admin', 'master_admin'].includes(role);
+  const responderRole = role === 'responder';
+  if (!dispatcherRole && !responderRole) {
+    res.status(403).json({ error: 'Only MDRRMO dispatchers or an assigned responder can review this report.' });
+    return;
+  }
+  if (responderRole && parsed.data.outcome !== 'false_report') {
+    res.status(403).json({ error: 'Responders may only mark an assigned incident as a false report.' });
+    return;
+  }
+  if (parsed.data.outcome === 'inconclusive' && !parsed.data.reason.trim()) {
+    res.status(400).json({ error: 'Enter a reason for marking the report inconclusive.' });
+    return;
+  }
+
+  try {
+    const { data, error } = await supabaseAdmin.rpc('record_canonical_incident_review', {
+      p_report_id: req.params.id,
+      p_outcome: parsed.data.outcome,
+      p_reason: parsed.data.reason,
+      p_actor_id: req.user!.userId,
+      p_actor_role: role,
+    });
+    if (error) {
+      const status = error.code === 'P0002' ? 404
+        : error.code === '42501' ? 403
+          : error.code === 'P0001' ? 409
+            : error.code === '22023' ? 400
+              : 500;
+      res.status(status).json({ error: error.message || 'Could not save the report review.' });
+      return;
     }
 
+    const result = data as {
+      report?: any;
+      false_report_count?: number | null;
+      false_report_review_count?: number | null;
+      resident_status?: string | null;
+      already_reviewed?: boolean;
+    };
+    if (!result?.report) {
+      res.status(500).json({ error: 'Report review returned no report.' });
+      return;
+    }
+
+    const formatted = formatIncidentReport({
+      ...result.report,
+      false_report_review_count: result.false_report_review_count ?? result.report.false_report_review_count ?? 0,
+    });
+    const changedAt = new Date().toISOString();
+    io.to('dashboard_staff').emit('incident_report:reviewed', formatted);
+    io.to('dashboard_staff').emit('incident_report:updated', formatted);
+    io.to(`user:${req.user!.userId}`).emit('incident_report:updated', formatted);
+    if (formatted.reporter_type === 'guest') {
+      io.to(`guest-report:${formatted.id}`).emit('guest-report:updated', { reportId: formatted.id, changedAt });
+    } else if (formatted.reporter_type === 'resident' && formatted.reporter_id) {
+      io.to(`user:${formatted.reporter_id}`).emit('incident_report:reviewed', formatted);
+      io.to(`user:${formatted.reporter_id}`).emit('incident_report:updated', formatted);
+      io.to(`user:${formatted.reporter_id}`).emit('dashboard:data_changed', { resource: 'incident-reports', action: 'patch', changedAt });
+    }
+    res.json({
+      report: formatted,
+      false_report_count: result.false_report_count ?? null,
+      false_report_review_count: result.false_report_review_count ?? 0,
+      resident_status: result.resident_status ?? null,
+      already_reviewed: result.already_reviewed === true,
+    });
+  } catch (err) {
+    console.error('Invalid report review error:', err);
+    res.status(500).json({ error: 'Failed to save the report review.' });
+  }
+});
+
+const resubmissionSchema = z.object({
+  type: z.literal('emergency').default('emergency'),
+  title: z.string().trim().min(3).max(180),
+  incident_type: z.enum(['not_sure', 'flash_flood', 'fire', 'earthquake', 'vehicle_incident', 'medical_emergency', 'typhoon', 'other']),
+  severity: z.enum(['low', 'moderate', 'high', 'critical']),
+  description: z.string().trim().max(5000).default(''),
+  specifics: z.string().trim().max(1000).default(''),
+  address: z.string().trim().max(300).default(''),
+  latitude: z.coerce.number().min(-90).max(90),
+  longitude: z.coerce.number().min(-180).max(180),
+  incident_occurred_at: z.string().trim().optional().default(''),
+  incident_time_precision: z.enum(['exact', 'approximate', 'unknown']).default('unknown'),
+  contact_number: z.string().optional().default(''),
+  kept_proof_urls: z.string().optional().default('[]'),
+  request_id: z.string().uuid(),
+});
+
+router.patch('/:id/resubmit', optionalAuthenticate, parseReportResubmissionFiles, async (req: AuthRequest, res: Response): Promise<void> => {
+  const parsed = resubmissionSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Check the updated report details and try again.', details: parsed.error.flatten() });
+    return;
+  }
+  const values = parsed.data;
+  if ((values.latitude === 0 && values.longitude === 0) ||
+      (values.incident_occurred_at && !Number.isFinite(Date.parse(values.incident_occurred_at)))) {
+    res.status(400).json({ error: 'Enter a valid incident location and time.' });
+    return;
+  }
+
+  const contactPhone = normalizeReportPhone(values.contact_number);
+  let existing: any;
+  try {
+    existing = await fetchResidentReportById(req.params.id);
+  } catch (error) {
+    console.error('Could not load report for resubmission:', error);
+    res.status(500).json({ error: 'The report could not be loaded for editing.' });
+    return;
+  }
+  if (!existing || !['resident', 'guest'].includes(String(existing.reporter_type))) {
+    res.status(404).json({ error: 'Incident report not found.' });
+    return;
+  }
+  const isResidentOwner = existing.reporter_type === 'resident' && Boolean(existing.reporter_id) &&
+    req.user?.role === 'resident' && req.user.userId === existing.reporter_id;
+  const isGuestOwner = existing.reporter_type === 'guest' && !existing.reporter_id && /^09\d{9}$/.test(contactPhone) &&
+    contactPhone === normalizeReportPhone(existing.reporter_phone);
+  if (!isResidentOwner && !isGuestOwner) {
+    res.status(404).json({ error: 'Report ownership could not be verified.' });
+    return;
+  }
+  if (!['inconclusive', 'false_report'].includes(String(existing.review_outcome || ''))) {
     try {
-        const { data, error } = await supabaseAdmin.rpc('review_incident_report', {
-            p_report_id: req.params.id,
-            p_review_outcome: outcome,
-            p_review_reason: reason,
-            p_reviewed_by: req.user!.userId,
-        });
-        if (error) {
-            const status = error.code === 'P0002' ? 404
-                : error.code === 'P0001' ? 409
-                    : error.code === '22023' ? 400
-                        : 500;
-            res.status(status).json({ error: error.message || 'Could not save the report review.' });
-            return;
-        }
-
-        const result = data as {
-            report?: any;
-            false_report_count?: number | null;
-            resident_status?: string | null;
-            already_reviewed?: boolean;
-        };
-        if (!result?.report) {
-            res.status(500).json({ error: 'Report review returned no report.' });
-            return;
-        }
-
-        const formatted = formatIncidentReport(result.report);
-        io.to('dashboard_staff').emit('incident_report:reviewed', formatted);
-        io.to('dashboard_staff').emit('incident_report:updated', formatted);
-        if (formatted.reporter_id) {
-            io.to(`user:${formatted.reporter_id}`).emit('incident_report:reviewed', formatted);
-        }
-
-        res.json({
-            report: formatted,
-            false_report_count: result.false_report_count ?? null,
-            resident_status: result.resident_status ?? null,
-            already_reviewed: result.already_reviewed === true,
-        });
-    } catch (err) {
-        console.error('Invalid report review error:', err);
-        res.status(500).json({ error: 'Failed to save the report review.' });
+      const { data: priorResubmission, error } = await supabaseAdmin
+        .from('incident_report_review_history')
+        .select('id')
+        .eq('report_id', req.params.id)
+        .eq('event_type', 'resubmitted')
+        .eq('request_id', values.request_id)
+        .maybeSingle();
+      if (error) throw error;
+      if (!priorResubmission) {
+        res.status(409).json({ error: 'Only a report marked inconclusive or false reporter can be edited and resubmitted.' });
+        return;
+      }
+    } catch (error) {
+      console.error('Could not check resubmission retry:', error);
+      res.status(500).json({ error: 'The report could not be checked for a previous resubmission.' });
+      return;
     }
+  }
+
+  let keptUrls: string[] = [];
+  try {
+    const supplied = JSON.parse(values.kept_proof_urls);
+    if (Array.isArray(supplied)) keptUrls = supplied.filter((item): item is string => typeof item === 'string');
+  } catch {
+    res.status(400).json({ error: 'The selected evidence list is invalid.' });
+    return;
+  }
+  const currentUrls = Array.isArray(existing.proof_urls) ? existing.proof_urls.filter(Boolean) :
+    existing.proof_url ? [String(existing.proof_url)] : [];
+  keptUrls = [...new Set(keptUrls.filter((url) => currentUrls.includes(url)))];
+  const currentTypes: string[] = Array.isArray(existing.proof_types) ? existing.proof_types : [];
+  const keptTypes = keptUrls.map((url) => currentTypes[currentUrls.indexOf(url)] || existing.proof_type || 'image');
+  const files = (req.files as Express.Multer.File[]) || [];
+  const acceptedMediaExtensions = new Set(['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif', 'gif', 'avif', 'mp4', 'mov', 'webm', '3gp', 'mkv', 'avi']);
+  const acceptedMediaMimeTypes = new Set([
+    'image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'image/gif', 'image/avif',
+    'video/mp4', 'video/quicktime', 'video/webm', 'video/3gpp', 'video/x-matroska', 'video/x-msvideo',
+  ]);
+  if (files.some((file) => {
+    const extension = (file.originalname.split('.').pop() || '').toLowerCase();
+    const mime = (file.mimetype || '').toLowerCase().split(';')[0].trim();
+    return !acceptedMediaExtensions.has(extension) || (!acceptedMediaMimeTypes.has(mime) && mime !== 'application/octet-stream');
+  })) {
+    res.status(400).json({ error: 'Attach supported photo or video files only.' });
+    return;
+  }
+  const uploadedPaths: string[] = [];
+  const uploadedUrls: string[] = [];
+  const uploadedTypes: string[] = [];
+  let resubmissionCommitted = false;
+
+  try {
+    for (const file of files) {
+      const rawExtension = (file.originalname.split('.').pop() || 'jpg').toLowerCase();
+      const extension = rawExtension.replace(/[^a-z0-9]/g, '') || 'jpg';
+      const objectPath = `reports/${req.params.id}/resubmissions/${randomUUID()}.${extension}`;
+      const { error } = await supabaseAdmin.storage.from(config.supabaseBucketName)
+        .upload(objectPath, file.buffer, { contentType: file.mimetype, upsert: false });
+      if (error) throw error;
+      uploadedPaths.push(objectPath);
+      const { data } = supabaseAdmin.storage.from(config.supabaseBucketName).getPublicUrl(objectPath);
+      uploadedUrls.push(data.publicUrl);
+      uploadedTypes.push((file.mimetype || '').startsWith('video/') || ['mp4', 'mov', 'webm', '3gp', 'mkv', 'avi'].includes(extension) ? 'video' : 'image');
+    }
+
+    const proofUrls = [...keptUrls, ...uploadedUrls];
+    const proofTypes = [...keptTypes, ...uploadedTypes];
+    const patch = {
+      type: values.type,
+      title: values.title,
+      incident_type: values.incident_type,
+      severity: values.severity,
+      description: values.description,
+      // Keep the server-owned routing tag out of reporter edits.
+      specifics: [
+        String(existing.specifics || '').match(/\[SEND_TO:[^\]]+\]/i)?.[0],
+        String(existing.description || '').match(/\[SEND_TO:[^\]]+\]/i)?.[0],
+        values.specifics,
+      ]
+        .filter(Boolean).join('\n'),
+      address: values.address,
+      latitude: values.latitude,
+      longitude: values.longitude,
+      incident_occurred_at: values.incident_occurred_at ? new Date(values.incident_occurred_at).toISOString() : '',
+      incident_time_precision: values.incident_time_precision,
+      proof_urls: proofUrls,
+      proof_types: proofTypes,
+    };
+    const { data, error } = await supabaseAdmin.rpc('resubmit_reviewed_incident_report', {
+      p_report_id: req.params.id,
+      p_reporter_type: existing.reporter_type,
+      p_reporter_id: isResidentOwner ? req.user!.userId : null,
+      p_contact_phone: isGuestOwner ? contactPhone : null,
+      p_patch: patch,
+      p_request_id: values.request_id,
+    });
+    if (error) {
+      if (uploadedPaths.length > 0) {
+        const { error: removeError } = await supabaseAdmin.storage.from(config.supabaseBucketName).remove(uploadedPaths);
+        if (removeError) console.error('Could not remove rejected resubmission evidence:', removeError.message);
+      }
+      const status = error.code === 'P0002' ? 404
+        : error.code === '42501' ? 403
+          : error.code === 'P0001' ? 409
+            : error.code === '22023' ? 400
+              : 500;
+      res.status(status).json({ error: error.message || 'The report could not be resubmitted.' });
+      return;
+    }
+    resubmissionCommitted = true;
+
+    const result = data as { report?: any; resubmission_count?: number; false_report_review_count?: number; already_resubmitted?: boolean };
+    if (!result?.report) {
+      res.status(500).json({ error: 'The report resubmission returned no report.' });
+      return;
+    }
+    const formatted = formatIncidentReport({
+      ...result.report,
+      resubmission_count: result.resubmission_count ?? result.report.resubmission_count ?? 0,
+      false_report_review_count: result.false_report_review_count ?? result.report.false_report_review_count ?? 0,
+    }, await getBarangayNameMap());
+    if (result.already_resubmitted) {
+      if (uploadedPaths.length > 0) {
+        const { error: removeError } = await supabaseAdmin.storage.from(config.supabaseBucketName).remove(uploadedPaths);
+        if (removeError) console.error('Could not remove duplicate retry evidence:', removeError.message);
+      }
+    }
+    const changedAt = new Date().toISOString();
+    io.to('dashboard_staff').emit('incident_report:updated', formatted);
+    io.to(['dashboard_staff', 'role:dispatcher']).emit('incident_report:new', formatted);
+    io.to('dashboard_staff').emit('dashboard:data_changed', { resource: 'incident-reports', action: 'patch', changedAt });
+    if (formatted.reporter_type === 'guest') {
+      io.to(`guest-report:${formatted.id}`).emit('guest-report:updated', { reportId: formatted.id, changedAt });
+    } else if (formatted.reporter_type === 'resident' && formatted.reporter_id) {
+      io.to(`user:${formatted.reporter_id}`).emit('incident_report:updated', formatted);
+      io.to(`user:${formatted.reporter_id}`).emit('dashboard:data_changed', { resource: 'incident-reports', action: 'patch', changedAt });
+    }
+    res.json(formatted);
+  } catch (error: any) {
+    if (!resubmissionCommitted && uploadedPaths.length > 0) {
+      const { error: removeError } = await supabaseAdmin.storage.from(config.supabaseBucketName).remove(uploadedPaths);
+      if (removeError) console.error('Could not remove uncommitted resubmission evidence:', removeError.message);
+    }
+    console.error('Incident report resubmission failed:', error);
+    res.status(500).json({ error: error?.message || 'The report could not be resubmitted.' });
+  }
 });
 
 export default router;

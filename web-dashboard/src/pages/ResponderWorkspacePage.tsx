@@ -35,6 +35,11 @@ type AssignedReport = {
   responded_by?: string | null;
   barangay_responded_by?: string | null;
   arrived_at?: string | null;
+  resolved_at?: string | null;
+  map_closed_at?: string | null;
+  review_outcome?: 'inconclusive' | 'false_report' | null;
+  review_reason?: string | null;
+  false_report_review_count?: number;
   assigned_team_leader_ids?: string[];
   mdrrmo_arrived_at?: string | null;
   mdrrmo_assignments?: ResponseAssignment[];
@@ -140,6 +145,7 @@ export default function ResponderWorkspacePage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [reviewConfirmReportId, setReviewConfirmReportId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [locationMapReport, setLocationMapReport] = useState<AssignedReport | null>(null);
   const autoArrivalInFlight = useRef(new Set<string>());
@@ -572,6 +578,13 @@ export default function ResponderWorkspacePage() {
             ? Boolean(report.barangay_arrived_at)
             : Boolean(assignment ? assignment.arrived_at : report.mdrrmo_arrived_at);
           const canUpdateField = !report.is_demo && (isBarangay ? responseStatus === 'responding' : assignmentStatus === 'responding');
+          const currentResponderIsAssigned = isBarangay
+            ? report.is_central_assignment
+              ? [...(report.assigned_team_leader_ids || []), ...(report.assigned_responder_ids || []), report.barangay_responded_by || ''].includes(user?.id || '')
+              : (report.barangay_responded_by || report.responded_by) === user?.id
+            : assignment?.responder_id === user?.id;
+          const canMarkFalseReporter = user?.role === 'responder' && canUpdateField && currentResponderIsAssigned &&
+            !report.resolved_at && !report.map_closed_at && responseStatus !== 'resolved' && !report.review_outcome;
           const canManageCrew = !isBarangay && !report.is_demo && !arrived && assignmentStatus === 'responding';
           const selectedCrewIds = crewDraftSelections[report.id] || [];
           const currentAssessment = assessments[report.id] || emptyAssessment;
@@ -635,6 +648,8 @@ export default function ResponderWorkspacePage() {
 
             {canUpdateField && <section className="responder-action-panel">
               <h3><Activity size={16} /> Field response</h3>
+              {canMarkFalseReporter && <button className="responder-false-reporter-button" type="button" disabled={saving} onClick={() => setReviewConfirmReportId(report.id)}><ShieldAlert size={16} /> False Reporter</button>}
+              {report.review_outcome === 'inconclusive' && <div className="workspace-message"><strong>Report marked inconclusive.</strong> {report.review_reason || 'The reporter may correct and resubmit it.'}</div>}
               {!arrived && <button className="workspace-secondary-action" type="button" disabled={saving} onClick={() => void perform(() => isBarangay
                 ? report.is_central_assignment
                   ? reportAPI.arriveBarangayAssignment(report.id, { method: 'manual' })
@@ -722,6 +737,24 @@ export default function ResponderWorkspacePage() {
         locationName={locationPreviews[locationMapReport.id]?.road || locationPreviews[locationMapReport.id]?.landmark || formatIncidentLocation(locationMapReport)}
         onClose={closeLocationMap}
       />}
+      {reviewConfirmReportId && <div className="invalid-review-overlay" onClick={() => !saving && setReviewConfirmReportId(null)}>
+        <section className="invalid-review-dialog responder-false-review-dialog" role="dialog" aria-modal="true" aria-labelledby="responder-false-review-title" onClick={(event) => event.stopPropagation()}>
+          <button className="selection-close-btn invalid-review-close" type="button" aria-label="Close confirmation" disabled={saving} onClick={() => setReviewConfirmReportId(null)}><X size={20} /></button>
+          <h2 id="responder-false-review-title">Mark this assigned incident as False Reporter?</h2>
+          <p>This closes your active assignment and hides the report from the MDRRMO map until the reporter edits and resubmits it. You can mark it before or after arrival, as long as it is unresolved.</p>
+          <div className="invalid-review-actions">
+            <button type="button" disabled={saving} onClick={() => setReviewConfirmReportId(null)}>Cancel</button>
+            <button type="button" className="invalid-review-danger-action" disabled={saving} onClick={() => {
+              const reportId = reviewConfirmReportId;
+              if (!reportId) return;
+              setReviewConfirmReportId(null);
+              void perform(() => isBarangay
+                ? reportAPI.reviewBarangayAssignedReport(reportId)
+                : reportAPI.reviewAssignedReport(reportId), 'Incident marked False Reporter.');
+            }}>{saving ? 'Saving…' : 'Confirm False Reporter'}</button>
+          </div>
+        </section>
+      </div>}
     </div>
   );
 }

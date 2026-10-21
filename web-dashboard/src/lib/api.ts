@@ -326,6 +326,7 @@ export const reportAPI = {
     return api.post('/incident-reports', body, { headers: { 'Content-Type': 'multipart/form-data' } });
   },
   trackGuestReport: (id: string, contactNumber: string) => api.get(`/incident-reports/resident/${encodeURIComponent(id)}`, { params: { contact_number: contactNumber } }),
+  resubmit: (id: string, body: FormData) => api.patch(`/incident-reports/${encodeURIComponent(id)}/resubmit`, body, { headers: { 'Content-Type': 'multipart/form-data' } }),
   submitReportFollowUp: (id: string, contactNumber: string, media: File[] = []) => {
     const body = new FormData();
     body.append('contact_number', contactNumber);
@@ -353,6 +354,8 @@ export const reportAPI = {
     return api.post(`/mdrrmo/reports/${id}/field-media`, body, { headers: { 'Content-Type': 'multipart/form-data' } });
   },
   review: (id: string, data: { outcome: 'inconclusive' | 'false_report'; reason?: string }) => api.patch(`/incident-reports/${id}/review`, data),
+  reviewAssignedReport: (id: string) => api.patch(`/incident-reports/${encodeURIComponent(id)}/review`, { outcome: 'false_report', reason: '' }),
+  reviewBarangayAssignedReport: (id: string) => api.patch(`/barangay/assigned-reports/${encodeURIComponent(id)}/review`, { outcome: 'false_report' }),
 };
 
 export const evacuationAPI = {

@@ -12,6 +12,7 @@ export default function NotificationManager() {
 
   useEffect(() => {
     if (!user) return;
+    const notifiedReportCycles = new Set<string>();
 
     // Join room for real-time updates
     socket.emit('join:role', user.role);
@@ -21,8 +22,9 @@ export default function NotificationManager() {
     };
 
     // Helper to show custom notification
-    const showIncidentNotification = (reportId: string, title: string, severity?: string) => {
+    const showIncidentNotification = (reportId: string, title: string, severity?: string, resubmissionCount = 0) => {
       const reportTitle = title?.trim() || 'Incident report';
+      const isResubmission = resubmissionCount > 0;
       const isCritical = /critical|life.?threatening/i.test(title) ||
         ['critical', 'life-threatening', 'life_threatening'].includes(String(severity || '').toLowerCase());
       playNotificationSound(isCritical ? 'criticalIncident' : 'incident');
@@ -35,10 +37,10 @@ export default function NotificationManager() {
           style={{ width: '100%', cursor: 'pointer', padding: '10px' }}
         >
           <div style={{ fontWeight: 'bold', color: 'white' }}>
-            {isCritical ? '🚨 URGENT: ' : 'New incident report: '}{reportTitle}
+            {isCritical ? '🚨 URGENT: ' : isResubmission ? 'Report resubmitted: ' : 'New incident report: '}{reportTitle}
           </div>
           <div style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.9)' }}>
-            {isCritical ? 'Critical incident reported. Click to review.' : 'A new incident report was submitted. Click to review.'}
+            {isCritical ? 'Critical incident reported. Click to review.' : isResubmission ? 'The reporter corrected this incident and sent it back for review.' : 'A new incident report was submitted. Click to review.'}
           </div>
         </div>
       ), {
@@ -51,7 +53,13 @@ export default function NotificationManager() {
     // Listen for new incident reports
     const onMdrrmoNewReport = (report: any) => {
       if (['dispatcher', 'master_admin'].includes(user.role) && isVisibleToMdrrmo(report)) {
-        showIncidentNotification(report.id, report.title, report.severity);
+        const reportId = String(report?.id || '').trim();
+        if (!reportId) return;
+        const cycle = Math.max(0, Number(report?.resubmission_count) || 0);
+        const key = `${reportId}:${cycle}`;
+        if (notifiedReportCycles.has(key)) return;
+        notifiedReportCycles.add(key);
+        showIncidentNotification(reportId, report.title, report.severity, cycle);
       }
     };
     socket.on('incident_report:new', onMdrrmoNewReport);

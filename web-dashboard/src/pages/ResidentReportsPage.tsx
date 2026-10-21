@@ -6,13 +6,17 @@ import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
 import { INCIDENT_TYPE_OPTIONS } from '../lib/incidentClassification';
 import { buildIncidentTimeline } from '../lib/reportTimeline';
 import { useAuth } from '../context/AuthContext';
+import toast from 'react-hot-toast';
+import EditAndResubmitReportForm from '../components/EditAndResubmitReportForm';
 
 type ResidentReport = {
   id: string;
   title?: string | null;
+  title?: string | null;
   description?: string | null;
   specifics?: string | null;
   incident_type?: string | null;
+  severity?: string | null;
   type?: string | null;
   source_type?: string | null;
   send_to?: string | null;
@@ -28,6 +32,8 @@ type ResidentReport = {
   review_outcome?: string | null;
   review_reason?: string | null;
   reviewed_at?: string | null;
+  resubmission_count?: number | null;
+  resubmitted_at?: string | null;
   incident_occurred_at?: string | null;
   incident_time_precision?: 'exact' | 'approximate' | 'unknown' | null;
   latitude?: number | string | null;
@@ -86,7 +92,7 @@ type IncidentLocationPreview = {
 };
 
 function reportWasClosedAfterReview(report: ResidentReport) {
-  return ['invalid', 'false_report'].includes(String(report.review_outcome || '').toLowerCase()) ||
+  return ['invalid', 'inconclusive', 'false_report'].includes(String(report.review_outcome || '').toLowerCase()) ||
     ['rejected', 'invalid', 'false_report'].includes(String(report.status || '').toLowerCase());
 }
 
@@ -94,6 +100,8 @@ function reportStatus(report: ResidentReport) {
   const mdrrmoStatus = String(report.mdrrmo_response_status || (report.send_to !== 'barangay' ? report.response_status || report.status : 'pending')).toLowerCase();
   const barangayStatus = String(report.barangay_response_status || '').toLowerCase();
   const closedStatuses = ['resolved', 'closed', 'complete', 'completed'];
+  if (report.review_outcome === 'inconclusive') return 'Marked inconclusive';
+  if (report.review_outcome === 'false_report') return 'Marked false reporter';
   if (reportWasClosedAfterReview(report)) return 'Closed after review';
   if (closedStatuses.includes(mdrrmoStatus) || (!report.is_escalated && closedStatuses.includes(barangayStatus))) return 'Resolved';
   if (['responding', 'accepted', 'en_route', 'on_scene', 'arrived'].includes(mdrrmoStatus) || ['responding', 'accepted', 'en_route', 'on_scene', 'arrived'].includes(barangayStatus) || report.mdrrmo_dispatched_at || report.barangay_dispatched_at || (report.send_to !== 'barangay' && report.dispatched_at) || (report.send_to === 'barangay' && report.dispatched_at)) return 'Response in progress';
@@ -161,6 +169,7 @@ export default function ResidentReportsPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const [editingReportId, setEditingReportId] = useState<string | null>(null);
 
   const loadReports = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
@@ -218,7 +227,7 @@ export default function ResidentReportsPage() {
     document.getElementById(`resident-report-${requestedReportId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, [loading, reports, requestedReportId]);
 
-  const activeCount = reports.filter((report) => !['Resolved', 'Closed after review'].includes(reportStatus(report))).length;
+  const activeCount = reports.filter((report) => !['Resolved', 'Closed after review', 'Marked inconclusive', 'Marked false reporter'].includes(reportStatus(report))).length;
   const resolvedCount = reports.filter((report) => reportStatus(report) === 'Resolved').length;
 
   return (
@@ -262,6 +271,14 @@ export default function ResidentReportsPage() {
               return <article id={`resident-report-${report.id}`} className={`resident-report-card${report.id === requestedReportId ? ' is-focus-target' : ''}`} key={report.id}>
                 <div className="resident-report-card-main">
                   <div className="resident-report-card-heading"><strong>{categoryLabel(report)}</strong><span className={`resident-status ${status === 'Resolved' ? 'resolved' : status === 'Response in progress' ? 'responding' : ''}`}>{status}</span></div>
+                  {report.review_outcome && <section className="resident-review-notice" aria-label="MDRRMO report review">
+                    <strong>{report.review_outcome === 'inconclusive' ? 'MDRRMO marked this report inconclusive' : 'MDRRMO marked this report False Reporter'}</strong>
+                    {report.review_reason && <p>{report.review_reason}</p>}
+                    <p>Update the report details and resubmit it for review.</p>
+                    {editingReportId === report.id
+                      ? <EditAndResubmitReportForm report={report} onCancel={() => setEditingReportId(null)} onSubmitted={() => { setEditingReportId(null); toast.success('Report resubmitted to MDRRMO.'); void loadReports(true); }} />
+                      : <button type="button" className="workspace-primary-action" onClick={() => setEditingReportId(report.id)}>Edit and resubmit</button>}
+                  </section>}
                   {details && <p>{details}</p>}
                   {!details && report.title?.toLowerCase().startsWith('visual ') && <p>Visual report submitted. See the captured evidence below.</p>}
                   {!details && !report.title?.toLowerCase().startsWith('visual ') && <p>No written incident details were provided.</p>}

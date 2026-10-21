@@ -8,6 +8,7 @@ import { reportAPI, requestAPI, respondUnitAPI, socket } from '../lib/api';
 import { createLocationMapIcon } from '../lib/locationMapIcon';
 import { INCIDENT_SEVERITY_OPTIONS, INCIDENT_TYPE_OPTIONS } from '../lib/incidentClassification';
 import { getMdrrmoReportGroup, isVisibleToMdrrmo } from '../lib/mdrrmoReportVisibility';
+import InvalidReportReviewDialog from '../components/InvalidReportReviewDialog';
 import { useAuth } from '../context/AuthContext';
 import { useMunicipalityBoundary } from '../context/MunicipalityBoundaryContext';
 import MunicipalityBoundaryMapLayer from '../components/MunicipalityBoundaryMapLayer';
@@ -66,6 +67,7 @@ interface IncidentItem {
   reporter_id?: string | null;
   reporter_type?: string;
   reporter_false_report_count?: number;
+  false_report_review_count?: number;
   reporter_account_status?: string;
   review_outcome?: 'inconclusive' | 'false_report' | null;
   review_reason?: string | null;
@@ -774,6 +776,17 @@ const createTeardropPin = (category: MapReportCategory, status: ReportStage, sel
   });
 };
 
+const createInconclusivePin = (selected = false) => {
+  const size = 64;
+  return L.divIcon({
+    html: `<div class="command-map-dot ${selected ? 'selected' : ''} command-map-dot-inconclusive" style="width:${size}px;height:${size}px;background:#fff;color:#111"><span aria-label="Inconclusive report">!</span></div>`,
+    className: 'command-map-dot-icon',
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+    popupAnchor: [0, -size / 2],
+  });
+};
+
 const createTransportIncidentIcon = () => L.divIcon({
   html: '<div class="command-transport-incident-marker"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M8 21v-5a8 8 0 0 1 16 0v5M6 21h20v4H6zM12 5V2m8 3V2M5 11l-2-2m24 2 2-2"/></svg></div>',
   className: 'command-transport-marker-icon',
@@ -994,7 +1007,7 @@ function ClusteredIncidentMarkers({
           <Marker
             key={incident.id}
             position={[incident.latitude, incident.longitude]}
-            icon={incident.transport_in_progress ? createTransportIncidentIcon() : createTeardropPin(incident.map_category, incident.status, selectedId === incident.id, barangayDashboard, pendingAssistanceIncidentIds.has(incident.id))}
+            icon={incident.transport_in_progress ? createTransportIncidentIcon() : incident.review_outcome === 'inconclusive' ? createInconclusivePin(selectedId === incident.id) : createTeardropPin(incident.map_category, incident.status, selectedId === incident.id, barangayDashboard, pendingAssistanceIncidentIds.has(incident.id))}
             zIndexOffset={selectedId === incident.id ? 1600 : 0}
             eventHandlers={{ click: () => onSelect(incident) }}
           />
@@ -1013,7 +1026,7 @@ function ClusteredIncidentMarkers({
               <strong>Nearby reports <span>{group.length}</span></strong>
               {group.map((incident) => (
                 <button key={incident.id} type="button" onClick={(event) => { event.stopPropagation(); onSelect(incident); }}>
-                  <i style={{ backgroundColor: incidentClusterColor(incident, barangayDashboard) }} />
+                  <i className={incident.review_outcome === 'inconclusive' ? 'inconclusive' : ''} style={incident.review_outcome === 'inconclusive' ? { backgroundColor: '#fff', borderColor: '#111', color: '#111' } : { backgroundColor: incidentClusterColor(incident, barangayDashboard) }} />
                   <span>{incidentClusterLabel(incident)}</span>
                 </button>
               ))}
@@ -1184,8 +1197,7 @@ export default function CommandCenter() {
   const [selectedUnit, setSelectedUnit] = useState<DispatchUnitItem | null>(null);
   const [selectedVisualUrl, setSelectedVisualUrl] = useState<string | null>(null);
   const [proofPreviewOpen, setProofPreviewOpen] = useState(false);
-  const [invalidReviewStep, setInvalidReviewStep] = useState<'choice' | 'reason' | null>(null);
-  const [invalidReason, setInvalidReason] = useState('');
+  const [invalidReviewOpen, setInvalidReviewOpen] = useState(false);
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
   const [closingResolvedMapMarker, setClosingResolvedMapMarker] = useState(false);
   const [closingResolvedBarangayAssignment, setClosingResolvedBarangayAssignment] = useState(false);
@@ -1419,6 +1431,7 @@ export default function CommandCenter() {
             reporter_account_status: r.reporter_account_status || '',
             review_outcome: r.review_outcome || null,
             review_reason: r.review_reason || null,
+            false_report_review_count: Number(r.false_report_review_count || 0),
             assigned_unit_id: r.assigned_unit_id || null,
             barangay_name: r.barangay_name || (r.barangays && r.barangays.name) || '',
             barangay_response_status: r.barangay_response_status || 'pending',
@@ -1777,8 +1790,7 @@ export default function CommandCenter() {
     setSelectedUnit(null);
     setSelectedIncident(item);
     loadSelectedIncidentLocation(item);
-    setInvalidReviewStep(null);
-    setInvalidReason('');
+    setInvalidReviewOpen(false);
     // Dispatcher instructions have their own field. Never seed them from
     // barangay escalation or responder field-assessment notes.
     setMdrrmoNotes(item.mdrrmo_dispatch_notes || '');
@@ -1844,18 +1856,16 @@ export default function CommandCenter() {
     setSelectedUnit(null);
     setSelectedVisualUrl(null);
     setProofPreviewOpen(false);
-    setInvalidReviewStep(null);
-    setInvalidReason('');
+    setInvalidReviewOpen(false);
   };
 
   const closeInvalidReview = () => {
-    setInvalidReviewStep(null);
-    setInvalidReason('');
+    setInvalidReviewOpen(false);
   };
 
-  const submitInvalidReview = async (outcome: 'inconclusive' | 'false_report') => {
+  const submitInvalidReview = async (outcome: 'inconclusive' | 'false_report', reasonValue = '') => {
     if (!selectedIncident || reviewSubmitting) return;
-    const reason = invalidReason.trim();
+    const reason = reasonValue.trim();
     if (outcome === 'inconclusive' && !reason) {
       toast.error('Enter a reason before marking this report inconclusive.');
       return;
@@ -1864,16 +1874,17 @@ export default function CommandCenter() {
     try {
       const response = await reportAPI.review(selectedIncident.id, { outcome, reason });
       const count = Number(response.data?.false_report_count ?? selectedIncident.reporter_false_report_count ?? 0);
+      const reportMarks = Number(response.data?.false_report_review_count ?? selectedIncident.false_report_review_count ?? 0);
       if (outcome === 'false_report') {
         toast.success(response.data?.resident_status === 'inactive'
           ? 'Report marked false. The resident account has been deactivated after 3 false reports.'
           : selectedIncident.reporter_id
-            ? `Report marked false (${count} of 3 resident marks).`
-            : 'Report marked false. No linked resident account was available for a strike.');
+            ? `False Reporter recorded (${reportMarks} mark${reportMarks === 1 ? '' : 's'} on this report; ${count} of 3 account marks).`
+            : `False Reporter recorded (${reportMarks} mark${reportMarks === 1 ? '' : 's'} on this report).`);
       } else {
         toast.success('Report marked inconclusive. The resident will be notified.');
       }
-      setInvalidReviewStep(null);
+      setInvalidReviewOpen(false);
       setSelectedIncident(null);
       setActiveModalType(null);
       await fetchData();
@@ -2687,8 +2698,10 @@ export default function CommandCenter() {
                     <button type="button" className="selection-invalid-btn" onClick={() => void recallSelectedBarangayAssignment()} disabled={barangayAssignmentSaving}>Recall assignment</button>
                     <button type="button" className="selection-dispatch-btn" onClick={() => openAssignmentPickerOnly(selectedIncident)} disabled={barangayAssignmentSaving}>Reassign</button>
                   </> : <>
-                    {!isBarangayDashboard && <button className="selection-invalid-btn" onClick={() => setInvalidReviewStep('choice')}>Invalid Report</button>}
-                    {!selectedIncident.mdrrmo_dispatched && (!isBarangayDashboard || user?.role === 'dispatcher') && (
+                    {!isBarangayDashboard && !selectedIncident.review_outcome && <button className="selection-invalid-btn" onClick={() => setInvalidReviewOpen(true)}>Invalid Report</button>}
+                    {!selectedIncident.review_outcome && Number(selectedIncident.false_report_review_count || 0) > 0 && <p className="command-review-note">False Reporter marks on this report: {selectedIncident.false_report_review_count}</p>}
+                    {selectedIncident.review_outcome === 'inconclusive' && <p className="command-review-note"><strong>Inconclusive</strong>{selectedIncident.review_reason ? `: ${selectedIncident.review_reason}` : ''} · waiting for reporter resubmission</p>}
+                    {!selectedIncident.review_outcome && !selectedIncident.mdrrmo_dispatched && (!isBarangayDashboard || user?.role === 'dispatcher') && (
                       <button type="button" className="selection-dispatch-btn" onClick={() => handleDispatch()} disabled={dispatching}>
                         {dispatching ? 'Dispatching…' : 'Dispatch'}
                       </button>
@@ -2755,7 +2768,7 @@ export default function CommandCenter() {
                   <button className="btn-preview-close" onClick={closeModal}>
                     ✕ CLOSE
                   </button>
-                  {!selectedHasActiveBarangayAssignment && (!isBarangayDashboard || (selectedIncident.status === 'pending' && user?.role === 'dispatcher')) && (
+                  {!selectedIncident.review_outcome && !selectedHasActiveBarangayAssignment && (!isBarangayDashboard || (selectedIncident.status === 'pending' && user?.role === 'dispatcher')) && (
                     <button className="btn-preview-dispatch" onClick={() => handleDispatch()}>
                       🚑 DISPATCH
                     </button>
@@ -3116,41 +3129,15 @@ export default function CommandCenter() {
           </div>
         )}
 
-        {invalidReviewStep && selectedIncident && (
-          <div className="invalid-review-overlay" onClick={closeInvalidReview}>
-            <section className="invalid-review-dialog" role="dialog" aria-modal="true" aria-labelledby="invalid-review-title" onClick={(event) => event.stopPropagation()}>
-              <button className="selection-close-btn invalid-review-close" onClick={closeInvalidReview} aria-label="Close review"><X size={20} /></button>
-              <h2 id="invalid-review-title">
-                {invalidReviewStep === 'choice'
-                  ? `Why is ${selectedIncident.reporter_name || 'the resident'}’s Report Invalid?`
-                  : 'Why is this report inconclusive?'}
-              </h2>
-              {invalidReviewStep === 'choice' ? (
-                <>
-                  <p>Choose how MDRRMO should record this review.</p>
-                  <div className="invalid-review-options">
-                    <button className="inconclusive-option" onClick={() => setInvalidReviewStep('reason')}>Inconclusive</button>
-                    <button className="false-reporter-option" onClick={() => void submitInvalidReview('false_report')} disabled={reviewSubmitting}>
-                      {reviewSubmitting ? 'Saving…' : 'False Reporter'}
-                      <small>{selectedIncident.reporter_id
-                        ? `${selectedIncident.reporter_false_report_count || 0} of 3 marks${(selectedIncident.reporter_false_report_count || 0) >= 2 ? ' · next mark deactivates account' : ''}`
-                        : 'No linked resident account'}</small>
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <p>The resident will receive this reason with the report status.</p>
-                  <textarea autoFocus className="invalid-review-reason" value={invalidReason} onChange={(event) => setInvalidReason(event.target.value)} placeholder="Explain what could not be confirmed…" maxLength={1000} />
-                  <div className="invalid-review-actions">
-                    <button onClick={closeInvalidReview} disabled={reviewSubmitting}>Cancel</button>
-                    <button onClick={() => void submitInvalidReview('inconclusive')} disabled={reviewSubmitting || !invalidReason.trim()}>{reviewSubmitting ? 'Saving…' : 'Notify Resident'}</button>
-                  </div>
-                </>
-              )}
-            </section>
-          </div>
-        )}
+        {invalidReviewOpen && selectedIncident && <InvalidReportReviewDialog
+          reporterName={selectedIncident.reporter_name}
+          falseReportCount={selectedIncident.false_report_review_count || 0}
+          residentStrikeCount={selectedIncident.reporter_false_report_count || 0}
+          linkedResident={selectedIncident.reporter_type === 'resident' && Boolean(selectedIncident.reporter_id)}
+          submitting={reviewSubmitting}
+          onClose={closeInvalidReview}
+          onSubmit={(outcome, reason) => void submitInvalidReview(outcome, reason)}
+        />}
 
         {proofPreviewOpen && selectedVisualUrl && selectedIncident && (
           <div className="proof-lightbox" onClick={() => setProofPreviewOpen(false)}>

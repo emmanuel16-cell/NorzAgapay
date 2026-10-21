@@ -3322,7 +3322,7 @@ tbody tr:last-child td { border-bottom: none; }
 .field-dispatch-btn { flex: 0 0 auto; width: 100%; }
 
 .invalid-review-overlay {
-  position: absolute;
+  position: fixed;
   z-index: 1900;
   inset: 0;
   display: flex;
@@ -3355,6 +3355,37 @@ tbody tr:last-child td { border-bottom: none; }
 .invalid-review-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 12px; }
 .invalid-review-actions button { min-height: 40px; padding: 0 16px; border: 0; border-radius: 8px; background: #8296b9; color: #fff; font-weight: 700; cursor: pointer; }
 .invalid-review-actions button:last-child { background: #35bdd8; }
+.invalid-review-actions .invalid-review-danger-action { background: #e83b41; }
+.command-map-dot-inconclusive > span { color: #111; text-shadow: none; }
+.command-review-note { flex-basis: 100%; margin: 0; color: #b45309; font-size: 12px; line-height: 1.4; }
+.report-resubmit-form { margin-top: 14px; padding: 16px; border: 1px solid #c7d4e8; border-radius: 12px; background: #f5f8fd; color: #15233c; text-align: left; }
+.report-resubmit-form > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; margin-bottom: 14px; }
+.report-resubmit-form > header h3 { margin: 4px 0; font-size: 18px; }
+.report-resubmit-form > header p { margin: 0; color: #50617b; font-size: 13px; }
+.report-resubmit-form > header button { display: grid; place-items: center; width: 34px; height: 34px; flex: 0 0 34px; border: 0; border-radius: 8px; background: #e2eaf6; color: #243653; cursor: pointer; }
+.report-resubmit-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.report-resubmit-grid label { display: grid; gap: 5px; color: #32445f; font-size: 12px; font-weight: 700; }
+.report-resubmit-grid label.wide { grid-column: 1 / -1; }
+.report-resubmit-grid input, .report-resubmit-grid select, .report-resubmit-grid textarea { box-sizing: border-box; width: 100%; min-height: 40px; padding: 9px 10px; border: 1px solid #b5c4da; border-radius: 7px; background: #fff; color: #15233c; font: inherit; font-size: 14px; }
+.report-resubmit-grid textarea { resize: vertical; }
+.report-resubmit-evidence { margin: 14px 0 0; padding: 12px; border: 1px solid #c7d4e8; border-radius: 9px; }
+.report-resubmit-evidence legend { padding: 0 5px; color: #32445f; font-size: 13px; font-weight: 700; }
+.report-resubmit-kept { display: grid; gap: 7px; margin-bottom: 12px; }
+.report-resubmit-kept label { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.report-resubmit-error { display: flex; align-items: flex-start; gap: 7px; margin: 12px 0 0; color: #b4232b; font-size: 13px; }
+.report-resubmit-form > footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.report-resubmit-form > footer button { min-height: 40px; }
+.resident-review-notice, .public-report-review-notice { margin: 14px 0; padding: 14px; border: 1px solid #f3bd6c; border-radius: 10px; background: #fff7e8; color: #5a3c10; }
+.resident-review-notice > strong, .public-report-review-notice > strong { display: block; color: #8a4b08; }
+.resident-review-notice p, .public-report-review-notice p { margin: 7px 0; font-size: 13px; }
+.resident-review-notice > button { margin-top: 6px; }
+.responder-false-reporter-button { display: inline-flex; align-items: center; gap: 7px; min-height: 40px; margin: 0 0 12px; padding: 0 13px; border: 1px solid #fca5a5; border-radius: 8px; background: #7f1d1d; color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+.responder-false-review-dialog { width: min(570px, 94vw); }
+@media (max-width: 640px) {
+  .report-resubmit-grid { grid-template-columns: 1fr; }
+  .report-resubmit-grid label.wide { grid-column: auto; }
+  .report-resubmit-form > footer { flex-direction: column-reverse; }
+}
 
 .proof-lightbox {
   position: absolute;

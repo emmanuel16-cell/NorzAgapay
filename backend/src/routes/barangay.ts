@@ -2498,6 +2498,56 @@ router.patch('/assigned-reports/:id/dispatch', authenticateBarangay, requireRole
   });
 });
 
+router.patch('/assigned-reports/:id/review', authenticateBarangay, requireRole(['responder']), async (req: any, res: Response): Promise<void> => {
+  if (req.body?.outcome && req.body.outcome !== 'false_report') {
+    res.status(403).json({ error: 'Responders may only mark an assigned incident as a false report.' });
+    return;
+  }
+  try {
+    const { data, error } = await supabaseAdmin.rpc('record_canonical_incident_review', {
+      p_report_id: req.params.id,
+      p_outcome: 'false_report',
+      p_reason: '',
+      p_actor_id: req.barangayUser.userId,
+      p_actor_role: 'responder',
+    });
+    if (error) {
+      const status = error.code === 'P0002' ? 404
+        : error.code === '42501' ? 403
+          : error.code === 'P0001' ? 409
+            : error.code === '22023' ? 400
+              : 500;
+      res.status(status).json({ error: error.message || 'Could not mark this report as false.' });
+      return;
+    }
+    const result = data as { report?: any; false_report_review_count?: number; false_report_count?: number | null; resident_status?: string | null };
+    if (!result?.report) {
+      res.status(500).json({ error: 'Report review returned no report.' });
+      return;
+    }
+    const report = {
+      ...result.report,
+      false_report_review_count: result.false_report_review_count ?? result.report.false_report_review_count ?? 0,
+    };
+    const changedAt = new Date().toISOString();
+    io.to('dashboard_staff').emit('incident_report:reviewed', report);
+    io.to('dashboard_staff').emit('incident_report:updated', report);
+    io.to(`barangay:${req.barangayUser.barangayId}`).emit('barangay:report_updated', report);
+    io.to(`barangay:${req.barangayUser.barangayId}`).emit('incident:lifecycle', report);
+    if (report.reporter_type === 'guest') {
+      io.to(`guest-report:${report.id}`).emit('guest-report:updated', { reportId: report.id, changedAt });
+    } else if (report.reporter_type === 'resident' && report.reporter_id) {
+      io.to(`user:${report.reporter_id}`).emit('incident_report:reviewed', report);
+      io.to(`user:${report.reporter_id}`).emit('incident_report:updated', report);
+      io.to(`user:${report.reporter_id}`).emit('dashboard:data_changed', { resource: 'incident-reports', action: 'patch', changedAt });
+    }
+    res.json({ report, false_report_count: result.false_report_count ?? null, false_report_review_count: result.false_report_review_count ?? 0 });
+  } catch (error: any) {
+    console.error('Barangay responder false-report review failed:', error);
+    res.status(500).json({ error: error?.message || 'Could not mark this report as false.' });
+  }
+});
+
 router.patch('/assigned-reports/:id/crew', authenticateBarangay, requireRole(['responder']), async (req: any, res: Response): Promise<void> => {
   const parsed = z.object({
     members: z.array(z.object({

@@ -38,7 +38,7 @@ export function isDirectMdrrmoReport(report: MdrrmoReportVisibilityFields): bool
 }
 
 export function isVisibleToMdrrmo(report: MdrrmoReportVisibilityFields): boolean {
-  if (text(report.review_outcome)) return false;
+  if (text(report.review_outcome) === 'false_report') return false;
   if (isEscalatedForMdrrmo(report)) return true;
   return isDirectMdrrmoReport(report);
 }
