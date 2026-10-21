@@ -4,7 +4,6 @@ import toast from 'react-hot-toast';
 import { reportAPI, respondUnitAPI, socket, type TransportHospital } from '../lib/api';
 import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
 import { useAuth } from '../context/AuthContext';
-import { createDemoResponderReport } from '../demoResponderReport';
 import IncidentLocationCard from '../components/IncidentLocationCard';
 import ResponderLocationMapModal from '../components/ResponderLocationMapModal';
 import CameraEvidenceCapture from '../components/CameraEvidenceCapture';
@@ -45,7 +44,6 @@ type AssignedReport = {
   mdrrmo_assignments?: ResponseAssignment[];
   assigned_responder_ids?: string[];
   responder_media?: Array<{ id?: string; url?: string; type?: string }> | string | null;
-  is_demo?: boolean;
 };
 
 type TriageOutcome = 'safe' | 'mild_injuries' | 'severe_injuries';
@@ -118,8 +116,6 @@ const parseFieldAssessment = (notes: string | null | undefined, isBarangay: bool
 export default function ResponderWorkspacePage() {
   const { user } = useAuth();
   const isBarangay = user?.account_kind === 'barangay';
-  const [demoReport] = useState<AssignedReport>(() => createDemoResponderReport());
-  const [demoDismissed, setDemoDismissed] = useState(false);
   const [reports, setReports] = useState<AssignedReport[]>([]);
   const [crew, setCrew] = useState<CrewMember[]>([]);
   const [crewSelections, setCrewSelections] = useState<Record<string, string[]>>({});
@@ -154,7 +150,7 @@ export default function ResponderWorkspacePage() {
   const closeLocationMap = useCallback(() => setLocationMapReport(null), []);
 
   const loadLocationPreview = useCallback(async (report: AssignedReport) => {
-    if (report.is_demo || !hasIncidentPin(report)) return;
+    if (!hasIncidentPin(report)) return;
     const requestKey = `${report.id}:${report.latitude}:${report.longitude}`;
     if (requestedLocationPreviews.current.has(requestKey)) return;
     requestedLocationPreviews.current.add(requestKey);
@@ -225,7 +221,6 @@ export default function ResponderWorkspacePage() {
   useEffect(() => {
     if (user?.role !== 'responder' || !user.id || !navigator.geolocation) return;
     const isAssignedResponse = (report: AssignedReport) => {
-      if (report.is_demo) return false;
       const status = String((isBarangay ? report.barangay_response_status : report.response_status) || report.response_status || '').toLowerCase();
       if (status !== 'responding') return false;
       if (isBarangay) {
@@ -346,10 +341,6 @@ export default function ResponderWorkspacePage() {
   const responseStatusFor = (report: AssignedReport) => String((isBarangay ? report.barangay_response_status : report.response_status) || report.response_status || 'pending').toLowerCase();
   const activeReports = reports.filter((report) => responseStatusFor(report) !== 'resolved');
   const resolvedCount = reports.length - activeReports.length;
-  const showDemoPreview = isBarangay && user?.role === 'responder' &&
-    localStorage.getItem('norzagapay_debug_session') === 'true' &&
-    localStorage.getItem('norzagapay_responder_demo_hidden') !== 'true' && !demoDismissed;
-  const visibleActiveReports = showDemoPreview ? [...activeReports, demoReport] : activeReports;
 
   const perform = async (action: () => Promise<unknown>, successMessage: string) => {
     setSaving(true);
@@ -563,12 +554,11 @@ export default function ResponderWorkspacePage() {
         <article><span>{isBarangay ? 'Scoped reports' : 'Unit crew'}</span><strong>{isBarangay ? reports.length : crew.length}</strong></article>
       </section>
       {error && <div className="workspace-message workspace-message-error" role="alert"><AlertCircle size={17} />{error}<button type="button" onClick={() => void loadWorkspace()}>Try again</button></div>}
-      {showDemoPreview && <div className="responder-demo-notice" role="note"><div><strong>Debug demo preview</strong><span>This sample is not a real incident, is not saved, and is excluded from the counts above.</span></div><button type="button" onClick={() => { localStorage.setItem('norzagapay_responder_demo_hidden', 'true'); setDemoDismissed(true); }}><X size={15} /> Hide preview</button></div>}
       {!loading && !isBarangay && crew.length === 0 && <div className="workspace-message"><ShieldAlert size={17} />Your unit roster is not available yet. Ask logistics staff to assign your team and crew.</div>}
-      {loading ? <p className="resident-reports-state">Loading assigned responses…</p> : visibleActiveReports.length === 0 ? (
+      {loading ? <p className="resident-reports-state">Loading assigned responses…</p> : activeReports.length === 0 ? (
         <div className="resident-reports-empty"><CheckCircle2 size={23} /><strong>No active assignments</strong><span>New dispatches assigned to your responder account will appear here.</span></div>
       ) : <div className="responder-report-list">
-        {visibleActiveReports.map((report) => {
+        {activeReports.map((report) => {
           const assignment = assignmentFor(report);
           const assignmentStatus = String(isBarangay ? report.assignment_status || '' : assignment?.status || assignment?.assignment_status || '').toLowerCase();
           const responseStatus = responseStatusFor(report);
@@ -577,7 +567,7 @@ export default function ResponderWorkspacePage() {
           const arrived = isBarangay
             ? Boolean(report.barangay_arrived_at)
             : Boolean(assignment ? assignment.arrived_at : report.mdrrmo_arrived_at);
-          const canUpdateField = !report.is_demo && (isBarangay ? responseStatus === 'responding' : assignmentStatus === 'responding');
+          const canUpdateField = isBarangay ? responseStatus === 'responding' : assignmentStatus === 'responding';
           const currentResponderIsAssigned = isBarangay
             ? report.is_central_assignment
               ? [...(report.assigned_team_leader_ids || []), ...(report.assigned_responder_ids || []), report.barangay_responded_by || ''].includes(user?.id || '')
@@ -585,7 +575,7 @@ export default function ResponderWorkspacePage() {
             : assignment?.responder_id === user?.id;
           const canMarkFalseReporter = user?.role === 'responder' && canUpdateField && currentResponderIsAssigned &&
             !report.resolved_at && !report.map_closed_at && responseStatus !== 'resolved' && !report.review_outcome;
-          const canManageCrew = !isBarangay && !report.is_demo && !arrived && assignmentStatus === 'responding';
+          const canManageCrew = !isBarangay && !arrived && assignmentStatus === 'responding';
           const selectedCrewIds = crewDraftSelections[report.id] || [];
           const currentAssessment = assessments[report.id] || emptyAssessment;
           const fieldMedia = parseResponderMedia(report.responder_media);
@@ -599,11 +589,11 @@ export default function ResponderWorkspacePage() {
           const canResolve = assessmentSaved && triageSaved &&
             (currentAssessment.triage_outcome !== 'severe_injuries' || currentAssessment.transport_status === 'delivered');
           const savedMdrrmoCrew = (assignment?.crew || []).filter((member) => member.member_role !== 'team_leader');
-          const hasMapLocation = !report.is_demo && hasIncidentPin(report);
+          const hasMapLocation = hasIncidentPin(report);
           const locationPreview = locationPreviews[report.id];
           const displayStatus = responseStatus === 'responding' ? 'Responding' : assignmentStatus === 'active' ? 'Assigned' : assignmentStatus || 'Assigned';
           return <article className="responder-report-card" key={report.id}>
-            <header><div><span className="workspace-eyebrow">{report.is_demo ? 'DEMO ASSIGNMENT · ' : ''}{report.incident_type?.replaceAll('_', ' ') || 'Incident'}{report.severity ? ` · ${report.severity}` : ''}</span><h2>{report.title || 'Incident response'}</h2></div><span className={`resident-status ${responseStatus === 'responding' ? 'responding' : ''} ${report.is_demo ? 'demo' : ''}`}>{report.is_demo ? 'Demo preview' : displayStatus}</span></header>
+            <header><div><span className="workspace-eyebrow">{report.incident_type?.replaceAll('_', ' ') || 'Incident'}{report.severity ? ` · ${report.severity}` : ''}</span><h2>{report.title || 'Incident response'}</h2></div><span className={`resident-status ${responseStatus === 'responding' ? 'responding' : ''}`}>{displayStatus}</span></header>
             <p className="responder-report-description">{report.description || 'No incident details were provided.'}</p>
             <div className="resident-report-meta"><span><Activity size={14} /> {report.created_at ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(report.created_at)) : 'Time unavailable'}</span></div>
             <IncidentLocationCard

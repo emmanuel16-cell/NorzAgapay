@@ -7,7 +7,6 @@ import { reportAPI, socket } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { INCIDENT_SEVERITY_OPTIONS, INCIDENT_TYPE_OPTIONS } from '../lib/incidentClassification';
 import { getMdrrmoReportGroup, isVisibleToMdrrmo } from '../lib/mdrrmoReportVisibility';
-import { createDemoResponderReport } from '../demoResponderReport';
 import ResponderLocationMapModal from '../components/ResponderLocationMapModal';
 import IncidentLocationCard from '../components/IncidentLocationCard';
 import { formatMobileNumber } from '../lib/mobileNumber';
@@ -56,7 +55,6 @@ interface IncidentReport {
   is_central_assignment?: boolean; assignment_id?: string; assignment_status?: string; assignment_closed_at?: string | null; assignment_notes?: string;
   assigned_team_leader_ids?: string[]; active_barangay_assignment?: BarangayAssignment | null; barangay_assignments?: BarangayAssignment[];
   barangay_responded_at?: string | null; barangay_resolved_notes?: string | null;
-  is_demo?: boolean;
 }
 type ResponderOption = { id: string; full_name: string; phone?: string | null; unit_type?: string | null; unit_id: string; unit_name: string };
 
@@ -144,18 +142,12 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
   const [searchParams, setSearchParams] = useSearchParams();
   const [currentTime, setCurrentTime] = useState(() => new Date().toLocaleTimeString());
   const [reports, setReports] = useState<IncidentReport[]>([]);
-  const [demoReport] = useState<IncidentReport>(() => {
-    const sample = createDemoResponderReport();
-    return { ...sample, type: sample.incident_type || 'incident', status: sample.response_status || 'responding', barangay_name: user?.barangay_name || null };
-  });
-  const [demoDismissed, setDemoDismissed] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [reviewDialogReport, setReviewDialogReport] = useState<IncidentReport | null>(null);
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
   const [group, setGroup] = useState<ReportTab>('resident');
   const [stage, setStage] = useState<ReportStage>(() => isReadOnlyResponder &&
-    localStorage.getItem('norzagapay_debug_session') === 'true' &&
-    localStorage.getItem('norzagapay_responder_demo_hidden') !== 'true' ? 'responding' : 'pending');
+    localStorage.getItem('norzagapay_debug_session') === 'true' ? 'responding' : 'pending');
   const [loading, setLoading] = useState(true);
   const [dispatchReport, setDispatchReport] = useState<IncidentReport | null>(null);
   const [incidentType, setIncidentType] = useState('');
@@ -178,11 +170,6 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
   const [locationPreviewLoading, setLocationPreviewLoading] = useState<Record<string, boolean>>({});
   const requestedLocationPreviews = useRef(new Set<string>());
   const queueListRef = useRef<HTMLDivElement>(null);
-
-  const showDemoPreview = isReadOnlyResponder &&
-    localStorage.getItem('norzagapay_debug_session') === 'true' &&
-    localStorage.getItem('norzagapay_responder_demo_hidden') !== 'true' && !demoDismissed;
-  const displayedReports = useMemo(() => showDemoPreview ? [...reports, demoReport] : reports, [demoReport, reports, showDemoPreview]);
 
   const fetchReports = useCallback(async () => {
     try {
@@ -241,8 +228,8 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
     if (target) { setSelectedId(target.id); setGroup(isAssignedToBarangay(target) ? 'assigned' : 'resident'); setStage(getStage(target)); }
   }, [searchParams, reports]);
 
-  const inGroup = useMemo(() => isBarangay ? displayedReports : displayedReports.filter((item) =>
-    group === 'assigned' ? isAssignedToBarangay(item) : !isAssignedToBarangay(item)), [displayedReports, group, isBarangay]);
+  const inGroup = useMemo(() => isBarangay ? reports : reports.filter((item) =>
+    group === 'assigned' ? isAssignedToBarangay(item) : !isAssignedToBarangay(item)), [reports, group, isBarangay]);
   const counts = useMemo(() => ({
     pending: inGroup.filter((item) => getStage(item) === 'pending').length,
     responding: inGroup.filter((item) => getStage(item) === 'responding').length,
@@ -253,7 +240,7 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
   const nearestDestination = destinations.find((item) => item.distance_meters != null) || null;
 
   const loadLocationPreview = useCallback(async (report: IncidentReport) => {
-    if (report.is_demo || !hasPin(report)) return;
+    if (!hasPin(report)) return;
     const requestKey = `${report.id}:${report.latitude}:${report.longitude}`;
     if (requestedLocationPreviews.current.has(requestKey)) return;
     requestedLocationPreviews.current.add(requestKey);
@@ -501,7 +488,6 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
           <button key={value} type="button" className={'stage-' + value + (stage === value ? ' active' : '')} onClick={() => selectStage(value)}>{label} <span>{counts[value]}</span></button>
         ))}
       </nav>
-      {showDemoPreview && <div className="responder-demo-notice reports-demo-notice" role="note"><div><strong>Debug demo preview</strong><span>This sample is not a real incident and is not saved. It appears here only to preview the dispatcher-style report layout.</span></div><button type="button" onClick={() => { localStorage.setItem('norzagapay_responder_demo_hidden', 'true'); setDemoDismissed(true); }}><X size={15} /> Hide preview</button></div>}
 
       <section className={`reports-split-view-v2 ${isReadOnlyResponder ? selectedId ? 'responder-mobile-detail-v2' : 'responder-mobile-list-v2' : ''}`}>
         <aside className="reports-queue-v2">
@@ -512,20 +498,18 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
                 const reportProofs = getProofs(report);
                 const active = selected?.id === report.id;
                 const locationPreview = locationPreviews[report.id];
-                const reportLocationName = report.is_demo
-                  ? 'Demo location'
-                  : locationPreview?.road || locationPreview?.landmark || formatIncidentLocation(report);
+                const reportLocationName = locationPreview?.road || locationPreview?.landmark || formatIncidentLocation(report);
                 return <button key={report.id} type="button" className={'reports-queue-item-v2 ' + stage + (active ? ' selected' : '')} onClick={() => selectReport(report)}>
-                  <span className="reports-queue-item-top"><strong>{report.is_demo ? 'Demo: ' : ''}{report.description?.trim() || 'No report details provided.'}</strong><span className={'report-status-chip-v2 ' + stage}>{report.is_demo ? 'Demo preview' : report.review_outcome === 'inconclusive' ? 'Inconclusive' : stage === 'responding' ? 'Responding' : stage === 'resolved' ? 'Resolved' : 'Pending'}</span></span>
+                  <span className="reports-queue-item-top"><strong>{report.description?.trim() || 'No report details provided.'}</strong><span className={'report-status-chip-v2 ' + stage}>{report.review_outcome === 'inconclusive' ? 'Inconclusive' : stage === 'responding' ? 'Responding' : stage === 'resolved' ? 'Resolved' : 'Pending'}</span></span>
                   <span className="reports-queue-time">Report received {timeAgo(report.created_at)}</span>
                   <span className="reports-queue-time">{incidentTimeLabel(report)}</span>
                   <span className="reports-queue-meta">
-                    <span className="reports-queue-location-v2" data-report-location-id={report.is_demo ? undefined : report.id}>
+                    <span className="reports-queue-location-v2" data-report-location-id={report.id}>
                       <MapPin size={14} />
                       <span><strong>{reportLocationName}</strong>
                         {locationPreview?.road && nearbyLandmarkLabel(locationPreview) && <small>{nearbyLandmarkLabel(locationPreview)}</small>}
                         {locationPreview?.nearest_response_barangay_name && <small>Closest response barangay: {locationPreview.nearest_response_barangay_name.replace(/^(?:barangay|brgy\.?)\s*/i, '')}</small>}
-                        {!report.is_demo && locationPreviewLoading[report.id] && !locationPreview && <small>Looking up road and nearby places…</small>}
+                        {locationPreviewLoading[report.id] && !locationPreview && <small>Looking up road and nearby places…</small>}
                       </span>
                     </span>
                     <span><Paperclip size={13} /> {reportProofs.length} attachment{reportProofs.length === 1 ? '' : 's'}</span>

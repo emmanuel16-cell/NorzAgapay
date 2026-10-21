@@ -327,7 +327,7 @@ BEGIN
         WHERE report_id = v_mdrrmo.id AND assignment_status = 'active';
       INSERT INTO public.mdrrmo_report_barangay_assignment_events (
         report_id, event_type, actor_id, actor_role, notes, created_at
-      ) VALUES (v_mdrrmo.id, 'dismissed', p_actor_id, p_actor_role, 'Responder marked the report as false reporter.', v_now);
+      ) VALUES (v_mdrrmo.id, 'recalled', p_actor_id, p_actor_role, 'Responder marked the report as false reporter.', v_now);
     END IF;
   END IF;
 
