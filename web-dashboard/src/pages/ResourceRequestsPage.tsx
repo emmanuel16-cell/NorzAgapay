@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { format } from 'date-fns';
-import { AlertTriangle, ClipboardList } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ClipboardList } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { reportAPI, requestAPI, socket } from '../lib/api';
 import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
@@ -135,6 +135,7 @@ export default function ResourceRequestsPage() {
   const requestedId = searchParams.get('request_id');
   const [requests, setRequests] = useState<AssistanceRequest[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [expandedRequestId, setExpandedRequestId] = useState<string | false | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [approvalNote, setApprovalNote] = useState('');
@@ -222,12 +223,15 @@ export default function ResourceRequestsPage() {
     ? incidentGroups.find((group) => group.key === (selected.incident_id ? `incident:${selected.incident_id}` : `request:${selected.id}`)) || null
     : null;
   const selectedHistory = selectedGroup?.requests || [];
+  const latestHistoryRequestId = selectedHistory[selectedHistory.length - 1]?.id || null;
+  const effectiveExpandedRequestId = expandedRequestId === null ? latestHistoryRequestId : expandedRequestId || null;
   const linkedIncident = selectedGroup?.incident || selected?.incident_report || null;
   const linkedIncidentId = linkedIncident?.id;
   const linkedIncidentHasPin = linkedIncident ? hasIncidentPin(linkedIncident) : false;
   const linkedLocationPreview = locationPreviewState?.incidentId === linkedIncident?.id ? locationPreviewState : null;
 
   useEffect(() => { setApprovalNote(''); }, [selected?.id]);
+  useEffect(() => { setExpandedRequestId(null); }, [selectedGroup?.key, latestHistoryRequestId]);
 
   useEffect(() => {
     if (!linkedIncidentId || !linkedIncidentHasPin) {
@@ -275,7 +279,16 @@ export default function ResourceRequestsPage() {
   const selectIncidentGroup = (group: AssistanceIncidentGroup) => {
     const activeRequest = [...group.requests].reverse().find((request) => request.status === 'pending') || group.requests[group.requests.length - 1];
     if (!activeRequest) return;
+    setExpandedRequestId(null);
     selectRequest(activeRequest);
+  };
+
+  const toggleRequestCard = (request: AssistanceRequest) => {
+    selectRequest(request);
+    setExpandedRequestId((current) => {
+      const currentlyExpanded = current === null ? latestHistoryRequestId : current || null;
+      return currentlyExpanded === request.id ? false : request.id;
+    });
   };
 
   const updateStatus = async (request: AssistanceRequest, status: RequestStatus) => {
@@ -383,42 +396,43 @@ export default function ResourceRequestsPage() {
                         ].filter((tag): tag is string => Boolean(tag));
                         return (
                           <article
-                            className={`assistance-history-card assistance-review-selectable ${selected.id === request.id ? 'review-selected' : ''}`}
+                            className={`assistance-history-card assistance-review-selectable ${selected.id === request.id ? 'review-selected' : ''} ${effectiveExpandedRequestId === request.id ? '' : 'is-collapsed'}`}
                             key={request.id}
-                            role="button"
-                            tabIndex={0}
-                            aria-pressed={selected.id === request.id}
-                            aria-label={`Review ${requestTypeLabel(request.request_type, request.sub_type)} request from ${request.requested_by_user?.full_name || 'Responder'}, ${requestStatusLabel(request)}`}
-                            onClick={() => selectRequest(request)}
-                            onKeyDown={(event) => {
-                              if (event.key === 'Enter' || event.key === ' ') {
-                                event.preventDefault();
-                                selectRequest(request);
-                              }
-                            }}
                           >
                             <header>
-                              <div><span className="assistance-history-sos">SOS</span><strong>Assistance Request</strong></div>
-                              <span className={`assistance-status-chip ${request.status}`}>{hasDispatcherResponse ? coordinationLabel(request) : 'Pending'}</span>
+                              <button
+                                type="button"
+                                className="assistance-history-toggle"
+                                aria-expanded={effectiveExpandedRequestId === request.id}
+                                aria-controls={`mdrrmo-assistance-history-${request.id}`}
+                                aria-label={`${effectiveExpandedRequestId === request.id ? 'Minimize' : 'Maximize'} assistance request from ${request.requested_by_user?.full_name || 'Responder'}`}
+                                onClick={() => toggleRequestCard(request)}
+                              >
+                                <span className="assistance-history-title"><span className="assistance-history-sos">SOS</span><strong>Assistance Request</strong></span>
+                                <span className={`assistance-status-chip ${request.status}`}>{hasDispatcherResponse ? coordinationLabel(request) : 'Pending'}</span>
+                                <ChevronDown className={effectiveExpandedRequestId === request.id ? '' : 'collapsed'} size={17} aria-hidden="true" />
+                              </button>
                             </header>
-                            <div className="assistance-history-entry">
-                              <strong>From: {request.requested_by_user?.full_name || 'Responder'}</strong>
-                              <div className="assistance-history-meta">
-                                <time>{dateTime(request.created_at)}</time>
+                            <div id={`mdrrmo-assistance-history-${request.id}`} hidden={effectiveExpandedRequestId !== request.id}>
+                              <div className="assistance-history-entry">
+                                <strong>From: {request.requested_by_user?.full_name || 'Responder'}</strong>
+                                <div className="assistance-history-meta">
+                                  <time>{dateTime(request.created_at)}</time>
+                                </div>
+                                {categoryTags.length > 0 && <div className="assistance-history-tags" aria-label="Requested assistance categories">{categoryTags.map((tag) => <span key={tag}>✓ {tag}</span>)}</div>}
+                                <p>{request.explanation || request.details || 'No request details provided.'}</p>
                               </div>
-                              {categoryTags.length > 0 && <div className="assistance-history-tags" aria-label="Requested assistance categories">{categoryTags.map((tag) => <span key={tag}>✓ {tag}</span>)}</div>}
-                              <p>{request.explanation || request.details || 'No request details provided.'}</p>
+                              {hasDispatcherResponse && (
+                                <div className="assistance-history-entry dispatcher">
+                                  <strong>From: Dispatcher</strong>
+                                  <span className={`assistance-decision-badge ${request.decision === 'coordinate_mdrrmo' ? 'coordination' : request.decision === 'dismissed' || request.status === 'rejected' ? 'rejected' : 'provided'}`}>
+                                    {coordinationLabel(request)}
+                                  </span>
+                                  {request.dispatcher_notes && <p>{request.dispatcher_notes}</p>}
+                                  {request.decided_at && <time>{dateTime(request.decided_at)}</time>}
+                                </div>
+                              )}
                             </div>
-                            {hasDispatcherResponse && (
-                              <div className="assistance-history-entry dispatcher">
-                                <strong>From: Dispatcher</strong>
-                                <span className={`assistance-decision-badge ${request.decision === 'coordinate_mdrrmo' ? 'coordination' : request.decision === 'dismissed' || request.status === 'rejected' ? 'rejected' : 'provided'}`}>
-                                  {coordinationLabel(request)}
-                                </span>
-                                {request.dispatcher_notes && <p>{request.dispatcher_notes}</p>}
-                                {request.decided_at && <time>{dateTime(request.decided_at)}</time>}
-                              </div>
-                            )}
                           </article>
                         );
                       })}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { ArrowLeft, Check, ClipboardList, HandHelping, MapPin, RefreshCw, Send, X } from 'lucide-react';
+import { ArrowLeft, Check, ChevronDown, ClipboardList, HandHelping, MapPin, RefreshCw, Send, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import { barangayAPI, reportAPI, requestAPI, socket } from '../lib/api';
@@ -105,6 +105,7 @@ function BarangayAssistanceWorkspace() {
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
+  const [expandedRequestId, setExpandedRequestId] = useState<string | false | null>(null);
   const [form, setForm] = useState<RequestForm>(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
@@ -194,6 +195,18 @@ function BarangayAssistanceWorkspace() {
     : null;
   const selectedDispatcherIncident = selectedDispatcherGroup?.incident || null;
   const selectedDispatcherRequests = selectedDispatcherGroup?.requests || [];
+  const latestDispatcherRequestId = selectedDispatcherRequests[selectedDispatcherRequests.length - 1]?.id || null;
+  const effectiveExpandedDispatcherRequestId = expandedRequestId === null ? latestDispatcherRequestId : expandedRequestId || null;
+
+  useEffect(() => { setExpandedRequestId(null); }, [selectedDispatcherGroup?.key, latestDispatcherRequestId]);
+
+  const toggleDispatcherRequest = (request: Assistance) => {
+    setSelectedRequestId(request.id);
+    setExpandedRequestId((current) => {
+      const currentlyExpanded = current === null ? latestDispatcherRequestId : current || null;
+      return currentlyExpanded === request.id ? false : request.id;
+    });
+  };
 
   const reset = () => { setForm(emptyForm); setEditingId(null); setIsRequestModalOpen(false); };
   const startNewRequest = () => {
@@ -305,6 +318,7 @@ function BarangayAssistanceWorkspace() {
               return <button key={group.key} type="button" className={`reports-queue-item-v2 ${group.incident ? incidentStatusClass(group.incident) : statusClass(latestRequest.status)} ${active ? 'selected' : ''}`} onClick={() => {
                 const reviewRequest = [...group.requests].reverse().find((request) => request.status === 'pending') || latestRequest;
                 setSelectedRequestId(reviewRequest.id);
+                setExpandedRequestId(null);
               }}>
                 <span className="reports-queue-item-top"><strong>{group.incident ? incidentTitle(group.incident) : latestRequest.incident_title || 'General barangay assistance'}</strong><span className={`report-status-chip-v2 ${group.incident ? incidentStatusClass(group.incident) : statusClass(latestRequest.status)}`}>{group.incident ? statusLabel(incidentStatus(group.incident)) : statusLabel(latestRequest.status)}</span></span>
                 <span className="reports-queue-time">Incident occurred · {dateTime(group.incident?.created_at || latestRequest.created_at)}</span>
@@ -358,18 +372,14 @@ function BarangayAssistanceWorkspace() {
                       request.beyond_barangay_capability ? 'MDRRMO coordination' : null,
                     ].filter((category): category is string => Boolean(category));
                     return <article
-                      className={`assistance-history-card assistance-review-selectable ${isSelectedForReview ? 'review-selected' : ''}`}
+                      className={`assistance-history-card assistance-review-selectable ${isSelectedForReview ? 'review-selected' : ''} ${effectiveExpandedDispatcherRequestId === request.id ? '' : 'is-collapsed'}`}
                       key={request.id}
-                      role="button"
-                      tabIndex={0}
-                      aria-pressed={isSelectedForReview}
-                      aria-label={`Review assistance request from ${request.requested_by_user?.full_name || 'Responder'}, ${statusLabel(request.status)}`}
-                      onClick={() => setSelectedRequestId(request.id)}
-                      onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedRequestId(request.id); } }}
                     >
-                      <header><div><span className="assistance-history-sos">SOS</span><strong>Assistance Request</strong></div><span className={`assistance-status-chip ${statusClass(request.status)}`}>{dispatcherRequestStatus(request)}</span></header>
-                      <div className="assistance-history-entry"><strong>From: {request.requested_by_user?.full_name || 'Responder'}</strong><time>{dateTime(request.created_at)}</time>{categories.length > 0 && <div className="assistance-history-tags" aria-label="Requested assistance categories">{categories.map((category) => <span key={category}>✓ {category}</span>)}</div>}<p>{request.explanation || 'No request details provided.'}</p></div>
-                      {(request.dispatcher_notes || request.decision || request.status !== 'pending') && <div className="assistance-history-entry dispatcher"><strong>From: Dispatcher</strong><span className={`assistance-decision-badge ${request.decision === 'coordinate_mdrrmo' ? 'coordination' : request.decision === 'dismissed' || request.status === 'rejected' ? 'rejected' : 'provided'}`}>{dispatcherRequestStatus(request)}</span>{request.dispatcher_notes && <p>{request.dispatcher_notes}</p>}</div>}
+                      <header><button type="button" className="assistance-history-toggle" aria-expanded={effectiveExpandedDispatcherRequestId === request.id} aria-controls={`barangay-assistance-history-${request.id}`} aria-label={`${effectiveExpandedDispatcherRequestId === request.id ? 'Minimize' : 'Maximize'} assistance request from ${request.requested_by_user?.full_name || 'Responder'}`} onClick={() => toggleDispatcherRequest(request)}><span className="assistance-history-title"><span className="assistance-history-sos">SOS</span><strong>Assistance Request</strong></span><span className={`assistance-status-chip ${statusClass(request.status)}`}>{dispatcherRequestStatus(request)}</span><ChevronDown className={effectiveExpandedDispatcherRequestId === request.id ? '' : 'collapsed'} size={17} aria-hidden="true" /></button></header>
+                      <div id={`barangay-assistance-history-${request.id}`} hidden={effectiveExpandedDispatcherRequestId !== request.id}>
+                        <div className="assistance-history-entry"><strong>From: {request.requested_by_user?.full_name || 'Responder'}</strong><time>{dateTime(request.created_at)}</time>{categories.length > 0 && <div className="assistance-history-tags" aria-label="Requested assistance categories">{categories.map((category) => <span key={category}>✓ {category}</span>)}</div>}<p>{request.explanation || 'No request details provided.'}</p></div>
+                        {(request.dispatcher_notes || request.decision || request.status !== 'pending') && <div className="assistance-history-entry dispatcher"><strong>From: Dispatcher</strong><span className={`assistance-decision-badge ${request.decision === 'coordinate_mdrrmo' ? 'coordination' : request.decision === 'dismissed' || request.status === 'rejected' ? 'rejected' : 'provided'}`}>{dispatcherRequestStatus(request)}</span>{request.dispatcher_notes && <p>{request.dispatcher_notes}</p>}</div>}
+                      </div>
                     </article>;
                   })}</div> : <div className="reports-no-media-v2">No assistance requests for this incident yet.</div>}
                 </section>
