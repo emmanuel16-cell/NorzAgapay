@@ -274,7 +274,7 @@ async function assistanceForReport(reportId: string): Promise<{ requests: any[];
   for (const request of barangayResult.error ? [] : barangayResult.data || []) {
     requestsById.set(request.id, { ...request, source: 'barangay' });
   }
-  const resourceRequests = [
+  const resourceRequests: any[] = [
     ...(legacyResult.error ? [] : legacyResult.data || []),
     ...(reportResult.error ? [] : reportResult.data || []),
   ];

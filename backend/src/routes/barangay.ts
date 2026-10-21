@@ -3628,8 +3628,8 @@ router.get('/reports/:id/resolution-pdf', authenticateBarangay, requireRole(['ad
       const { data: assignments, error: assignmentError } = await supabaseAdmin
         .from('mdrrmo_report_barangay_assignments')
         // Dispatcher downloads do not depend on a responder roster. Only load
-        // responder IDs for responder authorization checks.
-        .select(isResponder ? 'id, responder_ids' : 'id')
+        // and inspect responder IDs for responder authorization checks.
+        .select('*')
         .eq('report_id', req.params.id)
         .eq('barangay_id', req.barangayUser.barangayId)
         .eq('assignment_status', 'completed')
