@@ -105,9 +105,7 @@ export default function ResidentIncidentReportPage() {
       const title = reportMode === 'visual'
         ? type === 'community' ? 'Visual Community Report' : 'Visual Incident Report'
         : type === 'community' ? selectedCategoryLabel : 'Resident Incident Report';
-      const incidentTimeFingerprint = type === 'emergency'
-        ? [incidentTime.choice, incidentTime.choice === 'earlier' ? incidentTime.occurredAt : null, incidentTime.choice === 'earlier' ? incidentTime.precision : null]
-        : null;
+      const incidentTimeFingerprint = [incidentTime.choice, incidentTime.choice === 'earlier' ? incidentTime.occurredAt : null, incidentTime.choice === 'earlier' ? incidentTime.precision : null];
       const fingerprint = JSON.stringify([type, reportMode, title, selectedCategory, selectedCategory === 'other' ? otherEmergency.trim() : '', normalizedPhone, reportDescription, location.latitude, location.longitude, evidence.map((file) => [file.name, file.size, file.lastModified]), incidentTimeFingerprint]);
       if (requestFingerprintRef.current !== fingerprint) {
         requestIdRef.current = requestId();
@@ -120,13 +118,11 @@ export default function ResidentIncidentReportPage() {
           : type === 'community' ? selectedCategoryLabel : '', description: reportDescription,
         latitude: location.latitude, longitude: location.longitude, contact_number: normalizedPhone,
         send_to: 'mdrrmo', incident_type: selectedCategory,
-        ...(type === 'emergency' ? {
-          incident_time_choice: incidentTime.choice,
-          incident_occurred_at: incidentTime.choice === 'just_now'
-            ? requestStartedAtRef.current
-            : incidentTime.choice === 'unknown' ? null : incidentTime.occurredAt,
-          incident_time_precision: incidentTime.choice === 'just_now' ? 'exact' : incidentTime.precision,
-        } : {}),
+        incident_time_choice: incidentTime.choice,
+        incident_occurred_at: incidentTime.choice === 'just_now'
+          ? requestStartedAtRef.current
+          : incidentTime.choice === 'unknown' ? null : incidentTime.occurredAt,
+        incident_time_precision: incidentTime.choice === 'just_now' ? 'exact' : incidentTime.precision,
         client_request_id: requestIdRef.current, client_submitted_at: requestStartedAtRef.current,
       }, evidence);
       const reportId = response.data?.report?.id;
@@ -150,7 +146,14 @@ export default function ResidentIncidentReportPage() {
       <form className="resident-compose-form" onSubmit={(event) => void submit(event)}>
         {!reportMode ? <ReportModeChoices onSelect={setReportMode} trackTo="/my-reports" trackText="View your reports" /> : <>
         <button type="button" className="report-mode-back" onClick={() => setReportMode(null)}>← Change report format</button>
-        {type === 'community' ? <><label>Incident category<select value={communityCategory} onChange={(event) => setCommunityCategory(event.target.value)}>{INCIDENT_TYPE_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>{communityCategory === 'other' && <label><span className="required-inline-label">Describe the emergency <b>Required</b></span><input type="text" required maxLength={120} value={otherEmergency} onChange={(event) => setOtherEmergency(event.target.value)} placeholder="Describe the emergency" /></label>}</> : <div className="resident-incident-time-row"><div className="resident-incident-category-column"><label>Incident category<select value={category} onChange={(event) => setCategory(event.target.value)}>{INCIDENT_TYPE_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>{category === 'other' && <label><span className="required-inline-label">What kind of emergency? <b>Required</b></span><input type="text" required maxLength={120} value={otherEmergency} onChange={(event) => setOtherEmergency(event.target.value)} placeholder="Describe the emergency" /></label>}</div><IncidentTimeInput value={incidentTime} onChange={setIncidentTime} /></div>}
+        <div className="resident-incident-time-row">
+          <div className="resident-incident-category-column">
+            {type === 'community'
+              ? <><label>Incident category<select value={communityCategory} onChange={(event) => setCommunityCategory(event.target.value)}>{INCIDENT_TYPE_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>{communityCategory === 'other' && <label><span className="required-inline-label">Describe the emergency <b>Required</b></span><input type="text" required maxLength={120} value={otherEmergency} onChange={(event) => setOtherEmergency(event.target.value)} placeholder="Describe the emergency" /></label>}</>
+              : <><label>Incident category<select value={category} onChange={(event) => setCategory(event.target.value)}>{INCIDENT_TYPE_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>{category === 'other' && <label><span className="required-inline-label">What kind of emergency? <b>Required</b></span><input type="text" required maxLength={120} value={otherEmergency} onChange={(event) => setOtherEmergency(event.target.value)} placeholder="Describe the emergency" /></label></>}
+          </div>
+          <IncidentTimeInput value={incidentTime} onChange={setIncidentTime} />
+        </div>
         <label>Mobile number <MobileNumberInput value={phone} onValueChange={setPhone} placeholder="09XXXXXXXXX" required/><small>Responders may use this number to contact you about the report.</small></label>
         {reportMode === 'standard' && <label>Incident details<textarea rows={5} minLength={8} maxLength={2000} placeholder={type === 'community' ? 'Describe the hazard and where it is affecting the community…' : 'Describe what happened, who needs help, and any immediate danger…'} value={description} onChange={(event) => setDescription(event.target.value)} required/></label>}
         <fieldset className="resident-location-field"><legend>Incident location <b>Required</b></legend><p>Place the pin at the incident site. This helps responders find the right location.</p><div className="resident-location-actions"><button type="button" onClick={() => requestCurrentLocation()}><LocateFixed size={15}/>{locationSource === 'current' ? 'Update current location' : 'Use current location'}</button><button type="button" onClick={openMapPicker}><MapPin size={15}/>{locationSource === 'map' ? 'Change map location' : 'Choose on map'}</button></div><div className={`resident-picked-location ${location ? 'located' : ''}`}><MapPin size={15}/>{location ? `${locationSource === 'map' ? 'Map pin' : 'Current location'} · ${location.latitude.toFixed(5)}, ${location.longitude.toFixed(5)}` : 'No location selected yet'}</div></fieldset>
