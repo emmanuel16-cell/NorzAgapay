@@ -6,7 +6,8 @@ import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
 import { useAuth } from '../context/AuthContext';
 import { createDemoResponderReport } from '../demoResponderReport';
 import IncidentLocationCard from '../components/IncidentLocationCard';
-import { formatIncidentLocation, hasIncidentPin, incidentMapUrl, type IncidentLocationPreview } from '../lib/incidentLocation';
+import ResponderLocationMapModal from '../components/ResponderLocationMapModal';
+import { formatIncidentLocation, hasIncidentPin, type IncidentLocationPreview } from '../lib/incidentLocation';
 
 type CrewMember = { id?: string; unit_member_id?: string; name?: string; full_name?: string; member_role: string; is_active?: boolean };
 type BarangayCrewMember = { id: string; full_name: string; account_role: 'responder' | 'staff' };
@@ -81,6 +82,8 @@ export default function ResponderWorkspacePage() {
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [locationMapReport, setLocationMapReport] = useState<AssignedReport | null>(null);
+  const closeLocationMap = useCallback(() => setLocationMapReport(null), []);
 
   const loadLocationPreview = useCallback(async (report: AssignedReport) => {
     if (report.is_demo || !hasIncidentPin(report)) return;
@@ -309,7 +312,7 @@ export default function ResponderWorkspacePage() {
           const selectedBarangayCrew = barangayCrewSelections[report.id] || [];
           const savedMdrrmoCrew = (assignment?.crew || []).filter((member) => member.member_role !== 'team_leader');
           const savedBarangayCrew = report.barangay_crew_members || [];
-          const mapUrl = incidentMapUrl(report);
+          const hasMapLocation = !report.is_demo && hasIncidentPin(report);
           const locationPreview = locationPreviews[report.id];
           const displayStatus = responseStatus === 'responding' ? 'Responding' : assignmentStatus === 'active' ? 'Assigned' : assignmentStatus || 'Assigned';
           return <article className="responder-report-card" key={report.id}>
@@ -321,7 +324,7 @@ export default function ResponderWorkspacePage() {
               fallbackLabel={formatIncidentLocation(report)}
               loading={Boolean(locationPreviewLoading[report.id])}
               coordinates={hasIncidentPin(report) ? `${Number(report.latitude).toFixed(5)}, ${Number(report.longitude).toFixed(5)}` : null}
-              mapHref={mapUrl}
+              onOpenMap={hasMapLocation ? () => setLocationMapReport(report) : undefined}
             />
 
             {canManageCrew && !isBarangay && <section className="responder-action-panel">
@@ -394,6 +397,12 @@ export default function ResponderWorkspacePage() {
           </article>;
         })}
       </div>}
+      {locationMapReport && hasIncidentPin(locationMapReport) && <ResponderLocationMapModal
+        latitude={Number(locationMapReport.latitude)}
+        longitude={Number(locationMapReport.longitude)}
+        locationName={locationPreviews[locationMapReport.id]?.road || locationPreviews[locationMapReport.id]?.landmark || formatIncidentLocation(locationMapReport)}
+        onClose={closeLocationMap}
+      />}
     </div>
   );
 }

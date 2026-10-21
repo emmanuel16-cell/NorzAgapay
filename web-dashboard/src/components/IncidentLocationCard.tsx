@@ -7,7 +7,7 @@ type Props = {
   loading?: boolean;
   error?: string;
   coordinates?: string | null;
-  mapHref?: string | null;
+  onOpenMap?: () => void;
 };
 
 export default function IncidentLocationCard({
@@ -16,7 +16,7 @@ export default function IncidentLocationCard({
   loading = false,
   error = '',
   coordinates,
-  mapHref,
+  onOpenMap,
 }: Props) {
   const primary = location?.road || location?.landmark || fallbackLabel || 'Pinned incident location';
   const hasNearbyLandmark = Boolean(location?.landmark && location.landmark !== primary);
@@ -36,7 +36,7 @@ export default function IncidentLocationCard({
         {!loading && error && <small className="incident-location-message">{error}{coordinates ? ` · ${coordinates}` : ''}</small>}
         {!loading && !error && !location?.road && !location?.landmark && !fallbackLabel && coordinates &&
           <small className="incident-location-message">{coordinates}</small>}
-        {mapHref && <a className="incident-location-map-link" href={mapHref} target="_blank" rel="noreferrer">Open map</a>}
+        {onOpenMap && <button className="incident-location-map-link" type="button" onClick={onOpenMap}>Open map</button>}
       </div>
     </div>
   );

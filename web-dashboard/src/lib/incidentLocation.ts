@@ -45,8 +45,3 @@ export function formatIncidentLocation(report: IncidentLocationRecord): string {
   }
   return hasIncidentPin(report) ? 'Pinned incident location' : 'Location not provided';
 }
-
-export function incidentMapUrl(report: IncidentLocationRecord): string | null {
-  if (!hasIncidentPin(report)) return null;
-  return `https://www.google.com/maps/search/?api=1&query=${Number(report.latitude)},${Number(report.longitude)}`;
-}

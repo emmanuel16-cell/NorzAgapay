@@ -3463,7 +3463,7 @@ tbody tr:last-child td { border-bottom: none; }
 .incident-location-card .reporter-note-content p { min-height: 18px; color: #8bdcf0; font-size: 13px; font-weight: 700; overflow-wrap: anywhere; }
 .incident-location-card .reporter-note-content small { color: #9ab1d2; font-size: 11px; }
 .incident-location-card .incident-location-message { color: #f1b1ad; }
-.incident-location-map-link { width: max-content; color: #69c8e7; font-size: 11px; text-decoration: underline; text-underline-offset: 2px; }
+.incident-location-map-link { width: max-content; padding: 0; border: 0; color: #69c8e7; background: transparent; font: inherit; font-size: 11px; text-align: left; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 .resident-selection-overlay .panel-resident .incident-location-card,
 .escalated-selection-overlay .panel-resident .incident-location-card { order: 2; }
 .reporter-note-content { display: flex; height: 100%; flex-direction: column; gap: 6px; }
