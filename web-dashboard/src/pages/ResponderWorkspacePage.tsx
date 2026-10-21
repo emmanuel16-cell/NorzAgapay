@@ -46,6 +46,17 @@ type AssignedReport = {
 
 const emptyAssessment = { situation: '', affected_people: '', actions_taken: '', risks_resources: '' };
 type AssessmentField = keyof typeof emptyAssessment;
+const AUTO_ARRIVAL_RADIUS_METERS = 100;
+const AUTO_ARRIVAL_MAX_ACCURACY_METERS = 50;
+
+function distanceMeters(latitudeA: number, longitudeA: number, latitudeB: number, longitudeB: number): number {
+  const radians = (degrees: number) => degrees * Math.PI / 180;
+  const deltaLatitude = radians(latitudeB - latitudeA);
+  const deltaLongitude = radians(longitudeB - longitudeA);
+  const a = Math.sin(deltaLatitude / 2) ** 2 +
+    Math.cos(radians(latitudeA)) * Math.cos(radians(latitudeB)) * Math.sin(deltaLongitude / 2) ** 2;
+  return 6_371_000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
 const parseFieldAssessment = (notes: string | null | undefined, isBarangay: boolean) => {
   const marker = String(notes || '').match(isBarangay
@@ -87,6 +98,8 @@ export default function ResponderWorkspacePage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [locationMapReport, setLocationMapReport] = useState<AssignedReport | null>(null);
+  const autoArrivalInFlight = useRef(new Set<string>());
+  const autoArrivalAttemptedAt = useRef(new Map<string, number>());
   const closeLocationMap = useCallback(() => setLocationMapReport(null), []);
 
   const loadLocationPreview = useCallback(async (report: AssignedReport) => {
@@ -152,7 +165,7 @@ export default function ResponderWorkspacePage() {
 
   useEffect(() => {
     if (user?.role !== 'responder' || !user.id || !navigator.geolocation) return;
-    const hasActiveDispatch = reports.some((report) => {
+    const isAssignedAndEnRoute = (report: AssignedReport) => {
       if (report.is_demo) return false;
       const status = String((isBarangay ? report.barangay_response_status : report.response_status) || report.response_status || '').toLowerCase();
       if (status !== 'responding') return false;
@@ -170,26 +183,71 @@ export default function ResponderWorkspacePage() {
       const assignment = report.mdrrmo_assignments?.find((item) => item.responder_id === user.id && item.status !== 'removed');
       return Boolean(assignment && (assignment.status || assignment.assignment_status) === 'responding' &&
         !assignment.arrived_at && !report.mdrrmo_arrived_at);
-    });
-    if (!hasActiveDispatch) return;
+    };
+    if (!reports.some(isAssignedAndEnRoute)) return;
 
-    type GpsFix = { latitude: number; longitude: number; accuracy_m: number | null; capturedAt: number };
+    type GpsFix = { latitude: number; longitude: number; accuracy_m: number | null; capturedAt: number; fix_at: string };
     let latestFix: GpsFix | null = null;
+    const checkAutoArrival = (fix: GpsFix) => {
+      if (!Number.isFinite(fix.accuracy_m) || fix.accuracy_m === null || fix.accuracy_m > AUTO_ARRIVAL_MAX_ACCURACY_METERS ||
+          Date.now() - fix.capturedAt > 20_000) return;
+      for (const report of reports) {
+        if (!isAssignedAndEnRoute(report) || !hasIncidentPin(report)) continue;
+        const latitude = Number(report.latitude);
+        const longitude = Number(report.longitude);
+        if (distanceMeters(latitude, longitude, fix.latitude, fix.longitude) > AUTO_ARRIVAL_RADIUS_METERS) continue;
+        if (autoArrivalInFlight.current.has(report.id)) continue;
+        const lastAttempt = autoArrivalAttemptedAt.current.get(report.id) || 0;
+        if (Date.now() - lastAttempt < 15_000) continue;
+        autoArrivalAttemptedAt.current.set(report.id, Date.now());
+        autoArrivalInFlight.current.add(report.id);
+        const gpsArrival = {
+          method: 'gps' as const,
+          latitude: fix.latitude,
+          longitude: fix.longitude,
+          accuracy_m: fix.accuracy_m,
+          fix_at: fix.fix_at,
+        };
+        const recordArrival = isBarangay
+          ? report.is_central_assignment
+            ? reportAPI.arriveBarangayAssignment(report.id, gpsArrival)
+            : reportAPI.arriveBarangayReport(report.id, gpsArrival)
+          : reportAPI.arriveAtMdrrmoIncident(report.id, gpsArrival);
+        void recordArrival.then(() => {
+          autoArrivalAttemptedAt.current.set(report.id, Number.POSITIVE_INFINITY);
+          toast.success(`Arrival recorded automatically: ${report.title || 'Incident'}`);
+          void loadWorkspace(true);
+        }).catch((arrivalError: any) => {
+          const statusCode = arrivalError?.response?.status;
+          if (statusCode === 403 || statusCode === 404 || statusCode === 409) {
+            autoArrivalAttemptedAt.current.set(report.id, Number.POSITIVE_INFINITY);
+            void loadWorkspace(true);
+          } else {
+            console.warn(`Automatic arrival could not be recorded for ${report.id}:`, arrivalError);
+          }
+        }).finally(() => {
+          autoArrivalInFlight.current.delete(report.id);
+        });
+      }
+    };
     const sendFix = () => {
-      if (!latestFix || Date.now() - latestFix.capturedAt > 20_000 || !socket.connected) return;
-      socket.emit(isBarangay ? 'barangay:gps:update' : 'gps:update', {
-        userId: user.id,
-        latitude: latestFix.latitude,
-        longitude: latestFix.longitude,
-        accuracy_m: latestFix.accuracy_m,
-      });
+      if (!latestFix || Date.now() - latestFix.capturedAt > 20_000) return;
+      checkAutoArrival(latestFix);
+      if (socket.connected) socket.emit(isBarangay ? 'barangay:gps:update' : 'gps:update', {
+          userId: user.id,
+          latitude: latestFix.latitude,
+          longitude: latestFix.longitude,
+          accuracy_m: latestFix.accuracy_m,
+        });
     };
     const watchId = navigator.geolocation.watchPosition((position) => {
+      const fixTimestamp = Number.isFinite(position.timestamp) ? position.timestamp : Date.now();
       latestFix = {
         latitude: position.coords.latitude,
         longitude: position.coords.longitude,
         accuracy_m: Number.isFinite(position.coords.accuracy) ? position.coords.accuracy : null,
         capturedAt: Date.now(),
+        fix_at: new Date(fixTimestamp).toISOString(),
       };
       sendFix();
     }, (locationError) => {
@@ -202,7 +260,7 @@ export default function ResponderWorkspacePage() {
       window.clearInterval(heartbeat);
       socket.off('connect', sendFix);
     };
-  }, [isBarangay, reports, user?.id, user?.role]);
+  }, [isBarangay, loadWorkspace, reports, user?.id, user?.role]);
 
   useRealtimeRefresh(loadWorkspace, {
     events: [
@@ -439,7 +497,12 @@ export default function ResponderWorkspacePage() {
 
             {canUpdateField && <section className="responder-action-panel">
               <h3><Activity size={16} /> Field response</h3>
-              {!arrived && <button className="workspace-secondary-action" type="button" disabled={saving} onClick={() => void perform(() => isBarangay ? reportAPI.arriveBarangayAssignment(report.id, { method: 'manual' }) : reportAPI.arriveAtMdrrmoIncident(report.id), 'Arrival recorded.')}>Record arrival</button>}
+              {!arrived && <button className="workspace-secondary-action" type="button" disabled={saving} onClick={() => void perform(() => isBarangay
+                ? report.is_central_assignment
+                  ? reportAPI.arriveBarangayAssignment(report.id, { method: 'manual' })
+                  : reportAPI.arriveBarangayReport(report.id, { method: 'manual' })
+                : reportAPI.arriveAtMdrrmoIncident(report.id), 'Arrival recorded.')}>Record arrival</button>}
+              {!arrived && <small className="responder-arrival-hint">GPS records arrival automatically within 100 m when accuracy is 50 m or better. Keep this workspace open, or record arrival manually.</small>}
               <div className="responder-assessment-grid">
                 <label>Situation<textarea value={currentAssessment.situation} onChange={(event) => updateAssessment(report.id, 'situation', event.target.value)} placeholder="Describe what you found, or enter Not applicable." /></label>
                 <label>People affected / urgency<textarea value={currentAssessment.affected_people} onChange={(event) => updateAssessment(report.id, 'affected_people', event.target.value)} placeholder="Enter the impact, or Not applicable." /></label>

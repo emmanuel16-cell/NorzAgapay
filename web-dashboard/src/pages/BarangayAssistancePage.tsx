@@ -42,7 +42,6 @@ const dateTime = (value?: string) => {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? 'Time unavailable' : new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
 };
-const requestLabel = (request: Assistance) => [request.needs_more_manpower && 'Additional responders', request.needs_resources && 'Supplies or resources', request.needs_equipment && 'Equipment', request.beyond_barangay_capability && 'MDRRMO coordination'].filter(Boolean).join(' · ') || 'General assistance';
 const requestDateValue = (request: Assistance) => {
   const value = Date.parse(request.created_at || '');
   return Number.isFinite(value) ? value : 0;
@@ -104,6 +103,7 @@ function BarangayAssistanceWorkspace() {
   const [requests, setRequests] = useState<Assistance[]>([]);
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
+  const [expandedResponderRequestId, setExpandedResponderRequestId] = useState<string | false | null>(null);
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
   const [expandedRequestId, setExpandedRequestId] = useState<string | false | null>(null);
   const [form, setForm] = useState<RequestForm>(emptyForm);
@@ -184,9 +184,13 @@ function BarangayAssistanceWorkspace() {
   }, [incidents, requests]);
   const incidentLocations = useIncidentLocationPreviews(incidentQueue, true);
   const selectedIncident = selectedIncidentId && selectedIncidentId !== 'general' ? incidents.find((incident) => incident.id === selectedIncidentId) || null : null;
-  const incidentRequests = selectedIncidentId === 'general'
+  const incidentRequests = (selectedIncidentId === 'general'
     ? requests.filter((request) => !request.incident_report_id)
-    : requests.filter((request) => request.incident_report_id === selectedIncidentId);
+    : requests.filter((request) => request.incident_report_id === selectedIncidentId))
+    .slice()
+    .sort((a, b) => requestDateValue(a) - requestDateValue(b) || a.id.localeCompare(b.id));
+  const latestResponderRequestId = incidentRequests[incidentRequests.length - 1]?.id || null;
+  const effectiveExpandedResponderRequestId = expandedResponderRequestId === null ? latestResponderRequestId : expandedResponderRequestId || null;
   const selectedRequest = requests.find((request) => request.id === selectedRequestId) ||
     requests.slice().sort((a, b) => requestDateValue(b) - requestDateValue(a)).find((request) => request.status === 'pending') ||
     requests.slice().sort((a, b) => requestDateValue(b) - requestDateValue(a))[0] || null;
@@ -199,11 +203,19 @@ function BarangayAssistanceWorkspace() {
   const effectiveExpandedDispatcherRequestId = expandedRequestId === null ? latestDispatcherRequestId : expandedRequestId || null;
 
   useEffect(() => { setExpandedRequestId(null); }, [selectedDispatcherGroup?.key, latestDispatcherRequestId]);
+  useEffect(() => { setExpandedResponderRequestId(null); }, [selectedIncidentId, latestResponderRequestId]);
 
   const toggleDispatcherRequest = (request: Assistance) => {
     setSelectedRequestId(request.id);
     setExpandedRequestId((current) => {
       const currentlyExpanded = current === null ? latestDispatcherRequestId : current || null;
+      return currentlyExpanded === request.id ? false : request.id;
+    });
+  };
+
+  const toggleResponderRequest = (request: Assistance) => {
+    setExpandedResponderRequestId((current) => {
+      const currentlyExpanded = current === null ? latestResponderRequestId : current || null;
       return currentlyExpanded === request.id ? false : request.id;
     });
   };
@@ -344,12 +356,18 @@ function BarangayAssistanceWorkspace() {
                 {selectedIncident && <section className="reports-detail-section-v2"><h3>Incident location</h3><IncidentLocationCard showTitle={false} showLandmarkDistance={false} location={incidentLocations.previews[selectedIncident.id]} fallbackLabel={formatIncidentLocation(selectedIncident)} loading={Boolean(incidentLocations.loading[selectedIncident.id])} coordinates={hasIncidentPin(selectedIncident) ? `${Number(selectedIncident.latitude).toFixed(5)}, ${Number(selectedIncident.longitude).toFixed(5)}` : null} />{selectedIncident.description && <div className="reports-text-card-v2" style={{ marginTop: 10 }}>{selectedIncident.description}</div>}</section>}
                 <section className="reports-detail-section-v2 assistance-history-section">
                   <div className="reports-section-heading-v2"><h3>Request history</h3><span>{incidentRequests.length} requests</span></div>
-                  {incidentRequests.length ? <div className="assistance-history-list">{incidentRequests.map((request) => <article className="assistance-history-card" key={request.id}>
-                    <header><div><span className="assistance-history-sos">SOS</span><strong>{requestLabel(request)}</strong></div><span className={`assistance-status-chip ${statusClass(request.status)}`}>{statusLabel(request.status)}</span></header>
-                    <div className="assistance-history-entry"><strong>{selectedIncident ? incidentTitle(selectedIncident) : 'General assistance'}</strong><div className="assistance-history-meta"><span>{request.requested_by_user?.full_name || 'You'}</span><time>{dateTime(request.created_at)}</time></div><p>{request.explanation || 'No request details provided.'}</p></div>
-                    {request.decision && <div className="assistance-history-entry dispatcher"><strong>Dispatcher response · {statusLabel(request.decision)}</strong>{request.dispatcher_notes && <p>{request.dispatcher_notes}</p>}{request.decided_by_user?.full_name && <small>Recorded by {request.decided_by_user.full_name}</small>}</div>}
-                    <footer className="barangay-assistance-card-footer">{editRequest(request) && <button type="button" onClick={() => startEdit(request)}><ClipboardList size={15} /> Edit request</button>}{request.decision === 'provide_barangay_assistance' && !request.team_acknowledged && <button type="button" onClick={() => void responderAction(request, 'acknowledge')} disabled={saving}><Check size={15} /> Acknowledge support</button>}{String(request.status || '').toLowerCase() === 'pending' && request.requested_by === user?.id && <button className="danger" type="button" onClick={() => void responderAction(request, 'cancel')} disabled={saving}><X size={15} /> Cancel request</button>}{request.team_acknowledged && <span className="barangay-assistance-acknowledged"><Check size={14} /> Support acknowledged</span>}</footer>
-                  </article>)}</div> : <div className="reports-no-media-v2">No assistance requests for this incident yet.</div>}
+                  {incidentRequests.length ? <div className="assistance-history-list">{incidentRequests.map((request) => {
+                    const expanded = effectiveExpandedResponderRequestId === request.id;
+                    const categories = [request.needs_more_manpower ? 'Additional responders' : null, request.needs_resources ? 'Supplies or resources' : null, request.needs_equipment ? 'Equipment' : null, request.beyond_barangay_capability ? 'MDRRMO coordination' : null].filter((category): category is string => Boolean(category));
+                    return <article className={`assistance-history-card ${expanded ? '' : 'is-collapsed'}`} key={request.id}>
+                      <header><button type="button" className="assistance-history-toggle" aria-expanded={expanded} aria-controls={`barangay-responder-assistance-history-${request.id}`} aria-label={`${expanded ? 'Minimize' : 'Maximize'} assistance request`} onClick={() => toggleResponderRequest(request)}><span className="assistance-history-title"><span className="assistance-history-sos">SOS</span><strong>Assistance Request</strong></span><span className={`assistance-status-chip ${statusClass(request.status)}`}>{statusLabel(request.status)}</span><ChevronDown className={expanded ? '' : 'collapsed'} size={17} aria-hidden="true" /></button></header>
+                      <div id={`barangay-responder-assistance-history-${request.id}`} hidden={!expanded}>
+                        <div className="assistance-history-entry"><strong>{selectedIncident ? incidentTitle(selectedIncident) : 'General assistance'}</strong><div className="assistance-history-meta"><span>{request.requested_by_user?.full_name || 'You'}</span><time>{dateTime(request.created_at)}</time></div>{categories.length > 0 && <div className="assistance-history-tags" aria-label="Requested assistance categories">{categories.map((category) => <span key={category}>✓ {category}</span>)}</div>}<p>{request.explanation || 'No request details provided.'}</p></div>
+                        {request.decision && <div className="assistance-history-entry dispatcher"><strong>Dispatcher response · {statusLabel(request.decision)}</strong>{request.dispatcher_notes && <p>{request.dispatcher_notes}</p>}{request.decided_by_user?.full_name && <small>Recorded by {request.decided_by_user.full_name}</small>}</div>}
+                        <footer className="barangay-assistance-card-footer">{editRequest(request) && <button type="button" onClick={() => startEdit(request)}><ClipboardList size={15} /> Edit request</button>}{request.decision === 'provide_barangay_assistance' && !request.team_acknowledged && <button type="button" onClick={() => void responderAction(request, 'acknowledge')} disabled={saving}><Check size={15} /> Acknowledge support</button>}{String(request.status || '').toLowerCase() === 'pending' && request.requested_by === user?.id && <button className="danger" type="button" onClick={() => void responderAction(request, 'cancel')} disabled={saving}><X size={15} /> Cancel request</button>}{request.team_acknowledged && <span className="barangay-assistance-acknowledged"><Check size={14} /> Support acknowledged</span>}</footer>
+                      </div>
+                    </article>;
+                  })}</div> : <div className="reports-no-media-v2">No assistance requests for this incident yet.</div>}
                 </section>
               </div>
             </>
@@ -410,6 +428,7 @@ function MdrrmoResponderAssistanceWorkspace() {
   const [requests, setRequests] = useState<MdrrmoAssistance[]>([]);
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
+  const [expandedRequestId, setExpandedRequestId] = useState<string | false | null>(null);
   const [form, setForm] = useState<MdrrmoRequestForm>(initialMdrrmoRequest);
   const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -448,8 +467,21 @@ function MdrrmoResponderAssistanceWorkspace() {
   }, [incidents, requests]);
   const incidentLocations = useIncidentLocationPreviews(incidentQueue, false);
   const selectedIncident = incidents.find((incident) => incident.id === selectedIncidentId) || null;
-  const incidentRequests = requests.filter((request) => request.incident_id === selectedIncidentId);
+  const incidentRequests = requests.filter((request) => request.incident_id === selectedIncidentId)
+    .slice()
+    .sort((a, b) => requestDateValue(a) - requestDateValue(b) || a.id.localeCompare(b.id));
+  const latestRequestId = incidentRequests[incidentRequests.length - 1]?.id || null;
+  const effectiveExpandedRequestId = expandedRequestId === null ? latestRequestId : expandedRequestId || null;
   const isSelectedActive = Boolean(selectedIncident && isActiveIncident(selectedIncident));
+
+  useEffect(() => { setExpandedRequestId(null); }, [selectedIncidentId, latestRequestId]);
+
+  const toggleRequest = (request: MdrrmoAssistance) => {
+    setExpandedRequestId((current) => {
+      const currentlyExpanded = current === null ? latestRequestId : current || null;
+      return currentlyExpanded === request.id ? false : request.id;
+    });
+  };
 
   const reset = () => { setForm(initialMdrrmoRequest); setIsRequestModalOpen(false); };
   const startRequest = () => {
@@ -509,12 +541,17 @@ function MdrrmoResponderAssistanceWorkspace() {
         <section className="reports-detail-v2">{!selectedIncident ? <div className="reports-detail-empty-v2"><div><ClipboardList size={28} /></div><strong>Select a responding incident</strong><p>Choose an incident assigned to your unit to review requests and ask for support.</p></div> : <>
           <div className="reports-detail-scroll-v2"><header className="reports-detail-heading-v2 reports-detail-heading-responder-v2"><button type="button" className="reports-mobile-back-v2" onClick={() => setSelectedIncidentId(null)}><ArrowLeft size={16} /> Responding incidents</button><div><span className="reports-eyebrow-v2">Selected incident</span><h2>{incidentTitle(selectedIncident)}</h2><p>{statusLabel(incidentStatus(selectedIncident))} · {dateTime(selectedIncident.created_at)}</p></div><div className="reports-detail-heading-actions-v2"><span className={`report-status-chip-v2 detail ${incidentStatusClass(selectedIncident)}`}>{statusLabel(incidentStatus(selectedIncident))}</span><button className="workspace-primary-action" type="button" onClick={startRequest} disabled={!isSelectedActive}><HandHelping size={16} /> Request assistance</button></div></header>
             <section className="reports-detail-section-v2"><h3>Incident location</h3><IncidentLocationCard showTitle={false} showLandmarkDistance={false} location={incidentLocations.previews[selectedIncident.id]} fallbackLabel={formatIncidentLocation(selectedIncident)} loading={Boolean(incidentLocations.loading[selectedIncident.id])} coordinates={hasIncidentPin(selectedIncident) ? `${Number(selectedIncident.latitude).toFixed(5)}, ${Number(selectedIncident.longitude).toFixed(5)}` : null} />{selectedIncident.description && <div className="reports-text-card-v2" style={{ marginTop: 10 }}>{selectedIncident.description}</div>}</section>
-            <section className="reports-detail-section-v2 assistance-history-section"><div className="reports-section-heading-v2"><h3>Request history</h3><span>{incidentRequests.length} requests</span></div>{incidentRequests.length ? <div className="assistance-history-list">{incidentRequests.map((request) => <article className="assistance-history-card" key={request.id}>
-              <header><div><span className="assistance-history-sos">SOS</span><strong>Assistance Request</strong></div><span className={`assistance-status-chip ${statusClass(request.status)}`}>{request.status === 'fulfilled' ? 'Received' : statusLabel(request.status)}</span></header>
-              <div className="assistance-history-entry"><strong>From: {user?.full_name || 'You'}</strong><time>{dateTime(request.created_at)}</time><div className="assistance-history-tags" aria-label="Requested assistance categories">{mdrrmoRequestCategories(request).map((category) => <span key={category}>✓ {category}</span>)}</div><p>{request.details || 'No request details provided.'}</p></div>
-              {(request.dispatcher_notes || request.status !== 'pending') && <div className="assistance-history-entry dispatcher"><strong>From: Dispatcher</strong><span className={`assistance-decision-badge ${request.status === 'rejected' ? 'rejected' : 'provided'}`}>{request.status === 'fulfilled' ? 'Received' : statusLabel(request.status)}</span>{request.dispatcher_notes && <p>{request.dispatcher_notes}</p>}</div>}
-              {request.status === 'approved' && <footer className="barangay-assistance-card-footer"><button type="button" onClick={() => void confirmReceived(request)} disabled={saving}><Check size={15} /> Confirm received</button></footer>}
-            </article>)}</div> : <div className="reports-no-media-v2">No assistance requests for this incident yet.</div>}</section>
+            <section className="reports-detail-section-v2 assistance-history-section"><div className="reports-section-heading-v2"><h3>Request history</h3><span>{incidentRequests.length} requests</span></div>{incidentRequests.length ? <div className="assistance-history-list">{incidentRequests.map((request) => {
+              const expanded = effectiveExpandedRequestId === request.id;
+              return <article className={`assistance-history-card ${expanded ? '' : 'is-collapsed'}`} key={request.id}>
+                <header><button type="button" className="assistance-history-toggle" aria-expanded={expanded} aria-controls={`mdrrmo-responder-assistance-history-${request.id}`} aria-label={`${expanded ? 'Minimize' : 'Maximize'} assistance request`} onClick={() => toggleRequest(request)}><span className="assistance-history-title"><span className="assistance-history-sos">SOS</span><strong>Assistance Request</strong></span><span className={`assistance-status-chip ${statusClass(request.status)}`}>{request.status === 'fulfilled' ? 'Received' : statusLabel(request.status)}</span><ChevronDown className={expanded ? '' : 'collapsed'} size={17} aria-hidden="true" /></button></header>
+                <div id={`mdrrmo-responder-assistance-history-${request.id}`} hidden={!expanded}>
+                  <div className="assistance-history-entry"><strong>From: {user?.full_name || 'You'}</strong><time>{dateTime(request.created_at)}</time><div className="assistance-history-tags" aria-label="Requested assistance categories">{mdrrmoRequestCategories(request).map((category) => <span key={category}>✓ {category}</span>)}</div><p>{request.details || 'No request details provided.'}</p></div>
+                  {(request.dispatcher_notes || request.status !== 'pending') && <div className="assistance-history-entry dispatcher"><strong>From: Dispatcher</strong><span className={`assistance-decision-badge ${request.status === 'rejected' ? 'rejected' : 'provided'}`}>{request.status === 'fulfilled' ? 'Received' : statusLabel(request.status)}</span>{request.dispatcher_notes && <p>{request.dispatcher_notes}</p>}</div>}
+                  {request.status === 'approved' && <footer className="barangay-assistance-card-footer"><button type="button" onClick={() => void confirmReceived(request)} disabled={saving}><Check size={15} /> Confirm received</button></footer>}
+                </div>
+              </article>;
+            })}</div> : <div className="reports-no-media-v2">No request history for this incident yet.</div>}</section>
           </div>
         </>}</section>
       </section>

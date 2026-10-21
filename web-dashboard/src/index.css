@@ -4390,6 +4390,7 @@ tbody tr:last-child td { border-bottom: none; }
 .responder-report-card h2 { margin: 4px 0 0; color: var(--text-primary); font-size: 17px; }
 .responder-action-panel { display: grid; gap: 10px; margin-top: 15px; padding: 14px; border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-secondary); }
 .responder-action-panel h3 { display: flex; align-items: center; gap: 7px; margin: 0; color: var(--text-primary); font-size: 13px; }
+.responder-arrival-hint { color: var(--text-muted); font-size: 11px; line-height: 1.45; }
 .responder-crew-option { display: flex; align-items: center; gap: 9px; padding: 9px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-card); }
 .responder-crew-option > label { display: flex; min-width: 0; flex: 1; align-items: center; gap: 9px; cursor: pointer; }
 .responder-crew-option > label span { display: grid; min-width: 0; gap: 2px; }

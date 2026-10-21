@@ -279,6 +279,7 @@ export const reportAPI = {
   dispatchToBarangay: (id: string, data: { team_leader_ids: string[]; notes?: string }) => api.patch(`/barangay/assigned-reports/${id}/dispatch`, data),
   dispatchBarangayReport: (id: string, data: { team_leader_ids: string[]; notes?: string }) => api.patch(`/barangay/reports/${id}/dispatch`, data),
   arriveBarangayAssignment: (id: string, data: { method: 'gps' | 'manual'; latitude?: number; longitude?: number; accuracy_m?: number; fix_at?: string }) => api.patch(`/barangay/assigned-reports/${id}/arrive`, data),
+  arriveBarangayReport: (id: string, data: { method: 'gps' | 'manual'; latitude?: number; longitude?: number; accuracy_m?: number; fix_at?: string }) => api.patch(`/barangay/reports/${id}/arrive`, data),
   saveBarangayAssignmentFieldNotes: (id: string, data: { situation: string; affected_people: string; actions_taken: string; risks_resources: string }) => api.patch(`/barangay/assigned-reports/${id}/field-notes`, data),
   closeBarangayAssignment: (id: string, resolved_notes: string) => api.post(`/barangay/assigned-reports/${id}/close`, { resolved_notes }),
   uploadBarangayAssignmentMedia: (id: string, file: File) => {
@@ -329,7 +330,7 @@ export const reportAPI = {
   mdrrmoResponders: () => api.get<{ responders: Array<{ id: string; full_name: string; phone?: string | null; unit_type?: string | null; unit_id: string; unit_name: string }> }>('/mdrrmo/reports/responders'),
   dispatchToMdrrmo: (id: string, data: { responder_ids: string[]; incident_type: string; severity: string; notes?: string }) => api.post(`/mdrrmo/reports/${id}/dispatch`, data),
   saveMdrrmoResponseCrew: (id: string, member_ids: string[]) => api.patch(`/mdrrmo/reports/${id}/crew`, { member_ids }),
-  arriveAtMdrrmoIncident: (id: string) => api.patch(`/mdrrmo/reports/${id}/arrive`, { method: 'manual' }),
+  arriveAtMdrrmoIncident: (id: string, data: { method: 'gps' | 'manual'; latitude?: number; longitude?: number; accuracy_m?: number; fix_at?: string } = { method: 'manual' }) => api.patch(`/mdrrmo/reports/${id}/arrive`, data),
   saveMdrrmoFieldAssessment: (id: string, data: { situation: string; affected_people: string; actions_taken: string; risks_resources: string }) => api.patch(`/mdrrmo/reports/${id}/field-assessment`, data),
   closeMdrrmoReport: (id: string, resolved_notes: string) => api.post(`/mdrrmo/reports/${id}/close`, { resolved_notes }),
   closeResolvedMapMarker: (id: string) => api.post(`/mdrrmo/reports/${id}/map-close`),
