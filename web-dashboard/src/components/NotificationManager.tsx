@@ -149,6 +149,9 @@ export default function NotificationManager() {
     const seenFollowUpNotifications = new Set<string>();
     const onReportUpdated = (report: any) => {
       if (!report || typeof report !== 'object') return;
+      if (report.reporter_follow_up && typeof report.reporter_follow_up === 'object') {
+        onReporterFollowUp(report.reporter_follow_up);
+      }
       const isResolved = Boolean(report.resolved_at || report.mdrrmo_resolved_at) ||
         ['resolved', 'closed'].includes(String(report.mdrrmo_response_status || report.response_status || '').toLowerCase());
       const isArrived = Boolean(report.arrived_at || report.mdrrmo_arrived_at);

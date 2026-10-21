@@ -1211,9 +1211,18 @@ router.post('/:id/follow-up', optionalAuthenticate, parseReporterFollowUpFiles, 
     }
     const changedAt = new Date().toISOString();
     const invalidation = { resource: 'incident-reports', action: 'patch', changedAt };
+    const followUpId = randomUUID();
+    const notification = {
+      reportId: reportWithAssignment.id,
+      followUpId,
+      title: reportWithAssignment.title || 'Emergency incident',
+      attachmentCount: files.length,
+      createdAt: changedAt,
+    };
+    const reportUpdate = { ...reportWithAssignment, reporter_follow_up: notification };
 
-    io.to('dashboard_staff').emit('incident_report:updated', reportWithAssignment);
-    await emitReportUpdateToBarangayScope(refreshedTarget.row, reportWithAssignment, refreshedTarget.table);
+    io.to('dashboard_staff').emit('incident_report:updated', reportUpdate);
+    await emitReportUpdateToBarangayScope(refreshedTarget.row, reportUpdate, refreshedTarget.table);
     io.to('dashboard_staff').emit('dashboard:data_changed', invalidation);
     if (reportWithAssignment.reporter_type === 'guest') {
       io.to(`guest-report:${reportWithAssignment.id}`).emit('guest-report:updated', {
@@ -1225,14 +1234,6 @@ router.post('/:id/follow-up', optionalAuthenticate, parseReporterFollowUpFiles, 
       io.to(`user:${reportWithAssignment.reporter_id}`).emit('dashboard:data_changed', invalidation);
     }
 
-    const followUpId = randomUUID();
-    const notification = {
-      reportId: reportWithAssignment.id,
-      followUpId,
-      title: reportWithAssignment.title || 'Emergency incident',
-      attachmentCount: files.length,
-      createdAt: changedAt,
-    };
     io.to('dashboard_staff').emit('incident_report:follow_up', notification);
     if (refreshedTarget.table === 'mdrrmo_reports') {
       const { data: assignment, error: assignmentError } = await supabaseAdmin
