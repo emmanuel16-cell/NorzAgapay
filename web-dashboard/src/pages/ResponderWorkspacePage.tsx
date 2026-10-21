@@ -5,6 +5,7 @@ import { reportAPI, respondUnitAPI } from '../lib/api';
 import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
 import { useAuth } from '../context/AuthContext';
 import { createDemoResponderReport } from '../demoResponderReport';
+import { formatIncidentLocation, incidentMapUrl } from '../lib/incidentLocation';
 
 type CrewMember = { id?: string; unit_member_id?: string; name?: string; full_name?: string; member_role: string; is_active?: boolean };
 type BarangayCrewMember = { id: string; full_name: string; account_role: 'responder' | 'staff' };
@@ -18,6 +19,9 @@ type AssignedReport = {
   severity?: string | null;
   latitude?: number | string | null;
   longitude?: number | string | null;
+  address?: string | null;
+  location_name?: string | null;
+  barangay_name?: string | null;
   created_at?: string | null;
   response_status?: string | null;
   barangay_response_status?: string | null;
@@ -281,11 +285,12 @@ export default function ResponderWorkspacePage() {
           const selectedBarangayCrew = barangayCrewSelections[report.id] || [];
           const savedMdrrmoCrew = (assignment?.crew || []).filter((member) => member.member_role !== 'team_leader');
           const savedBarangayCrew = report.barangay_crew_members || [];
+          const mapUrl = incidentMapUrl(report);
           const displayStatus = responseStatus === 'responding' ? 'Responding' : assignmentStatus === 'active' ? 'Assigned' : assignmentStatus || 'Assigned';
           return <article className="responder-report-card" key={report.id}>
             <header><div><span className="workspace-eyebrow">{report.is_demo ? 'DEMO ASSIGNMENT · ' : ''}{report.incident_type?.replaceAll('_', ' ') || 'Incident'}{report.severity ? ` · ${report.severity}` : ''}</span><h2>{report.title || 'Incident response'}</h2></div><span className={`resident-status ${responseStatus === 'responding' ? 'responding' : ''} ${report.is_demo ? 'demo' : ''}`}>{report.is_demo ? 'Demo preview' : displayStatus}</span></header>
             <p className="responder-report-description">{report.description || 'No incident details were provided.'}</p>
-            <div className="resident-report-meta"><span><Activity size={14} /> {report.created_at ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(report.created_at)) : 'Time unavailable'}</span><span><MapPin size={14} /> {report.latitude != null && report.longitude != null ? `${Number(report.latitude).toFixed(5)}, ${Number(report.longitude).toFixed(5)}` : 'Location unavailable'}</span></div>
+            <div className="resident-report-meta"><span><Activity size={14} /> {report.created_at ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(report.created_at)) : 'Time unavailable'}</span><span><MapPin size={14} /> {formatIncidentLocation(report)}</span>{mapUrl && <a href={mapUrl} target="_blank" rel="noreferrer">Open map</a>}</div>
 
             {canManageCrew && !isBarangay && <section className="responder-action-panel">
               <h3><ClipboardList size={16} /> MDRRMO response crew</h3>

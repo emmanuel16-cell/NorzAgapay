@@ -11,6 +11,7 @@ import { createDemoResponderReport } from '../demoResponderReport';
 import ResponderLocationMapModal from '../components/ResponderLocationMapModal';
 import { formatMobileNumber } from '../lib/mobileNumber';
 import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
+import { formatIncidentLocation, hasIncidentPin } from '../lib/incidentLocation';
 
 type ReportGroup = 'resident' | 'escalated';
 type ReportTab = 'resident' | 'assigned';
@@ -115,30 +116,7 @@ const incidentTimeLabel = (report: IncidentReport) => {
   return `Incident occurred: ${dateTime(report.incident_occurred_at)} (${report.incident_time_precision})`;
 };
 const hasPin = (report: IncidentReport) => {
-  if (report.latitude == null || report.longitude == null || String(report.latitude).trim() === '' || String(report.longitude).trim() === '') return false;
-  const latitude = Number(report.latitude);
-  const longitude = Number(report.longitude);
-  return Number.isFinite(latitude) && latitude >= -90 && latitude <= 90 &&
-    Number.isFinite(longitude) && longitude >= -180 && longitude <= 180 && !(latitude === 0 && longitude === 0);
-};
-const formatIncidentLocation = (report: IncidentReport) => {
-  const barangay = report.barangay_name?.trim().replace(/^(?:(?:barangay|brgy\.?)\s*)/i, '');
-  const addMunicipality = (name: string) => {
-    if (/\bnorzagaray\b/i.test(name)) return /\bbulacan\b/i.test(name) ? name : `${name}, Bulacan`;
-    return `${name}, Norzagaray, Bulacan`;
-  };
-  const providedLocation = [report.location_name, report.address]
-    .map((value) => value?.trim())
-    .find((value) => value && !/^(?:norzagaray(?:,?\s*bulacan)?|bulacan)$/i.test(value));
-  if (providedLocation) return addMunicipality(providedLocation);
-  if (barangay) return addMunicipality(barangay);
-
-  const generalLocation = report.location_name?.trim() || report.address?.trim();
-  if (generalLocation) {
-    if (/^(?:norzagaray(?:,?\s*bulacan)?|bulacan)$/i.test(generalLocation)) return 'Norzagaray, Bulacan';
-    return addMunicipality(generalLocation);
-  }
-  return hasPin(report) ? 'Pinned incident location' : 'Location not provided';
+  return hasIncidentPin(report);
 };
 const nearbyLandmarkLabel = (location?: IncidentLocationPreview) => location?.landmark
   ? `Near ${location.landmark}${location.landmark_distance_meters != null ? ` · ${Math.round(location.landmark_distance_meters)} m` : ''}`
@@ -577,7 +555,7 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
                 <div className="reports-info-card-v2"><span>Priority</span><strong>{priority || 'Not classified'}</strong></div>
               </div></section>}
 
-              {!isReadOnlyResponder && <section className="reports-detail-section-v2"><h3>Reported location</h3><div className="reports-location-card-v2"><MapPin size={20} /><div><strong>{locationName}</strong><span>{locationPreviewLoading[selected.id] && !selectedLocationPreview ? 'Looking up the road and nearby places…' : locationNote}</span>{selectedLocationPreview?.nearest_response_barangay_name && <small>Closest response barangay: {selectedLocationPreview.nearest_response_barangay_name.replace(/^(?:barangay|brgy\.?)\s*/i, '')}</small>}</div>{hasPin(selected) && ['pending', 'responding'].includes(stage) && <Link className="reports-view-map-link-v2" to={`/command-center?report_id=${encodeURIComponent(selected.id)}`}>View in map</Link>}</div></section>}
+              {!isReadOnlyBarangay && <section className="reports-detail-section-v2"><h3>Reported location</h3><div className="reports-location-card-v2"><MapPin size={20} /><div><strong>{locationName}</strong><span>{locationPreviewLoading[selected.id] && !selectedLocationPreview ? 'Looking up the road and nearby places…' : locationNote}</span>{selectedLocationPreview?.nearest_response_barangay_name && <small>Closest response barangay: {selectedLocationPreview.nearest_response_barangay_name.replace(/^(?:barangay|brgy\.?)\s*/i, '')}</small>}</div>{!isReadOnlyResponder && hasPin(selected) && ['pending', 'responding'].includes(stage) && <Link className="reports-view-map-link-v2" to={`/command-center?report_id=${encodeURIComponent(selected.id)}`}>View in map</Link>}</div></section>}
 
               {!isBarangay && Boolean(selected.barangay_assignments?.length) && <section className="reports-detail-section-v2">
                 <h3>Barangay assignment history</h3>
