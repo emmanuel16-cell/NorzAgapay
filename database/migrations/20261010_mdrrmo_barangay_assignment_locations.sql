@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS public.mdrrmo_report_barangay_assignments (
   assignment_notes TEXT,
   assigned_by UUID REFERENCES public.users(id) ON DELETE SET NULL,
   assigned_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  closed_at TIMESTAMPTZ,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   dispatched_by UUID REFERENCES public.barangay_users(id) ON DELETE SET NULL,
   dispatched_at TIMESTAMPTZ,
@@ -250,6 +251,7 @@ BEGIN
     UPDATE public.mdrrmo_report_barangay_assignments
     SET assignment_status = CASE WHEN v_action = 'reassign' THEN 'reassigned' ELSE 'recalled' END,
         assignment_notes = concat_ws(E'\n', NULLIF(assignment_notes,''), trim(COALESCE(p_notes,''))),
+        closed_at = v_now,
         updated_at = v_now
     WHERE id = v_active.id;
     INSERT INTO public.mdrrmo_report_barangay_assignment_events

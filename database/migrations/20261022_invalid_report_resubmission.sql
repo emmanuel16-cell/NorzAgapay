@@ -30,6 +30,10 @@ ALTER TABLE public.incident_reports
   ADD COLUMN IF NOT EXISTS resubmission_count INTEGER NOT NULL DEFAULT 0,
   ADD COLUMN IF NOT EXISTS resubmitted_at TIMESTAMPTZ;
 
+-- Assignment closure timestamps are consumed by responder review and assignment feeds.
+ALTER TABLE public.mdrrmo_report_barangay_assignments
+  ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ;
+
 DO $$ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint
