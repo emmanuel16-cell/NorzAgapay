@@ -3643,7 +3643,7 @@ router.get('/reports/:id/resolution-pdf', authenticateBarangay, requireRole(['ad
       }
       barangayAssignmentId = assignment.id;
     }
-    const pdf = await IncidentResolutionPdfService.generateAndStore(req.params.id, barangayAssignmentId);
+    const pdf = await IncidentResolutionPdfService.generateForDownload(req.params.id, barangayAssignmentId);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="Norz-Agapay_Incident_${req.params.id.slice(0, 8)}.pdf"`);
     res.setHeader('Content-Length', pdf.buffer.length);

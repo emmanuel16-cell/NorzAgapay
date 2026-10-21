@@ -499,7 +499,15 @@ export class IncidentResolutionPdfService {
     return [...new Set(missing)];
   }
 
-  static async generateAndStore(reportId: string, barangayAssignmentId?: string): Promise<{ buffer: Buffer; path: string; generatedAt: string }> {
+  static async generateForDownload(reportId: string, barangayAssignmentId?: string): Promise<{ buffer: Buffer; path?: string; generatedAt: string }> {
+    return this.generate(reportId, barangayAssignmentId, false);
+  }
+
+  static async generateAndStore(reportId: string, barangayAssignmentId?: string): Promise<{ buffer: Buffer; path?: string; generatedAt: string }> {
+    return this.generate(reportId, barangayAssignmentId, true);
+  }
+
+  private static async generate(reportId: string, barangayAssignmentId: string | undefined, storeDocument: boolean): Promise<{ buffer: Buffer; path?: string; generatedAt: string }> {
     let report: any = null;
 
     // Try mdrrmo_reports first
@@ -625,12 +633,14 @@ export class IncidentResolutionPdfService {
     }
     const assistance = await assistanceForReport(reportId);
     const buffer = await toBuffer(report, resident, assistance);
+    const generatedAt = new Date().toISOString();
+    if (!storeDocument) return { buffer, generatedAt };
+
     const storagePath = `resolved-reports/${reportId}/latest.pdf`;
     const { error: uploadError } = await supabaseAdmin.storage
       .from(config.resolutionPdfBucketName)
       .upload(storagePath, buffer, { contentType: 'application/pdf', upsert: true });
     if (uploadError) throw uploadError;
-    const generatedAt = new Date().toISOString();
     const pdfUpdate = { resolution_pdf_path: storagePath, resolution_pdf_generated_at: generatedAt, resolution_pdf_status: 'ready' };
     await Promise.all([
       supabaseAdmin.from('barangay_reports').update(pdfUpdate).eq('id', reportId),

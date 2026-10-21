@@ -434,9 +434,16 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
       toast.success('Resolution document downloaded.');
     } catch (error: any) {
       console.error('Resolution PDF download failed', error);
+      let serverMessage = typeof error?.response?.data?.error === 'string' ? error.response.data.error : '';
+      if (!serverMessage && error?.response?.data instanceof Blob) {
+        try {
+          const payload = JSON.parse(await error.response.data.text());
+          if (typeof payload?.error === 'string') serverMessage = payload.error;
+        } catch { /* Keep the generic download error when the server did not return JSON. */ }
+      }
       toast.error(error?.response?.status === 409
         ? 'The resolution document is incomplete. Complete the required field assessment before downloading.'
-        : 'Could not download the resolution document. Please try again.');
+        : serverMessage || 'Could not download the resolution document. Please try again.');
     } finally {
       setDownloadingPdf(false);
     }
