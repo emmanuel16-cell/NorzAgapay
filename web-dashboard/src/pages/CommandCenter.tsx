@@ -226,6 +226,7 @@ interface AvailableResponderPin {
   full_name: string;
   phone?: string | null;
   unit_type?: string | null;
+  unit_name?: string | null;
 }
 
 const commandOfficePinIcon = L.divIcon({ className: 'dashboard-command-pin office', html: '<span>MDRRMO</span>', iconSize: [82, 38], iconAnchor: [41, 19] });
@@ -2217,12 +2218,12 @@ export default function CommandCenter() {
         </MapContainer>
 
         {selectedAvailabilityPin && <aside className="command-availability-panel" aria-live="polite">
-          <header><div><strong>{selectedAvailabilityPin.name}</strong><span>Responders not currently responding</span></div><button type="button" aria-label="Close responder list" onClick={() => { setSelectedAvailabilityPin(null); setAvailableResponderPins([]); }}>×</button></header>
+          <header><div><strong>{selectedAvailabilityPin.name}</strong><span>{selectedAvailabilityPin.type === 'office' ? 'Dispatchable responders not currently responding' : 'Responders not currently responding'}</span></div><button type="button" aria-label="Close responder list" onClick={() => { setSelectedAvailabilityPin(null); setAvailableResponderPins([]); }}>×</button></header>
           {isBarangayDashboard && selectedAvailabilityPin.type === 'office'
             ? <p>Only MDRRMO command-center users can view MDRRMO responder availability.</p>
             : availabilityLoading ? <p>Checking active response assignments…</p>
-              : availableResponderPins.length === 0 ? <p>No responders are currently available.</p>
-                : <ul>{availableResponderPins.map((responder) => <li key={responder.id}><span><strong>{responder.full_name}</strong>{responder.phone && <a href={`tel:${responder.phone}`}>{formatMobileNumber(responder.phone)}</a>}</span>{responder.unit_type && <small>{responder.unit_type}</small>}</li>)}</ul>}
+              : availableResponderPins.length === 0 ? <p>{selectedAvailabilityPin.type === 'office' ? 'No dispatchable responders are currently available from active Respond Units.' : 'No responders are currently available.'}</p>
+                : <ul>{availableResponderPins.map((responder) => <li key={responder.id}><span><strong>{responder.full_name}</strong>{responder.phone && <a href={`tel:${responder.phone}`}>{formatMobileNumber(responder.phone)}</a>}</span>{(responder.unit_name || responder.unit_type) && <small>{responder.unit_name || responder.unit_type}</small>}</li>)}</ul>}
         </aside>}
 
         {!(activeModalType === 'escalated' || (activeModalType === 'incident' && selectedIncident?.status !== 'pending')) && <CurrentWeatherPanel />}

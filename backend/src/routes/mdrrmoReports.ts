@@ -541,13 +541,27 @@ router.get('/available-responders', authenticate, authorize('dispatcher', 'admin
     if (!locationLabel) { res.json({ responders: [], location: null }); return; }
 
     const isBarangayPin = locationType === 'barangay';
-    const { data: responders, error: respondersError } = isBarangayPin
-      ? await supabaseAdmin.from('barangay_users')
-        .select('id, full_name, phone').eq('barangay_id', barangayId).eq('role', 'responder').eq('is_active', true)
-      : await supabaseAdmin.from('users')
-        .select('id, full_name, phone, unit_type').eq('role', 'responder').eq('status', 'active');
-    if (respondersError) throw respondersError;
-    const responderRows = responders || [];
+    let responderRows: any[] = [];
+    if (isBarangayPin) {
+      const { data: responders, error } = await supabaseAdmin.from('barangay_users')
+        .select('id, full_name, phone').eq('barangay_id', barangayId).eq('role', 'responder').eq('is_active', true);
+      if (error) throw error;
+      responderRows = responders || [];
+    } else {
+      const dispatchableUnits = await getDispatchableRespondUnits();
+      const unitsByResponderId = new Map(dispatchableUnits.map((unit) => [unit.responder_user_id, unit]));
+      const dispatchableResponderIds = [...unitsByResponderId.keys()];
+      if (dispatchableResponderIds.length) {
+        const { data: responders, error } = await supabaseAdmin.from('users')
+          .select('id, full_name, phone, unit_type').in('id', dispatchableResponderIds)
+          .eq('role', 'responder').eq('status', 'active');
+        if (error) throw error;
+        responderRows = (responders || []).map((responder: any) => ({
+          ...responder,
+          unit_name: unitsByResponderId.get(responder.id)?.unit_name || null,
+        }));
+      }
+    }
     if (!responderRows.length) { res.json({ responders: [], location: locationLabel }); return; }
     const ids = responderRows.map((row: any) => row.id);
     const busy = new Set<string>();
@@ -576,7 +590,13 @@ router.get('/available-responders', authenticate, authorize('dispatcher', 'admin
     }
     const available = responderRows.filter((responder: any) => !busy.has(responder.id))
       .sort((a: any, b: any) => String(a.full_name || '').localeCompare(String(b.full_name || '')))
-      .map((responder: any) => ({ id: responder.id, full_name: responder.full_name, phone: responder.phone, unit_type: responder.unit_type || null }));
+      .map((responder: any) => ({
+        id: responder.id,
+        full_name: responder.full_name,
+        phone: responder.phone,
+        unit_type: responder.unit_type || null,
+        unit_name: responder.unit_name || null,
+      }));
     res.json({ responders: available, location: locationLabel });
   } catch (error) {
     console.error('Load available MDRRMO responders failed:', error);
