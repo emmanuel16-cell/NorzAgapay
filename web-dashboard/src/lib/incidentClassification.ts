@@ -9,6 +9,17 @@ export const INCIDENT_TYPE_OPTIONS = [
   { value: 'other', label: 'Other Emergency' },
 ] as const;
 
+export const COMMUNITY_CONCERN_OPTIONS = [
+  { value: 'flash_flood', label: 'Flood / Flash Flood' },
+  { value: 'fire', label: 'Fire' },
+  { value: 'earthquake', label: 'Earthquake' },
+  { value: 'vehicle_incident', label: 'Vehicle Incident' },
+  { value: 'medical_emergency', label: 'Medical Emergency' },
+  { value: 'typhoon', label: 'Typhoon / Severe Weather' },
+  { value: 'not_sure', label: 'Not sure' },
+  { value: 'other', label: 'Other concerns' },
+] as const;
+
 export const INCIDENT_SEVERITY_OPTIONS = [
   { value: 'low', label: 'Low' },
   { value: 'moderate', label: 'Moderate' },

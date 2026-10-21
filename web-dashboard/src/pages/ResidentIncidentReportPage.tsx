@@ -5,7 +5,7 @@ import L from 'leaflet';
 import { ArrowLeft, CircleAlert, LocateFixed, MapPin, Phone, ShieldCheck, Siren, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { reportAPI } from '../lib/api';
-import { INCIDENT_TYPE_OPTIONS } from '../lib/incidentClassification';
+import { COMMUNITY_CONCERN_OPTIONS, INCIDENT_TYPE_OPTIONS } from '../lib/incidentClassification';
 import { CARTO_ATTRIBUTION, CARTO_DARK_MAP_URL } from '../lib/mapConfig';
 import IncidentTimeInput from '../components/IncidentTimeInput';
 import { createInitialIncidentTime, type IncidentTimeValue } from '../lib/incidentTime';
@@ -46,7 +46,7 @@ export default function ResidentIncidentReportPage() {
   const [category, setCategory] = useState<string>(INCIDENT_TYPE_OPTIONS[0]?.value || 'not_sure');
   const [incidentTime, setIncidentTime] = useState<IncidentTimeValue>(createInitialIncidentTime);
   const [otherEmergency, setOtherEmergency] = useState('');
-  const [communityCategory, setCommunityCategory] = useState<string>(INCIDENT_TYPE_OPTIONS[0]?.value || 'not_sure');
+  const [communityCategory, setCommunityCategory] = useState<string>('not_sure');
   const [reportMode, setReportMode] = useState<'standard' | 'visual' | null>(null);
   const [phone, setPhone] = useState(() => normalizeMobile(user?.phone));
   const [description, setDescription] = useState('');
@@ -65,7 +65,9 @@ export default function ResidentIncidentReportPage() {
   const requestFingerprintRef = useRef('');
   const requestStartedAtRef = useRef('');
   const selectedCategory = type === 'community' ? communityCategory : category;
-  const selectedCategoryLabel = INCIDENT_TYPE_OPTIONS.find((item) => item.value === selectedCategory)?.label || selectedCategory;
+  const selectedCategoryOptions = type === 'community' ? COMMUNITY_CONCERN_OPTIONS : INCIDENT_TYPE_OPTIONS;
+  const selectedCategoryLabel = selectedCategoryOptions.find((item) => item.value === selectedCategory)?.label || selectedCategory;
+  const selectedCategoryNeedsDescription = selectedCategory === 'other';
 
   useEffect(() => { if (user?.phone) setPhone((current) => current || normalizeMobile(user.phone)); }, [user?.phone]);
 
@@ -92,7 +94,7 @@ export default function ResidentIncidentReportPage() {
     event.preventDefault(); setError(''); setMessage(''); setSubmitted(false);
     const normalizedPhone = normalizeMobile(phone);
     if (!isValidMobileNumber(normalizedPhone)) { setError('Enter exactly 11 digits starting with 09.'); return; }
-    if (selectedCategory === 'other' && !otherEmergency.trim()) { setError('Describe the other emergency.'); return; }
+    if (selectedCategoryNeedsDescription && !otherEmergency.trim()) { setError(type === 'community' ? 'Describe the other concern.' : 'Describe the other emergency.'); return; }
     if (!location) { setError('Add the incident location before submitting.'); return; }
     if (reportMode === 'standard' && description.trim().length < 8) { setError('Describe what happened in at least 8 characters.'); return; }
     if (reportMode === 'visual' && evidence.length === 0) { setError('Capture at least one photo or video for a visual report.'); return; }
@@ -106,15 +108,15 @@ export default function ResidentIncidentReportPage() {
         ? type === 'community' ? 'Visual Community Report' : 'Visual Incident Report'
         : type === 'community' ? selectedCategoryLabel : 'Resident Incident Report';
       const incidentTimeFingerprint = [incidentTime.choice, incidentTime.choice === 'earlier' ? incidentTime.occurredAt : null, incidentTime.choice === 'earlier' ? incidentTime.precision : null];
-      const fingerprint = JSON.stringify([type, reportMode, title, selectedCategory, selectedCategory === 'other' ? otherEmergency.trim() : '', normalizedPhone, reportDescription, location.latitude, location.longitude, evidence.map((file) => [file.name, file.size, file.lastModified]), incidentTimeFingerprint]);
+      const fingerprint = JSON.stringify([type, reportMode, title, selectedCategory, selectedCategoryNeedsDescription ? otherEmergency.trim() : '', normalizedPhone, reportDescription, location.latitude, location.longitude, evidence.map((file) => [file.name, file.size, file.lastModified]), incidentTimeFingerprint]);
       if (requestFingerprintRef.current !== fingerprint) {
         requestIdRef.current = requestId();
         requestStartedAtRef.current = new Date().toISOString();
         requestFingerprintRef.current = fingerprint;
       }
       const response = await reportAPI.guestReport({
-        type, title, specifics: selectedCategory === 'other' && otherEmergency.trim()
-          ? `Other emergency: ${otherEmergency.trim()}`
+        type, title, specifics: selectedCategoryNeedsDescription && otherEmergency.trim()
+          ? `${type === 'community' ? 'Other concern' : 'Other emergency'}: ${otherEmergency.trim()}`
           : type === 'community' ? selectedCategoryLabel : '', description: reportDescription,
         latitude: location.latitude, longitude: location.longitude, contact_number: normalizedPhone,
         send_to: 'mdrrmo', incident_type: selectedCategory,
@@ -130,7 +132,7 @@ export default function ResidentIncidentReportPage() {
       setSubmitted(true);
       setMessage(type === 'community' ? 'Your community concern was sent to MDRRMO for review.' : 'Your report was sent to MDRRMO for review and coordination.');
       setDescription(''); setOtherEmergency(''); setLocation(null); setLocationSource(null); setEvidence([]);
-      setCommunityCategory(INCIDENT_TYPE_OPTIONS[0]?.value || 'not_sure');
+      setCommunityCategory('not_sure');
       setIncidentTime(createInitialIncidentTime());
       requestIdRef.current = requestId(); requestFingerprintRef.current = ''; requestStartedAtRef.current = '';
     } catch (submitError: any) {
@@ -154,12 +156,12 @@ export default function ResidentIncidentReportPage() {
                 value={selectedCategory}
                 onChange={(event) => type === 'community' ? setCommunityCategory(event.target.value) : setCategory(event.target.value)}
               >
-                {INCIDENT_TYPE_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                {selectedCategoryOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
               </select>
             </label>
-            {selectedCategory === 'other' && <label>
-              <span className="required-inline-label">Describe the emergency <b>Required</b></span>
-              <input type="text" required maxLength={120} value={otherEmergency} onChange={(event) => setOtherEmergency(event.target.value)} placeholder="Describe the emergency" />
+            {selectedCategoryNeedsDescription && <label>
+              <span className="required-inline-label">{type === 'community' ? 'Describe the concern' : 'Describe the emergency'} <b>Required</b></span>
+              <input type="text" required maxLength={120} value={otherEmergency} onChange={(event) => setOtherEmergency(event.target.value)} placeholder={type === 'community' ? 'Describe the concern' : 'Describe the emergency'} />
             </label>}
           </div>
           <IncidentTimeInput value={incidentTime} onChange={setIncidentTime} />
