@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { format, formatDistanceToNowStrict } from 'date-fns';
-import { AlertTriangle, ClipboardList, MapPin, Phone, UserRound } from 'lucide-react';
+import { AlertTriangle, ClipboardList, Phone, UserRound } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { requestAPI, socket } from '../lib/api';
+import { reportAPI, requestAPI, socket } from '../lib/api';
 import { formatMobileNumber } from '../lib/mobileNumber';
 import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
+import IncidentLocationCard from '../components/IncidentLocationCard';
+import { formatIncidentLocation, hasIncidentPin, type IncidentLocationPreview } from '../lib/incidentLocation';
 
 type RequestStatus = 'pending' | 'approved' | 'rejected' | 'fulfilled';
 
@@ -16,6 +18,9 @@ interface LinkedReport {
   description?: string;
   status?: string;
   address?: string | null;
+  location_name?: string | null;
+  latitude?: number | string | null;
+  longitude?: number | string | null;
   reporter_type?: string;
   barangay_name?: string | null;
   created_at?: string;
@@ -126,6 +131,12 @@ export default function ResourceRequestsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [approvalNote, setApprovalNote] = useState('');
+  const [locationPreviewState, setLocationPreviewState] = useState<{
+    incidentId: string;
+    preview: IncidentLocationPreview | null;
+    loading: boolean;
+    error: string;
+  } | null>(null);
   const [currentTime, setCurrentTime] = useState(() => new Date().toLocaleTimeString());
 
   const fetchRequests = useCallback(async () => {
@@ -178,8 +189,34 @@ export default function ResourceRequestsPage() {
     }), [requests]);
   const selected = visibleRequests.find((request) => request.id === selectedId) || visibleRequests[visibleRequests.length - 1] || null;
   const selectedHistory = selected ? [selected] : [];
+  const linkedIncident = selected?.incident_report || null;
+  const linkedIncidentId = linkedIncident?.id;
+  const linkedIncidentHasPin = linkedIncident ? hasIncidentPin(linkedIncident) : false;
+  const linkedLocationPreview = locationPreviewState?.incidentId === linkedIncident?.id ? locationPreviewState : null;
 
   useEffect(() => { setApprovalNote(''); }, [selected?.id]);
+
+  useEffect(() => {
+    if (!linkedIncidentId || !linkedIncidentHasPin) {
+      setLocationPreviewState(linkedIncidentId ? { incidentId: linkedIncidentId, preview: null, loading: false, error: '' } : null);
+      return;
+    }
+    let cancelled = false;
+    setLocationPreviewState({ incidentId: linkedIncidentId, preview: null, loading: true, error: '' });
+    reportAPI.mdrrmoReportLocationPreview(linkedIncidentId)
+      .then((response) => {
+        if (!cancelled) setLocationPreviewState({ incidentId: linkedIncidentId, preview: response.data || {}, loading: false, error: '' });
+      })
+      .catch((error) => {
+        if (!cancelled) setLocationPreviewState({
+          incidentId: linkedIncidentId,
+          preview: null,
+          loading: false,
+          error: error?.response?.data?.error || 'Detailed location is unavailable.',
+        });
+      });
+    return () => { cancelled = true; };
+  }, [linkedIncidentId, linkedIncidentHasPin]);
 
   useEffect(() => {
     if (!requests.length) return;
@@ -277,16 +314,17 @@ export default function ResourceRequestsPage() {
                 </section>
 
                 <section className="reports-detail-section-v2">
-                  <h3>Linked incident</h3>
-                  <div className="reports-location-card-v2">
-                    <MapPin size={19} />
-                    <div>
-                      <strong>{selected.incident_report?.title || selected.incident_report?.type || 'Assigned incident'}</strong>
-                      <span>{selected.incident_report?.address || selected.incident_report?.barangay_name || 'Location not provided'}</span>
-                      <small>Status: {statusLabel(selected.incident_report?.mdrrmo_response_status || selected.incident_report?.status)}</small>
-                    </div>
-                  </div>
-                  {selected.incident_report?.description && <div className="reports-text-card-v2" style={{ marginTop: 10 }}>{selected.incident_report.description}</div>}
+                  <h3>Incident location</h3>
+                  {linkedIncident ? (
+                    <IncidentLocationCard
+                      showTitle={false}
+                      location={linkedLocationPreview?.preview}
+                      loading={Boolean(linkedLocationPreview?.loading)}
+                      error={linkedLocationPreview?.error || ''}
+                      fallbackLabel={formatIncidentLocation(linkedIncident)}
+                      coordinates={hasIncidentPin(linkedIncident) ? `${Number(linkedIncident.latitude).toFixed(5)}, ${Number(linkedIncident.longitude).toFixed(5)}` : null}
+                    />
+                  ) : <div className="reports-location-card-v2"><div><strong>Location not provided</strong></div></div>}
                 </section>
 
                 <section className="reports-detail-section-v2 assistance-history-section">

@@ -35,7 +35,7 @@ router.get('/', authenticate, authorize('dispatcher'), async (req: AuthRequest, 
     const incidentId = typeof req.query.incident_id === 'string' ? req.query.incident_id : null;
     let newQuery = supabaseAdmin
       .from('mdrrmo_reports')
-      .select('id, type, title, description, specifics, response_status, reporter_type, reporter_name, reporter_phone, address, barangay_id, barangay_name, created_at, coordination_notes')
+      .select('id, type, title, description, specifics, response_status, reporter_type, reporter_name, reporter_phone, address, latitude, longitude, barangay_id, barangay_name, created_at, coordination_notes')
       .order('created_at', { ascending: false });
     if (incidentId) newQuery = newQuery.eq('id', incidentId);
 
