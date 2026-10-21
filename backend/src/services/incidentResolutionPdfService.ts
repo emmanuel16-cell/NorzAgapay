@@ -20,8 +20,6 @@ const transportAssessmentLabels: Record<string, string> = {
   transport_status: 'Injured person transport status',
   hospital: 'Transport destination',
   hospital_address: 'Destination address',
-  hospital_latitude: 'Destination latitude',
-  hospital_longitude: 'Destination longitude',
   transport_started: 'Transport started at',
   transport_completed: 'Transport completed at',
 };
