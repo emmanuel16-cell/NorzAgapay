@@ -2229,7 +2229,7 @@ export default function CommandCenter() {
           {isBarangayDashboard && selectedAvailabilityPin.type === 'office'
             ? <p>Only MDRRMO command-center users can view MDRRMO responder availability.</p>
             : availabilityLoading ? <p>Checking active response assignments…</p>
-              : availableResponderPins.length === 0 ? <p>No responders with a fresh location within 100 meters of this pin are currently available.</p>
+              : availableResponderPins.length === 0 ? <p>No responders are currently available.</p>
                 : <ul>{availableResponderPins.map((responder) => <li key={responder.id}><span><strong>{responder.full_name}</strong>{responder.phone && <a href={`tel:${responder.phone}`}>{formatMobileNumber(responder.phone)}</a>}</span>{responder.unit_type && <small>{responder.unit_type}</small>}</li>)}</ul>}
         </aside>}
 

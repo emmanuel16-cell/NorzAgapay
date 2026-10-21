@@ -2,7 +2,6 @@ import { Router, Response } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
 import { config } from '../config';
-import { getResponderGpsLocation } from '../config/redis';
 import { supabaseAdmin } from '../config/supabase';
 import { AuthRequest, authenticate, authorize } from '../middleware/auth';
 import { io } from '../server';
@@ -14,7 +13,6 @@ import { getBarangayCoordinates, getNearestBarangay, distanceMeters as distanceB
 import { getVerifiedResponseBarangays } from '../services/responseBarangay';
 import { resolveIncidentLocation } from '../services/incidentLocation';
 import { getVerifiedBarangayIds } from '../services/verifiedBarangayService';
-import { getRespondersWithinCommandLocation } from '../services/pinResponderAvailability';
 import { isValidLocationIcon, removeStoredLocationIcon, storeLocationIcon } from '../services/locationIconStorage';
 
 const router = Router();
@@ -525,34 +523,22 @@ router.get('/available-responders', authenticate, authorize('dispatcher', 'admin
     const locationType = String(req.query.location_type || '');
     const barangayId = String(req.query.barangay_id || '');
     let locationLabel = '';
-    let location: { latitude: number; longitude: number } | null = null;
     if (locationType === 'office') {
-      const { data: office, error } = await supabaseAdmin.from('mdrrmo_command_locations')
-        .select('latitude, longitude').eq('location_key', 'office').maybeSingle();
-      if (error) throw error;
-      if (office) {
-        locationLabel = 'MDRRMO office';
-        location = { latitude: Number(office.latitude), longitude: Number(office.longitude) };
-      }
+      locationLabel = 'MDRRMO office';
     } else if (locationType === 'barangay') {
       if (!barangayId || !(await getVerifiedBarangayIds()).includes(barangayId)) {
         res.status(403).json({ error: 'This barangay location is unavailable.' });
         return;
       }
       const { data, error } = await supabaseAdmin.from('barangays')
-        .select('name, location_latitude, location_longitude').eq('id', barangayId).maybeSingle();
+        .select('name').eq('id', barangayId).maybeSingle();
       if (error) throw error;
-      if (data) {
-        locationLabel = `Barangay ${data.name}`;
-        if (data.location_latitude != null && data.location_longitude != null) {
-          location = { latitude: Number(data.location_latitude), longitude: Number(data.location_longitude) };
-        }
-      }
+      if (data) locationLabel = `Barangay ${data.name}`;
     } else {
       res.status(400).json({ error: 'Choose an office or barangay location.' });
       return;
     }
-    if (!locationLabel || !location) { res.json({ responders: [], location: locationLabel || null }); return; }
+    if (!locationLabel) { res.json({ responders: [], location: null }); return; }
 
     const isBarangayPin = locationType === 'barangay';
     const { data: responders, error: respondersError } = isBarangayPin
@@ -588,13 +574,7 @@ router.get('/available-responders', authenticate, authorize('dispatcher', 'admin
       if (activeError) throw activeError;
       for (const row of activeRows || []) busy.add(row.responder_id);
     }
-    const notResponding = responderRows.filter((responder: any) => !busy.has(responder.id));
-    const withinLocation = await getRespondersWithinCommandLocation(
-      notResponding,
-      location,
-      isBarangayPin ? getBarangayResponderGpsLocation : getResponderGpsLocation,
-    );
-    const available = withinLocation
+    const available = responderRows.filter((responder: any) => !busy.has(responder.id))
       .sort((a: any, b: any) => String(a.full_name || '').localeCompare(String(b.full_name || '')))
       .map((responder: any) => ({ id: responder.id, full_name: responder.full_name, phone: responder.phone, unit_type: responder.unit_type || null }));
     res.json({ responders: available, location: locationLabel });
