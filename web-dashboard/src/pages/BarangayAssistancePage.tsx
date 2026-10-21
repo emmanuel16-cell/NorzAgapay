@@ -318,9 +318,13 @@ type MdrrmoAssistance = {
 };
 type MdrrmoRequestForm = { incident_id: string; needs_more_manpower: boolean; needs_resources: boolean; needs_equipment: boolean; details: string };
 const initialMdrrmoRequest: MdrrmoRequestForm = { incident_id: '', needs_more_manpower: false, needs_resources: false, needs_equipment: false, details: '' };
-const mdrrmoRequestLabel = (request: MdrrmoAssistance) => request.sub_type?.replaceAll('_', ' ') || (request.request_type === 'responders' ? 'Additional responders' : 'Resources');
+const mdrrmoRequestCategories = (request: MdrrmoAssistance) => {
+  const categories = String(request.sub_type || '').split(',').map((value) => value.trim()).filter(Boolean).map(statusLabel);
+  return categories.length ? categories : [request.request_type === 'responders' ? 'Manpower' : 'Resources'];
+};
 
 function MdrrmoResponderAssistanceWorkspace() {
+  const { user } = useAuth();
   const [requests, setRequests] = useState<MdrrmoAssistance[]>([]);
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
@@ -424,9 +428,9 @@ function MdrrmoResponderAssistanceWorkspace() {
           <div className="reports-detail-scroll-v2"><header className="reports-detail-heading-v2 reports-detail-heading-responder-v2"><button type="button" className="reports-mobile-back-v2" onClick={() => setSelectedIncidentId(null)}><ArrowLeft size={16} /> Responding incidents</button><div><span className="reports-eyebrow-v2">Selected incident</span><h2>{incidentTitle(selectedIncident)}</h2><p>{statusLabel(incidentStatus(selectedIncident))} · {dateTime(selectedIncident.created_at)}</p></div><div className="reports-detail-heading-actions-v2"><span className={`report-status-chip-v2 detail ${incidentStatusClass(selectedIncident)}`}>{statusLabel(incidentStatus(selectedIncident))}</span><button className="workspace-primary-action" type="button" onClick={startRequest} disabled={!isSelectedActive}><HandHelping size={16} /> Request assistance</button></div></header>
             <section className="reports-detail-section-v2"><h3>Incident location</h3><IncidentLocationCard showTitle={false} showLandmarkDistance={false} location={incidentLocations.previews[selectedIncident.id]} fallbackLabel={formatIncidentLocation(selectedIncident)} loading={Boolean(incidentLocations.loading[selectedIncident.id])} coordinates={hasIncidentPin(selectedIncident) ? `${Number(selectedIncident.latitude).toFixed(5)}, ${Number(selectedIncident.longitude).toFixed(5)}` : null} />{selectedIncident.description && <div className="reports-text-card-v2" style={{ marginTop: 10 }}>{selectedIncident.description}</div>}</section>
             <section className="reports-detail-section-v2 assistance-history-section"><div className="reports-section-heading-v2"><h3>Request history</h3><span>{incidentRequests.length} requests</span></div>{incidentRequests.length ? <div className="assistance-history-list">{incidentRequests.map((request) => <article className="assistance-history-card" key={request.id}>
-              <header><div><span className="assistance-history-sos">SOS</span><strong>{mdrrmoRequestLabel(request)}</strong></div><span className={`assistance-status-chip ${statusClass(request.status)}`}>{request.status === 'fulfilled' ? 'Received' : statusLabel(request.status)}</span></header>
-              <div className="assistance-history-entry"><strong>{incidentTitle(selectedIncident)}</strong><div className="assistance-history-meta"><span>{mdrrmoRequestLabel(request)}</span><time>{dateTime(request.created_at)}</time></div><p>{request.details || 'No request details provided.'}</p></div>
-              {request.dispatcher_notes && <div className="assistance-history-entry dispatcher"><strong>Dispatcher response</strong><p>{request.dispatcher_notes}</p></div>}
+              <header><div><span className="assistance-history-sos">SOS</span><strong>Assistance Request</strong></div><span className={`assistance-status-chip ${statusClass(request.status)}`}>{request.status === 'fulfilled' ? 'Received' : statusLabel(request.status)}</span></header>
+              <div className="assistance-history-entry"><strong>From: {user?.full_name || 'You'}</strong><time>{dateTime(request.created_at)}</time><div className="assistance-history-tags" aria-label="Requested assistance categories">{mdrrmoRequestCategories(request).map((category) => <span key={category}>✓ {category}</span>)}</div><p>{request.details || 'No request details provided.'}</p></div>
+              {(request.dispatcher_notes || request.status !== 'pending') && <div className="assistance-history-entry dispatcher"><strong>From: Dispatcher</strong><span className={`assistance-decision-badge ${request.status === 'rejected' ? 'rejected' : 'provided'}`}>{request.status === 'fulfilled' ? 'Received' : statusLabel(request.status)}</span>{request.dispatcher_notes && <p>{request.dispatcher_notes}</p>}</div>}
               {request.status === 'approved' && <footer className="barangay-assistance-card-footer"><button type="button" onClick={() => void confirmReceived(request)} disabled={saving}><Check size={15} /> Confirm received</button></footer>}
             </article>)}</div> : <div className="reports-no-media-v2">No assistance requests for this incident yet.</div>}</section>
           </div>
