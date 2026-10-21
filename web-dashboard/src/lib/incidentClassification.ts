@@ -17,7 +17,7 @@ export const COMMUNITY_CONCERN_OPTIONS = [
   { value: 'medical_emergency', label: 'Medical Emergency' },
   { value: 'typhoon', label: 'Typhoon / Severe Weather' },
   { value: 'not_sure', label: 'Not sure' },
-  { value: 'other', label: 'Other concerns' },
+  { value: 'other', label: 'Other concern' },
 ] as const;
 
 export const INCIDENT_SEVERITY_OPTIONS = [
