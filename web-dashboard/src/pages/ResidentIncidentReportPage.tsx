@@ -148,9 +148,19 @@ export default function ResidentIncidentReportPage() {
         <button type="button" className="report-mode-back" onClick={() => setReportMode(null)}>← Change report format</button>
         <div className="resident-incident-time-row">
           <div className="resident-incident-category-column">
-            {type === 'community'
-              ? <><label>Incident category<select value={communityCategory} onChange={(event) => setCommunityCategory(event.target.value)}>{INCIDENT_TYPE_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>{communityCategory === 'other' && <label><span className="required-inline-label">Describe the emergency <b>Required</b></span><input type="text" required maxLength={120} value={otherEmergency} onChange={(event) => setOtherEmergency(event.target.value)} placeholder="Describe the emergency" /></label>}</>
-              : <><label>Incident category<select value={category} onChange={(event) => setCategory(event.target.value)}>{INCIDENT_TYPE_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>{category === 'other' && <label><span className="required-inline-label">What kind of emergency? <b>Required</b></span><input type="text" required maxLength={120} value={otherEmergency} onChange={(event) => setOtherEmergency(event.target.value)} placeholder="Describe the emergency" /></label></>}
+            <label>
+              Incident category
+              <select
+                value={selectedCategory}
+                onChange={(event) => type === 'community' ? setCommunityCategory(event.target.value) : setCategory(event.target.value)}
+              >
+                {INCIDENT_TYPE_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+              </select>
+            </label>
+            {selectedCategory === 'other' && <label>
+              <span className="required-inline-label">Describe the emergency <b>Required</b></span>
+              <input type="text" required maxLength={120} value={otherEmergency} onChange={(event) => setOtherEmergency(event.target.value)} placeholder="Describe the emergency" />
+            </label>}
           </div>
           <IncidentTimeInput value={incidentTime} onChange={setIncidentTime} />
         </div>
