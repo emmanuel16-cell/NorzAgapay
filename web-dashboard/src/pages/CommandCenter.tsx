@@ -2169,15 +2169,7 @@ export default function CommandCenter() {
               icon={createLocationMapIcon(pin.iconUrl, pin.type, pin.type === 'office' ? commandOfficePinIcon : commandBarangayPinIcon)}
               zIndexOffset={1800}
               eventHandlers={{ click: () => void openAvailabilityForPin(pin) }}
-            >
-              <Popup className="command-map-cluster-popup" minWidth={220}>
-                <div className="command-pin-popup">
-                  <strong>{pin.name}</strong>
-                  {pin.address && <span>{pin.address}</span>}
-                  <small>{isBarangayDashboard && pin.type === 'office' ? 'Responder availability is limited to the MDRRMO dashboard.' : 'Click this pin to see responders who are not currently responding.'}</small>
-                </div>
-              </Popup>
-            </Marker>
+            />
           ))}
 
           {/* Dispatch unit visibility follows the category toggle for its target report. */}
