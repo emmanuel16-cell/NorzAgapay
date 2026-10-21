@@ -901,6 +901,15 @@ const dispatchMdrrmoReport = async (req: AuthRequest, res: Response): Promise<vo
       });
       return;
     }
+    if (err?.code === '23505' && dispatchStage === 'persist_dispatch') {
+      res.status(503).json({
+        error: 'The database still prevents redispatching a report to a responder who was previously marked false reporter. Apply database/migrations/20261022_mdrrmo_assignment_redispatch.sql, then retry.',
+        code: 'MDRRMO_ASSIGNMENT_REDISPATCH_MIGRATION_REQUIRED',
+        stage: dispatchStage,
+        cause_code: err.code,
+      });
+      return;
+    }
     if (err?.code === '23514' || err?.code === '22023') {
       res.status(409).json({ error: err.message || 'The report or response unit is no longer eligible for dispatch.' });
       return;

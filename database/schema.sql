@@ -1902,9 +1902,12 @@ CREATE TABLE IF NOT EXISTS public.mdrrmo_report_assignments (
   assigned_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   accepted_at TIMESTAMPTZ,
   arrived_at TIMESTAMPTZ,
-  resolved_at TIMESTAMPTZ,
-  UNIQUE (report_id, responder_id)
+  resolved_at TIMESTAMPTZ
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS mdrrmo_report_assignments_one_nonremoved_responder_idx
+  ON public.mdrrmo_report_assignments (report_id, responder_id)
+  WHERE status <> 'removed';
 
 CREATE INDEX IF NOT EXISTS idx_mdrrmo_report_assignments_responder_status
   ON public.mdrrmo_report_assignments(responder_id, status, assigned_at DESC);
@@ -2628,7 +2631,7 @@ BEGIN
   SELECT p_report_id, selected.responder_id, p_actor_id, 'assigned', v_now,
          NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
   FROM unnest(p_responder_ids) AS selected(responder_id)
-  ON CONFLICT (report_id, responder_id) DO UPDATE SET
+  ON CONFLICT (report_id, responder_id) WHERE status <> 'removed' DO UPDATE SET
     assigned_by = EXCLUDED.assigned_by,
     status = 'assigned',
     assigned_at = EXCLUDED.assigned_at,
@@ -5317,7 +5320,7 @@ BEGIN
 
   SELECT * INTO v_assignment
   FROM public.mdrrmo_report_assignments
-  WHERE report_id = p_report_id AND responder_id = p_responder_id
+  WHERE report_id = p_report_id AND responder_id = p_responder_id AND status = 'assigned'
   FOR UPDATE;
   IF NOT FOUND OR v_assignment.status <> 'assigned' THEN
     RAISE EXCEPTION 'Assignment not found or already accepted' USING ERRCODE = 'P0002';
@@ -6243,7 +6246,7 @@ BEGIN
 
   SELECT * INTO v_assignment
   FROM public.mdrrmo_report_assignments
-  WHERE report_id = p_report_id AND responder_id = p_responder_id
+  WHERE report_id = p_report_id AND responder_id = p_responder_id AND status = 'responding'
   FOR UPDATE;
   IF NOT FOUND OR v_assignment.status <> 'responding' OR v_assignment.arrived_at IS NOT NULL THEN
     RAISE EXCEPTION 'This active response assignment cannot be edited' USING ERRCODE = 'P0002';
