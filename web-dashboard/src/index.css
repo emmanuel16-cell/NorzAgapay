@@ -2984,6 +2984,16 @@ tbody tr:last-child td { border-bottom: none; }
 }
 .command-map-cluster-alert { position: absolute; top: -3px; right: -3px; width: 12px; height: 12px; border: 2px solid #fff; border-radius: 50%; background: #ef4444; }
 .command-map-dot-icon { background: transparent !important; border: 0 !important; }
+.command-map-route-arrow-icon { background: transparent !important; border: 0 !important; }
+.command-map-route-arrow {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.85));
+}
+.command-map-route-arrow svg { width: 21px; height: 21px; overflow: visible; }
+.command-map-route-arrow path { fill: var(--route-arrow-color); stroke: #fff; stroke-width: 2; stroke-linejoin: round; }
 .command-map-cluster-marker { background: transparent !important; border: 0 !important; }
 .command-map-cluster-badge {
   position: relative;

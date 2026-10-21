@@ -176,10 +176,14 @@ interface LiveResponderCrewMember {
 }
 
 interface LiveResponderLocation {
+  responderKey: string;
   responderId: string;
+  accountKind: 'mdrrmo' | 'barangay';
+  barangayId?: string | null;
   responderName: string;
   latitude: number;
   longitude: number;
+  accuracyM?: number | null;
   timestamp: string;
   assignments: LiveResponderAssignment[];
 }
@@ -228,10 +232,16 @@ function normalizeLiveResponderLocation(value: any): LiveResponderLocation | nul
     })) : [];
   if (!assignments.length) return null;
   return {
+    responderKey: typeof value.responderKey === 'string'
+      ? value.responderKey
+      : `${value.accountKind === 'barangay' ? 'barangay' : 'mdrrmo'}:${value.responderId}`,
     responderId: value.responderId,
+    accountKind: value.accountKind === 'barangay' ? 'barangay' : 'mdrrmo',
+    barangayId: typeof value.barangayId === 'string' ? value.barangayId : null,
     responderName: typeof value.responderName === 'string' ? value.responderName : 'Responder',
     latitude: value.latitude,
     longitude: value.longitude,
+    accuracyM: Number.isFinite(value.accuracyM) ? value.accuracyM : null,
     timestamp: value.timestamp,
     assignments,
   };
@@ -700,11 +710,11 @@ const createResponderUnitBadge = (selected = false) => {
   });
 };
 
-const createLiveResponderBadge = (selected = false) => {
+const createLiveResponderBadge = (selected = false, color = '#1478f8') => {
   const size = 56;
   return L.divIcon({
     html: `
-      <div class="command-map-dot ${selected ? 'selected' : ''}" style="width:${size}px;height:${size}px;background:#1478f8">
+      <div class="command-map-dot ${selected ? 'selected' : ''}" style="width:${size}px;height:${size}px;background:${color}">
         <svg width="27" height="27" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
           <circle cx="12" cy="7" r="4"></circle>
@@ -717,6 +727,26 @@ const createLiveResponderBadge = (selected = false) => {
     popupAnchor: [0, -size / 2],
   });
 };
+
+function getRouteBearing(from: [number, number], to: [number, number]): number {
+  const radians = Math.PI / 180;
+  const latitude1 = from[0] * radians;
+  const latitude2 = to[0] * radians;
+  const longitudeDelta = (to[1] - from[1]) * radians;
+  const y = Math.sin(longitudeDelta) * Math.cos(latitude2);
+  const x = Math.cos(latitude1) * Math.sin(latitude2) -
+    Math.sin(latitude1) * Math.cos(latitude2) * Math.cos(longitudeDelta);
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+}
+
+function createLiveRouteArrow(color: string, bearing: number) {
+  return L.divIcon({
+    html: `<span class="command-map-route-arrow" style="--route-arrow-color:${color};transform:rotate(${bearing}deg)" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3 21 21l-9-5-9 5 9-18Z"/></svg></span>`,
+    className: 'command-map-route-arrow-icon',
+    iconSize: [22, 22],
+    iconAnchor: [11, 11],
+  });
+}
 
 function MapResizer() {
   const map = useMap();
@@ -925,27 +955,39 @@ function LiveResponderOverlays({
       return [
         ...targets.map((target) => (
           <Polyline
-            key={`live-route-${location.responderId}-${target.id}`}
+            key={`live-route-${location.responderKey}-${target.id}`}
             positions={[[location.latitude, location.longitude], [target.latitude, target.longitude]]}
-            pathOptions={{ color: incidentClusterColor(target), weight: 3, dashArray: '8, 8', opacity: 0.9 }}
+            pathOptions={{ color: incidentClusterColor(target, location.accountKind === 'barangay'), weight: 3, dashArray: '8, 8', opacity: 0.9 }}
           />
         )),
+        ...targets.map((target) => {
+          const responderPosition: [number, number] = [location.latitude, location.longitude];
+          const targetPosition: [number, number] = [target.latitude, target.longitude];
+          const color = incidentClusterColor(target, location.accountKind === 'barangay');
+          return <Marker
+            key={`live-route-arrow-${location.responderKey}-${target.id}`}
+            position={[(location.latitude + target.latitude) / 2, (location.longitude + target.longitude) / 2]}
+            icon={createLiveRouteArrow(color, getRouteBearing(responderPosition, targetPosition))}
+            interactive={false}
+            keyboard={false}
+          />;
+        }),
         <Marker
-          key={`live-responder-${location.responderId}`}
+          key={`live-responder-${location.responderKey}`}
           position={[location.latitude, location.longitude]}
-          icon={createLiveResponderBadge(selectedResponderId === location.responderId)}
-          zIndexOffset={selectedResponderId === location.responderId ? 1800 : 1400}
-          eventHandlers={{ click: () => onSelectResponder(location.responderId) }}
+          icon={createLiveResponderBadge(selectedResponderId === location.responderKey, incidentClusterColor(targets[0], location.accountKind === 'barangay'))}
+          zIndexOffset={selectedResponderId === location.responderKey ? 1800 : 1400}
+          eventHandlers={{ click: () => onSelectResponder(location.responderKey) }}
         >
           <Popup className="command-map-cluster-popup" minWidth={220} maxWidth={320}>
             <div className="command-map-cluster-list">
-              <strong>{location.responderName}<span>Live</span></strong>
+              <strong>{location.responderName}<span>Live · {location.accountKind === 'barangay' ? 'Barangay' : 'MDRRMO'}</span></strong>
               {targets.map((target) => {
                 const assignment = location.assignments.find((item) => item.incidentId === target.id);
                 const crew = assignment?.crew || [];
                 return (
                   <button key={target.id} type="button" onClick={(event) => { event.stopPropagation(); onSelectIncident(target); }}>
-                    <i style={{ backgroundColor: incidentClusterColor(target) }} />
+                    <i style={{ backgroundColor: incidentClusterColor(target, location.accountKind === 'barangay') }} />
                     <div className="command-map-live-target-details">
                       <span>En route · {target.title}</span>
                       {crew.length > 0 && (
@@ -1363,7 +1405,9 @@ export default function CommandCenter() {
 
   useEffect(() => {
     fetchData();
-    const requestLiveLocations = () => { if (!isBarangayDashboard) socket.emit('mdrrmo:requestResponderLocations'); };
+    const requestLiveLocations = () => {
+      socket.emit(isBarangayDashboard ? 'barangay:requestResponderLocations' : 'mdrrmo:requestResponderLocations');
+    };
     const handleRefresh = () => {
       void fetchData();
       requestLiveLocations();
@@ -1371,16 +1415,19 @@ export default function CommandCenter() {
     };
     const handleLiveLocation = (payload: any) => {
       if (payload?.responderId && Array.isArray(payload.assignments) && payload.assignments.length === 0) {
-        setLiveResponderLocations((current) => current.filter((location) => location.responderId !== payload.responderId));
-        setSelectedResponderId((current) => current === payload.responderId ? null : current);
+        const responderKey = typeof payload.responderKey === 'string'
+          ? payload.responderKey
+          : `${payload.accountKind === 'barangay' ? 'barangay' : 'mdrrmo'}:${payload.responderId}`;
+        setLiveResponderLocations((current) => current.filter((location) => location.responderKey !== responderKey));
+        setSelectedResponderId((current) => current === responderKey ? null : current);
         return;
       }
       const location = normalizeLiveResponderLocation(payload);
       if (!location) return;
       setLiveResponderLocations((current) => {
-        const previous = current.find((item) => item.responderId === location.responderId);
+        const previous = current.find((item) => item.responderKey === location.responderKey);
         if (previous && Date.parse(previous.timestamp) > Date.parse(location.timestamp)) return current;
-        return [...current.filter((item) => item.responderId !== location.responderId), location];
+        return [...current.filter((item) => item.responderKey !== location.responderKey), location];
       });
     };
     const handleLiveLocations = (payload: any) => {
@@ -1388,7 +1435,7 @@ export default function CommandCenter() {
         ? payload.locations.map(normalizeLiveResponderLocation).filter((location: LiveResponderLocation | null): location is LiveResponderLocation => Boolean(location))
         : [];
       setLiveResponderLocations(locations);
-      setSelectedResponderId((current) => current && locations.some((location: LiveResponderLocation) => location.responderId === current) ? current : null);
+      setSelectedResponderId((current) => current && locations.some((location: LiveResponderLocation) => location.responderKey === current) ? current : null);
     };
     const expireStaleLocations = () => {
       setLiveResponderLocations((current) => {
@@ -1414,6 +1461,8 @@ export default function CommandCenter() {
     socket.on('task:statusChanged', handleRefresh);
     socket.on('mdrrmo:responder_location', handleLiveLocation);
     socket.on('mdrrmo:responder_locations', handleLiveLocations);
+    socket.on('barangay:responder_location', handleLiveLocation);
+    socket.on('barangay:responder_locations', handleLiveLocations);
     requestLiveLocations();
     const expiryTimer = setInterval(expireStaleLocations, 5_000);
     return () => {
@@ -1434,6 +1483,8 @@ export default function CommandCenter() {
       socket.off('task:statusChanged', handleRefresh);
       socket.off('mdrrmo:responder_location', handleLiveLocation);
       socket.off('mdrrmo:responder_locations', handleLiveLocations);
+      socket.off('barangay:responder_location', handleLiveLocation);
+      socket.off('barangay:responder_locations', handleLiveLocations);
     };
   }, [fetchData, isBarangayDashboard, openAvailabilityForPin, selectedAvailabilityPin]);
 
@@ -1507,10 +1558,9 @@ export default function CommandCenter() {
         const age = currentTimestamp - Date.parse(location.timestamp);
         if (!Number.isFinite(age) || age > LIVE_LOCATION_MAX_AGE_MS) return false;
       }
-      if (boundary.enabled && !isCoordinateInsideBoundary(location.latitude, location.longitude, boundary.geometry)) return false;
       return location.assignments.some((assignment) => visibleIncidents.some((incident) => incident.id === assignment.incidentId));
     });
-  }, [liveResponderLocations, visibleIncidents, boundary, currentTimestamp]);
+  }, [liveResponderLocations, visibleIncidents, currentTimestamp]);
 
   // Fit the initial and filtered map view to every report and visible unit point.
   const visiblePinPoints = useMemo((): [number, number][] => {
@@ -1521,7 +1571,7 @@ export default function CommandCenter() {
     return points;
   }, [visibleIncidents, commandLocationPins, visibleDispatchUnits, visibleLiveResponders]);
 
-  const selectedResponder = visibleLiveResponders.find((responder) => responder.responderId === selectedResponderId) || null;
+  const selectedResponder = visibleLiveResponders.find((responder) => responder.responderKey === selectedResponderId) || null;
   const selectedMapDot = selectedAvailabilityPin
     ? { key: `command-location:${selectedAvailabilityPin.id}`, position: [selectedAvailabilityPin.latitude, selectedAvailabilityPin.longitude] as [number, number] }
     : selectedIncident
@@ -1529,14 +1579,14 @@ export default function CommandCenter() {
     : selectedUnit
       ? { key: `unit:${selectedUnit.id}`, position: [selectedUnit.latitude, selectedUnit.longitude] as [number, number] }
       : selectedResponder
-        ? { key: `responder:${selectedResponder.responderId}`, position: [selectedResponder.latitude, selectedResponder.longitude] as [number, number] }
+        ? { key: `responder:${selectedResponder.responderKey}`, position: [selectedResponder.latitude, selectedResponder.longitude] as [number, number] }
         : null;
 
   const mapFitKey = useMemo(() => [
     ...visibleIncidents.map((incident) => `report:${incident.id}:${incident.latitude}:${incident.longitude}`),
     ...commandLocationPins.map((pin) => `command-location:${pin.id}:${pin.latitude}:${pin.longitude}`),
     ...visibleDispatchUnits.map((unit) => `unit:${unit.id}:${unit.latitude}:${unit.longitude}`),
-    ...visibleLiveResponders.map((responder) => `responder:${responder.responderId}`),
+    ...visibleLiveResponders.map((responder) => `responder:${responder.responderKey}`),
   ].sort().join('|'), [visibleIncidents, commandLocationPins, visibleDispatchUnits, visibleLiveResponders]);
 
   // Click Handlers

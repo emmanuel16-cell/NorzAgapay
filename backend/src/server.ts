@@ -14,7 +14,7 @@ import { startMdrrmoResponderPushRelay } from './services/mdrrmoResponderPushNot
 import { startMdrrmoBarangayAssignmentPushRelay } from './services/mdrrmoBarangayAssignmentPushNotifications';
 import { startResidentPushRelay } from './services/residentPushNotifications';
 import { deleteResponderGpsLocation, RESPONDER_GPS_TTL_SECONDS, setBarangayResponderGpsLocation, setResponderGpsLocation } from './config/redis';
-import { getActiveResponderTargets, getCurrentResponderLiveLocations, ResponderIncidentTarget } from './services/responderLiveLocation';
+import { getActiveBarangayResponderTargets, getActiveResponderTargets, getCurrentBarangayResponderLiveLocations, getCurrentResponderLiveLocations, ResponderIncidentTarget } from './services/responderLiveLocation';
 
 // Import routes
 import authRoutes from './routes/auth';
@@ -461,14 +461,22 @@ io.on('connection', (socket) => {
       };
       await setResponderGpsLocation(decoded.userId, location);
       if (assignments.length === 0) {
+        io.to('dashboard_staff').emit('mdrrmo:responder_location', {
+          responderId: decoded.userId,
+          responderKey: `mdrrmo:${decoded.userId}`,
+          accountKind: 'mdrrmo',
+          assignments: [],
+        });
         io.to('role:dispatcher').to('role:admin').to('role:master_admin').emit('mdrrmo:availability_changed', {
           responderId: decoded.userId,
           expiresInSeconds: RESPONDER_GPS_TTL_SECONDS,
         });
         return;
       }
-      io.to('role:dispatcher').to('role:master_admin').emit('mdrrmo:responder_location', {
+      io.to('dashboard_staff').emit('mdrrmo:responder_location', {
         responderId: decoded.userId,
+        responderKey: `mdrrmo:${decoded.userId}`,
+        accountKind: 'mdrrmo',
         responderName: responder.full_name || 'Responder',
         ...location,
         assignments,
@@ -477,8 +485,8 @@ io.on('connection', (socket) => {
     })().catch((error) => console.error('Responder live location update failed:', error));
   });
 
-  // Barangay responder presence uses the same short-lived GPS cache but never
-  // broadcasts coordinates; authorized dashboards query a pin-scoped list.
+  // Only stream fresh barangay GPS for an active response assignment. Central
+  // staff see dispatched locations; barangay staff receive their own barangay.
   socket.on('barangay:gps:update', (data: any) => {
     void (async () => {
       const decoded = getSocketTokenPayload(socket);
@@ -490,15 +498,40 @@ io.on('connection', (socket) => {
           longitude < -180 || longitude > 180) return;
       if (!await canUseBarangaySocket(socket)) return;
       const { data: account, error } = await supabaseAdmin.from('barangay_users')
-        .select('id, barangay_id, role, is_active').eq('id', decoded.userId).maybeSingle();
+        .select('id, barangay_id, full_name, role, is_active').eq('id', decoded.userId).maybeSingle();
       if (error) throw error;
       if (!account || account.barangay_id !== decoded.barangayId || account.role !== 'responder' || account.is_active !== true) return;
       const accuracyM = Number(data?.accuracy_m);
-      await setBarangayResponderGpsLocation(decoded.userId, {
+      const location = {
         latitude, longitude,
         accuracyM: Number.isFinite(accuracyM) && accuracyM >= 0 ? accuracyM : null,
         timestamp: new Date().toISOString(),
-      });
+      };
+      await setBarangayResponderGpsLocation(decoded.userId, location);
+      const targetsByResponder = await getActiveBarangayResponderTargets(decoded.barangayId, decoded.userId);
+      const assignments = targetsByResponder.get(decoded.userId) || [];
+      if (assignments.length > 0) {
+        const payload = {
+          responderId: decoded.userId,
+          responderKey: `barangay:${decoded.userId}`,
+          accountKind: 'barangay',
+          barangayId: decoded.barangayId,
+          responderName: account.full_name || 'Responder',
+          ...location,
+          assignments,
+          expiresInSeconds: RESPONDER_GPS_TTL_SECONDS,
+        };
+        io.to('dashboard_staff').emit('barangay:responder_location', payload);
+        io.to(`barangay:${decoded.barangayId}`).emit('barangay:responder_location', payload);
+      } else {
+        io.to('dashboard_staff').emit('barangay:responder_location', {
+          responderId: decoded.userId,
+          responderKey: `barangay:${decoded.userId}`,
+          accountKind: 'barangay',
+          barangayId: decoded.barangayId,
+          assignments: [],
+        });
+      }
       io.to(`barangay:${decoded.barangayId}`).emit('barangay:availability_changed', {
         responderId: decoded.userId,
         expiresInSeconds: RESPONDER_GPS_TTL_SECONDS,
@@ -506,16 +539,26 @@ io.on('connection', (socket) => {
     })().catch((error) => console.error('Barangay responder location update failed:', error));
   });
 
-  // A dashboard dispatcher/master admin can request only currently dispatched,
-  // eligible responder locations for initial map state and reconnect recovery.
+  // Authorized central staff request only current, actively dispatched GPS.
   socket.on('mdrrmo:requestResponderLocations', () => {
     void (async () => {
       const decoded = getSocketTokenPayload(socket);
       const role = decoded ? normalizeSocketRole(decoded.role || '') : '';
-      if (!decoded || decoded.barangayId || !['dispatcher', 'master_admin'].includes(role)) return;
+      if (!decoded || decoded.barangayId || !['dispatcher', 'admin', 'logistics', 'master_admin'].includes(role)) return;
       const locations = await getCurrentResponderLiveLocations();
       socket.emit('mdrrmo:responder_locations', { locations });
     })().catch((error) => console.error('Responder live location snapshot failed:', error));
+  });
+
+  // Barangay maps are scoped to their own responder accounts and assignments.
+  socket.on('barangay:requestResponderLocations', () => {
+    void (async () => {
+      const decoded = getSocketTokenPayload(socket);
+      const role = decoded ? normalizeSocketRole(decoded.role || '') : '';
+      if (!decoded?.barangayId || !['admin', 'dispatcher'].includes(role) || !await canUseBarangaySocket(socket)) return;
+      const locations = await getCurrentBarangayResponderLiveLocations(decoded.barangayId);
+      socket.emit('barangay:responder_locations', { locations });
+    })().catch((error) => console.error('Barangay responder live location snapshot failed:', error));
   });
 
   // Task status updates

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Activity, AlertCircle, CheckCircle2, ClipboardList, RefreshCw, ShieldAlert, Upload, X } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { reportAPI, respondUnitAPI } from '../lib/api';
+import { reportAPI, respondUnitAPI, socket } from '../lib/api';
 import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
 import { useAuth } from '../context/AuthContext';
 import { createDemoResponderReport } from '../demoResponderReport';
@@ -33,6 +33,10 @@ type AssignedReport = {
   barangay_dispatched_at?: string | null;
   response_notes?: string | null;
   barangay_response_notes?: string | null;
+  responded_by?: string | null;
+  barangay_responded_by?: string | null;
+  arrived_at?: string | null;
+  assigned_team_leader_ids?: string[];
   barangay_crew_members?: Array<{ member_id: string; member_name: string; crew_role: string }>;
   mdrrmo_arrived_at?: string | null;
   mdrrmo_assignments?: ResponseAssignment[];
@@ -145,6 +149,61 @@ export default function ResponderWorkspacePage() {
 
   useEffect(() => { void loadWorkspace(); }, [loadWorkspace]);
   useEffect(() => { reports.forEach((report) => void loadLocationPreview(report)); }, [reports, loadLocationPreview]);
+
+  useEffect(() => {
+    if (user?.role !== 'responder' || !user.id || !navigator.geolocation) return;
+    const hasActiveDispatch = reports.some((report) => {
+      if (report.is_demo) return false;
+      const status = String((isBarangay ? report.barangay_response_status : report.response_status) || report.response_status || '').toLowerCase();
+      if (status !== 'responding') return false;
+      if (isBarangay) {
+        if (report.barangay_arrived_at || report.arrived_at) return false;
+        const notes = String(report.barangay_response_notes || report.response_notes || '');
+        const assignedIds = [
+          ...(report.assigned_team_leader_ids || []),
+          ...(report.assigned_responder_ids || []),
+          ...(notes.match(/^\[ASSIGNED:([^\]]+)\]/)?.[1]?.split(',').map((id) => id.trim()).filter(Boolean) || []),
+          report.barangay_responded_by || report.responded_by || '',
+        ];
+        return assignedIds.includes(user.id);
+      }
+      const assignment = report.mdrrmo_assignments?.find((item) => item.responder_id === user.id && item.status !== 'removed');
+      return Boolean(assignment && (assignment.status || assignment.assignment_status) === 'responding' &&
+        !assignment.arrived_at && !report.mdrrmo_arrived_at);
+    });
+    if (!hasActiveDispatch) return;
+
+    type GpsFix = { latitude: number; longitude: number; accuracy_m: number | null; capturedAt: number };
+    let latestFix: GpsFix | null = null;
+    const sendFix = () => {
+      if (!latestFix || Date.now() - latestFix.capturedAt > 20_000 || !socket.connected) return;
+      socket.emit(isBarangay ? 'barangay:gps:update' : 'gps:update', {
+        userId: user.id,
+        latitude: latestFix.latitude,
+        longitude: latestFix.longitude,
+        accuracy_m: latestFix.accuracy_m,
+      });
+    };
+    const watchId = navigator.geolocation.watchPosition((position) => {
+      latestFix = {
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+        accuracy_m: Number.isFinite(position.coords.accuracy) ? position.coords.accuracy : null,
+        capturedAt: Date.now(),
+      };
+      sendFix();
+    }, (locationError) => {
+      console.warn('Responder GPS update unavailable:', locationError.message);
+    }, { enableHighAccuracy: true, maximumAge: 5_000, timeout: 15_000 });
+    const heartbeat = window.setInterval(sendFix, 10_000);
+    socket.on('connect', sendFix);
+    return () => {
+      navigator.geolocation.clearWatch(watchId);
+      window.clearInterval(heartbeat);
+      socket.off('connect', sendFix);
+    };
+  }, [isBarangay, reports, user?.id, user?.role]);
+
   useRealtimeRefresh(loadWorkspace, {
     events: [
       'incident:lifecycle', 'incident_report:updated', 'incident_report:reviewed', 'mdrrmo:report_updated',
