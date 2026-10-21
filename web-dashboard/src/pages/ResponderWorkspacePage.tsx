@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Activity, AlertCircle, CheckCircle2, ClipboardList, RefreshCw, ShieldAlert, Upload, X } from 'lucide-react';
+import { Activity, AlertCircle, CheckCircle2, ClipboardList, RefreshCw, ShieldAlert, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { reportAPI, respondUnitAPI, socket, type TransportHospital } from '../lib/api';
 import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import { createDemoResponderReport } from '../demoResponderReport';
 import IncidentLocationCard from '../components/IncidentLocationCard';
 import ResponderLocationMapModal from '../components/ResponderLocationMapModal';
+import CameraEvidenceCapture from '../components/CameraEvidenceCapture';
 import { formatIncidentLocation, hasIncidentPin, type IncidentLocationPreview } from '../lib/incidentLocation';
 
 type CrewMember = { id?: string; unit_member_id?: string; name?: string; full_name?: string; member_role: string; is_active?: boolean };
@@ -134,6 +135,8 @@ export default function ResponderWorkspacePage() {
   const [locationPreviewLoading, setLocationPreviewLoading] = useState<Record<string, boolean>>({});
   const requestedLocationPreviews = useRef(new Set<string>());
   const [resolutionNotes, setResolutionNotes] = useState<Record<string, string>>({});
+  const [capturedFieldMedia, setCapturedFieldMedia] = useState<Record<string, File[]>>({});
+  const uploadedFieldMediaKeys = useRef<Record<string, Set<string>>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -400,10 +403,10 @@ export default function ResponderWorkspacePage() {
     }
   };
 
-  const uploadMedia = (report: AssignedReport, files?: FileList | null) => {
-    const selectedFiles = files ? Array.from(files) : [];
-    if (!selectedFiles.length) return;
-    void perform(async () => {
+  const uploadMedia = async (report: AssignedReport, files?: File[] | null) => {
+    const selectedFiles = files || [];
+    if (!selectedFiles.length) return false;
+    return perform(async () => {
       for (const file of selectedFiles) {
         if (isBarangay) {
           if (report.is_central_assignment) await reportAPI.uploadBarangayAssignmentMedia(report.id, file);
@@ -413,6 +416,21 @@ export default function ResponderWorkspacePage() {
         }
       }
     }, `${selectedFiles.length} field attachment${selectedFiles.length === 1 ? '' : 's'} added.`);
+  };
+
+  const captureFieldMedia = (report: AssignedReport, files: File[]) => {
+    setCapturedFieldMedia((current) => ({ ...current, [report.id]: files }));
+    const uploadedKeys = uploadedFieldMediaKeys.current[report.id] || new Set<string>();
+    const newFiles = files.filter((file) => !uploadedKeys.has(`${file.name}:${file.size}:${file.lastModified}`));
+    for (const file of newFiles) uploadedKeys.add(`${file.name}:${file.size}:${file.lastModified}`);
+    uploadedFieldMediaKeys.current[report.id] = uploadedKeys;
+    if (newFiles.length) {
+      void uploadMedia(report, newFiles).then((saved) => {
+        if (!saved) {
+          for (const file of newFiles) uploadedKeys.delete(`${file.name}:${file.size}:${file.lastModified}`);
+        }
+      });
+    }
   };
 
   const updateAssessment = (reportId: string, field: AssessmentField, value: string) => {
@@ -623,7 +641,7 @@ export default function ResponderWorkspacePage() {
                   : reportAPI.arriveBarangayReport(report.id, { method: 'manual' })
                 : reportAPI.arriveAtMdrrmoIncident(report.id), 'Arrival recorded.')}>Record arrival</button>}
               {!arrived && <small className="responder-arrival-hint">GPS records arrival automatically within 100 m when accuracy is 50 m or better. Keep this workspace open, or record arrival manually.</small>}
-              {!arrived && <label className="workspace-secondary-action upload-action"><Upload size={16} /> Add field media<input type="file" accept="image/*,video/*" multiple onChange={(event) => { uploadMedia(report, event.currentTarget.files); event.currentTarget.value = ''; }} /></label>}
+              {!arrived && <CameraEvidenceCapture files={capturedFieldMedia[report.id] || []} onFilesChange={(files) => captureFieldMedia(report, files)} />}
               {arrived ? <>
                 <div className="responder-assessment-grid responder-assessment-grid-primary">
                   <label>Situation<textarea value={currentAssessment.situation} onChange={(event) => updateAssessment(report.id, 'situation', event.target.value)} placeholder="Describe what you found, or enter Not applicable." /></label>
@@ -655,7 +673,7 @@ export default function ResponderWorkspacePage() {
                       ? <video key={media.id} src={media.url} controls preload="metadata" aria-label={`Field video ${index + 1}`} />
                       : <a key={media.id} href={media.url} target="_blank" rel="noreferrer"><img src={media.url} alt={`Field attachment ${index + 1}`} loading="lazy" /></a>)}
                   </div>
-                  <label className="workspace-secondary-action upload-action"><Upload size={16} /> Add field media<input type="file" accept="image/*,video/*" multiple onChange={(event) => { uploadMedia(report, event.currentTarget.files); event.currentTarget.value = ''; }} /></label>
+                  <CameraEvidenceCapture files={capturedFieldMedia[report.id] || []} onFilesChange={(files) => captureFieldMedia(report, files)} />
                 </section>
                 {currentAssessment.triage_outcome === 'severe_injuries' && currentAssessment.transport_status !== 'in_transit' && currentAssessment.transport_status !== 'delivered' && <button className="workspace-primary-action responder-transport-trigger" type="button" disabled={saving || !assessmentSaved} onClick={() => {
                   const opening = !transportPickerOpen[report.id];

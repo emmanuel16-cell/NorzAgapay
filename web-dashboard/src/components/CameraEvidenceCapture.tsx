@@ -17,7 +17,6 @@ type CameraEvidenceCaptureProps = {
   files: File[];
   onFilesChange: (files: File[]) => void;
   required?: boolean;
-  allowFileSelection?: boolean;
 };
 
 function fileExtension(mimeType: string) {
@@ -32,14 +31,13 @@ function createCaptureName(mimeType: string, kind: 'photo' | 'video') {
   return `${kind}-${timestamp}.${fileExtension(mimeType)}`;
 }
 
-export default function CameraEvidenceCapture({ files, onFilesChange, required = false, allowFileSelection = true }: CameraEvidenceCaptureProps) {
+export default function CameraEvidenceCapture({ files, onFilesChange, required = false }: CameraEvidenceCaptureProps) {
   const [cameraOpen, setCameraOpen] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [cameraMessage, setCameraMessage] = useState('');
   const [recording, setRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const onFilesChangeRef = useRef(onFilesChange);
@@ -126,7 +124,7 @@ export default function CameraEvidenceCapture({ files, onFilesChange, required =
       ? MIME_BY_EXTENSION[extension] || declaredMime
       : declaredMime;
     if (!SUPPORTED_MIME_TYPES.has(mimeType)) {
-      setCameraMessage('Choose a photo or video file.');
+      setCameraMessage('The camera produced an unsupported media format. Try another photo or video.');
       return false;
     }
     if (file.size > MAX_MEDIA_BYTES) {
@@ -144,21 +142,6 @@ export default function CameraEvidenceCapture({ files, onFilesChange, required =
     filesRef.current = nextFiles;
     onFilesChangeRef.current(nextFiles);
     return true;
-  };
-
-  const addSelectedFiles = (selectedFiles: FileList | null) => {
-    if (!selectedFiles?.length) return;
-    let addedCount = 0;
-    for (const file of Array.from(selectedFiles)) {
-      if (appendEvidence(file)) addedCount += 1;
-    }
-    if (addedCount > 0) {
-      const rejectedCount = selectedFiles.length - addedCount;
-      setCameraMessage(rejectedCount > 0
-        ? `${addedCount} photo or video${addedCount === 1 ? '' : 's'} added. ${rejectedCount} file${rejectedCount === 1 ? ' was' : 's were'} skipped; check file type, size, and the five-file limit.`
-        : `${addedCount} photo or video${addedCount === 1 ? '' : 's'} added to the report.`);
-    }
-    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const capturePhoto = () => {
@@ -243,22 +226,8 @@ export default function CameraEvidenceCapture({ files, onFilesChange, required =
   return <div className="camera-evidence-control">
     <div className="camera-evidence-heading">
       <strong>Photo or video evidence {required ? <b>Required</b> : <span>Optional</span>}</strong>
-      <small>{allowFileSelection ? 'Capture with your camera or choose photos and videos from this device.' : 'Capture photos and videos with your camera.'} Up to five files, 50 MB each.</small>
+      <small>Capture photos and videos with your camera. Up to five files, 50 MB each.</small>
     </div>
-    {allowFileSelection && <>
-      <input
-        ref={fileInputRef}
-        className="camera-evidence-file-input"
-        type="file"
-        accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/gif,image/avif,video/mp4,video/webm,video/quicktime,video/3gpp,video/x-matroska"
-        multiple
-        onChange={(event) => addSelectedFiles(event.currentTarget.files)}
-        aria-label="Choose photos or videos"
-      />
-      <button className="camera-evidence-open" type="button" onClick={() => fileInputRef.current?.click()}>
-        <ImagePlus size={17} aria-hidden="true" /> Choose photo or video
-      </button>
-    </>}
     <button className="camera-evidence-open" type="button" onClick={() => void openCamera()}>
       <Camera size={17} aria-hidden="true" /> Open camera
     </button>
@@ -273,7 +242,7 @@ export default function CameraEvidenceCapture({ files, onFilesChange, required =
     {cameraOpen && <div className="camera-capture-backdrop" role="presentation">
       <section className="camera-capture-dialog" role="dialog" aria-modal="true" aria-labelledby="camera-capture-title">
         <header>
-          <div><h2 id="camera-capture-title">Capture report evidence</h2><p>{allowFileSelection ? 'Take a photo or record a video, or choose media from your device.' : 'Take a photo or record a video.'}</p></div>
+          <div><h2 id="camera-capture-title">Capture report evidence</h2><p>Take a photo or record a video.</p></div>
           <button type="button" className="camera-capture-close" aria-label="Close camera" onClick={closeCamera}><X size={18} /></button>
         </header>
         {stream
