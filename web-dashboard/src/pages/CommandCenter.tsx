@@ -626,7 +626,7 @@ const mapCategoryLabel = (category: MapReportCategory): string => ({
 
 const mapStageSymbol = (status: ReportStage): string => {
   if (status === 'pending') return '<span class="command-map-symbol command-map-symbol-pending">!</span>';
-  if (status === 'responding') return '<svg class="command-map-status-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5"/><path d="M4.4 9A8 8 0 0 1 18.2 5.8L20 7"/><path d="M4 17v-5h5"/><path d="M19.6 15a8 8 0 0 1-13.8 3.2L4 17"/></svg>';
+  if (status === 'responding') return '<svg class="command-map-status-svg command-map-status-responding" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 11.5a8.5 8.5 0 0 0-14.7-5L3.5 8.8"/><path d="M3.5 3.5v5.3h5.3"/><path d="M3.5 12.5a8.5 8.5 0 0 0 14.7 5l2.3-2.3"/><path d="M20.5 20.5v-5.3h-5.3"/></svg>';
   if (status === 'arrived') return '<svg class="command-map-status-svg command-map-pin-symbol" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></svg>';
   return '<svg class="command-map-status-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="m4 12 5 5L20 6"/></svg>';
 };
