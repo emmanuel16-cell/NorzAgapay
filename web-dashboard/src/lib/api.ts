@@ -315,6 +315,12 @@ export const reportAPI = {
     return api.post('/incident-reports', body, { headers: { 'Content-Type': 'multipart/form-data' } });
   },
   trackGuestReport: (id: string, contactNumber: string) => api.get(`/incident-reports/resident/${encodeURIComponent(id)}`, { params: { contact_number: contactNumber } }),
+  submitReportFollowUp: (id: string, contactNumber: string, media: File[] = []) => {
+    const body = new FormData();
+    body.append('contact_number', contactNumber);
+    media.forEach((file) => body.append('media', file));
+    return api.post(`/incident-reports/${encodeURIComponent(id)}/follow-up`, body, { headers: { 'Content-Type': 'multipart/form-data' } });
+  },
   residentReportLocationPreview: (id: string, contactNumber?: string) => api.get(`/incident-reports/resident/${encodeURIComponent(id)}/location-preview`, {
     params: contactNumber ? { contact_number: contactNumber } : undefined,
   }),

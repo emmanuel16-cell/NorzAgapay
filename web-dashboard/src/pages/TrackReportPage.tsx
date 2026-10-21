@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { AlertCircle, ArrowLeft, ExternalLink, FileText, MapPin, Search } from 'lucide-react';
+import { AlertCircle, ArrowLeft, ExternalLink, FileText, HandHelping, MapPin, Search, Send, X } from 'lucide-react';
 import PublicHeader from '../components/PublicHeader';
+import CameraEvidenceCapture from '../components/CameraEvidenceCapture';
 import { reportAPI, socket } from '../lib/api';
 import { INCIDENT_TYPE_OPTIONS } from '../lib/incidentClassification';
 import { buildIncidentTimeline } from '../lib/reportTimeline';
@@ -47,6 +48,7 @@ type TrackedReport = {
   resolved_at?: string | null;
   barangay_assignments?: Array<{
     assignment_status?: string | null;
+    response_status?: string | null;
     barangay_name?: string | null;
     assigned_at?: string | null;
     dispatched_at?: string | null;
@@ -147,6 +149,19 @@ function statusLabel(report: TrackedReport) {
   return 'Received by MDRRMO';
 }
 
+function responderHasArrived(report: TrackedReport) {
+  const statuses = [report.mdrrmo_response_status, report.barangay_response_status, report.response_status, report.assignment_status]
+    .map((value) => String(value || '').toLowerCase());
+  return Boolean(report.arrived_at || report.mdrrmo_arrived_at || report.barangay_arrived_at ||
+    report.barangay_assignments?.some((assignment) => assignment.arrived_at || ['arrived', 'on_scene', 'resolved'].includes(String(assignment.assignment_status || '').toLowerCase()) || ['arrived', 'on_scene', 'resolved'].includes(String(assignment.response_status || '').toLowerCase())) ||
+    statuses.some((status) => ['arrived', 'on_scene', 'resolved', 'closed', 'completed'].includes(status)));
+}
+
+function followUpIsClosed(report: TrackedReport) {
+  return responderHasArrived(report) || reportWasClosedAfterReview(report) ||
+    ['Resolved', 'Closed after review'].includes(statusLabel(report));
+}
+
 export default function TrackReportPage() {
   const liveConnected = useRealtimeConnection();
   const [searchParams] = useSearchParams();
@@ -162,11 +177,20 @@ export default function TrackReportPage() {
   const [locationPreviewLoading, setLocationPreviewLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [followUpOpen, setFollowUpOpen] = useState(false);
+  const [followUpFiles, setFollowUpFiles] = useState<File[]>([]);
+  const [followUpSubmitting, setFollowUpSubmitting] = useState(false);
+  const [followUpError, setFollowUpError] = useState('');
+  const [followUpSuccess, setFollowUpSuccess] = useState('');
 
   const loadGuestReport = useCallback(async (reportReference: string, reportPhone: string) => {
     setError('');
     setTrackingCredentials(null);
     setReport(null);
+    setFollowUpOpen(false);
+    setFollowUpFiles([]);
+    setFollowUpError('');
+    setFollowUpSuccess('');
     if (!reportReference.trim()) { setError('Enter the report reference.'); return; }
     if (!isValidMobileNumber(reportPhone)) { setError('Enter exactly 11 digits starting with 09.'); return; }
     setLoading(true);
@@ -187,6 +211,44 @@ export default function TrackReportPage() {
   const trackReport = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     void loadGuestReport(reference, phone);
+  };
+
+  const submitFollowUp = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!report || !trackingCredentials) return;
+    if (followUpIsClosed(report)) {
+      setFollowUpOpen(false);
+      setFollowUpError('Follow-up requests are unavailable after a responder arrives.');
+      return;
+    }
+    setFollowUpSubmitting(true);
+    setFollowUpError('');
+    setFollowUpSuccess('');
+    try {
+      const response = await reportAPI.submitReportFollowUp(report.id, trackingCredentials.phone, followUpFiles);
+      const updatedReport = response.data?.report || response.data;
+      setReport((current) => current ? {
+        ...current,
+        proof_url: updatedReport?.proof_url ?? current.proof_url,
+        proof_type: updatedReport?.proof_type ?? current.proof_type,
+        proof_urls: updatedReport?.proof_urls ?? current.proof_urls,
+        proof_types: updatedReport?.proof_types ?? current.proof_types,
+      } : current);
+      setFollowUpFiles([]);
+      setFollowUpOpen(false);
+      setFollowUpSuccess('Follow-up request sent to dispatch.');
+    } catch (submitError: any) {
+      setFollowUpError(submitError?.response?.data?.error || 'The follow-up request could not be sent. Please try again.');
+      if (submitError?.response?.status === 409) {
+        try {
+          const latest = await reportAPI.trackGuestReport(trackingCredentials.reference, trackingCredentials.phone);
+          setReport(latest.data);
+          setFollowUpOpen(false);
+        } catch { /* Keep the current report visible if the refresh fails. */ }
+      }
+    } finally {
+      setFollowUpSubmitting(false);
+    }
   };
 
   useEffect(() => {
@@ -263,6 +325,7 @@ export default function TrackReportPage() {
 
   const categoryLabel = INCIDENT_TYPE_OPTIONS.find((item) => item.value === report?.incident_type)?.label || report?.incident_type || 'Not provided';
   const reportEvidence = report ? evidenceFor(report) : [];
+  const canSendFollowUp = Boolean(report && trackingCredentials && !followUpIsClosed(report));
   const coordinates = report ? coordinatesFor(report) : null;
   const details = report?.title?.toLowerCase().startsWith('visual ')
     ? ''
@@ -314,7 +377,22 @@ export default function TrackReportPage() {
           </div>
           <div className="resident-report-meta"><span><FileText size={14} /> Report received {dateLabel(report.created_at)}</span></div>
           <section className="public-tracked-evidence" aria-labelledby="tracked-evidence-title">
-            <h3 id="tracked-evidence-title">Photo or video evidence</h3>
+            <div className="public-tracked-evidence-heading">
+              <h3 id="tracked-evidence-title">Photo or video evidence</h3>
+              {canSendFollowUp && <button className="public-follow-up-button" type="button" onClick={() => { setFollowUpOpen((open) => !open); setFollowUpError(''); setFollowUpSuccess(''); }}>
+                {followUpOpen ? <X size={15} aria-hidden="true" /> : <HandHelping size={15} aria-hidden="true" />}
+                {followUpOpen ? 'Cancel follow-up' : 'Follow-up request'}
+              </button>}
+            </div>
+            {followUpSuccess && <p className="public-follow-up-status" role="status">{followUpSuccess}</p>}
+            {followUpError && <p className="public-follow-up-error" role="alert"><AlertCircle size={14} /> {followUpError}</p>}
+            {followUpOpen && canSendFollowUp && <form className="public-follow-up-form" onSubmit={(event) => void submitFollowUp(event)}>
+              <p>Send an additional emergency update to dispatch. Photo or video evidence is optional.</p>
+              <CameraEvidenceCapture files={followUpFiles} onFilesChange={setFollowUpFiles} />
+              <button className="btn btn-primary public-follow-up-submit" type="submit" disabled={followUpSubmitting}>
+                <Send size={15} aria-hidden="true" /> {followUpSubmitting ? 'Sending follow-up…' : 'Send follow-up request'}
+              </button>
+            </form>}
             {reportEvidence.length ? <div className="public-tracked-evidence-grid">{reportEvidence.map((item, index) => isVideoEvidence(item.url, item.type)
               ? <video key={`${item.url}-${index}`} src={item.url} controls playsInline preload="metadata" aria-label={`Incident video evidence ${index + 1}`} />
               : <a key={`${item.url}-${index}`} href={item.url} target="_blank" rel="noreferrer" aria-label={`Open incident photo evidence ${index + 1}`}><img src={item.url} alt={`Incident photo evidence ${index + 1}`} loading="lazy" /></a>)}</div>

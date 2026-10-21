@@ -1,6 +1,7 @@
 import { Router, Response, Request, NextFunction } from 'express';
 import multer from 'multer';
 import jwt from 'jsonwebtoken';
+import { randomUUID } from 'crypto';
 import { z } from 'zod';
 import { config } from '../config';
 import { supabaseAdmin } from '../config/supabase';
@@ -17,6 +18,21 @@ import {
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
+const reporterFollowUpUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { files: 5, fileSize: 50 * 1024 * 1024 },
+});
+
+const parseReporterFollowUpFiles = (req: Request, res: Response, next: NextFunction) => {
+  reporterFollowUpUpload.array('media', 5)(req, res, (error: any) => {
+    if (error) {
+      const tooLarge = error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE';
+      res.status(tooLarge ? 413 : 400).json({ error: tooLarge ? 'Each photo or video must be 50 MB or smaller.' : 'Choose up to five photo or video files.' });
+      return;
+    }
+    next();
+  });
+};
 
 function reportWasRoutedToBarangay(report: any): boolean {
   const marker = `${report?.specifics || ''}\n${report?.description || ''}`.match(/\[SEND_TO:([^\]]+)\]/i)?.[1];
@@ -425,6 +441,86 @@ function canAccessResidentReport(report: any, req: AuthRequest, contactNumber: u
   const requestedPhone = String(contactNumber || '').replace(/\D/g, '');
   const reportPhone = String(report.reporter_phone || '').replace(/\D/g, '');
   return Boolean(requestedPhone && requestedPhone === reportPhone);
+}
+
+type ReporterFollowUpTable = 'barangay_reports' | 'mdrrmo_reports';
+
+async function loadReporterFollowUpTarget(reportId: string): Promise<{
+  table: ReporterFollowUpTable;
+  row: any;
+  report: any;
+  relatedReportIds: string[];
+}> {
+  const [barangayResult, mdrrmoResult] = await Promise.all([
+    supabaseAdmin.from('barangay_reports').select('*').eq('id', reportId).maybeSingle(),
+    supabaseAdmin.from('mdrrmo_reports').select('*').eq('id', reportId).maybeSingle(),
+  ]);
+  if (barangayResult.error) throw barangayResult.error;
+  if (mdrrmoResult.error) throw mdrrmoResult.error;
+
+  let barangayReport = barangayResult.data;
+  let mdrrmoReport = mdrrmoResult.data;
+  if (!mdrrmoReport && barangayReport) {
+    const linked = await supabaseAdmin.from('mdrrmo_reports').select('*')
+      .eq('source_barangay_report_id', barangayReport.id).maybeSingle();
+    if (linked.error) throw linked.error;
+    mdrrmoReport = linked.data;
+  }
+  if (!barangayReport && mdrrmoReport?.source_barangay_report_id) {
+    const source = await supabaseAdmin.from('barangay_reports').select('*')
+      .eq('id', mdrrmoReport.source_barangay_report_id).maybeSingle();
+    if (source.error) throw source.error;
+    barangayReport = source.data;
+  }
+
+  const table: ReporterFollowUpTable = mdrrmoReport ? 'mdrrmo_reports' : 'barangay_reports';
+  const row = mdrrmoReport || barangayReport;
+  if (!row) return { table, row: null, report: null, relatedReportIds: [reportId] };
+
+  const report = barangayReport && mdrrmoReport
+    ? combineResidentReportCopies(barangayReport, mdrrmoReport)
+    : row;
+  return {
+    table,
+    row,
+    report,
+    relatedReportIds: [...new Set([row.id, barangayReport?.id, mdrrmoReport?.id].filter(Boolean))],
+  };
+}
+
+async function ensureReporterFollowUpIsOpen(target: {
+  report: any;
+  relatedReportIds: string[];
+}): Promise<void> {
+  const [mdrrmoAssignments, barangayAssignments] = await Promise.all([
+    supabaseAdmin.from('mdrrmo_report_assignments')
+      .select('arrived_at, resolved_at, status')
+      .in('report_id', target.relatedReportIds),
+    supabaseAdmin.from('mdrrmo_report_barangay_assignments')
+      .select('arrived_at, resolved_at, response_status, assignment_status')
+      .in('report_id', target.relatedReportIds),
+  ]);
+  if (mdrrmoAssignments.error) throw mdrrmoAssignments.error;
+  if (barangayAssignments.error) throw barangayAssignments.error;
+
+  const report = target.report;
+  const assignmentHasArrived = (mdrrmoAssignments.data || []).some((assignment: any) =>
+    assignment.arrived_at || assignment.resolved_at || ['resolved', 'completed'].includes(String(assignment.status || '').toLowerCase())) ||
+    (barangayAssignments.data || []).some((assignment: any) =>
+      assignment.arrived_at || assignment.resolved_at ||
+      ['resolved', 'completed'].includes(String(assignment.response_status || '').toLowerCase()) ||
+      String(assignment.assignment_status || '').toLowerCase() === 'completed');
+  const reportIsClosed = report.arrived_at || report.mdrrmo_arrived_at || report.barangay_arrived_at ||
+    report.resolved_at || report.mdrrmo_resolved_at || report.barangay_resolved_at ||
+    ['resolved', 'closed', 'completed'].includes(String(report.status || '').toLowerCase()) ||
+    ['resolved', 'closed', 'completed'].includes(String(report.response_status || '').toLowerCase()) ||
+    ['resolved', 'closed', 'completed'].includes(String(report.mdrrmo_response_status || '').toLowerCase()) ||
+    ['invalid', 'false_report'].includes(String(report.review_outcome || '').toLowerCase());
+  if (assignmentHasArrived || reportIsClosed) {
+    const error: any = new Error('Follow-up requests are unavailable after a responder arrives.');
+    error.code = 'P0001';
+    throw error;
+  }
 }
 
 async function getResidentReportTimingHistory(barangayIds: string[]) {
@@ -1020,6 +1116,152 @@ router.post('/location-preview', authenticate, authorize('dispatcher', 'admin'),
   } catch (error) {
     console.warn('Could not resolve dispatch location preview:', error);
     res.status(502).json({ error: 'Could not find nearby map labels.' });
+  }
+});
+
+/**
+ * POST /api/incident-reports/:id/follow-up
+ * Send an emergency update from the report owner before a responder arrives.
+ * Optional media is appended to the report's existing evidence.
+ */
+router.post('/:id/follow-up', optionalAuthenticate, parseReporterFollowUpFiles, async (req: AuthRequest, res: Response): Promise<void> => {
+  const uploadedPaths: string[] = [];
+  let evidenceCommitted = false;
+  try {
+    const files = (req.files as Express.Multer.File[]) || [];
+    const target = await loadReporterFollowUpTarget(req.params.id);
+    if (!target.report || !['resident', 'guest'].includes(String(target.report.reporter_type))) {
+      res.status(404).json({ error: 'Incident report not found.' });
+      return;
+    }
+    if (!canAccessResidentReport(target.report, req, req.body.contact_number)) {
+      res.status(404).json({ error: 'Incident report not found.' });
+      return;
+    }
+
+    await ensureReporterFollowUpIsOpen(target);
+
+    const allowedMimeTypes = new Set([
+      'image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/heic', 'image/heif',
+      'video/mp4', 'video/webm', 'video/quicktime', 'video/3gpp', 'video/x-matroska',
+    ]);
+    for (const file of files) {
+      const mimeType = String(file.mimetype || '').toLowerCase().split(';')[0].trim();
+      if (!allowedMimeTypes.has(mimeType)) {
+        res.status(400).json({ error: 'Follow-up attachments must be photos or videos.' });
+        return;
+      }
+    }
+
+    const proofTypes = files.map((file) => file.mimetype.toLowerCase().startsWith('video/') ? 'video' : 'image');
+    const proofUrls: string[] = [];
+    for (let index = 0; index < files.length; index += 1) {
+      const file = files[index];
+      const mimeType = file.mimetype.toLowerCase().split(';')[0].trim();
+      const extensionByMime: Record<string, string> = {
+        'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png', 'image/webp': 'webp',
+        'image/heic': 'heic', 'image/heif': 'heif', 'video/mp4': 'mp4', 'video/webm': 'webm',
+        'video/quicktime': 'mov', 'video/3gpp': '3gp', 'video/x-matroska': 'mkv',
+      };
+      const objectPath = `reports/${target.row.id}/follow-up/${randomUUID()}.${extensionByMime[mimeType]}`;
+      const { error: uploadError } = await supabaseAdmin.storage
+        .from(config.supabaseBucketName)
+        .upload(objectPath, file.buffer, { contentType: mimeType, upsert: false });
+      if (uploadError) throw uploadError;
+      uploadedPaths.push(objectPath);
+      const { data } = supabaseAdmin.storage.from(config.supabaseBucketName).getPublicUrl(objectPath);
+      proofUrls.push(data.publicUrl);
+    }
+
+    const { error: appendError } = await supabaseAdmin.rpc('append_reporter_follow_up_evidence', {
+      p_report_id: target.row.id,
+      p_table_name: target.table,
+      p_proof_urls: proofUrls,
+      p_proof_types: proofTypes,
+    });
+    if (appendError) throw appendError;
+    evidenceCommitted = true;
+
+    let refreshedTarget = target;
+    try {
+      refreshedTarget = await loadReporterFollowUpTarget(target.row.id);
+    } catch (refreshError) {
+      console.warn('Could not reload report after saving follow-up evidence:', refreshError);
+    }
+    const barangayMap = await getBarangayNameMap();
+    const formatted = formatIncidentReport(refreshedTarget.report, barangayMap);
+    let reportWithAssignment = formatted;
+    try {
+      [reportWithAssignment] = await attachResidentBarangayAssignmentState([formatted]);
+    } catch (assignmentStateError) {
+      console.warn('Could not attach responder assignment state to follow-up update:', assignmentStateError);
+    }
+    const changedAt = new Date().toISOString();
+    const invalidation = { resource: 'incident-reports', action: 'patch', changedAt };
+
+    io.to('dashboard_staff').emit('incident_report:updated', reportWithAssignment);
+    await emitReportUpdateToBarangayScope(refreshedTarget.row, reportWithAssignment, refreshedTarget.table);
+    io.to('dashboard_staff').emit('dashboard:data_changed', invalidation);
+    if (reportWithAssignment.reporter_type === 'guest') {
+      io.to(`guest-report:${reportWithAssignment.id}`).emit('guest-report:updated', {
+        reportId: reportWithAssignment.id,
+        changedAt,
+      });
+    } else if (reportWithAssignment.reporter_type === 'resident' && reportWithAssignment.reporter_id) {
+      io.to(`user:${reportWithAssignment.reporter_id}`).emit('incident_report:updated', reportWithAssignment);
+      io.to(`user:${reportWithAssignment.reporter_id}`).emit('dashboard:data_changed', invalidation);
+    }
+
+    const followUpId = randomUUID();
+    const notification = {
+      reportId: reportWithAssignment.id,
+      followUpId,
+      title: reportWithAssignment.title || 'Emergency incident',
+      attachmentCount: files.length,
+      createdAt: changedAt,
+    };
+    io.to('dashboard_staff').emit('incident_report:follow_up', notification);
+    if (refreshedTarget.table === 'mdrrmo_reports') {
+      const { data: assignment, error: assignmentError } = await supabaseAdmin
+        .from('mdrrmo_report_barangay_assignments')
+        .select('barangay_id')
+        .eq('report_id', refreshedTarget.row.id)
+        .eq('assignment_status', 'active')
+        .maybeSingle();
+      if (assignmentError) console.warn('Could not resolve responder barangay for follow-up notification:', assignmentError.message);
+      else if (assignment?.barangay_id) {
+        io.to(`barangay:${assignment.barangay_id}`).emit('incident_report:follow_up', notification);
+      }
+    } else if (refreshedTarget.row.barangay_id) {
+      io.to(`barangay:${refreshedTarget.row.barangay_id}`).emit('incident_report:follow_up', notification);
+    }
+
+    res.json({
+      report: reportWithAssignment,
+      follow_up_id: followUpId,
+      attachment_count: files.length,
+    });
+  } catch (error: any) {
+    if (!evidenceCommitted && uploadedPaths.length > 0) {
+      const { error: removeError } = await supabaseAdmin.storage
+        .from(config.supabaseBucketName)
+        .remove(uploadedPaths);
+      if (removeError) console.error('Could not remove uncommitted follow-up uploads:', removeError.message);
+    }
+    if (error?.code === 'P0001') {
+      res.status(409).json({ error: 'Follow-up requests are unavailable after a responder arrives.' });
+      return;
+    }
+    if (error?.code === 'P0002') {
+      res.status(404).json({ error: 'Incident report not found.' });
+      return;
+    }
+    if (error?.code === '22023') {
+      res.status(400).json({ error: error.message || 'Follow-up request details are invalid.' });
+      return;
+    }
+    console.error('Reporter follow-up request error:', error);
+    res.status(500).json({ error: 'The follow-up request could not be sent. Please try again.' });
   }
 });
 

@@ -146,6 +146,7 @@ export default function NotificationManager() {
     };
 
     const seenProgressNotifications = new Set<string>();
+    const seenFollowUpNotifications = new Set<string>();
     const onReportUpdated = (report: any) => {
       if (!report || typeof report !== 'object') return;
       const isResolved = Boolean(report.resolved_at || report.mdrrmo_resolved_at) ||
@@ -160,6 +161,37 @@ export default function NotificationManager() {
       else if (isResponding) showReportProgressNotification(report, 'responding');
       else if (isDispatched) showReportProgressNotification(report, 'assigned');
       else if (isReviewed) showReportProgressNotification(report, 'review');
+    };
+
+    const onReporterFollowUp = (payload: any) => {
+      const isBarangayDispatcher = user.account_kind === 'barangay' && user.role === 'dispatcher';
+      const isCentralDispatcher = user.account_kind !== 'barangay' && ['dispatcher', 'admin', 'master_admin'].includes(user.role);
+      if (!isBarangayDispatcher && !isCentralDispatcher) return;
+      const reportId = String(payload?.reportId || '').trim();
+      if (!reportId) return;
+      const notificationId = String(payload?.followUpId || `${reportId}:${payload?.createdAt || ''}`);
+      if (seenFollowUpNotifications.has(notificationId)) return;
+      seenFollowUpNotifications.add(notificationId);
+      if (seenFollowUpNotifications.size > 300) {
+        seenFollowUpNotifications.delete(seenFollowUpNotifications.values().next().value!);
+      }
+      const title = String(payload?.title || '').trim() || 'Emergency incident';
+      const attachmentCount = Number(payload?.attachmentCount) || 0;
+      playNotificationSound('criticalIncident');
+      toast((t) => (
+        <div
+          onClick={() => {
+            toast.dismiss(t.id);
+            openIncidentInCommandCenter(reportId);
+          }}
+          style={{ width: '100%', cursor: 'pointer', padding: '10px' }}
+        >
+          <div style={{ fontWeight: 'bold', color: 'white' }}>🚨 Emergency follow-up request: {title}</div>
+          <div style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.9)' }}>
+            Reporter sent an additional update{attachmentCount ? ` with ${attachmentCount} photo or video attachment${attachmentCount === 1 ? '' : 's'}` : ''}. Click to review the incident.
+          </div>
+        </div>
+      ), { duration: 60000, className: 'notification-emergency', position: 'top-right' });
     };
 
     const onEscalated = (payload: any) => {
@@ -199,6 +231,7 @@ export default function NotificationManager() {
     };
 
     socket.on('incident_report:updated', onReportUpdated);
+    socket.on('incident_report:follow_up', onReporterFollowUp);
     socket.on('barangay:escalated', onEscalated);
     socket.on('barangay:responding', onBarangayResponding);
     socket.on('barangay:incident_closed', onIncidentClosed);
@@ -213,6 +246,7 @@ export default function NotificationManager() {
       socket.off('barangay:report_assigned', onBarangayReportAssigned);
       socket.off('resource:request');
       socket.off('incident_report:updated', onReportUpdated);
+      socket.off('incident_report:follow_up', onReporterFollowUp);
       socket.off('barangay:escalated', onEscalated);
       socket.off('barangay:responding', onBarangayResponding);
       socket.off('barangay:incident_closed', onIncidentClosed);
