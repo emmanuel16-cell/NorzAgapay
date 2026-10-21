@@ -22,6 +22,7 @@ interface UnitMember {
   specialization?: string;
   status?: string;
   is_active?: boolean;
+  is_active_account?: boolean;
 }
 
 interface ResponderAccount {
@@ -49,6 +50,7 @@ interface RespondUnit {
   created_at: string;
   team_leader_user_id?: string | null;
   team_leader?: { id: string; full_name: string; phone?: string | null; is_active_account?: boolean } | null;
+  team_leaders?: Array<{ id: string; officer_id: string; responder_user_id: string; full_name: string; phone?: string | null; is_active_account?: boolean }>;
   members: UnitMember[];
   roster_ready: boolean;
   is_active: boolean;
@@ -99,6 +101,8 @@ export default function RespondUnitsPage() {
   const [showUnitForm, setShowUnitForm] = useState(false);
   const [editingUnit, setEditingUnit] = useState<RespondUnit | null>(null);
   const [showMemberForm, setShowMemberForm] = useState(false);
+  const [showLeaderForm, setShowLeaderForm] = useState(false);
+  const [leaderToAdd, setLeaderToAdd] = useState('');
   const [unitForm, setUnitForm] = useState({ unit_name: '', specialization: 'mixed', status: 'available', team_leader_user_id: '' });
   const [memberForm, setMemberForm] = useState({ name: '', phone: '', member_role: 'driver_responder' as CrewRole });
 
@@ -108,6 +112,7 @@ export default function RespondUnitsPage() {
     if (!normalized) return units;
     return units.filter((unit) =>
       unit.unit_name.toLowerCase().includes(normalized) ||
+      (unit.team_leaders || []).some((leader) => leader.full_name.toLowerCase().includes(normalized)) ||
       (unit.team_leader?.full_name || '').toLowerCase().includes(normalized) ||
       unit.specialization.toLowerCase().includes(normalized),
     );
@@ -177,7 +182,7 @@ export default function RespondUnitsPage() {
       unit_name: unit.unit_name,
       specialization: unit.specialization || 'mixed',
       status: unit.status || 'available',
-      team_leader_user_id: unit.team_leader_user_id || '',
+      team_leader_user_id: '',
     });
     setSaving(true);
     try {
@@ -198,11 +203,6 @@ export default function RespondUnitsPage() {
           specialization: unitForm.specialization,
           status: unitForm.status,
         });
-        if (unitForm.team_leader_user_id && editingUnit.team_leader_user_id !== unitForm.team_leader_user_id) {
-          await respondUnitAPI.assignLeader(editingUnit.id, unitForm.team_leader_user_id);
-        } else if (!unitForm.team_leader_user_id && editingUnit.team_leader_user_id) {
-          await respondUnitAPI.clearLeader(editingUnit.id);
-        }
         toast.success('Respond unit updated.');
       } else {
         const response = await respondUnitAPI.create({
@@ -259,6 +259,49 @@ export default function RespondUnitsPage() {
       await fetchUnits(response.data.unit.id);
     } catch (error: any) {
       toast.error(error.response?.data?.error || 'Could not add this crew member.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openLeaderForm = async () => {
+    if (!selectedUnit) return;
+    setLeaderToAdd('');
+    setSaving(true);
+    try {
+      await loadLeaderAccounts(selectedUnit.id);
+      setShowLeaderForm(true);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const addLeader = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!selectedUnit || !leaderToAdd) return;
+    setSaving(true);
+    try {
+      const response = await respondUnitAPI.assignLeader(selectedUnit.id, leaderToAdd);
+      setShowLeaderForm(false);
+      setLeaderToAdd('');
+      await fetchUnits(response.data.unit.id);
+      toast.success('Team Leader added to the response unit.');
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || 'Could not add this Team Leader.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const removeLeader = async (leader: NonNullable<RespondUnit['team_leaders']>[number]) => {
+    if (!selectedUnit || !window.confirm(`Remove ${leader.full_name} as a Team Leader from ${selectedUnit.unit_name}?`)) return;
+    setSaving(true);
+    try {
+      const response = await respondUnitAPI.removeLeader(selectedUnit.id, leader.responder_user_id);
+      await fetchUnits(response.data.unit.id);
+      toast.success('Team Leader removed from the response unit.');
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || 'Could not remove this Team Leader.');
     } finally {
       setSaving(false);
     }
@@ -359,7 +402,7 @@ export default function RespondUnitsPage() {
                     <span className="ru-unit-item-icon"><Shield size={18} /></span>
                     <span className="ru-unit-item-content">
                       <strong>{unit.unit_name}</strong>
-                      <small>{unit.team_leader?.full_name || 'Team Leader unassigned'}</small>
+                      <small>{(unit.team_leaders || []).map((leader) => leader.full_name).join(', ') || unit.team_leader?.full_name || 'Team Leader unassigned'}</small>
                       <small>{activeMembers.length} roster members · {unit.status || 'available'}</small>
                       <small className={`ru-unit-activation ${unit.can_dispatch ? 'dispatchable' : ''}`}>
                         {unit.can_dispatch ? 'Active · dispatchable' : unit.is_active ? 'Active · not dispatchable' : 'Inactive · not dispatchable'}
@@ -397,6 +440,7 @@ export default function RespondUnitsPage() {
                     <Power size={14} /> {selectedUnit.is_active ? 'Deactivate' : 'Activate'}
                   </button>}
                   {canManageRoster && <button className="btn btn-outline btn-sm" onClick={() => void openEdit(selectedUnit)} disabled={saving}><Pencil size={14} /> Edit unit</button>}
+                  {canManageRoster && <button className="btn btn-outline btn-sm" onClick={() => void openLeaderForm()} disabled={saving}><Plus size={15} /> Add Team Leader</button>}
                   {canManageRoster && <button className="btn btn-primary btn-sm" onClick={() => setShowMemberForm((visible) => !visible)}><Plus size={15} /> Add crew</button>}
                 </div>
               </div>
@@ -415,15 +459,34 @@ export default function RespondUnitsPage() {
                 </form>
               )}
 
-              <div className="ru-leader-card">
-                <div className="ru-member-icon leader"><Shield size={18} /></div>
-                <div className="ru-member-info">
-                  <small>TEAM LEADER · RESPONDER ACCOUNT</small>
-                  <strong>{selectedUnit.team_leader?.full_name || 'No Team Leader assigned'}</strong>
-                  {selectedUnit.team_leader?.phone && <span>{formatMobileNumber(selectedUnit.team_leader.phone)}</span>}
+              <section className="ru-leader-section">
+                <div className="ru-leader-section-heading"><div><h3>Team Leaders</h3><span>{(selectedUnit.team_leaders || []).length} assigned</span></div></div>
+                {(selectedUnit.team_leaders || []).length > 0 ? <div className="ru-leader-list">
+                  {(selectedUnit.team_leaders || []).map((leader) => <div className="ru-leader-card" key={leader.id}>
+                    <div className="ru-member-icon leader"><Shield size={18} /></div>
+                    <div className="ru-member-info">
+                      <small>TEAM LEADER · RESPONDER ACCOUNT</small>
+                      <strong>{leader.full_name}</strong>
+                      {leader.phone && <span>{formatMobileNumber(leader.phone)}</span>}
+                    </div>
+                    <span className={`ru-member-status ${!leader.is_active_account ? 'inactive' : ''}`}>{leader.is_active_account ? 'Assigned' : 'Account inactive'}</span>
+                    {canManageRoster && <button className="ru-remove-member" type="button" aria-label={`Remove ${leader.full_name} as Team Leader`} disabled={saving} onClick={() => void removeLeader(leader)}><Trash2 size={15} /></button>}
+                  </div>)}
+                </div> : <div className="ru-leader-empty">No Team Leader assigned. Add an active responder account to make this unit dispatch-ready.</div>}
+              </section>
+
+              {showLeaderForm && <form className="ru-add-member ru-add-leader" onSubmit={addLeader}>
+                <div className="ru-add-member-title"><strong>Add Team Leader</strong><button type="button" aria-label="Close add Team Leader form" onClick={() => setShowLeaderForm(false)}><X size={16} /></button></div>
+                <div className="ru-add-member-fields">
+                  <select className="form-select" required value={leaderToAdd} onChange={(event) => setLeaderToAdd(event.target.value)}>
+                    <option value="">Select an active responder account</option>
+                    {leaderAccounts.filter((account) => !(selectedUnit.team_leaders || []).some((leader) => leader.responder_user_id === account.id)).map((account) => <option key={account.id} value={account.id}>{account.officer_name || account.full_name}{account.phone ? ` · ${formatMobileNumber(account.phone)}` : ''}</option>)}
+                  </select>
+                  <button className="btn btn-primary" type="submit" disabled={saving || !leaderToAdd}>{saving ? 'Saving…' : 'Add Team Leader'}</button>
                 </div>
-                <span className={`ru-member-status ${selectedUnit.team_leader && !selectedUnit.team_leader.is_active_account ? 'inactive' : ''}`}>{selectedUnit.team_leader ? selectedUnit.team_leader.is_active_account ? 'Assigned' : 'Account inactive' : 'Required'}</span>
-              </div>
+                {leaderAccountsError && <small className="ru-form-warning" role="status">{leaderAccountsError}</small>}
+                {!leaderAccountsError && leaderAccounts.every((account) => (selectedUnit.team_leaders || []).some((leader) => leader.responder_user_id === account.id)) && <small className="ru-form-hint">No unassigned active responder accounts are available. A responder can only be a Team Leader for one response unit.</small>}
+              </form>}
 
               <div className="ru-roster-title"><div><h3>Unit roster</h3><span>One radio operator · up to three drivers · up to three first aiders</span></div><span>{selectedUnit.members.length} members</span></div>
               <div className="ru-roster-grid">
@@ -483,9 +546,9 @@ export default function RespondUnitsPage() {
             <div className="form-group"><label className="form-label">Unit name *</label><input className="form-input" required minLength={2} maxLength={100} placeholder="e.g. Alpha Rescue Team" value={unitForm.unit_name} onChange={(event) => setUnitForm({ ...unitForm, unit_name: event.target.value })} /></div>
             <div className="form-group"><label className="form-label">Specialization *</label><input className="form-input" required maxLength={120} value={unitForm.specialization} onChange={(event) => setUnitForm({ ...unitForm, specialization: event.target.value })} /></div>
             {editingUnit && <div className="form-group"><label className="form-label">Status</label><select className="form-select" value={unitForm.status} onChange={(event) => setUnitForm({ ...unitForm, status: event.target.value })}><option value="available">Available</option><option value="unavailable">Unavailable</option><option value="maintenance">Maintenance</option></select></div>}
-            <div className="form-group"><label className="form-label">Team Leader · MDRRMO mobile responder</label><select className="form-select" value={unitForm.team_leader_user_id} onChange={(event) => setUnitForm({ ...unitForm, team_leader_user_id: event.target.value })}><option value="">Assign a Team Leader later</option>{editingUnit?.team_leader_user_id && !leaderAccounts.some((account) => account.id === editingUnit.team_leader_user_id) && <option value={editingUnit.team_leader_user_id}>{editingUnit.team_leader?.full_name || 'Current Team Leader'}</option>}{leaderAccounts.length > 0 && <optgroup label="Active MDRRMO mobile responder accounts">{leaderAccounts.map((account) => <option key={account.id} value={account.id}>{account.officer_name || account.full_name}{account.phone ? ` · ${formatMobileNumber(account.phone)}` : ''}</option>)}</optgroup>}{officerProfiles.length > 0 && <optgroup label="MDRRMO Officers without an active mobile account">{officerProfiles.map((officer) => <option key={officer.id} value={`officer-${officer.id}`} disabled>{officer.name}{officer.phone ? ` · ${formatMobileNumber(officer.phone)}` : ''} · account needed</option>)}</optgroup>}</select>
+            {!editingUnit && <div className="form-group"><label className="form-label">Initial Team Leader · MDRRMO mobile responder (optional)</label><select className="form-select" value={unitForm.team_leader_user_id} onChange={(event) => setUnitForm({ ...unitForm, team_leader_user_id: event.target.value })}><option value="">Assign a Team Leader later</option>{leaderAccounts.length > 0 && <optgroup label="Active MDRRMO mobile responder accounts">{leaderAccounts.map((account) => <option key={account.id} value={account.id}>{account.officer_name || account.full_name}{account.phone ? ` · ${formatMobileNumber(account.phone)}` : ''}</option>)}</optgroup>}{officerProfiles.length > 0 && <optgroup label="MDRRMO Officers without an active mobile account">{officerProfiles.map((officer) => <option key={officer.id} value={`officer-${officer.id}`} disabled>{officer.name}{officer.phone ? ` · ${formatMobileNumber(officer.phone)}` : ''} · account needed</option>)}</optgroup>}</select>
               {leaderAccountsError ? <small className="ru-form-warning" role="status">{leaderAccountsError} {officerProfiles.length > 0 ? 'Officer profiles are shown below, but they need an active mobile responder account to be assigned as Team Leader.' : ''} You can still create the unit and assign the Team Leader later.</small> : leaderAccounts.length === 0 ? <small className="ru-form-warning" role="status">{officerProfiles.length > 0 ? `Found ${officerProfiles.length} active MDRRMO Officer profile(s), but none has a matching active mobile responder account. Create or activate a responder account with the same mobile number, then retry.` : noLeaderAccountsMessage}</small> : <small className="ru-form-hint">Officer profiles are matched to MDRRMO mobile responder accounts by mobile number. Assign one now or later; the unit also needs a Driver Responder, a First Aider Responder, and activation before dispatch.</small>}
-            </div>
+            </div>}
             <div className="modal-footer">
               {editingUnit && <button type="button" className="btn btn-danger ru-delete-unit" onClick={() => void deleteUnit()} disabled={saving || deletingUnit || editingUnit.members.length > 0}><Trash2 size={15} /> {deletingUnit ? 'Deleting…' : 'Delete Unit'}</button>}
               <button type="button" className="btn btn-outline" onClick={() => { setShowUnitForm(false); setEditingUnit(null); }} disabled={saving || deletingUnit}>Cancel</button>

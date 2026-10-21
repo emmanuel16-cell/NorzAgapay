@@ -96,13 +96,14 @@ async function getUnitDetails(unitIds?: string[]) {
           rank: officer.rank || null,
           status: officer.status || 'active',
           is_active: member.is_active,
+          is_active_account: responder.role === 'responder' && responder.status === 'active',
         };
       });
-    const leader = members.find((member: any) => member.member_role === 'team_leader') || null;
-    const leaderAccount: any = leader?.responder_user_id ? responderMap.get(leader.responder_user_id) : null;
+    const leaders = members.filter((member: any) => member.member_role === 'team_leader');
+    const leader = leaders[0] || null;
     const activeMembers = members.filter((member: any) => member.member_role !== 'unassigned');
     const officerIds = [...new Set(members.map((member: any) => member.officer_id))];
-    const rosterReady = Boolean(leader && leaderAccount?.role === 'responder' && leaderAccount?.status === 'active') &&
+    const rosterReady = leaders.some((member: any) => member.is_active_account) &&
       activeMembers.some((member: any) => member.member_role === 'driver_responder') &&
       activeMembers.some((member: any) => member.member_role === 'first_aider_responder');
     return {
@@ -110,11 +111,21 @@ async function getUnitDetails(unitIds?: string[]) {
       officer_ids: officerIds,
       team_leader_id: leader?.officer_id || null,
       team_leader_user_id: leader?.responder_user_id || null,
+      team_leader_user_ids: leaders.map((member: any) => member.responder_user_id),
+      team_leaders: leaders.map((member: any) => ({
+        id: member.id,
+        officer_id: member.officer_id,
+        responder_user_id: member.responder_user_id,
+        full_name: member.name,
+        phone: member.phone,
+        is_active_account: member.is_active_account,
+      })),
+      // Keep the legacy singular leader fields available to older clients.
       team_leader: leader ? {
         id: leader.responder_user_id,
-        full_name: leaderAccount?.full_name || leader.name,
-        phone: leaderAccount?.phone || leader.phone || null,
-        is_active_account: leaderAccount?.role === 'responder' && leaderAccount?.status === 'active',
+        full_name: leader.name,
+        phone: leader.phone,
+        is_active_account: leader.is_active_account,
       } : null,
       members,
       roster_ready: rosterReady,
@@ -484,6 +495,20 @@ router.delete('/:id/team-leader', authenticate, authorize('admin', 'logistics', 
     res.json({ unit: (await getUnitDetails([req.params.id]))[0] });
   } catch (error: any) {
     reportDbError(res, error, 'Could not clear the Team Leader.');
+  }
+});
+
+router.delete('/:id/team-leaders/:responderUserId', authenticate, authorize('admin', 'logistics', 'master_admin'), async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { error } = await supabaseAdmin.rpc('remove_respond_unit_team_leader_v1', {
+      p_unit_id: req.params.id,
+      p_responder_user_id: req.params.responderUserId,
+    });
+    if (error) throw error;
+    await syncLegacyOfficerIds(req.params.id);
+    res.json({ unit: (await getUnitDetails([req.params.id]))[0] });
+  } catch (error: any) {
+    reportDbError(res, error, 'Could not remove the Team Leader.');
   }
 });
 

@@ -4852,9 +4852,7 @@ REVOKE ALL ON FUNCTION public.enqueue_resident_report_status_push() FROM PUBLIC,
 -- existing task workflow while new roster writes use this normalized table.
 CREATE INDEX IF NOT EXISTS idx_respond_unit_members_unit_active_role
   ON public.respond_unit_members(unit_id, is_active, member_role);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_respond_unit_one_active_team_leader
-  ON public.respond_unit_members(unit_id)
-  WHERE is_active AND member_role = 'team_leader';
+DROP INDEX IF EXISTS public.idx_respond_unit_one_active_team_leader;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_respond_unit_one_active_radio_operator
   ON public.respond_unit_members(unit_id)
   WHERE is_active AND member_role = 'radio_operator';
@@ -4907,10 +4905,12 @@ BEGIN
     ) THEN
       RAISE EXCEPTION 'Responder account already leads an active unit' USING ERRCODE = '23505';
     END IF;
+
+    -- Multiple responders may lead the same response unit.
+    RETURN NEW;
   END IF;
 
   v_limit := CASE NEW.member_role
-    WHEN 'team_leader' THEN 1
     WHEN 'radio_operator' THEN 1
     WHEN 'driver_responder' THEN 3
     WHEN 'first_aider_responder' THEN 3
@@ -4984,25 +4984,6 @@ BEGIN
     RAISE EXCEPTION 'Team Leader profile must match the responder account' USING ERRCODE = '23514';
   END IF;
 
-  IF EXISTS (
-    SELECT 1
-    FROM public.respond_unit_members AS current_leader
-    JOIN public.mdrrmo_report_assignments AS assignments
-      ON assignments.responder_id = current_leader.responder_user_id
-    WHERE current_leader.unit_id = p_unit_id
-      AND current_leader.member_role = 'team_leader'
-      AND current_leader.is_active
-      AND current_leader.responder_user_id <> p_responder_user_id
-      AND assignments.status IN ('assigned', 'responding')
-  ) THEN
-    RAISE EXCEPTION 'Cannot change Team Leader while the current leader has an active dispatch' USING ERRCODE = '23514';
-  END IF;
-
-  UPDATE public.respond_unit_members
-  SET member_role = 'unassigned', responder_user_id = NULL
-  WHERE unit_id = p_unit_id AND is_active AND member_role = 'team_leader'
-    AND officer_id <> p_officer_id;
-
   INSERT INTO public.respond_unit_members (unit_id, officer_id, responder_user_id, member_role, is_active)
   VALUES (p_unit_id, p_officer_id, p_responder_user_id, 'team_leader', true)
   ON CONFLICT (unit_id, officer_id) DO UPDATE SET
@@ -5018,6 +4999,47 @@ BEGIN
   WHERE id = p_unit_id;
 
   RETURN jsonb_build_object('unit_id', p_unit_id, 'responder_user_id', p_responder_user_id);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.remove_respond_unit_team_leader_v1(
+  p_unit_id UUID,
+  p_responder_user_id UUID
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_unit public.respond_units%ROWTYPE;
+  v_leader public.respond_unit_members%ROWTYPE;
+BEGIN
+  SELECT * INTO v_unit FROM public.respond_units WHERE id = p_unit_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Respond unit not found' USING ERRCODE = 'P0002';
+  END IF;
+
+  SELECT * INTO v_leader
+  FROM public.respond_unit_members
+  WHERE unit_id = p_unit_id
+    AND responder_user_id = p_responder_user_id
+    AND member_role = 'team_leader'
+    AND is_active
+  FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Active Team Leader not found in this response unit' USING ERRCODE = 'P0002';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM public.mdrrmo_report_assignments
+    WHERE responder_id = p_responder_user_id AND status IN ('assigned', 'responding')
+  ) THEN
+    RAISE EXCEPTION 'Cannot remove a Team Leader while they have an active dispatch' USING ERRCODE = '23514';
+  END IF;
+
+  UPDATE public.respond_unit_members SET is_active = false WHERE id = v_leader.id;
+  RETURN jsonb_build_object('unit_id', p_unit_id, 'responder_user_id', p_responder_user_id, 'team_leader_removed', true);
 END;
 $$;
 
@@ -5374,6 +5396,8 @@ $$;
 REVOKE ALL ON FUNCTION public.enforce_respond_unit_member_role() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.assign_respond_unit_team_leader_v1(UUID, UUID, UUID) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.assign_respond_unit_team_leader_v1(UUID, UUID, UUID) TO service_role;
+REVOKE ALL ON FUNCTION public.remove_respond_unit_team_leader_v1(UUID, UUID) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.remove_respond_unit_team_leader_v1(UUID, UUID) TO service_role;
 REVOKE ALL ON FUNCTION public.clear_respond_unit_team_leader_v1(UUID) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.clear_respond_unit_team_leader_v1(UUID) TO service_role;
 REVOKE ALL ON FUNCTION public.delete_empty_respond_unit_v1(UUID) FROM PUBLIC, anon, authenticated;
