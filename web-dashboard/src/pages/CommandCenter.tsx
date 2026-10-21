@@ -417,6 +417,9 @@ function ResponderAssessmentPanel({
   incident,
   assistanceRequests,
   assistanceRequestLoading,
+  canManageAssistanceRequests = false,
+  savingAssistanceRequestId = null,
+  onAssistanceRequestStatusChange,
   notes,
   mediaSource,
   view,
@@ -429,6 +432,9 @@ function ResponderAssessmentPanel({
   incident: IncidentItem;
   assistanceRequests: AssistanceRequestItem[];
   assistanceRequestLoading: boolean;
+  canManageAssistanceRequests?: boolean;
+  savingAssistanceRequestId?: string | null;
+  onAssistanceRequestStatusChange?: (request: AssistanceRequestItem, status: 'approved' | 'rejected', dispatcherNotes?: string) => void;
   notes?: string;
   mediaSource: 'barangay' | 'mdrrmo' | 'all';
   view: 'assessment' | 'assistance';
@@ -439,6 +445,7 @@ function ResponderAssessmentPanel({
   showTitle?: boolean;
 }) {
   const navigate = useNavigate();
+  const [approvalNote, setApprovalNote] = useState('');
   const latestAssistanceRequest = assistanceRequests.reduce<AssistanceRequestItem | null>(
     (latest, request) => !isResponderAssistanceRequest(request)
       ? latest
@@ -447,6 +454,7 @@ function ResponderAssessmentPanel({
   );
   const responderAssistanceCount = assistanceRequests.filter(isResponderAssistanceRequest).length;
   const hasPendingAssistance = assistanceRequests.some((request) => isResponderAssistanceRequest(request) && request.status === 'pending');
+  useEffect(() => { setApprovalNote(''); }, [latestAssistanceRequest?.id]);
 
   return (
     <div className="responder-detail-panel">
@@ -518,6 +526,20 @@ function ResponderAssessmentPanel({
               )}
             </article>
           )) : <div className="assistance-request-card"><strong>Assistance Request</strong><span>No assistance request details provided.</span></div>}
+          {canManageAssistanceRequests && latestAssistanceRequest?.status === 'pending' && onAssistanceRequestStatusChange && (
+            <footer className="reports-detail-actions-v2 assistance-request-actions command-assistance-actions">
+              <label className="assistance-approval-note">
+                <span>Approval note <small>Required to approve · 3–300 characters</small></span>
+                <textarea value={approvalNote} onChange={(event) => setApprovalNote(event.target.value)} maxLength={300} rows={2} placeholder="Add a brief note for the responder…" disabled={savingAssistanceRequestId === latestAssistanceRequest.id} />
+              </label>
+              <button type="button" className="reports-invalid-button-v2" disabled={Boolean(savingAssistanceRequestId)} onClick={() => onAssistanceRequestStatusChange(latestAssistanceRequest, 'rejected')}>
+                {savingAssistanceRequestId === latestAssistanceRequest.id ? 'Saving…' : 'Reject'}
+              </button>
+              <button type="button" className="reports-dispatch-button-v2" disabled={Boolean(savingAssistanceRequestId) || approvalNote.trim().length < 3} onClick={() => onAssistanceRequestStatusChange(latestAssistanceRequest, 'approved', approvalNote.trim())}>
+                {savingAssistanceRequestId === latestAssistanceRequest.id ? 'Saving…' : 'Approve request'}
+              </button>
+            </footer>
+          )}
           {responderAssistanceCount > 1 && <small className="assistance-request-history-count">Showing the latest of {responderAssistanceCount} requests.</small>}
           <button type="button" className="assistance-request-view-all" onClick={() => navigate('/requests')}>
             View all assistance requests
@@ -532,6 +554,9 @@ function EscalatedResponsePanel({
   incident,
   assistanceRequests,
   assistanceRequestLoading,
+  canManageAssistanceRequests,
+  savingAssistanceRequestId,
+  onAssistanceRequestStatusChange,
   tab,
   onTabChange,
   responderView,
@@ -543,6 +568,9 @@ function EscalatedResponsePanel({
   incident: IncidentItem;
   assistanceRequests: AssistanceRequestItem[];
   assistanceRequestLoading: boolean;
+  canManageAssistanceRequests?: boolean;
+  savingAssistanceRequestId?: string | null;
+  onAssistanceRequestStatusChange?: (request: AssistanceRequestItem, status: 'approved' | 'rejected', dispatcherNotes?: string) => void;
   tab: 'barangay' | 'responder';
   onTabChange: (tab: 'barangay' | 'responder') => void;
   responderView: 'assessment' | 'assistance';
@@ -567,6 +595,9 @@ function EscalatedResponsePanel({
           incident={incident}
           assistanceRequests={assistanceRequests}
           assistanceRequestLoading={assistanceRequestLoading}
+          canManageAssistanceRequests={canManageAssistanceRequests}
+          savingAssistanceRequestId={savingAssistanceRequestId}
+          onAssistanceRequestStatusChange={onAssistanceRequestStatusChange}
           notes={incident.mdrrmo_response_notes}
           mediaSource="mdrrmo"
           view={responderView}
@@ -984,6 +1015,7 @@ export default function CommandCenter() {
   const [selectedIncidentLocationError, setSelectedIncidentLocationError] = useState('');
   const [assistanceRequests, setAssistanceRequests] = useState<AssistanceRequestItem[]>([]);
   const [assistanceRequestsLoading, setAssistanceRequestsLoading] = useState(false);
+  const [savingAssistanceRequestId, setSavingAssistanceRequestId] = useState<string | null>(null);
   const [pendingAssistanceIncidentIds, setPendingAssistanceIncidentIds] = useState<Set<string>>(() => new Set());
   const [selectedUnit, setSelectedUnit] = useState<DispatchUnitItem | null>(null);
   const [selectedVisualUrl, setSelectedVisualUrl] = useState<string | null>(null);
@@ -1097,6 +1129,29 @@ export default function CommandCenter() {
       socket.off('resource:request', refreshAssistanceRequests);
     };
   }, [activeModalType, selectedIncidentId, isBarangayDashboard]);
+
+  const updateAssistanceRequestStatus = useCallback(async (
+    request: AssistanceRequestItem,
+    status: 'approved' | 'rejected',
+    dispatcherNotes?: string,
+  ) => {
+    if (status === 'approved' && (dispatcherNotes?.trim().length || 0) < 3) {
+      toast.error('Add a short approval note (3–300 characters).');
+      return;
+    }
+    setSavingAssistanceRequestId(request.id);
+    try {
+      await requestAPI.updateStatus(request.id, status, status === 'approved' ? dispatcherNotes?.trim() : undefined);
+      const response = await requestAPI.list({ incident_id: request.incident_id });
+      setAssistanceRequests(Array.isArray(response.data.requests) ? response.data.requests : []);
+      toast.success(`Assistance request ${status}.`);
+    } catch (error) {
+      console.error('Could not update assistance request from Command Center:', error);
+      toast.error('Could not update assistance request.');
+    } finally {
+      setSavingAssistanceRequestId(null);
+    }
+  }, []);
 
   // Fetch data
   const fetchData = useCallback(async () => {
@@ -2500,6 +2555,9 @@ export default function CommandCenter() {
                   incident={selectedIncident}
                   assistanceRequests={assistanceRequests}
                   assistanceRequestLoading={assistanceRequestsLoading}
+                  canManageAssistanceRequests={!isBarangayDashboard && user?.role === 'dispatcher'}
+                  savingAssistanceRequestId={savingAssistanceRequestId}
+                  onAssistanceRequestStatusChange={updateAssistanceRequestStatus}
                   notes={selectedIncident.barangay_response_notes || selectedIncident.mdrrmo_response_notes}
                   mediaSource="all"
                   view={responderInfoTab}
@@ -2827,6 +2885,9 @@ export default function CommandCenter() {
                 incident={selectedIncident}
                 assistanceRequests={assistanceRequests}
                 assistanceRequestLoading={assistanceRequestsLoading}
+                canManageAssistanceRequests={!isBarangayDashboard && user?.role === 'dispatcher'}
+                savingAssistanceRequestId={savingAssistanceRequestId}
+                onAssistanceRequestStatusChange={updateAssistanceRequestStatus}
                 tab={escalatedResponseTab}
                 onTabChange={setEscalatedResponseTab}
                 responderView={responderInfoTab}

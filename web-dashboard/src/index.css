@@ -4480,6 +4480,11 @@ tbody tr:last-child td { border-bottom: none; }
 .assistance-decision-badge.coordination { border-color: #fca5a5; color: #dc2626; background: #fee2e2; }
 .assistance-decision-badge.rejected { border-color: #fca5a5; color: #b91c1c; background: #fee2e2; }
 .assistance-request-history-count { color: #91add9; text-align: center; }
+.command-assistance-actions { flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding: 12px; border: 1px solid #243a61; border-radius: 9px; background: #08152e; }
+.command-assistance-actions .assistance-approval-note { min-width: 100%; }
+.command-assistance-actions .reports-invalid-button-v2,
+.command-assistance-actions .reports-dispatch-button-v2 { min-height: 40px; padding-inline: 12px; }
+.command-assistance-actions .reports-dispatch-button-v2 { min-width: 150px; flex: 1 1 150px; }
 .reports-page-header-v2 {
   flex: 0 0 var(--header-height);
   display: flex;
