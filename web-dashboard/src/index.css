@@ -3915,6 +3915,13 @@ tbody tr:last-child td { border-bottom: none; }
 .assistance-status-chip.fulfilled { color: #70e6bd; background: #103d39; }
 .assistance-status-chip.rejected { color: #ffaaaa; background: #4a1c2b; }
 .assistance-status-chip.detail { padding: 8px 14px; font-size: 13px; }
+.assistance-request-actions { flex-wrap: wrap; }
+.assistance-approval-note { display: grid; flex: 1 0 100%; gap: 7px; color: #d7e4f8; font-size: 13px; font-weight: 700; }
+.assistance-approval-note > span { display: flex; align-items: baseline; flex-wrap: wrap; gap: 7px; }
+.assistance-approval-note small { color: #91add9; font-size: 11px; font-weight: 500; }
+.assistance-approval-note textarea { box-sizing: border-box; width: 100%; min-height: 64px; padding: 9px 11px; border: 1px solid #345071; border-radius: 8px; color: #e8f0ff; background: #09172b; font: inherit; font-size: 13px; font-weight: 400; resize: vertical; }
+.assistance-approval-note textarea:focus { border-color: #35c5df; outline: 2px solid rgba(53, 197, 223, .18); }
+.assistance-approval-note textarea:disabled { opacity: .65; }
 
 /* Public home, sign-in and incident-reporting pages. */
 .public-site-header { position: relative; z-index: 20; width: 100%; flex: 0 0 auto; border-bottom: 1px solid rgba(177, 198, 233, .12); color: #f5f7fb; background: linear-gradient(105deg, #07142e 0%, #142650 100%); }
@@ -4641,6 +4648,9 @@ body.responder-map-open { overflow: hidden; }
 :root[data-theme='light'] .reports-stage-tabs-v2,
 :root[data-theme='light'] .reports-detail-heading-v2,
 :root[data-theme='light'] .reports-detail-actions-v2 { border-color: #cbd7e8; }
+:root[data-theme='light'] .assistance-approval-note { color: #293b59; }
+:root[data-theme='light'] .assistance-approval-note small { color: #617794; }
+:root[data-theme='light'] .assistance-approval-note textarea { border-color: #c7d3e3; color: #1e2d46; background: #f8faff; }
 :root[data-theme='light'] .reports-page-header-v2 h1,
 :root[data-theme='light'] .reports-detail-heading-v2 h2,
 :root[data-theme='light'] .reports-queue-heading h2 { color: #152743; }

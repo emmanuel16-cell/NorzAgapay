@@ -202,8 +202,8 @@ export const requestAPI = {
   list: (params?: { incident_id?: string }) => api.get('/requests', { params }),
   mine: () => api.get('/requests/mine'),
   create: (data: { request_type: 'responders' | 'goods'; sub_type?: string; details: string; incident_id: string }) => api.post('/requests', data),
-  updateStatus: (id: string, status: 'pending' | 'approved' | 'rejected' | 'fulfilled') => 
-    api.patch(`/requests/${id}/status`, { status }),
+  updateStatus: (id: string, status: 'pending' | 'approved' | 'rejected' | 'fulfilled', dispatcher_notes?: string) =>
+    api.patch(`/requests/${id}/status`, { status, dispatcher_notes }),
 };
 
 // Analytics

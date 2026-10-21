@@ -136,9 +136,11 @@ class _AssistanceRequestsScreenState extends State<AssistanceRequestsScreen> {
                 TextField(
                   controller: notesController,
                   style: const TextStyle(color: Colors.white),
+                  maxLength: 300,
                   maxLines: 2,
+                  onChanged: (_) => setDialogState(() {}),
                   decoration: const InputDecoration(
-                    labelText: 'Dispatcher\'s Notes (optional)',
+                    labelText: 'Dispatcher\'s note (required for approval)',
                     labelStyle: TextStyle(color: Color(0xFF94A3B8)),
                     hintText: 'e.g., Dispatching 6 additional volunteers now.',
                     hintStyle: TextStyle(color: Color(0xFF64748B), fontSize: 12),
@@ -159,7 +161,9 @@ class _AssistanceRequestsScreenState extends State<AssistanceRequestsScreen> {
               child: const Text('Cancel', style: TextStyle(color: Color(0xFF94A3B8))),
             ),
             ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, true),
+              onPressed: selectedDecision == 'dismissed' || notesController.text.trim().length >= 3
+                  ? () => Navigator.pop(ctx, true)
+                  : null,
               style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0284C7)),
               child: const Text('Confirm Decision', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
             ),

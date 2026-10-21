@@ -1597,10 +1597,12 @@ class _ReportsScreenState extends State<ReportsScreen>
                 TextField(
                   controller: notesController,
                   style: const TextStyle(color: Colors.white),
+                  maxLength: 300,
                   minLines: 3,
                   maxLines: 5,
+                  onChanged: (_) => setDialogState(() {}),
                   decoration: const InputDecoration(
-                    labelText: 'Dispatcher\'s Notes (optional)',
+                    labelText: 'Dispatcher\'s note (required for approval)',
                     labelStyle: TextStyle(color: Color(0xFF94A3B8)),
                     hintText:
                         'e.g., Dispatching 6 additional volunteers and rescue gear now.',
@@ -1628,7 +1630,9 @@ class _ReportsScreenState extends State<ReportsScreen>
               ),
             ),
             ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, true),
+              onPressed: notesController.text.trim().length >= 3
+                  ? () => Navigator.pop(ctx, true)
+                  : null,
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF0284C7),
               ),

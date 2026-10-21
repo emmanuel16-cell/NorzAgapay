@@ -3723,6 +3723,11 @@ router.patch('/assistance-requests/:id/decide', authenticateBarangay, requireRol
       res.status(400).json({ error: 'Invalid decision. Must be: provide_barangay_assistance, coordinate_mdrrmo, or dismissed.' });
       return;
     }
+    const dispatcherNotes = typeof dispatcher_notes === 'string' ? dispatcher_notes.trim() : '';
+    if ((decision !== 'dismissed' && (dispatcherNotes.length < 3 || dispatcherNotes.length > 300)) || dispatcherNotes.length > 300) {
+      res.status(400).json({ error: decision === 'dismissed' ? 'Dispatcher notes must be 300 characters or fewer.' : 'Add a short dispatcher note between 3 and 300 characters before approving.' });
+      return;
+    }
 
     const { data: assistanceRequest, error: requestError } = await supabaseAdmin
       .from('barangay_assistance_requests')
@@ -3769,7 +3774,7 @@ router.patch('/assistance-requests/:id/decide', authenticateBarangay, requireRol
 
     let escalatedReport: any = null;
     if (linkedReport) {
-      const escalationNotes = (dispatcher_notes || assistanceRequest.explanation || 'MDRRMO support requested by the barangay response team').trim();
+      const escalationNotes = dispatcherNotes || assistanceRequest.explanation || 'MDRRMO support requested by the barangay response team';
       const now = new Date().toISOString();
       const { data: reportData, error: reportError } = await supabaseAdmin
         .from('barangay_reports')
@@ -3835,8 +3840,8 @@ router.patch('/assistance-requests/:id/decide', authenticateBarangay, requireRol
       io.to(`barangay:${req.barangayUser.barangayId}`).emit('barangay:report_updated', escalatedReport);
     } else if (decision === 'provide_barangay_assistance' && assistanceRequest.incident_report_id) {
       // Append note to linked incident report so responder sees it in the incident response log
-      const assistanceNote = dispatcher_notes
-        ? `[Assistance Approved: ${dispatcher_notes}]`
+      const assistanceNote = dispatcherNotes
+        ? `[Assistance Approved: ${dispatcherNotes}]`
         : '[Barangay assistance dispatched by Coordinator]';
       const { data: existingReport, error: existingReportError } = await supabaseAdmin
         .from('barangay_reports')
@@ -3869,7 +3874,7 @@ router.patch('/assistance-requests/:id/decide', authenticateBarangay, requireRol
       .update({
         status: newStatus,
         decision,
-        dispatcher_notes: dispatcher_notes || null,
+        dispatcher_notes: dispatcherNotes || null,
         decided_at: new Date().toISOString(),
         decided_by: req.barangayUser.userId,
       })

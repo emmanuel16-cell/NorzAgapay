@@ -125,6 +125,7 @@ export default function ResourceRequestsPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [approvalNote, setApprovalNote] = useState('');
   const [currentTime, setCurrentTime] = useState(() => new Date().toLocaleTimeString());
 
   const fetchRequests = useCallback(async () => {
@@ -178,6 +179,8 @@ export default function ResourceRequestsPage() {
   const selected = visibleRequests.find((request) => request.id === selectedId) || visibleRequests[visibleRequests.length - 1] || null;
   const selectedHistory = selected ? [selected] : [];
 
+  useEffect(() => { setApprovalNote(''); }, [selected?.id]);
+
   useEffect(() => {
     if (!requests.length) return;
     const deepLinked = requestedId
@@ -195,10 +198,16 @@ export default function ResourceRequestsPage() {
   };
 
   const updateStatus = async (request: AssistanceRequest, status: RequestStatus) => {
+    const note = approvalNote.trim();
+    if (status === 'approved' && (note.length < 3 || note.length > 300)) {
+      toast.error('Add a short approval note (3–300 characters).');
+      return;
+    }
     try {
       setSaving(true);
-      await requestAPI.updateStatus(request.id, status);
+      await requestAPI.updateStatus(request.id, status, status === 'approved' ? note : undefined);
       toast.success(`Assistance request marked ${status}.`);
+      if (status === 'approved') setApprovalNote('');
       await fetchRequests();
     } catch (error) {
       console.error('Failed to update assistance request', error);
@@ -299,7 +308,6 @@ export default function ResourceRequestsPage() {
                             <div className="assistance-history-entry">
                               <strong>From: {request.requested_by_user?.full_name || 'Responder'}</strong>
                               <div className="assistance-history-meta">
-                                <span>{requestTypeLabel(request.request_type, request.sub_type)}</span>
                                 <time>{dateTime(request.created_at)}</time>
                               </div>
                               {categoryTags.length > 0 && <div className="assistance-history-tags" aria-label="Requested assistance categories">{categoryTags.map((tag) => <span key={tag}>✓ {tag}</span>)}</div>}
@@ -326,8 +334,12 @@ export default function ResourceRequestsPage() {
               {(selected.status === 'pending' || (selected.status === 'approved' && selected.source !== 'mdrrmo')) && (
                 <footer className="reports-detail-actions-v2 assistance-request-actions">
                   {selected.status === 'pending' ? <>
+                    <label className="assistance-approval-note">
+                      <span>Approval note <small>Required to approve · 3–300 characters</small></span>
+                      <textarea value={approvalNote} onChange={(event) => setApprovalNote(event.target.value)} maxLength={300} rows={2} placeholder="Add a brief note for the responder…" disabled={saving} />
+                    </label>
                     <button type="button" className="reports-invalid-button-v2" disabled={saving} onClick={() => void updateStatus(selected, 'rejected')}>Reject</button>
-                    <button type="button" className="reports-dispatch-button-v2" disabled={saving} onClick={() => void updateStatus(selected, 'approved')}>Approve request</button>
+                    <button type="button" className="reports-dispatch-button-v2" disabled={saving || approvalNote.trim().length < 3} onClick={() => void updateStatus(selected, 'approved')}>Approve request</button>
                   </> : (
                     <button type="button" className="reports-dispatch-button-v2" disabled={saving} onClick={() => void updateStatus(selected, 'fulfilled')}>Mark fulfilled</button>
                   )}

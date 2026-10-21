@@ -4040,9 +4040,11 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                 TextField(
                   controller: notesController,
                   style: const TextStyle(color: Colors.white),
+                  maxLength: 300,
                   maxLines: 2,
+                  onChanged: (_) => setDialogState(() {}),
                   decoration: const InputDecoration(
-                    labelText: 'Dispatcher Notes (optional)',
+                    labelText: 'Dispatcher note (required for approval)',
                     labelStyle: TextStyle(color: Color(0xFF94A3B8)),
                     hintText: 'e.g., Sending 2 additional volunteers now.',
                     hintStyle: TextStyle(
@@ -4066,7 +4068,9 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
               ),
             ),
             ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, true),
+              onPressed: selectedDecision == 'dismissed' || notesController.text.trim().length >= 3
+                  ? () => Navigator.pop(ctx, true)
+                  : null,
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF0284C7),
               ),

@@ -99,15 +99,29 @@ const incidentTimeText = (occurredAt?: string | null, precision?: string | null)
   }
   const date = new Date(occurredAt);
   if (Number.isNaN(date.getTime())) return 'Incident time unknown';
-  return `Incident occurred: ${date.toLocaleString()} (${precision})`;
+  return `Incident occurred: ${formatDispatcherDateTime(date)} (${precision})`;
 };
+
+const formatDispatcherDate = (date: Date) => date.toLocaleDateString('en-US', {
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+});
+
+const formatDispatcherTime = (date: Date) => date.toLocaleTimeString('en-US', {
+  hour: 'numeric',
+  minute: '2-digit',
+  second: '2-digit',
+});
+
+const formatDispatcherDateTime = (date: Date) => `${formatDispatcherDate(date)}, ${formatDispatcherTime(date)}`;
 
 const reportReceivedText = (createdAt?: string) => {
   if (!createdAt) return 'Report received: Not recorded';
   const date = new Date(createdAt);
   return Number.isNaN(date.getTime())
     ? 'Report received: Not recorded'
-    : `Report received: ${date.toLocaleString()}`;
+    : `Report received: ${formatDispatcherDateTime(date)}`;
 };
 
 const dispatchLocationFallback = (incident: IncidentItem) => {
@@ -471,7 +485,7 @@ function ResponderAssessmentPanel({
                 {request.sub_type && <span><small>Category</small><b>{request.sub_type.replaceAll('_', ' ')}</b></span>}
                 <span><small>Status</small><b>{request.status.replaceAll('_', ' ')}</b></span>
                 {request.decision && <span><small>Decision</small><b>{request.decision.replaceAll('_', ' ')}</b></span>}
-                <span><small>Requested</small><b>{new Date(request.created_at).toLocaleString()}</b></span>
+                <span><small>Requested</small><b>{formatDispatcherTime(new Date(request.created_at))}</b></span>
               </div>
               {assistanceCategories(request).length > 0 && (
                 <div className="assistance-request-category-checklist" aria-label="Requested assistance categories">

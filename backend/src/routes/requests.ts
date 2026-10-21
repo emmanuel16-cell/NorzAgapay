@@ -297,13 +297,22 @@ router.patch('/:id/status', authenticate, authorize('dispatcher', 'responder'), 
       return;
     }
 
+    const dispatcherNotes = typeof req.body.dispatcher_notes === 'string'
+      ? req.body.dispatcher_notes.trim()
+      : '';
+    if (status === 'approved' && (dispatcherNotes.length < 3 || dispatcherNotes.length > 300)) {
+      res.status(400).json({ error: 'Add a short approval note between 3 and 300 characters.' });
+      return;
+    }
+
     // Attempt update on resource_requests
-    const { data: request } = await supabaseAdmin
+    const { data: request, error: requestError } = await supabaseAdmin
       .from('resource_requests')
-      .update({ status })
+      .update({ status, ...(status === 'approved' ? { dispatcher_notes: dispatcherNotes } : {}) })
       .eq('id', req.params.id)
       .select()
       .maybeSingle();
+    if (requestError) throw requestError;
 
     if (request) {
       const responseRequest = {
@@ -320,7 +329,7 @@ router.patch('/:id/status', authenticate, authorize('dispatcher', 'responder'), 
     const bgStatus = status === 'approved' ? 'actioned' : status === 'fulfilled' ? 'fulfilled' : status;
     const { data: bgRequest, error: bgError } = await supabaseAdmin
       .from('barangay_assistance_requests')
-      .update({ status: bgStatus })
+      .update({ status: bgStatus, ...(status === 'approved' ? { dispatcher_notes: dispatcherNotes } : {}) })
       .eq('id', req.params.id)
       .select()
       .maybeSingle();

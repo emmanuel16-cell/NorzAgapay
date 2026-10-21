@@ -137,6 +137,7 @@ CREATE TABLE IF NOT EXISTS resource_requests (
   request_type TEXT NOT NULL, -- 'responders' or 'goods'
   sub_type TEXT,
   details TEXT NOT NULL,
+  dispatcher_notes TEXT,
   incident_id UUID REFERENCES incidents(id) ON DELETE SET NULL,
   status TEXT NOT NULL DEFAULT 'pending', -- 'pending', 'approved', 'rejected', 'fulfilled'
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -5415,6 +5416,9 @@ GRANT SELECT, INSERT, UPDATE ON TABLE public.barangay_assistance_requests TO ser
 -- Keep resource_requests.incident_id for legacy requests linked to incidents.
 ALTER TABLE public.resource_requests
   ADD COLUMN IF NOT EXISTS mdrrmo_report_id UUID;
+
+ALTER TABLE public.resource_requests
+  ADD COLUMN IF NOT EXISTS dispatcher_notes TEXT;
 
 UPDATE public.resource_requests AS request
 SET mdrrmo_report_id = request.incident_id,
