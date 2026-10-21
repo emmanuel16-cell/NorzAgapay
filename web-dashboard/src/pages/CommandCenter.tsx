@@ -1860,6 +1860,7 @@ export default function CommandCenter() {
   };
 
   const closeInvalidReview = () => {
+    if (reviewSubmitting) return;
     setInvalidReviewOpen(false);
   };
 
@@ -1882,7 +1883,7 @@ export default function CommandCenter() {
             ? `False Reporter recorded (${reportMarks} mark${reportMarks === 1 ? '' : 's'} on this report; ${count} of 3 account marks).`
             : `False Reporter recorded (${reportMarks} mark${reportMarks === 1 ? '' : 's'} on this report).`);
       } else {
-        toast.success('Report marked inconclusive. The resident will be notified.');
+        toast.success('Report marked inconclusive. The reporter can correct and resubmit it.');
       }
       setInvalidReviewOpen(false);
       setSelectedIncident(null);

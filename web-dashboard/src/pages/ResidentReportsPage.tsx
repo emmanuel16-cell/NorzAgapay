@@ -12,7 +12,6 @@ import EditAndResubmitReportForm from '../components/EditAndResubmitReportForm';
 type ResidentReport = {
   id: string;
   title?: string | null;
-  title?: string | null;
   description?: string | null;
   specifics?: string | null;
   incident_type?: string | null;
