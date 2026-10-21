@@ -107,6 +107,18 @@ export default function RespondUnitsPage() {
   const [memberForm, setMemberForm] = useState({ name: '', phone: '', member_role: 'driver_responder' as CrewRole });
 
   const selectedUnit = units.find((unit) => unit.id === selectedId) || null;
+  const selectedLeaders = selectedUnit
+    ? selectedUnit.team_leaders ?? (selectedUnit.team_leader
+      ? [{
+          id: selectedUnit.team_leader.id,
+          officer_id: '',
+          responder_user_id: selectedUnit.team_leader.id,
+          full_name: selectedUnit.team_leader.full_name,
+          phone: selectedUnit.team_leader.phone,
+          is_active_account: selectedUnit.team_leader.is_active_account,
+        }]
+      : [])
+    : [];
   const filteredUnits = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     if (!normalized) return units;
@@ -460,9 +472,9 @@ export default function RespondUnitsPage() {
               )}
 
               <section className="ru-leader-section">
-                <div className="ru-leader-section-heading"><div><h3>Team Leaders</h3><span>{(selectedUnit.team_leaders || []).length} assigned</span></div></div>
-                {(selectedUnit.team_leaders || []).length > 0 ? <div className="ru-leader-list">
-                  {(selectedUnit.team_leaders || []).map((leader) => <div className="ru-leader-card" key={leader.id}>
+                <div className="ru-leader-section-heading"><div><h3>Team Leaders</h3><span>{selectedLeaders.length} assigned</span></div><span>Multiple leaders can share this unit</span></div>
+                {selectedLeaders.length > 0 ? <div className="ru-leader-list">
+                  {selectedLeaders.map((leader) => <div className="ru-leader-card" key={leader.id}>
                     <div className="ru-member-icon leader"><Shield size={18} /></div>
                     <div className="ru-member-info">
                       <small>TEAM LEADER · RESPONDER ACCOUNT</small>
@@ -480,12 +492,12 @@ export default function RespondUnitsPage() {
                 <div className="ru-add-member-fields">
                   <select className="form-select" required value={leaderToAdd} onChange={(event) => setLeaderToAdd(event.target.value)}>
                     <option value="">Select an active responder account</option>
-                    {leaderAccounts.filter((account) => !(selectedUnit.team_leaders || []).some((leader) => leader.responder_user_id === account.id)).map((account) => <option key={account.id} value={account.id}>{account.officer_name || account.full_name}{account.phone ? ` · ${formatMobileNumber(account.phone)}` : ''}</option>)}
+                    {leaderAccounts.filter((account) => !selectedLeaders.some((leader) => leader.responder_user_id === account.id)).map((account) => <option key={account.id} value={account.id}>{account.officer_name || account.full_name}{account.phone ? ` · ${formatMobileNumber(account.phone)}` : ''}</option>)}
                   </select>
                   <button className="btn btn-primary" type="submit" disabled={saving || !leaderToAdd}>{saving ? 'Saving…' : 'Add Team Leader'}</button>
                 </div>
                 {leaderAccountsError && <small className="ru-form-warning" role="status">{leaderAccountsError}</small>}
-                {!leaderAccountsError && leaderAccounts.every((account) => (selectedUnit.team_leaders || []).some((leader) => leader.responder_user_id === account.id)) && <small className="ru-form-hint">No unassigned active responder accounts are available. A responder can only be a Team Leader for one response unit.</small>}
+                {!leaderAccountsError && leaderAccounts.every((account) => selectedLeaders.some((leader) => leader.responder_user_id === account.id)) && <small className="ru-form-hint">No unassigned active responder accounts are available. A responder can only be a Team Leader for one response unit.</small>}
               </form>}
 
               <div className="ru-roster-title"><div><h3>Unit roster</h3><span>One radio operator · up to three drivers · up to three first aiders</span></div><span>{selectedUnit.members.length} members</span></div>

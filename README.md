@@ -154,6 +154,7 @@ NorzAgapay/
    - `20261022_invalid_report_resubmission.sql` (Inconclusive and false reporter review, report correction/resubmission, and false reporter counters)
    - `20261022_mdrrmo_assignment_closed_at.sql` (Assignment closure timestamps used by responder workflows)
    - `20261022_mdrrmo_assignment_redispatch.sql` (Allows redispatch to the same responders after false reporter review while preserving assignment history)
+   - `20261022_multiple_respond_unit_team_leaders.sql` (Allows multiple Team Leaders per response unit while keeping each responder linked to one unit)
 4. Ensure **Realtime** is enabled on the `incidents`, `incident_reports`, `alerts`, `evacuation_centers`, and `activity_feed` tables.
 5. Create a public Supabase Storage bucket matching `SUPABASE_BUCKET_NAME` (defaults to `norzagapay-files`) for report and broadcast media uploads.
 
