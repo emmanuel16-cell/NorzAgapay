@@ -1046,35 +1046,48 @@ function LiveResponderOverlays({
       if (!targets.length) return [];
 
       return [
-        ...targets.map((target) => (
-          <Polyline
-            key={`live-route-${location.responderKey}-${target.id}`}
-            positions={[[location.latitude, location.longitude], [target.latitude, target.longitude]]}
-            pathOptions={{ color: incidentClusterColor(target, location.accountKind === 'barangay'), weight: 3, dashArray: '8, 8', opacity: 0.9 }}
-          />
-        )),
-        ...targets.map((target) => {
+        ...targets.flatMap((target) => {
           const responderPosition: [number, number] = [location.latitude, location.longitude];
           const targetPosition: [number, number] = [target.latitude, target.longitude];
+          const assignment = location.assignments.find((item) => item.incidentId === target.id);
+          const transportInProgress = assignment?.transportStatus === 'in_transit' &&
+            Number.isFinite(assignment.hospitalLatitude) && Number.isFinite(assignment.hospitalLongitude);
           const color = incidentClusterColor(target, location.accountKind === 'barangay');
-          return <Marker
-            key={`live-route-arrow-${location.responderKey}-${target.id}`}
-            position={[(location.latitude + target.latitude) / 2, (location.longitude + target.longitude) / 2]}
-            icon={createLiveRouteArrow(color, getRouteBearing(responderPosition, targetPosition))}
-            interactive={false}
-            keyboard={false}
-          />;
+          const routeStart = transportInProgress ? targetPosition : responderPosition;
+          const routeEnd = transportInProgress ? responderPosition : targetPosition;
+          return [
+            <Polyline
+              key={`live-route-${location.responderKey}-${target.id}`}
+              positions={[routeStart, routeEnd]}
+              pathOptions={{ color, weight: 3, dashArray: '8, 8', opacity: 0.9 }}
+            />,
+            <Marker
+              key={`live-route-arrow-${location.responderKey}-${target.id}`}
+              position={[(routeStart[0] + routeEnd[0]) / 2, (routeStart[1] + routeEnd[1]) / 2]}
+              icon={createLiveRouteArrow(color, getRouteBearing(routeStart, routeEnd))}
+              interactive={false}
+              keyboard={false}
+            />,
+          ];
         }),
         ...targets.flatMap((target) => {
           const assignment = location.assignments.find((item) => item.incidentId === target.id);
           if (assignment?.transportStatus !== 'in_transit' || !Number.isFinite(assignment.hospitalLatitude) || !Number.isFinite(assignment.hospitalLongitude)) return [];
           const responderPosition: [number, number] = [location.latitude, location.longitude];
           const hospitalPosition: [number, number] = [Number(assignment.hospitalLatitude), Number(assignment.hospitalLongitude)];
+          const routeColor = '#635bff';
           return [
             <Polyline
               key={`transport-route-${location.responderKey}-${target.id}`}
               positions={[responderPosition, hospitalPosition]}
-              pathOptions={{ color: '#635bff', weight: 4, dashArray: '8, 8', opacity: 0.95 }}
+              pathOptions={{ color: routeColor, weight: 4, dashArray: '8, 8', opacity: 0.95 }}
+            />,
+            <Marker
+              key={`transport-route-arrow-${location.responderKey}-${target.id}`}
+              position={[(responderPosition[0] + hospitalPosition[0]) / 2, (responderPosition[1] + hospitalPosition[1]) / 2]}
+              icon={createLiveRouteArrow(routeColor, getRouteBearing(responderPosition, hospitalPosition))}
+              interactive={false}
+              keyboard={false}
             />,
             <Marker key={`transport-hospital-${location.responderKey}-${target.id}`} position={hospitalPosition} icon={createTransportHospitalIcon()} zIndexOffset={1900}>
               <Popup className="command-map-cluster-popup"><strong>{assignment.hospitalName || 'Transport destination'}</strong>{assignment.hospitalAddress && <p>{assignment.hospitalAddress}</p>}</Popup>
