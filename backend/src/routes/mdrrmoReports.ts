@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
 import { config } from '../config';
+import { getResponderGpsLocation } from '../config/redis';
 import { supabaseAdmin } from '../config/supabase';
 import { AuthRequest, authenticate, authorize } from '../middleware/auth';
 import { io } from '../server';
@@ -13,6 +14,7 @@ import { getBarangayCoordinates, getNearestBarangay, distanceMeters as distanceB
 import { getVerifiedResponseBarangays } from '../services/responseBarangay';
 import { resolveIncidentLocation } from '../services/incidentLocation';
 import { getVerifiedBarangayIds } from '../services/verifiedBarangayService';
+import { getRespondersWithinCommandLocation } from '../services/pinResponderAvailability';
 import { isValidLocationIcon, removeStoredLocationIcon, storeLocationIcon } from '../services/locationIconStorage';
 
 const router = Router();
@@ -523,22 +525,34 @@ router.get('/available-responders', authenticate, authorize('dispatcher', 'admin
     const locationType = String(req.query.location_type || '');
     const barangayId = String(req.query.barangay_id || '');
     let locationLabel = '';
+    let location: { latitude: number; longitude: number } | null = null;
     if (locationType === 'office') {
-      locationLabel = 'MDRRMO office';
+      const { data: office, error } = await supabaseAdmin.from('mdrrmo_command_locations')
+        .select('latitude, longitude').eq('location_key', 'office').maybeSingle();
+      if (error) throw error;
+      if (office) {
+        locationLabel = 'MDRRMO office';
+        location = { latitude: Number(office.latitude), longitude: Number(office.longitude) };
+      }
     } else if (locationType === 'barangay') {
       if (!barangayId || !(await getVerifiedBarangayIds()).includes(barangayId)) {
         res.status(403).json({ error: 'This barangay location is unavailable.' });
         return;
       }
       const { data, error } = await supabaseAdmin.from('barangays')
-        .select('name').eq('id', barangayId).maybeSingle();
+        .select('name, location_latitude, location_longitude').eq('id', barangayId).maybeSingle();
       if (error) throw error;
-      if (data) locationLabel = `Barangay ${data.name}`;
+      if (data) {
+        locationLabel = `Barangay ${data.name}`;
+        if (data.location_latitude != null && data.location_longitude != null) {
+          location = { latitude: Number(data.location_latitude), longitude: Number(data.location_longitude) };
+        }
+      }
     } else {
       res.status(400).json({ error: 'Choose an office or barangay location.' });
       return;
     }
-    if (!locationLabel) { res.json({ responders: [], location: null }); return; }
+    if (!locationLabel || !location) { res.json({ responders: [], location: locationLabel || null }); return; }
 
     const isBarangayPin = locationType === 'barangay';
     const { data: responders, error: respondersError } = isBarangayPin
@@ -555,7 +569,7 @@ router.get('/available-responders', authenticate, authorize('dispatcher', 'admin
       const [central, local] = await Promise.all([
         supabaseAdmin.from('mdrrmo_report_barangay_assignments').select('responder_ids')
           .eq('assignment_status', 'active'),
-        supabaseAdmin.from('barangay_reports').select('response_notes, barangay_response_notes, responded_by, barangay_responded_by')
+        supabaseAdmin.from('barangay_reports').select('response_notes, responded_by')
           .eq('barangay_id', barangayId).in('response_status', ['pending', 'responding']),
       ]);
       if (central.error) throw central.error;
@@ -564,10 +578,8 @@ router.get('/available-responders', authenticate, authorize('dispatcher', 'admin
         for (const responderId of assignment.responder_ids || []) busy.add(responderId);
       }
       for (const report of local.data || []) {
-        const primary = report.barangay_responded_by || report.responded_by;
-        if (primary) busy.add(primary);
-        const notes = report.barangay_response_notes || report.response_notes || '';
-        const match = String(notes).match(/^\[ASSIGNED:([^\]]+)\]/);
+        if (report.responded_by) busy.add(report.responded_by);
+        const match = String(report.response_notes || '').match(/^\[ASSIGNED:([^\]]+)\]/);
         if (match) match[1].split(',').map((id) => id.trim()).filter(Boolean).forEach((id) => busy.add(id));
       }
     } else {
@@ -576,7 +588,13 @@ router.get('/available-responders', authenticate, authorize('dispatcher', 'admin
       if (activeError) throw activeError;
       for (const row of activeRows || []) busy.add(row.responder_id);
     }
-    const available = responderRows.filter((responder: any) => !busy.has(responder.id))
+    const notResponding = responderRows.filter((responder: any) => !busy.has(responder.id));
+    const withinLocation = await getRespondersWithinCommandLocation(
+      notResponding,
+      location,
+      isBarangayPin ? getBarangayResponderGpsLocation : getResponderGpsLocation,
+    );
+    const available = withinLocation
       .sort((a: any, b: any) => String(a.full_name || '').localeCompare(String(b.full_name || '')))
       .map((responder: any) => ({ id: responder.id, full_name: responder.full_name, phone: responder.phone, unit_type: responder.unit_type || null }));
     res.json({ responders: available, location: locationLabel });

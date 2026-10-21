@@ -7,8 +7,8 @@ import multer from 'multer';
 import { z } from 'zod';
 import { randomInt } from 'crypto';
 import { config } from '../config';
+import { getBarangayResponderGpsLocation, setOtp, getOtp, deleteOtp, getOtpResendCooldownSeconds } from '../config/redis';
 import { supabaseAdmin } from '../config/supabase';
-import { setOtp, getOtp, deleteOtp, getOtpResendCooldownSeconds } from '../config/redis';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { io } from '../server';
 import { DispatcherVerificationService, normalizePositionDesignation } from '../services/dispatcherVerificationService';
@@ -30,6 +30,7 @@ import { isReportResolved, reportStageDurations, summarizeReportTimings } from '
 import { resolveIncidentLocation } from '../services/incidentLocation';
 import { findNearestVerifiedResponseBarangayName } from '../services/responseBarangay';
 import { isDirectMdrrmoReport } from '../services/mdrrmoReportVisibility';
+import { getRespondersWithinCommandLocation } from '../services/pinResponderAvailability';
 import { isMobileNumberRegistryConflict, normalizeMobileNumber } from '../services/mobileNumberService';
 import { countPasswordMatchesForPhone, hasPasswordReuseForPhone, hasPhoneInAccountType, withPhoneAccountLock } from '../services/accountAuthService';
 import { decryptPendingPassword, encryptPendingPassword } from '../services/pendingPasswordService';
@@ -430,8 +431,17 @@ router.delete('/location/icon', authenticateBarangay, requireRole(['admin', 'sta
 
 router.get('/location/available-responders', authenticateBarangay, requireRole(['admin','dispatcher']), async (req: any, res: Response): Promise<void> => {
   try {
+    const barangayId = req.barangayUser.barangayId as string;
+    const { data: barangay, error: locationError } = await supabaseAdmin.from('barangays')
+      .select('location_latitude, location_longitude').eq('id', barangayId).maybeSingle();
+    if (locationError) throw locationError;
+    if (barangay?.location_latitude == null || barangay?.location_longitude == null) {
+      res.json({ responders: [] });
+      return;
+    }
+
     const { data: responders, error: respondersError } = await supabaseAdmin.from('barangay_users').select('id, full_name, phone, role')
-      .eq('barangay_id', req.barangayUser.barangayId).eq('role', 'responder').eq('is_active', true);
+      .eq('barangay_id', barangayId).eq('role', 'responder').eq('is_active', true);
     if (respondersError) throw respondersError;
     if (!responders?.length) {
       res.json({ responders: [] });
@@ -440,20 +450,25 @@ router.get('/location/available-responders', authenticateBarangay, requireRole([
     const [{ data: centralAssignments, error: assignmentError }, { data: localReports, error: localError }] = await Promise.all([
       supabaseAdmin.from('mdrrmo_report_barangay_assignments').select('responder_ids')
         .eq('assignment_status', 'active'),
-      supabaseAdmin.from('barangay_reports').select('response_notes, responded_by, barangay_responded_by')
-        .eq('barangay_id', req.barangayUser.barangayId).in('response_status', ['pending','responding']),
+      supabaseAdmin.from('barangay_reports').select('response_notes, responded_by')
+        .eq('barangay_id', barangayId).in('response_status', ['pending','responding']),
     ]);
     if (assignmentError) throw assignmentError;
     if (localError) throw localError;
     const busy = new Set<string>();
     for (const assignment of centralAssignments || []) for (const id of assignment.responder_ids || []) busy.add(id);
     for (const report of localReports || []) {
-      const primary = report.responded_by || report.barangay_responded_by;
-      if (primary) busy.add(primary);
+      if (report.responded_by) busy.add(report.responded_by);
       const match = String(report.response_notes || '').match(/^\[ASSIGNED:([^\]]+)\]/);
       if (match) match[1].split(',').map((id) => id.trim()).filter(Boolean).forEach((id) => busy.add(id));
     }
-    const available = responders.filter((responder: any) => !busy.has(responder.id))
+    const notResponding = responders.filter((responder: any) => !busy.has(responder.id));
+    const withinLocation = await getRespondersWithinCommandLocation(
+      notResponding,
+      { latitude: Number(barangay.location_latitude), longitude: Number(barangay.location_longitude) },
+      getBarangayResponderGpsLocation,
+    );
+    const available = withinLocation
       .sort((a: any, b: any) => String(a.full_name || '').localeCompare(String(b.full_name || '')))
       .map((responder: any) => ({ id: responder.id, full_name: responder.full_name, phone: responder.phone }));
     res.json({ responders: available });
