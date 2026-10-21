@@ -10,8 +10,6 @@ import ResponderLocationMapModal from '../components/ResponderLocationMapModal';
 import { formatIncidentLocation, hasIncidentPin, type IncidentLocationPreview } from '../lib/incidentLocation';
 
 type CrewMember = { id?: string; unit_member_id?: string; name?: string; full_name?: string; member_role: string; is_active?: boolean };
-type BarangayCrewMember = { id: string; full_name: string; account_role: 'responder' | 'staff' };
-type BarangayCrewSelection = { member_id: string; crew_role: string };
 type ResponseAssignment = { responder_id?: string; status?: string; assignment_status?: string; arrived_at?: string | null; crew?: CrewMember[] };
 type AssignedReport = {
   id: string;
@@ -37,7 +35,6 @@ type AssignedReport = {
   barangay_responded_by?: string | null;
   arrived_at?: string | null;
   assigned_team_leader_ids?: string[];
-  barangay_crew_members?: Array<{ member_id: string; member_name: string; crew_role: string }>;
   mdrrmo_arrived_at?: string | null;
   mdrrmo_assignments?: ResponseAssignment[];
   assigned_responder_ids?: string[];
@@ -119,11 +116,9 @@ export default function ResponderWorkspacePage() {
   const [demoDismissed, setDemoDismissed] = useState(false);
   const [reports, setReports] = useState<AssignedReport[]>([]);
   const [crew, setCrew] = useState<CrewMember[]>([]);
-  const [barangayRoster, setBarangayRoster] = useState<BarangayCrewMember[]>([]);
   const [crewSelections, setCrewSelections] = useState<Record<string, string[]>>({});
   const [crewDraftSelections, setCrewDraftSelections] = useState<Record<string, string[]>>({});
   const [crewEditorReportId, setCrewEditorReportId] = useState<string | null>(null);
-  const [barangayCrewSelections, setBarangayCrewSelections] = useState<Record<string, BarangayCrewSelection[]>>({});
   const [assessments, setAssessments] = useState<Record<string, typeof emptyAssessment>>({});
   const assessmentBaseline = useRef<Record<string, FieldAssessment>>({});
   const [responderGps, setResponderGps] = useState<{ latitude: number; longitude: number; capturedAt: number } | null>(null);
@@ -175,11 +170,10 @@ export default function ResponderWorkspacePage() {
     try {
       const [queueResponse, rosterResponse] = await Promise.all([
         isBarangay ? reportAPI.barangayReports() : reportAPI.mdrrmoQueue(),
-        isBarangay ? reportAPI.barangayCrewRoster() : respondUnitAPI.myUnit(),
+        isBarangay ? Promise.resolve(null) : respondUnitAPI.myUnit(),
       ]);
       const items = Array.isArray(queueResponse.data) ? queueResponse.data : [];
       const members: CrewMember[] = isBarangay ? [] : Array.isArray(rosterResponse?.data?.members) ? rosterResponse.data.members : [];
-      const barangayMembers: BarangayCrewMember[] = isBarangay && Array.isArray(rosterResponse?.data?.members) ? rosterResponse.data.members : [];
       const nextAssessmentBaseline: Record<string, FieldAssessment> = Object.fromEntries(items.map((report: AssignedReport) => [
         report.id,
         parseFieldAssessment(isBarangay
@@ -202,17 +196,12 @@ export default function ResponderWorkspacePage() {
       })));
       assessmentBaseline.current = nextAssessmentBaseline;
       setCrew(members);
-      setBarangayRoster(barangayMembers);
       setCrewSelections(Object.fromEntries(items.map((report: AssignedReport) => {
         const assignment = report.mdrrmo_assignments?.find((item) => item.responder_id === user?.id && item.status !== 'removed');
         const savedIds = (assignment?.crew || []).filter((member) => member.member_role !== 'team_leader')
           .map((member) => member.unit_member_id || member.id || '').filter(Boolean);
         return [report.id, savedIds];
       })));
-      setBarangayCrewSelections(Object.fromEntries(items.map((report: AssignedReport) => [
-        report.id,
-        (report.barangay_crew_members || []).map((member) => ({ member_id: member.member_id, crew_role: member.crew_role })),
-      ])));
     } catch (loadError: any) {
       setError(loadError?.response?.data?.error || 'Your assigned responses could not be loaded.');
     } finally {
@@ -411,25 +400,6 @@ export default function ResponderWorkspacePage() {
     }
   };
 
-  const toggleBarangayCrew = (reportId: string, memberId: string) => {
-    setBarangayCrewSelections((all) => {
-      const current = all[reportId] || [];
-      return {
-        ...all,
-        [reportId]: current.some((member) => member.member_id === memberId)
-          ? current.filter((member) => member.member_id !== memberId)
-          : [...current, { member_id: memberId, crew_role: 'member' }],
-      };
-    });
-  };
-
-  const setBarangayCrewRole = (reportId: string, memberId: string, crewRole: string) => {
-    setBarangayCrewSelections((all) => ({
-      ...all,
-      [reportId]: (all[reportId] || []).map((member) => member.member_id === memberId ? { ...member, crew_role: crewRole } : member),
-    }));
-  };
-
   const uploadMedia = (report: AssignedReport, files?: FileList | null) => {
     const selectedFiles = files ? Array.from(files) : [];
     if (!selectedFiles.length) return;
@@ -584,9 +554,7 @@ export default function ResponderWorkspacePage() {
             ? Boolean(report.barangay_arrived_at)
             : Boolean(assignment ? assignment.arrived_at : report.mdrrmo_arrived_at);
           const canUpdateField = !report.is_demo && (isBarangay ? responseStatus === 'responding' : assignmentStatus === 'responding');
-          const canManageCrew = !report.is_demo && !arrived && (isBarangay
-            ? Boolean(report.is_central_assignment && report.barangay_dispatched_at && responseStatus === 'responding')
-            : assignmentStatus === 'responding');
+          const canManageCrew = !isBarangay && !report.is_demo && !arrived && assignmentStatus === 'responding';
           const selectedCrewIds = crewDraftSelections[report.id] || [];
           const currentAssessment = assessments[report.id] || emptyAssessment;
           const fieldMedia = parseResponderMedia(report.responder_media);
@@ -599,9 +567,7 @@ export default function ResponderWorkspacePage() {
           const transportInProgress = currentAssessment.transport_status === 'in_transit';
           const canResolve = assessmentSaved && triageSaved &&
             (currentAssessment.triage_outcome !== 'severe_injuries' || currentAssessment.transport_status === 'delivered');
-          const selectedBarangayCrew = barangayCrewSelections[report.id] || [];
           const savedMdrrmoCrew = (assignment?.crew || []).filter((member) => member.member_role !== 'team_leader');
-          const savedBarangayCrew = report.barangay_crew_members || [];
           const hasMapLocation = !report.is_demo && hasIncidentPin(report);
           const locationPreview = locationPreviews[report.id];
           const displayStatus = responseStatus === 'responding' ? 'Responding' : assignmentStatus === 'active' ? 'Assigned' : assignmentStatus || 'Assigned';
@@ -617,7 +583,7 @@ export default function ResponderWorkspacePage() {
               onOpenMap={hasMapLocation ? () => setLocationMapReport(report) : undefined}
             />
 
-            {canManageCrew && !isBarangay && <section className="responder-action-panel">
+            {canManageCrew && <section className="responder-action-panel">
               <h3><ClipboardList size={16} /> MDRRMO response crew</h3>
               <div className="responder-selected-crew-list">
                 {savedMdrrmoCrew.map((member) => <div className="responder-selected-crew-member" key={member.unit_member_id || member.id}>
@@ -648,25 +614,6 @@ export default function ResponderWorkspacePage() {
                 </section>
               </div>}
             </section>}
-
-            {canManageCrew && isBarangay && <section className="responder-action-panel">
-              <h3><ClipboardList size={16} /> {user?.barangay_name || 'Barangay'} response crew</h3>
-              <p className="responder-report-description">This assignment is already accepted. Choose members from your barangay roster and give each their response role.</p>
-              {savedBarangayCrew.length > 0 && <small className="responder-crew-guidance">Current crew: {savedBarangayCrew.map((member) => `${member.member_name} (${member.crew_role.replaceAll('_', ' ')})`).join(', ')}</small>}
-              {barangayRoster.length === 0 && <div className="workspace-message">No active staff or responders are available in this barangay roster.</div>}
-              {barangayRoster.map((member) => {
-                const selected = selectedBarangayCrew.find((item) => item.member_id === member.id);
-                return <div className="responder-crew-option" key={member.id}>
-                  <label><input type="checkbox" checked={Boolean(selected)} onChange={() => toggleBarangayCrew(report.id, member.id)} /><span><strong>{member.full_name}</strong><small>{member.account_role}</small></span></label>
-                  {selected && <select aria-label={`Response role for ${member.full_name}`} value={selected.crew_role} onChange={(event) => setBarangayCrewRole(report.id, member.id, event.target.value)}>
-                    <option value="team_leader">Team leader</option><option value="driver">Driver</option><option value="first_aider">First aider</option><option value="radio_operator">Radio operator</option><option value="member">Responder / member</option>
-                  </select>}
-                </div>;
-              })}
-              <button className="workspace-primary-action" type="button" disabled={saving || selectedBarangayCrew.length === 0 || selectedBarangayCrew.length > 20} onClick={() => void perform(() => reportAPI.saveBarangayResponseCrew(report.id, selectedBarangayCrew), 'Barangay response crew saved.')}>Save response crew</button>
-            </section>}
-
-            {!canManageCrew && canUpdateField && isBarangay && savedBarangayCrew.length > 0 && <div className="workspace-message">Barangay crew: {savedBarangayCrew.map((member) => `${member.member_name} (${member.crew_role.replaceAll('_', ' ')})`).join(', ')}</div>}
 
             {canUpdateField && <section className="responder-action-panel">
               <h3><Activity size={16} /> Field response</h3>
