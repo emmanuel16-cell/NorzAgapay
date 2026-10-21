@@ -1836,8 +1836,9 @@ router.delete('/team/:id', authenticateBarangay, requireRole(['admin']), async (
 // ─── GET /api/barangay/reports ───────────────────────────────────────────────
 // Get incident reports assigned to this barangay
 
-// Barangay analytics include only reports handled by the barangay. Direct
-// MDRRMO routing and reports escalated to MDRRMO are excluded from its metrics.
+// Barangay analytics include direct barangay reports and MDRRMO reports assigned
+// to this barangay. Direct MDRRMO work and barangay reports taken over by MDRRMO
+// are excluded from its metrics.
 router.get('/reports/statistics', authenticateBarangay, requireRole(['admin']), async (req: any, res: Response): Promise<void> => {
   try {
     const requestedType = typeof req.query.type === 'string' ? req.query.type : undefined;
@@ -1846,36 +1847,94 @@ router.get('/reports/statistics', authenticateBarangay, requireRole(['admin']), 
       return;
     }
 
-    // Primary: read from dedicated barangay_reports table
-    const { data: allData, error: newError } = await supabaseAdmin
-      .from('barangay_reports')
-      .select('*')
-      .eq('barangay_id', req.barangayUser.barangayId)
-      .order('created_at', { ascending: false })
-      .limit(5000);
-    if (newError) throw newError;
+    const [{ data: allBarangayReports, error: barangayReportsError }, { data: assignments, error: assignmentsError }] = await Promise.all([
+      supabaseAdmin
+        .from('barangay_reports')
+        .select('*')
+        .eq('barangay_id', req.barangayUser.barangayId)
+        .order('created_at', { ascending: false })
+        .limit(5000),
+      supabaseAdmin.from('mdrrmo_report_barangay_assignments')
+        .select('*')
+        .eq('barangay_id', req.barangayUser.barangayId)
+        .in('assignment_status', ['active', 'completed'])
+        .order('assigned_at', { ascending: false })
+        .limit(5000),
+    ]);
+    if (barangayReportsError) throw barangayReportsError;
+    if (assignmentsError) throw assignmentsError;
+
+    const centralReportIds = [...new Set((assignments || []).map((assignment: any) => assignment.report_id).filter(Boolean))];
+    const [{ data: centralReports, error: centralReportsError }, { data: barangay, error: barangayError }] = await Promise.all([
+      centralReportIds.length
+        ? supabaseAdmin.from('mdrrmo_reports').select('*').in('id', centralReportIds)
+        : Promise.resolve({ data: [], error: null } as any),
+      supabaseAdmin.from('barangays').select('name').eq('id', req.barangayUser.barangayId).maybeSingle(),
+    ]);
+    if (centralReportsError) throw centralReportsError;
+    if (barangayError) throw barangayError;
+
+    const centralById = new Map((centralReports || []).map((report: any) => [report.id, report]));
+    const centralSourceIds = new Set((centralReports || []).map((report: any) => report.source_barangay_report_id).filter(Boolean));
+    const centralAssignmentReports = (assignments || []).flatMap((assignment: any) => {
+      const report: any = centralById.get(assignment.report_id);
+      if (!report) return [];
+      return [formatIncidentReport({
+        ...report,
+        is_central_assignment: true,
+        assignment_id: assignment.id,
+        assignment_status: assignment.assignment_status,
+        assignment_closed_at: assignment.closed_at,
+        assignment_notes: assignment.assignment_notes,
+        status: assignment.response_status || assignment.assignment_status,
+        response_status: assignment.response_status,
+        barangay_response_status: assignment.response_status,
+        barangay_response_notes: assignment.response_notes,
+        barangay_responded_by: assignment.responded_by,
+        barangay_responded_at: assignment.responded_at,
+        barangay_dispatched_at: assignment.dispatched_at,
+        accepted_at: assignment.accepted_at,
+        arrived_at: assignment.arrived_at,
+        resolved_at: assignment.resolved_at,
+        barangay_accepted_at: assignment.accepted_at,
+        barangay_arrived_at: assignment.arrived_at,
+        barangay_resolved_at: assignment.resolved_at,
+        barangay_resolved_notes: assignment.resolved_notes,
+        response_barangay_id: assignment.barangay_id,
+        response_barangay_name: barangay?.name || null,
+        incident_barangay_id: report.barangay_id,
+        incident_barangay_name: report.barangay_name || null,
+        created_at: report.created_at,
+      })];
+    });
 
     const mdrrmoHandled = (report: any) => {
       const routeText = `${report.specifics || ''}\n${report.description || ''}`;
-      const mdrrmoStatus = String(report.mdrrmo_response_status || report.response_status || '').toLowerCase();
-      return report.send_to === 'mdrrmo' ||
+      const mdrrmoStatus = String(report.mdrrmo_response_status || '').toLowerCase();
+      return String(report.send_to || '').toLowerCase() === 'mdrrmo' ||
         /\[SEND_TO:mdrrmo\]/i.test(routeText) ||
         String(report.status || '').toLowerCase() === 'escalated' ||
         ['responding', 'resolved'].includes(mdrrmoStatus) ||
         String(report.barangay_response_status || report.response_notes || '').toLowerCase().includes('escalated');
     };
-    const barangayHandledReports = allData.filter(
-      (report: any) => !mdrrmoHandled(report),
+    const isBarangayResolved = (report: any) => isReportResolved(report) ||
+      (!report.barangay_response_status && !report.response_status && ['resolved', 'closed'].includes(String(report.status || '').toLowerCase()));
+    const centralIds = new Set(centralReportIds);
+    const legacyBarangayReports = (allBarangayReports || []).filter((report: any) =>
+      !centralIds.has(report.id) && !centralSourceIds.has(report.id) && !mdrrmoHandled(report),
     );
-    const resolvedReports = barangayHandledReports.filter(isReportResolved);
-    const selectedReports = requestedType
-      ? resolvedReports.filter((report: any) => report.type === requestedType)
-      : resolvedReports;
+    const barangayHandledReports = [...legacyBarangayReports, ...centralAssignmentReports];
+    const typeFilteredReports = requestedType
+      ? barangayHandledReports.filter((report: any) => report.type === requestedType)
+      : barangayHandledReports;
+    const resolvedReports = typeFilteredReports.filter(isBarangayResolved);
     const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const now = new Date();
-    const sixMonthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 5, 1));
+    const philippinesOffsetMs = 8 * 60 * 60 * 1000;
+    const philippinesNow = new Date(now.getTime() + philippinesOffsetMs);
+    const sixMonthStart = new Date(Date.UTC(philippinesNow.getUTCFullYear(), philippinesNow.getUTCMonth() - 5, 1) - philippinesOffsetMs);
     const monthlyVolume = Array.from({ length: 6 }, (_, index) => {
-      const month = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 5 + index, 1));
+      const month = new Date(Date.UTC(philippinesNow.getUTCFullYear(), philippinesNow.getUTCMonth() - 5 + index, 1));
       const year = month.getUTCFullYear();
       const monthNumber = month.getUTCMonth() + 1;
       return {
@@ -1885,13 +1944,14 @@ router.get('/reports/statistics', authenticateBarangay, requireRole(['admin']), 
         emergency: 0,
       };
     });
-    const recentReports = (barangayHandledReports as any[]).filter((report) => {
+    const recentReports = (typeFilteredReports as any[]).filter((report) => {
       const createdAt = new Date(report.created_at);
       return Number.isFinite(createdAt.getTime()) && createdAt >= sixMonthStart && createdAt <= now;
     });
     const categoryCounts = new Map<string, { label: string; count: number }>();
     for (const report of recentReports) {
-      const label = String(report.specifics || report.title || 'Unspecified').trim() || 'Unspecified';
+      const rawLabel = String(report.incident_type || report.specifics || report.title || 'Unspecified').trim() || 'Unspecified';
+      const label = rawLabel.replaceAll('_', ' ');
       const key = label.toLowerCase();
       const existing = categoryCounts.get(key);
       if (existing) existing.count += 1;
@@ -1906,7 +1966,7 @@ router.get('/reports/statistics', authenticateBarangay, requireRole(['admin']), 
 
     const statusDistribution = { pending: 0, responding: 0, resolved: 0 };
     for (const report of recentReports) {
-      if (isReportResolved(report)) {
+      if (isBarangayResolved(report)) {
         statusDistribution.resolved += 1;
         continue;
       }
@@ -1920,8 +1980,7 @@ router.get('/reports/statistics', authenticateBarangay, requireRole(['admin']), 
 
     const activityHeatmap = Array.from({ length: 7 }, () => Array<number>(24).fill(0));
     const heatmapStart = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
-    const philippinesOffsetMs = 8 * 60 * 60 * 1000;
-    for (const report of barangayHandledReports as any[]) {
+    for (const report of typeFilteredReports as any[]) {
       const createdAt = new Date(report.created_at);
       if (!Number.isFinite(createdAt.getTime()) || createdAt < heatmapStart || createdAt > now) continue;
       const philippinesTime = new Date(createdAt.getTime() + philippinesOffsetMs);
@@ -1931,9 +1990,9 @@ router.get('/reports/statistics', authenticateBarangay, requireRole(['admin']), 
     const monthIndexes = new Map<string, number>(
       monthlyVolume.map((month, index) => [month.period, index] as const),
     );
-    for (const report of barangayHandledReports as any[]) {
+    for (const report of recentReports as any[]) {
       if (report.type !== 'community' && report.type !== 'emergency') continue;
-      const createdAt = new Date(report.created_at);
+      const createdAt = new Date(new Date(report.created_at).getTime() + philippinesOffsetMs);
       if (!Number.isFinite(createdAt.getTime())) continue;
       const period = `${createdAt.getUTCFullYear()}-${String(createdAt.getUTCMonth() + 1).padStart(2, '0')}`;
       const monthIndex = monthIndexes.get(period);
@@ -1941,16 +2000,18 @@ router.get('/reports/statistics', authenticateBarangay, requireRole(['admin']), 
       if (report.type === 'community') monthlyVolume[monthIndex].community += 1;
       else monthlyVolume[monthIndex].emergency += 1;
     }
-    const reports = selectedReports.map((report: any) => ({
-      ...formatIncidentReport(report),
-      timing_durations: reportStageDurations(report),
-    }));
+    const reports = resolvedReports
+      .sort((first: any, second: any) => Date.parse(second.barangay_resolved_at || second.resolved_at || second.created_at || '') - Date.parse(first.barangay_resolved_at || first.resolved_at || first.created_at || ''))
+      .map((report: any) => ({
+        ...formatIncidentReport(report),
+        timing_durations: reportStageDurations(report),
+      }));
 
     res.json({
       barangay_id: req.barangayUser.barangayId,
       type: requestedType || 'all',
       report_count: reports.length,
-      averages: summarizeReportTimings(selectedReports),
+      averages: summarizeReportTimings(resolvedReports),
       report_volume_by_month: monthlyVolume,
       category_distribution: topCategories,
       status_distribution: statusDistribution,
