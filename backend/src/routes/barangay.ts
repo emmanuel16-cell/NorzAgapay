@@ -3627,7 +3627,9 @@ router.get('/reports/:id/resolution-pdf', authenticateBarangay, requireRole(['ad
     } else {
       const { data: assignments, error: assignmentError } = await supabaseAdmin
         .from('mdrrmo_report_barangay_assignments')
-        .select('id, responder_ids')
+        // Dispatcher downloads do not depend on a responder roster. Only load
+        // responder IDs for responder authorization checks.
+        .select(isResponder ? 'id, responder_ids' : 'id')
         .eq('report_id', req.params.id)
         .eq('barangay_id', req.barangayUser.barangayId)
         .eq('assignment_status', 'completed')
@@ -3653,7 +3655,7 @@ router.get('/reports/:id/resolution-pdf', authenticateBarangay, requireRole(['ad
       res.status(409).json({ error: error.message, missing_fields: error.missingFields });
       return;
     }
-    console.error('Barangay incident PDF download error:', error);
+    console.error(`Barangay incident PDF download error for report ${req.params.id}:`, error);
     res.status(500).json({ error: 'Could not create or download the incident PDF.' });
   }
 });

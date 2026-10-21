@@ -240,8 +240,8 @@ async function mdrrmoCycleTimes(reportId: string): Promise<Record<string, string
   };
 }
 
-async function assistanceForReport(reportId: string): Promise<any[]> {
-  const [barangayResult, legacyResult, reportResult] = await Promise.all([
+async function assistanceForReport(reportId: string): Promise<{ requests: any[]; unavailable: boolean }> {
+  const results = await Promise.allSettled([
     supabaseAdmin
       .from('barangay_assistance_requests')
       .select('id, explanation, needs_more_manpower, needs_resources, needs_equipment, beyond_barangay_capability, status, decision, dispatcher_notes, created_at')
@@ -258,23 +258,39 @@ async function assistanceForReport(reportId: string): Promise<any[]> {
       .eq('mdrrmo_report_id', reportId)
       .order('created_at', { ascending: true }),
   ]);
-  const firstError = barangayResult.error || legacyResult.error || reportResult.error;
-  if (firstError) throw firstError;
+  const settled = results.map((result) => result.status === 'fulfilled'
+    ? result.value
+    : { data: null, error: result.reason });
+  const [barangayResult, legacyResult, reportResult] = settled;
+  const lookupErrors = [barangayResult.error, legacyResult.error, reportResult.error].filter(Boolean);
+  if (lookupErrors.length) {
+    // Assistance history is supplementary to the required resolution fields.
+    // Older databases may not have the newer mdrrmo_report_id link yet, so a
+    // missing optional column must not prevent the actual resolution PDF.
+    console.warn('Some optional assistance records could not be loaded for the resolution PDF:', lookupErrors);
+  }
 
   const requestsById = new Map<string, any>();
-  for (const request of barangayResult.data || []) {
+  for (const request of barangayResult.error ? [] : barangayResult.data || []) {
     requestsById.set(request.id, { ...request, source: 'barangay' });
   }
-  for (const request of [...(legacyResult.data || []), ...(reportResult.data || [])]) {
+  const resourceRequests = [
+    ...(legacyResult.error ? [] : legacyResult.data || []),
+    ...(reportResult.error ? [] : reportResult.data || []),
+  ];
+  for (const request of resourceRequests) {
     requestsById.set(request.id, {
       ...request,
       explanation: request.details,
       source: 'mdrrmo',
     });
   }
-  return [...requestsById.values()].sort((a, b) =>
-    new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-  );
+  return {
+    requests: [...requestsById.values()].sort((a, b) =>
+      new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    ),
+    unavailable: lookupErrors.length > 0,
+  };
 }
 
 function assistanceDetail(request: any): string {
@@ -308,7 +324,7 @@ function assistanceOutcome(request: any): string {
   return 'Pending';
 }
 
-async function toBuffer(report: any, resident: any, assistance: any[]): Promise<Buffer> {
+async function toBuffer(report: any, resident: any, assistance: any[], assistanceUnavailable = false): Promise<Buffer> {
   const fonts = resolveFonts();
   const doc = new PDFDocument({ size: 'A4', margin: 42, info: { Title: `Incident Resolution - ${report.id}`, Author: 'Norz-Agapay' } });
   if (fonts.regularPath) doc.registerFont('Times New Roman', fonts.regularPath);
@@ -479,7 +495,9 @@ async function toBuffer(report: any, resident: any, assistance: any[]): Promise<
     const outcome = report.mdrrmo_response_status === 'resolved' ? 'Provided' : 'Pending';
     row(coordinationNotes, outcome);
   }
-  if (!assistance.length && !coordinationNotes) {
+  if (assistanceUnavailable) {
+    row('Additional assistance records', 'Some records could not be loaded and are omitted from this document.');
+  } else if (!assistance.length && !coordinationNotes) {
     row('Requests', 'No assistance or coordination requests recorded.');
   }
 
@@ -618,11 +636,19 @@ export class IncidentResolutionPdfService {
     }
 
     if (!report) throw new Error('Incident report not found.');
-    const mdrrmoTimes = await mdrrmoCycleTimes(reportId);
-    report.mdrrmo_accepted_at = report.mdrrmo_accepted_at || mdrrmoTimes.mdrrmo_accepted_at;
-    report.mdrrmo_arrived_at = report.mdrrmo_arrived_at || mdrrmoTimes.mdrrmo_arrived_at;
     const cycles = completedCycles(report);
     if (!cycles.length) throw new Error('This report has no resolved response cycle yet.');
+    if (cycles.includes('mdrrmo')) {
+      try {
+        const mdrrmoTimes = await mdrrmoCycleTimes(reportId);
+        report.mdrrmo_accepted_at = report.mdrrmo_accepted_at || mdrrmoTimes.mdrrmo_accepted_at;
+        report.mdrrmo_arrived_at = report.mdrrmo_arrived_at || mdrrmoTimes.mdrrmo_arrived_at;
+      } catch (error) {
+        // Assignment-history timestamps are supplementary. Keep any timestamps
+        // on the report and continue if this optional lookup is unavailable.
+        console.warn(`Could not load MDRRMO assignment timestamps for resolution PDF ${reportId}:`, error);
+      }
+    }
     const missing = cycles.flatMap((cycle) => this.missingFields(report, cycle));
     if (missing.length) throw new IncompleteResolutionReportError([...new Set(missing)]);
 
@@ -632,7 +658,7 @@ export class IncidentResolutionPdfService {
       resident = data;
     }
     const assistance = await assistanceForReport(reportId);
-    const buffer = await toBuffer(report, resident, assistance);
+    const buffer = await toBuffer(report, resident, assistance.requests, assistance.unavailable);
     const generatedAt = new Date().toISOString();
     if (!storeDocument) return { buffer, generatedAt };
 

@@ -1,0 +1,12 @@
+import { FileBlob, SpreadsheetFile } from '@oai/artifact-tool';
+const path='C:/Users/user/Desktop/MySystems/NorzAgapay/outputs/norzagapay-manual-test-plan-20261021/NorzAgapay_Manual_Test_Cases.xlsx';
+const wb=await SpreadsheetFile.importXlsx(await FileBlob.load(path));
+const sheet=wb.worksheets.getItem('Test Cases');
+console.log('SUMMARY',JSON.stringify(sheet.getRange('A5:I5').values));
+console.log('SUMMARY_FORMULAS',JSON.stringify(sheet.getRange('A5:I5').formulas));
+console.log('TABLES',JSON.stringify(sheet.tables.items.map(t=>({name:t.name,style:t.style,showFilterButton:t.showFilterButton}))));
+console.log('VALIDATION',JSON.stringify(sheet.getRange('J8').dataValidation));
+console.log('FIRST_STATUS',JSON.stringify(sheet.getRange('J8:J10').values));
+console.log('LAST_ROW',JSON.stringify(sheet.getRange('A57:M57').values));
+const summary=await wb.inspect({kind:'workbook,sheet,table',maxChars:3500,tableMaxRows:3,tableMaxCols:5});
+console.log('STRUCTURE\n'+summary.ndjson);
