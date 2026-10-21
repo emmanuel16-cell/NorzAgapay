@@ -11,6 +11,7 @@ import { isEscalatedForMdrrmo, isVisibleToMdrrmo } from '../services/mdrrmoRepor
 import { estimateReportTimings } from '../services/reportTiming';
 import { resolveIncidentLocation } from '../services/incidentLocation';
 import { findNearestVerifiedResponseBarangayName } from '../services/responseBarangay';
+import { checkReportSubmissionRateLimit } from '../services/reportSubmissionRateLimit';
 import {
   getMunicipalityBoundaryConfiguration,
   isPointInBoundary,
@@ -788,6 +789,33 @@ router.post('/', optionalAuthenticate, upload.any(), async (req: AuthRequest, re
     if (boundaryConfig.enabled && !isPointInBoundary(lat, lng, boundaryConfig.geometry)) {
       res.status(403).json({
         error: 'Incident reports can only be submitted for locations inside Norzagaray.',
+      });
+      return;
+    }
+
+    const phoneForRateLimit = reporterPhone || submittedPhoneDigits;
+    const reportRateLimit = await checkReportSubmissionRateLimit({
+      accountId: isSignedInResident ? req.user!.userId : null,
+      phone: phoneForRateLimit,
+      ip: req.ip || req.socket.remoteAddress || 'unknown',
+      incident: {
+        type,
+        category: req.body.incident_type || 'not_sure',
+        title,
+        specifics,
+        description,
+        latitude: parsedLatitude,
+        longitude: parsedLongitude,
+      },
+    });
+    if (!reportRateLimit.allowed) {
+      res.setHeader('Retry-After', String(reportRateLimit.retryAfterSeconds || 1));
+      res.status(429).json({
+        error: reportRateLimit.reason === 'duplicate'
+          ? 'A report for this same incident was submitted recently. Wait a moment before sending it again.'
+          : 'Too many reports were submitted in a short time. Please wait a few minutes and try again.',
+        code: 'REPORT_RATE_LIMITED',
+        retry_after_seconds: reportRateLimit.retryAfterSeconds || 1,
       });
       return;
     }

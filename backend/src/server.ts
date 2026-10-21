@@ -47,6 +47,9 @@ const getRiverLevelStatus = (level: number, warning: number, critical: number) =
 
 const app = express();
 const server = http.createServer(app);
+// Render forwards requests through one trusted proxy. Use the client IP for
+// abuse controls while avoiding treating every report as coming from Render.
+app.set('trust proxy', 1);
 
 // Socket.io setup
 const io = new SocketIOServer(server, {
