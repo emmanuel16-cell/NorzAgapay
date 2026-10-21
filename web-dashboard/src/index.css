@@ -4455,6 +4455,7 @@ tbody tr:last-child td { border-bottom: none; }
 .reports-page-header-v2 > div:first-child { display: flex; align-items: baseline; gap: 16px; min-width: 0; }
 .reports-page-header-v2 h1 { margin: 0; color: #f5f8ff; font-size: 20px; font-weight: 700; letter-spacing: -.3px; }
 .reports-page-header-v2 > div:first-child > span { color: #9ab2d9; font-size: 15px; }
+.assistance-header-actions-v2 { display: flex; align-items: center; justify-content: flex-end; gap: 14px; }
 .reports-live-indicator { display: flex; align-items: center; gap: 8px; color: #b4c6e3; font-size: 14px; white-space: nowrap; }
 .reports-live-indicator i { width: 10px; height: 10px; border-radius: 50%; background: #12c89a; box-shadow: 0 0 12px #12c89a80; }
 .reports-live-indicator > span { color: #6680a9; }
@@ -4662,6 +4663,10 @@ body.responder-map-open { overflow: hidden; }
 :root[data-theme='light'] .reports-resolve-notes-v2 { border-color: #cbd7e8; background: #e7eef9; }
 :root[data-theme='light'] .reports-detail-section-v2 > h3,
 :root[data-theme='light'] .reports-section-heading-v2 h3 { color: #293b59; }
+:root[data-theme='light'] .barangay-assistance-linked-summary strong,
+:root[data-theme='light'] .barangay-assistance-review-panel label { color: #293b59; }
+:root[data-theme='light'] .barangay-assistance-card-footer { border-color: #dbe4f0; }
+:root[data-theme='light'] .barangay-assistance-card-footer button { border-color: #c5d2e4; color: #263a59; background: #fff; }
 :root[data-theme='light'] .reports-stage-tabs-v2 button.active { color: #14213a; }
 
 @media (max-width: 1100px) {
@@ -4675,6 +4680,8 @@ body.responder-map-open { overflow: hidden; }
   .reports-page-header-v2 > div:first-child { align-items: flex-start; flex-direction: column; gap: 3px; }
   .reports-page-header-v2 > div:first-child > span { font-size: 12px; }
   .reports-live-indicator { font-size: 12px; }
+  .assistance-header-actions-v2 { gap: 8px; }
+  .assistance-header-actions-v2 .workspace-secondary-action { min-height: 36px; padding: 0 9px; font-size: 11px; }
   .reports-group-tabs-v2 { min-height: 58px; padding: 0 12px; }
   .reports-group-tabs-v2 button { min-height: 49px; padding: 0 12px; font-size: 13px; }
   .reports-stage-tabs-v2 { min-height: 54px; justify-content: space-around; gap: 12px; padding: 0 12px; }
@@ -4977,6 +4984,19 @@ body.responder-map-open { overflow: hidden; }
 .barangay-assistance-decision p { margin: 5px 0; color: var(--text-muted); font-size: 11px; white-space: pre-wrap; }
 .barangay-assistance-decision small { color: var(--text-muted); font-size: 10px; }
 .barangay-assistance-card footer { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
+.barangay-assistance-card-footer { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 14px 13px; border-top: 1px solid #dbe4f0; }
+.barangay-assistance-card-footer button { display: inline-flex; min-height: 34px; align-items: center; gap: 6px; padding: 6px 9px; border: 1px solid #b8c8dc; border-radius: 7px; color: #1e3a5f; background: #fff; font: inherit; font-size: 11px; font-weight: 650; cursor: pointer; }
+.barangay-assistance-card-footer button:hover { border-color: #38bfd5; }
+.barangay-assistance-card-footer button.danger { color: #b42332; }
+.barangay-assistance-card-footer .barangay-assistance-acknowledged { display: inline-flex; align-items: center; gap: 5px; color: #047857; font-size: 11px; }
+.barangay-assistance-linked-summary { display: flex; flex-direction: column; gap: 5px; }
+.barangay-assistance-linked-summary strong { color: #dce8f8; }
+.barangay-assistance-linked-summary span { color: #91add9; font-size: 12px; }
+.barangay-assistance-review-panel { display: grid; grid-template-columns: minmax(170px, .7fr) minmax(0, 1.4fr); gap: 10px; }
+.barangay-assistance-review-panel h3 { grid-column: 1 / -1; }
+.barangay-assistance-review-panel label { display: flex; flex-direction: column; gap: 6px; color: #dce8f8; font-size: 12px; font-weight: 650; }
+.barangay-assistance-review-panel select, .barangay-assistance-review-panel textarea { width: 100%; min-height: 40px; padding: 9px 11px; border: 1px solid #345071; border-radius: 8px; color: #e8f0ff; background: #09172b; font: inherit; font-weight: 400; }
+.barangay-assistance-review-panel textarea { min-height: 82px; resize: vertical; }
 .barangay-assistance-review { display: grid; grid-template-columns: minmax(150px, .7fr) minmax(0, 1.7fr) auto; align-items: end; gap: 9px; padding-top: 11px; border-top: 1px solid var(--border-color, #294466); }
 .barangay-assistance-review > button { display: inline-flex; align-items: center; gap: 6px; min-height: 39px; white-space: nowrap; }
 .barangay-analytics-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
@@ -5016,6 +5036,8 @@ body.responder-map-open { overflow: hidden; }
 :root[data-theme='light'] .barangay-console-post-form textarea,
 :root[data-theme='light'] .barangay-assistance-review select,
 :root[data-theme='light'] .barangay-assistance-review textarea,
+:root[data-theme='light'] .barangay-assistance-review-panel select,
+:root[data-theme='light'] .barangay-assistance-review-panel textarea,
 :root[data-theme='light'] .barangay-hotline-row input,
 :root[data-theme='light'] .barangay-analytics-controls select { border-color: #c5d2e4; color: #1c2c46; background: #fff; }
 :root[data-theme='light'] .barangay-location-fields > label input { border-color: #c5d2e4; color: #1c2c46; background: #fff; }
@@ -5027,6 +5049,7 @@ body.responder-map-open { overflow: hidden; }
   .barangay-location-map { min-height: 44vh; }
   .barangay-board-columns { grid-template-columns: 1fr; }
   .barangay-assistance-review { grid-template-columns: 1fr 1fr; }
+  .barangay-assistance-review-panel { grid-template-columns: 1fr; }
   .barangay-assistance-review > button { grid-column: 1 / -1; justify-self: start; }
 }
 @media (max-width: 680px) {

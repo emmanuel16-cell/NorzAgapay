@@ -1,11 +1,15 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { ClipboardList, Check, HandHelping, RefreshCw, Send, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { ArrowLeft, Check, ClipboardList, HandHelping, MapPin, RefreshCw, Send, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import { barangayAPI, reportAPI, requestAPI, socket } from '../lib/api';
 import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
 
-type Incident = { id: string; title?: string; incident_type?: string; description?: string; response_status?: string; barangay_response_status?: string; created_at?: string };
+type Incident = {
+  id: string; title?: string; incident_type?: string; description?: string;
+  response_status?: string; barangay_response_status?: string; created_at?: string;
+  address?: string | null; barangay_name?: string | null;
+};
 type Assistance = {
   id: string; requested_by?: string; requested_by_user?: { full_name?: string; role?: string };
   incident_report_id?: string | null; incident_title?: string | null; explanation?: string;
@@ -15,15 +19,37 @@ type Assistance = {
   decided_at?: string | null; decided_by_user?: { full_name?: string };
 };
 type RequestForm = { incident_report_id: string; needs_more_manpower: boolean; needs_resources: boolean; needs_equipment: boolean; beyond_barangay_capability: boolean; explanation: string };
+type DecisionForm = { decision: 'provide_barangay_assistance' | 'coordinate_mdrrmo' | 'dismissed'; notes: string };
 const emptyForm: RequestForm = { incident_report_id: '', needs_more_manpower: false, needs_resources: false, needs_equipment: false, beyond_barangay_capability: false, explanation: '' };
-const statusLabel = (value?: string) => String(value || 'pending').replaceAll('_', ' ');
+const statusLabel = (value?: string) => String(value || 'pending').replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+const statusClass = (value?: string) => String(value || 'pending').toLowerCase().replaceAll(' ', '_');
 const errorText = (error: any) => error?.response?.data?.error || 'The assistance request could not be updated.';
+const incidentTitle = (incident?: Incident | null) => incident?.title || incident?.incident_type?.replaceAll('_', ' ') || 'Incident report';
+const incidentStatus = (incident: Incident) => incident.barangay_response_status || incident.response_status || 'assigned';
+const incidentStatusClass = (incident: Incident) => {
+  const value = String(incidentStatus(incident)).toLowerCase();
+  if (['resolved', 'closed', 'rejected', 'completed'].includes(value)) return 'resolved';
+  if (['responding', 'accepted', 'arrived', 'on_scene'].includes(value)) return 'responding';
+  return 'pending';
+};
+const isActiveIncident = (incident: Incident) => !['resolved', 'closed', 'rejected', 'completed'].includes(String(incidentStatus(incident)).toLowerCase());
+const dateTime = (value?: string) => {
+  if (!value) return 'Time unavailable';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 'Time unavailable' : new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+};
+const requestLabel = (request: Assistance) => [request.needs_more_manpower && 'Additional responders', request.needs_resources && 'Supplies or resources', request.needs_equipment && 'Equipment', request.beyond_barangay_capability && 'MDRRMO coordination'].filter(Boolean).join(' · ') || 'General assistance';
 
-function RequestFields({ form, setForm, incidents }: { form: RequestForm; setForm: (update: (value: RequestForm) => RequestForm) => void; incidents: Incident[] }) {
+function RequestFields({ form, setForm, incident }: { form: RequestForm; setForm: (update: (value: RequestForm) => RequestForm) => void; incident?: Incident | null }) {
   return <>
-    <label>Linked incident<select value={form.incident_report_id} onChange={(event) => setForm((value) => ({ ...value, incident_report_id: event.target.value }))}><option value="">General assistance request</option>{incidents.map((incident) => <option key={incident.id} value={incident.id}>{incident.incident_type?.replaceAll('_', ' ') || incident.title || 'Incident'} · {statusLabel(incident.barangay_response_status || incident.response_status)}</option>)}</select></label>
-    <div className="barangay-assistance-needs"><span>Assistance needed</span><label><input type="checkbox" checked={form.needs_more_manpower} onChange={(event) => setForm((value) => ({ ...value, needs_more_manpower: event.target.checked }))} /> Additional responders</label><label><input type="checkbox" checked={form.needs_resources} onChange={(event) => setForm((value) => ({ ...value, needs_resources: event.target.checked }))} /> Supplies or resources</label><label><input type="checkbox" checked={form.needs_equipment} onChange={(event) => setForm((value) => ({ ...value, needs_equipment: event.target.checked }))} /> Equipment</label><label className="urgent"><input type="checkbox" checked={form.beyond_barangay_capability} onChange={(event) => setForm((value) => ({ ...value, beyond_barangay_capability: event.target.checked }))} /> Beyond barangay capability · request MDRRMO coordination</label></div>
-    {form.beyond_barangay_capability && !form.incident_report_id && <p className="barangay-assistance-inline-error">Link an active incident before requesting MDRRMO coordination.</p>}
+    <div className="reports-text-card-v2 barangay-assistance-linked-summary"><strong>Requesting assistance for:</strong> {incident ? incidentTitle(incident) : 'General barangay assistance'}{incident && <span>{statusLabel(incidentStatus(incident))} · {incident.address || incident.barangay_name || 'Location not provided'}</span>}</div>
+    <div className="barangay-assistance-needs"><span>Assistance needed</span>
+      <label><input type="checkbox" checked={form.needs_more_manpower} onChange={(event) => setForm((value) => ({ ...value, needs_more_manpower: event.target.checked }))} /> Additional responders</label>
+      <label><input type="checkbox" checked={form.needs_resources} onChange={(event) => setForm((value) => ({ ...value, needs_resources: event.target.checked }))} /> Supplies or resources</label>
+      <label><input type="checkbox" checked={form.needs_equipment} onChange={(event) => setForm((value) => ({ ...value, needs_equipment: event.target.checked }))} /> Equipment</label>
+      <label className="urgent"><input type="checkbox" checked={form.beyond_barangay_capability} onChange={(event) => setForm((value) => ({ ...value, beyond_barangay_capability: event.target.checked }))} /> Beyond barangay capability · request MDRRMO coordination</label>
+    </div>
+    {form.beyond_barangay_capability && !form.incident_report_id && <p className="barangay-assistance-inline-error">Select an assigned incident before requesting MDRRMO coordination.</p>}
     <label>Explain what is needed<textarea required minLength={10} rows={3} value={form.explanation} onChange={(event) => setForm((value) => ({ ...value, explanation: event.target.value }))} placeholder="Describe the support needed and why…" /></label>
   </>;
 }
@@ -33,13 +59,16 @@ function BarangayAssistanceWorkspace() {
   const isResponder = user?.role === 'responder';
   const [requests, setRequests] = useState<Assistance[]>([]);
   const [incidents, setIncidents] = useState<Incident[]>([]);
+  const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
+  const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
   const [form, setForm] = useState<RequestForm>(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
-  const [decisions, setDecisions] = useState<Record<string, { decision: 'provide_barangay_assistance' | 'coordinate_mdrrmo' | 'dismissed'; notes: string }>>({});
+  const [decisions, setDecisions] = useState<Record<string, DecisionForm>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [currentTime, setCurrentTime] = useState(() => new Date().toLocaleTimeString());
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -48,10 +77,22 @@ function BarangayAssistanceWorkspace() {
         isResponder ? barangayAPI.myAssistanceRequests() : barangayAPI.assistanceRequests(),
         reportAPI.barangayReports(),
       ]);
-      const rows = Array.isArray(requestResponse.data?.requests) ? requestResponse.data.requests : [];
+      const rows: Assistance[] = Array.isArray(requestResponse.data?.requests) ? requestResponse.data.requests : [];
+      const reports: Incident[] = Array.isArray(incidentResponse.data) ? incidentResponse.data : [];
       setRequests(rows);
-      setIncidents(Array.isArray(incidentResponse.data) ? incidentResponse.data.filter((item: Incident) => !['resolved', 'closed', 'rejected'].includes(String(item.barangay_response_status || item.response_status || '').toLowerCase())) : []);
-      setDecisions((current) => Object.fromEntries(rows.map((request: Assistance) => [request.id, current[request.id] || { decision: request.decision === 'coordinate_mdrrmo' ? 'coordinate_mdrrmo' : 'provide_barangay_assistance', notes: request.dispatcher_notes || '' }])));
+      setIncidents(reports);
+      setDecisions((current) => Object.fromEntries(rows.map((request) => [request.id, current[request.id] || {
+        decision: request.decision === 'coordinate_mdrrmo' ? 'coordinate_mdrrmo' : 'provide_barangay_assistance',
+        notes: request.dispatcher_notes || '',
+      }])));
+      if (isResponder) {
+        const queueIds = new Set(reports.filter(isActiveIncident).map((incident) => incident.id));
+        rows.forEach((request) => { if (request.incident_report_id) queueIds.add(request.incident_report_id); });
+        const hasGeneralRequests = rows.some((request) => !request.incident_report_id);
+        setSelectedIncidentId((current) => current && (queueIds.has(current) || (current === 'general' && hasGeneralRequests)) ? current : reports.find(isActiveIncident)?.id || (hasGeneralRequests ? 'general' : null));
+      } else {
+        setSelectedRequestId((current) => current && rows.some((request) => request.id === current) ? current : rows[0]?.id || null);
+      }
     } catch (loadError: any) { setError(loadError?.response?.data?.error || 'Assistance requests could not be loaded.'); }
     finally { setLoading(false); }
   }, [isResponder]);
@@ -62,15 +103,36 @@ function BarangayAssistanceWorkspace() {
     socket.on('assistance:new_request', load);
     socket.on('assistance:decision', load);
     socket.on('assistance:team_action', load);
+    socket.on('incident:lifecycle', load);
     return () => {
       socket.off('assistance:new_request', load);
       socket.off('assistance:decision', load);
       socket.off('assistance:team_action', load);
+      socket.off('incident:lifecycle', load);
     };
   }, [load]);
+  useEffect(() => {
+    const timer = window.setInterval(() => setCurrentTime(new Date().toLocaleTimeString()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const incidentQueue = useMemo(() => {
+    const linkedIds = new Set(requests.map((request) => request.incident_report_id).filter((id): id is string => Boolean(id)));
+    return incidents.filter((incident) => isActiveIncident(incident) || linkedIds.has(incident.id));
+  }, [incidents, requests]);
+  const selectedIncident = selectedIncidentId && selectedIncidentId !== 'general' ? incidents.find((incident) => incident.id === selectedIncidentId) || null : null;
+  const incidentRequests = selectedIncidentId === 'general'
+    ? requests.filter((request) => !request.incident_report_id)
+    : requests.filter((request) => request.incident_report_id === selectedIncidentId);
+  const selectedRequest = requests.find((request) => request.id === selectedRequestId) || requests[0] || null;
 
   const reset = () => { setForm(emptyForm); setEditingId(null); setIsRequestModalOpen(false); };
-  const startNewRequest = () => { setForm(emptyForm); setEditingId(null); setIsRequestModalOpen(true); };
+  const startNewRequest = () => {
+    if (!selectedIncident || !isActiveIncident(selectedIncident)) return;
+    setForm({ ...emptyForm, incident_report_id: selectedIncident.id });
+    setEditingId(null);
+    setIsRequestModalOpen(true);
+  };
   const startEdit = (request: Assistance) => {
     setEditingId(request.id);
     setForm({ incident_report_id: request.incident_report_id || '', needs_more_manpower: Boolean(request.needs_more_manpower), needs_resources: Boolean(request.needs_resources), needs_equipment: Boolean(request.needs_equipment), beyond_barangay_capability: Boolean(request.beyond_barangay_capability), explanation: request.explanation || '' });
@@ -79,9 +141,10 @@ function BarangayAssistanceWorkspace() {
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (form.beyond_barangay_capability && !form.incident_report_id) { toast.error('Link an incident before requesting MDRRMO coordination.'); return; }
     const linked = incidents.find((incident) => incident.id === form.incident_report_id);
-    const payload = { ...form, incident_report_id: form.incident_report_id || null, incident_title: linked?.title || linked?.incident_type || null };
+    if (!editingId && (!linked || !isActiveIncident(linked))) { toast.error('Select an active assigned incident before requesting assistance.'); return; }
+    if (form.beyond_barangay_capability && !form.incident_report_id) { toast.error('Select an incident before requesting MDRRMO coordination.'); return; }
+    const payload = { ...form, incident_report_id: form.incident_report_id || null, incident_title: linked ? incidentTitle(linked) : null };
     setSaving(true);
     try {
       if (editingId) await barangayAPI.editAssistanceRequest(editingId, payload);
@@ -91,11 +154,12 @@ function BarangayAssistanceWorkspace() {
     finally { setSaving(false); }
   };
 
-  const decide = async (request: Assistance) => {
+  const decide = async (request: Assistance, decisionOverride?: DecisionForm['decision']) => {
     const value = decisions[request.id] || { decision: 'provide_barangay_assistance' as const, notes: '' };
-    if (!window.confirm(`Confirm decision: ${statusLabel(value.decision)}?`)) return;
+    const decision = decisionOverride || value.decision;
+    if (!window.confirm(`Confirm decision: ${statusLabel(decision)}?`)) return;
     setSaving(true);
-    try { await barangayAPI.decideAssistanceRequest(request.id, value.decision, value.notes.trim()); toast.success('Assistance decision saved.'); await load(); }
+    try { await barangayAPI.decideAssistanceRequest(request.id, decision, value.notes.trim()); toast.success('Assistance decision saved.'); await load(); }
     catch (actionError: any) { toast.error(errorText(actionError)); }
     finally { setSaving(false); }
   };
@@ -109,177 +173,230 @@ function BarangayAssistanceWorkspace() {
   };
 
   const editRequest = (request: Assistance) => request.requested_by === user?.id && ['pending', 'rejected'].includes(String(request.status || '').toLowerCase());
+  const isSelectedActive = Boolean(selectedIncident && isActiveIncident(selectedIncident));
+  const detailOpen = isResponder ? Boolean(selectedIncidentId) : Boolean(selectedRequest);
 
   return (
-    <div className="barangay-console-page">
-      <header className="barangay-console-header"><div><span className="workspace-eyebrow">BARANGAY OPERATIONS · {user?.barangay_name || 'YOUR BARANGAY'}</span><h1>{isResponder ? 'My assistance requests' : 'Assistance requests'}</h1><p>{isResponder ? 'Request support for assigned incidents and follow each decision.' : 'Review barangay requests and coordinate local or MDRRMO support.'}</p></div><div className="barangay-console-header-actions">{isResponder && <button className="workspace-primary-action" type="button" onClick={startNewRequest} aria-haspopup="dialog" aria-expanded={isRequestModalOpen}><HandHelping size={16} /> Request assistance</button>}<button className="workspace-secondary-action" type="button" onClick={() => void load()} disabled={loading}><RefreshCw size={16} className={loading ? 'workspace-spinning' : ''} /> Refresh</button></div></header>
+    <main className={`reports-workspace-v2 assistance-workspace ${isResponder ? 'responder-mobile-workspace-v2' : ''}`}>
+      <header className="reports-page-header-v2">
+        <div><h1>Assistance Requests</h1><span>{isResponder ? `Responder workspace · ${user?.barangay_name || 'your barangay'}` : `Dispatcher workspace · ${user?.barangay_name || 'your barangay'}`}</span></div>
+        <div className="assistance-header-actions-v2"><div className="reports-live-indicator"><i /> Live <span>·</span> {currentTime}</div><button className="workspace-secondary-action" type="button" onClick={() => void load()} disabled={loading}><RefreshCw size={16} className={loading ? 'workspace-spinning' : ''} /> Refresh</button></div>
+      </header>
 
       {isResponder && isRequestModalOpen && <div className="barangay-console-modal-backdrop" role="presentation" onKeyDown={(event) => {
         if (event.key === 'Escape') { event.stopPropagation(); if (!saving) reset(); }
         if (event.key === 'Tab') {
           const focusable = event.currentTarget.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])');
-          const first = focusable[0];
-          const last = focusable[focusable.length - 1];
+          const first = focusable[0]; const last = focusable[focusable.length - 1];
           if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
           else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
         }
       }} onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) reset(); }}>
         <section className="barangay-console-panel barangay-console-form-modal barangay-assistance-request-modal" role="dialog" aria-modal="true" aria-labelledby="barangay-assistance-request-title">
-          <header><div><h2 id="barangay-assistance-request-title">{editingId ? 'Update request' : 'Request assistance'}</h2><p>Only incidents assigned to your responder account are available to link.</p></div><button autoFocus className="workspace-secondary-action" type="button" onClick={reset} disabled={saving}><X size={15} /> Cancel</button></header>
-          <form className="barangay-console-form-grid" onSubmit={(event) => void submit(event)}><RequestFields form={form} setForm={setForm} incidents={incidents} /><div className="barangay-console-form-actions"><button className="btn btn-primary" type="submit" disabled={saving}>{saving ? 'Submitting…' : editingId ? <><Check size={16} /> Save changes</> : <><Send size={16} /> Submit request</>}</button></div></form>
+          <header><div><h2 id="barangay-assistance-request-title">{editingId ? 'Update request' : 'Request assistance'}</h2><p>The request will be attached to the selected incident.</p></div><button autoFocus className="workspace-secondary-action" type="button" onClick={reset} disabled={saving}><X size={15} /> Cancel</button></header>
+          <form className="barangay-console-form-grid" onSubmit={(event) => void submit(event)}><RequestFields form={form} setForm={setForm} incident={incidents.find((incident) => incident.id === form.incident_report_id)} /><div className="barangay-console-form-actions"><button className="btn btn-primary" type="submit" disabled={saving}>{saving ? 'Submitting…' : editingId ? <><Check size={16} /> Save changes</> : <><Send size={16} /> Submit request</>}</button></div></form>
         </section>
       </div>}
 
       {error && <div className="workspace-message workspace-message-error" role="alert">{error}<button type="button" onClick={() => void load()}>Try again</button></div>}
-      <section className="barangay-console-panel"><header><div><h2><ClipboardList size={19} /> {isResponder ? 'Request history' : 'Barangay request inbox'}</h2><p>{isResponder ? 'Your requests and the coordination decision.' : 'Requests submitted by responders in your barangay.'}</p></div><span className="barangay-console-status pending">{requests.filter((request) => String(request.status || '').toLowerCase() === 'pending').length} pending</span></header>
-        {loading ? <p className="barangay-console-muted">Loading assistance requests…</p> : requests.length === 0 ? <div className="barangay-console-empty"><HandHelping size={25} /><strong>No assistance requests</strong><span>{isResponder ? 'Submitted requests will appear here.' : 'Responder requests from your barangay will appear here.'}</span></div> : <div className="barangay-assistance-list">{requests.map((request) => {
-          const decision = decisions[request.id] || { decision: 'provide_barangay_assistance' as const, notes: '' };
-          const isPending = String(request.status || '').toLowerCase() === 'pending';
-          const label = [request.needs_more_manpower && 'Additional responders', request.needs_resources && 'Supplies', request.needs_equipment && 'Equipment', request.beyond_barangay_capability && 'MDRRMO coordination'].filter(Boolean).join(' · ') || 'General assistance';
-          return <article className="barangay-assistance-card" key={request.id}>
-            <div className="barangay-assistance-card-heading"><div><span className={`barangay-console-status ${String(request.status || 'pending').toLowerCase()}`}>{statusLabel(request.status)}</span><strong>{request.incident_title || 'General barangay assistance'}</strong></div><time>{request.created_at ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(request.created_at)) : 'Time unavailable'}</time></div>
-            <div className="barangay-assistance-meta"><span>{label}</span>{request.requested_by_user?.full_name && <span>Requested by {request.requested_by_user.full_name}</span>}{request.team_acknowledged && <span className="acknowledged"><Check size={14} /> Team acknowledged</span>}</div>
-            <p className="barangay-assistance-explanation">{request.explanation}</p>
-            {request.decision && <div className="barangay-assistance-decision"><strong>Decision: {statusLabel(request.decision)}</strong>{request.dispatcher_notes && <p>{request.dispatcher_notes}</p>}{request.decided_by_user?.full_name && <small>Recorded by {request.decided_by_user.full_name}</small>}</div>}
-            {isResponder && <footer>{editRequest(request) && <button type="button" onClick={() => startEdit(request)}><Edit3Icon /> Edit request</button>}{request.decision === 'provide_barangay_assistance' && !request.team_acknowledged && <button type="button" onClick={() => void responderAction(request, 'acknowledge')} disabled={saving}><Check size={15} /> Acknowledge support</button>}{isPending && request.requested_by === user?.id && <button className="danger" type="button" onClick={() => void responderAction(request, 'cancel')} disabled={saving}><X size={15} /> Cancel request</button>}</footer>}
-            {!isResponder && isPending && <div className="barangay-assistance-review"><label>Decision<select value={decision.decision} onChange={(event) => setDecisions((current) => ({ ...current, [request.id]: { ...decision, decision: event.target.value as typeof decision.decision } }))}><option value="provide_barangay_assistance">Provide barangay assistance</option><option value="coordinate_mdrrmo">Coordinate with MDRRMO</option><option value="dismissed">Dismiss request</option></select></label><label>Dispatcher note<textarea rows={2} value={decision.notes} onChange={(event) => setDecisions((current) => ({ ...current, [request.id]: { ...decision, notes: event.target.value } }))} placeholder="Add context for the response team…" /></label><button className="btn btn-primary" type="button" onClick={() => void decide(request)} disabled={saving}><Check size={15} /> Save decision</button></div>}
-          </article>;
-        })}</div>}
+
+      <section className={`reports-split-view-v2 ${isResponder ? detailOpen ? 'responder-mobile-detail-v2' : 'responder-mobile-list-v2' : ''}`}>
+        <aside className="reports-queue-v2">
+          <div className="reports-queue-heading"><h2>{isResponder ? 'Responding incidents' : 'Barangay assistance queue'}</h2><span>{isResponder ? incidentQueue.length : requests.length}</span></div>
+          {loading ? <div className="reports-empty-v2"><span className="spinner" /><p>Loading assistance requests…</p></div> : isResponder ? incidentQueue.length === 0 && !requests.some((request) => !request.incident_report_id) ? (
+            <div className="reports-empty-v2"><HandHelping size={22} /><strong>No active incidents</strong><p>Incidents assigned to you will appear here. Select one to request assistance.</p></div>
+          ) : (
+            <div className="reports-queue-list-v2">
+              {incidentQueue.map((incident) => {
+                const count = requests.filter((request) => request.incident_report_id === incident.id).length;
+                return <button key={incident.id} type="button" className={`reports-queue-item-v2 ${incidentStatusClass(incident)} ${selectedIncidentId === incident.id ? 'selected' : ''}`} onClick={() => setSelectedIncidentId(incident.id)}>
+                  <span className="reports-queue-item-top"><strong>{incidentTitle(incident)}</strong><span className={`report-status-chip-v2 ${incidentStatusClass(incident)}`}>{statusLabel(incidentStatus(incident))}</span></span>
+                  <span className="reports-queue-time">Incident occurred · {dateTime(incident.created_at)}</span>
+                  <span className="reports-queue-meta"><span className="reports-queue-location-v2"><MapPin size={14} /><span><strong>{incident.address || incident.barangay_name || 'Location not provided'}</strong></span></span></span>
+                  {incident.description && <span className="reports-queue-time assistance-request-preview">{incident.description}</span>}
+                  <span className="reports-queue-time">{count} assistance {count === 1 ? 'request' : 'requests'}</span>
+                </button>;
+              })}
+              {requests.some((request) => !request.incident_report_id) && <button type="button" className={`reports-queue-item-v2 assistance-request-item ${selectedIncidentId === 'general' ? 'selected' : ''}`} onClick={() => setSelectedIncidentId('general')}>
+                <span className="reports-queue-item-top"><strong>General assistance</strong><span className="assistance-status-chip pending">{requests.filter((request) => !request.incident_report_id).length}</span></span>
+                <span className="reports-queue-time">Previously submitted requests without an incident</span>
+              </button>}
+            </div>
+          ) : requests.length === 0 ? (
+            <div className="reports-empty-v2"><HandHelping size={22} /><strong>No assistance requests</strong><p>Responder requests from your barangay will appear here.</p></div>
+          ) : (
+            <div className="reports-queue-list-v2">{requests.map((request) => {
+              const decision = decisions[request.id] || { decision: 'provide_barangay_assistance' as const, notes: '' };
+              return <button key={request.id} type="button" className={`reports-queue-item-v2 assistance-request-item ${selectedRequest?.id === request.id ? 'selected' : ''}`} onClick={() => setSelectedRequestId(request.id)}>
+                <span className="reports-queue-item-top"><strong>{request.incident_title || 'General barangay assistance'}</strong><span className={`assistance-status-chip ${statusClass(request.status)}`}>{statusLabel(request.status)}</span></span>
+                <span className="reports-queue-time">{request.requested_by_user?.full_name || 'Responder'} · {dateTime(request.created_at)}</span>
+                <span className="reports-queue-time assistance-request-preview">{requestLabel(request)} · {request.explanation || 'No request details provided.'}</span>
+              </button>;
+            })}</div>
+          )}
+        </aside>
+
+        <section className="reports-detail-v2">
+          {!detailOpen ? (
+            <div className="reports-detail-empty-v2"><div><ClipboardList size={28} /></div><strong>{isResponder ? 'Select a responding incident' : 'Select an assistance request'}</strong><p>{isResponder ? 'Choose one of your assigned incidents to review its assistance history.' : 'Choose a responder request from the queue to review and coordinate support.'}</p></div>
+          ) : isResponder ? (
+            <>
+              <div className="reports-detail-scroll-v2">
+                <header className="reports-detail-heading-v2 reports-detail-heading-responder-v2">
+                  <button type="button" className="reports-mobile-back-v2" onClick={() => setSelectedIncidentId(null)}><ArrowLeft size={16} /> Responding incidents</button>
+                  <div><span className="reports-eyebrow-v2">Selected incident</span><h2>{selectedIncident ? incidentTitle(selectedIncident) : 'General assistance'}</h2><p>{selectedIncident ? `${statusLabel(incidentStatus(selectedIncident))} · ${dateTime(selectedIncident.created_at)}` : 'Requests submitted without an incident link'}</p></div>
+                  <div className="reports-detail-heading-actions-v2"><span className={`report-status-chip-v2 detail ${selectedIncident ? incidentStatusClass(selectedIncident) : 'pending'}`}>{selectedIncident ? statusLabel(incidentStatus(selectedIncident)) : 'History'}</span><button className="workspace-primary-action" type="button" onClick={startNewRequest} disabled={!isSelectedActive}><HandHelping size={16} /> Request assistance</button></div>
+                </header>
+                {selectedIncident && <section className="reports-detail-section-v2"><h3>Incident location</h3><div className="reports-location-card-v2"><MapPin size={19} /><div><strong>{selectedIncident.address || 'Location not provided'}</strong><span>{selectedIncident.barangay_name || user?.barangay_name || 'Your barangay'}</span></div></div>{selectedIncident.description && <div className="reports-text-card-v2" style={{ marginTop: 10 }}>{selectedIncident.description}</div>}</section>}
+                <section className="reports-detail-section-v2 assistance-history-section">
+                  <div className="reports-section-heading-v2"><h3>Request history</h3><span>{incidentRequests.length} requests</span></div>
+                  {incidentRequests.length ? <div className="assistance-history-list">{incidentRequests.map((request) => <article className="assistance-history-card" key={request.id}>
+                    <header><div><span className="assistance-history-sos">SOS</span><strong>{requestLabel(request)}</strong></div><span className={`assistance-status-chip ${statusClass(request.status)}`}>{statusLabel(request.status)}</span></header>
+                    <div className="assistance-history-entry"><strong>{selectedIncident ? incidentTitle(selectedIncident) : 'General assistance'}</strong><div className="assistance-history-meta"><span>{request.requested_by_user?.full_name || 'You'}</span><time>{dateTime(request.created_at)}</time></div><p>{request.explanation || 'No request details provided.'}</p></div>
+                    {request.decision && <div className="assistance-history-entry dispatcher"><strong>Dispatcher response · {statusLabel(request.decision)}</strong>{request.dispatcher_notes && <p>{request.dispatcher_notes}</p>}{request.decided_by_user?.full_name && <small>Recorded by {request.decided_by_user.full_name}</small>}</div>}
+                    <footer className="barangay-assistance-card-footer">{editRequest(request) && <button type="button" onClick={() => startEdit(request)}><ClipboardList size={15} /> Edit request</button>}{request.decision === 'provide_barangay_assistance' && !request.team_acknowledged && <button type="button" onClick={() => void responderAction(request, 'acknowledge')} disabled={saving}><Check size={15} /> Acknowledge support</button>}{String(request.status || '').toLowerCase() === 'pending' && request.requested_by === user?.id && <button className="danger" type="button" onClick={() => void responderAction(request, 'cancel')} disabled={saving}><X size={15} /> Cancel request</button>}{request.team_acknowledged && <span className="barangay-assistance-acknowledged"><Check size={14} /> Support acknowledged</span>}</footer>
+                  </article>)}</div> : <div className="reports-no-media-v2">No assistance requests for this incident yet.</div>}
+                </section>
+              </div>
+            </>
+          ) : selectedRequest ? (
+            <>
+              <div className="reports-detail-scroll-v2">
+                <header className="reports-detail-heading-v2"><div><span className="reports-eyebrow-v2">Selected assistance request</span><h2>{selectedRequest.incident_title || 'General barangay assistance'}</h2><p>Requested by {selectedRequest.requested_by_user?.full_name || 'Responder'} · {dateTime(selectedRequest.created_at)}</p></div><span className={`assistance-status-chip detail ${statusClass(selectedRequest.status)}`}>{statusLabel(selectedRequest.status)}</span></header>
+                <section className="reports-detail-section-v2"><h3>Request details</h3><div className="reports-info-grid-v2"><div className="reports-info-card-v2"><span>Requester</span><strong><HandHelping size={17} /> {selectedRequest.requested_by_user?.full_name || 'Responder'}</strong></div><div className="reports-info-card-v2"><span>Assistance needed</span><strong>{requestLabel(selectedRequest)}</strong></div></div><div className="reports-text-card-v2" style={{ marginTop: 10 }}>{selectedRequest.explanation || 'No request details provided.'}</div></section>
+                <section className="reports-detail-section-v2"><h3>Linked incident</h3><div className="reports-location-card-v2"><MapPin size={19} /><div><strong>{selectedRequest.incident_title || 'General barangay assistance'}</strong><span>{incidents.find((incident) => incident.id === selectedRequest.incident_report_id)?.address || incidents.find((incident) => incident.id === selectedRequest.incident_report_id)?.barangay_name || user?.barangay_name || 'Your barangay'}</span></div></div></section>
+                {selectedRequest.decision && <section className="reports-detail-section-v2"><h3>Previous decision</h3><div className="reports-text-card-v2"><strong>{statusLabel(selectedRequest.decision)}</strong>{selectedRequest.dispatcher_notes && <p>{selectedRequest.dispatcher_notes}</p>}{selectedRequest.decided_by_user?.full_name && <small>Recorded by {selectedRequest.decided_by_user.full_name}</small>}</div></section>}
+                {String(selectedRequest.status || '').toLowerCase() === 'pending' && <section className="reports-detail-section-v2 barangay-assistance-review-panel"><h3>Dispatcher response</h3><label>Decision<select value={(decisions[selectedRequest.id] || { decision: 'provide_barangay_assistance', notes: '' }).decision} onChange={(event) => setDecisions((current) => ({ ...current, [selectedRequest.id]: { ...(current[selectedRequest.id] || { decision: 'provide_barangay_assistance', notes: '' }), decision: event.target.value as DecisionForm['decision'] } }))}><option value="provide_barangay_assistance">Provide barangay assistance</option><option value="coordinate_mdrrmo">Coordinate with MDRRMO</option><option value="dismissed">Dismiss request</option></select></label><label>Dispatcher note<textarea rows={3} value={(decisions[selectedRequest.id] || { decision: 'provide_barangay_assistance', notes: '' }).notes} onChange={(event) => setDecisions((current) => ({ ...current, [selectedRequest.id]: { ...(current[selectedRequest.id] || { decision: 'provide_barangay_assistance', notes: '' }), notes: event.target.value } }))} placeholder="Add context for the response team…" /></label></section>}
+              </div>
+                {String(selectedRequest.status || '').toLowerCase() === 'pending' && <footer className="reports-detail-actions-v2 assistance-request-actions"><button type="button" className="reports-invalid-button-v2" disabled={saving} onClick={() => void decide(selectedRequest, 'dismissed')}>Dismiss</button><button type="button" className="reports-dispatch-button-v2" disabled={saving} onClick={() => void decide(selectedRequest)}><Check size={16} /> Save decision</button></footer>}
+            </>
+          ) : null}
+        </section>
       </section>
-    </div>
+    </main>
   );
 }
 
-function Edit3Icon() { return <ClipboardList size={15} />; }
-
-type MdrrmoIncident = { id: string; title?: string; incident_type?: string; response_status?: string; created_at?: string };
 type MdrrmoAssistance = {
-  id: string;
-  incident_id: string;
-  request_type: 'responders' | 'goods';
-  sub_type?: string | null;
-  details?: string;
-  status?: 'pending' | 'approved' | 'rejected' | 'fulfilled';
-  dispatcher_notes?: string | null;
-  created_at?: string;
+  id: string; incident_id: string; request_type: 'responders' | 'goods'; sub_type?: string | null;
+  details?: string; status?: 'pending' | 'approved' | 'rejected' | 'fulfilled'; dispatcher_notes?: string | null; created_at?: string;
 };
 type MdrrmoRequestForm = { incident_id: string; needs_more_manpower: boolean; needs_resources: boolean; needs_equipment: boolean; details: string };
 const initialMdrrmoRequest: MdrrmoRequestForm = { incident_id: '', needs_more_manpower: false, needs_resources: false, needs_equipment: false, details: '' };
+const mdrrmoRequestLabel = (request: MdrrmoAssistance) => request.sub_type?.replaceAll('_', ' ') || (request.request_type === 'responders' ? 'Additional responders' : 'Resources');
 
 function MdrrmoResponderAssistanceWorkspace() {
   const [requests, setRequests] = useState<MdrrmoAssistance[]>([]);
-  const [incidents, setIncidents] = useState<MdrrmoIncident[]>([]);
+  const [incidents, setIncidents] = useState<Incident[]>([]);
+  const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
   const [form, setForm] = useState<MdrrmoRequestForm>(initialMdrrmoRequest);
   const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [currentTime, setCurrentTime] = useState(() => new Date().toLocaleTimeString());
 
   const load = useCallback(async () => {
-    setLoading(true);
-    setError('');
+    setLoading(true); setError('');
     try {
       const [requestResponse, incidentResponse] = await Promise.all([requestAPI.mine(), reportAPI.mdrrmoQueue()]);
-      setRequests(Array.isArray(requestResponse.data) ? requestResponse.data : []);
-      const reports = Array.isArray(incidentResponse.data) ? incidentResponse.data : [];
-      setIncidents(reports);
-    } catch (loadError: any) {
-      setError(loadError?.response?.data?.error || 'Your MDRRMO assistance requests could not be loaded.');
-    } finally {
-      setLoading(false);
-    }
+      const rows: MdrrmoAssistance[] = Array.isArray(requestResponse.data) ? requestResponse.data : [];
+      const reports: Incident[] = Array.isArray(incidentResponse.data) ? incidentResponse.data : [];
+      setRequests(rows); setIncidents(reports);
+      const queueIds = new Set(reports.filter(isActiveIncident).map((incident) => incident.id));
+      rows.forEach((request) => queueIds.add(request.incident_id));
+      setSelectedIncidentId((current) => current && queueIds.has(current) ? current : reports.find(isActiveIncident)?.id || rows[0]?.incident_id || null);
+    } catch (loadError: any) { setError(loadError?.response?.data?.error || 'Your MDRRMO assistance requests could not be loaded.'); }
+    finally { setLoading(false); }
   }, []);
 
   useEffect(() => { void load(); }, [load]);
   useRealtimeRefresh(load, { events: ['incident:new'] });
   useEffect(() => {
-    socket.on('resource:request', load);
-    socket.on('incident_report:updated', load);
-    return () => {
-      socket.off('resource:request', load);
-      socket.off('incident_report:updated', load);
-    };
+    socket.on('resource:request', load); socket.on('incident_report:updated', load);
+    return () => { socket.off('resource:request', load); socket.off('incident_report:updated', load); };
   }, [load]);
+  useEffect(() => {
+    const timer = window.setInterval(() => setCurrentTime(new Date().toLocaleTimeString()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const incidentQueue = useMemo(() => {
+    const requestIds = new Set(requests.map((request) => request.incident_id));
+    return incidents.filter((incident) => isActiveIncident(incident) || requestIds.has(incident.id));
+  }, [incidents, requests]);
+  const selectedIncident = incidents.find((incident) => incident.id === selectedIncidentId) || null;
+  const incidentRequests = requests.filter((request) => request.incident_id === selectedIncidentId);
+  const isSelectedActive = Boolean(selectedIncident && isActiveIncident(selectedIncident));
 
   const reset = () => { setForm(initialMdrrmoRequest); setIsRequestModalOpen(false); };
+  const startRequest = () => {
+    if (!selectedIncident || !isActiveIncident(selectedIncident)) return;
+    setForm({ ...initialMdrrmoRequest, incident_id: selectedIncident.id }); setIsRequestModalOpen(true);
+  };
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!form.incident_id) { toast.error('Choose an active incident for this request.'); return; }
-    const categories = [
-      form.needs_more_manpower ? 'manpower' : null,
-      form.needs_resources ? 'resources' : null,
-      form.needs_equipment ? 'equipment' : null,
-    ].filter((category): category is string => Boolean(category));
+    const linkedIncident = incidents.find((incident) => incident.id === form.incident_id);
+    if (!linkedIncident || !isActiveIncident(linkedIncident)) { toast.error('Select an active assigned incident before requesting assistance.'); return; }
+    const categories = [form.needs_more_manpower ? 'manpower' : null, form.needs_resources ? 'resources' : null, form.needs_equipment ? 'equipment' : null].filter((category): category is string => Boolean(category));
     if (!categories.length) { toast.error('Select at least one type of assistance.'); return; }
     if (form.details.trim().length < 10) { toast.error('Add a short explanation of at least 10 characters.'); return; }
     setSaving(true);
     try {
-      await requestAPI.create({
-        request_type: form.needs_more_manpower ? 'responders' : 'goods',
-        sub_type: categories.join(','),
-        details: form.details.trim(),
-        incident_id: form.incident_id,
-      });
-      toast.success('Assistance request submitted to MDRRMO dispatch.');
-      reset();
-      await load();
-    } catch (saveError: any) {
-      toast.error(saveError?.response?.data?.error || 'The assistance request could not be submitted.');
-    } finally {
-      setSaving(false);
-    }
+      await requestAPI.create({ request_type: form.needs_more_manpower ? 'responders' : 'goods', sub_type: categories.join(','), details: form.details.trim(), incident_id: form.incident_id });
+      toast.success('Assistance request submitted to MDRRMO dispatch.'); reset(); await load();
+    } catch (saveError: any) { toast.error(saveError?.response?.data?.error || 'The assistance request could not be submitted.'); }
+    finally { setSaving(false); }
   };
-
   const confirmReceived = async (request: MdrrmoAssistance) => {
     setSaving(true);
-    try {
-      await requestAPI.updateStatus(request.id, 'fulfilled');
-      toast.success('Assistance receipt confirmed.');
-      await load();
-    } catch (actionError: any) {
-      toast.error(actionError?.response?.data?.error || 'Assistance receipt could not be confirmed.');
-    } finally {
-      setSaving(false);
-    }
+    try { await requestAPI.updateStatus(request.id, 'fulfilled'); toast.success('Assistance receipt confirmed.'); await load(); }
+    catch (actionError: any) { toast.error(actionError?.response?.data?.error || 'Assistance receipt could not be confirmed.'); }
+    finally { setSaving(false); }
   };
-
-  const incidentName = (id: string) => {
-    const incident = incidents.find((item) => item.id === id);
-    return incident?.title || incident?.incident_type?.replaceAll('_', ' ') || 'Assigned incident';
-  };
-  const activeIncidents = incidents.filter((incident) => !['resolved', 'closed', 'rejected'].includes(String(incident.response_status || '').toLowerCase()));
+  const detailOpen = Boolean(selectedIncidentId);
 
   return (
-    <div className="barangay-console-page">
-      <header className="barangay-console-header"><div><span className="workspace-eyebrow">MDRRMO FIELD RESPONSE</span><h1>My assistance requests</h1><p>Request additional resources or responders for an incident assigned to your unit.</p></div><div className="barangay-console-header-actions"><button className="workspace-primary-action" type="button" onClick={() => { setForm(initialMdrrmoRequest); setIsRequestModalOpen(true); }} aria-haspopup="dialog"><HandHelping size={16} /> Request assistance</button><button className="workspace-secondary-action" type="button" onClick={() => void load()} disabled={loading}><RefreshCw size={16} className={loading ? 'workspace-spinning' : ''} /> Refresh</button></div></header>
-
+    <main className="reports-workspace-v2 assistance-workspace responder-mobile-workspace-v2">
+      <header className="reports-page-header-v2"><div><h1>Assistance Requests</h1><span>MDRRMO responder workspace</span></div><div className="assistance-header-actions-v2"><div className="reports-live-indicator"><i /> Live <span>·</span> {currentTime}</div><button className="workspace-secondary-action" type="button" onClick={() => void load()} disabled={loading}><RefreshCw size={16} className={loading ? 'workspace-spinning' : ''} /> Refresh</button></div></header>
       {isRequestModalOpen && <div className="barangay-console-modal-backdrop" role="presentation" onKeyDown={(event) => { if (event.key === 'Escape' && !saving) reset(); }} onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) reset(); }}>
         <section className="barangay-console-panel barangay-console-form-modal barangay-assistance-request-modal" role="dialog" aria-modal="true" aria-labelledby="mdrrmo-assistance-request-title">
-          <header><div><h2 id="mdrrmo-assistance-request-title">Request MDRRMO assistance</h2><p>Link the request to an active incident assigned to your responder account.</p></div><button autoFocus className="workspace-secondary-action" type="button" onClick={reset} disabled={saving}><X size={15} /> Cancel</button></header>
+          <header><div><h2 id="mdrrmo-assistance-request-title">Request MDRRMO assistance</h2><p>This request will be attached to {incidentTitle(selectedIncident)}.</p></div><button autoFocus className="workspace-secondary-action" type="button" onClick={reset} disabled={saving}><X size={15} /> Cancel</button></header>
           <form className="barangay-console-form-grid" onSubmit={(event) => void submit(event)}>
-            <label className="barangay-console-form-wide">Linked incident<select required value={form.incident_id} onChange={(event) => setForm((current) => ({ ...current, incident_id: event.target.value }))}><option value="">Choose an assigned incident</option>{activeIncidents.map((incident) => <option value={incident.id} key={incident.id}>{incident.title || incident.incident_type?.replaceAll('_', ' ') || 'Incident'}</option>)}</select></label>
-            <div className="barangay-assistance-needs barangay-console-form-wide"><span>Assistance needed</span>
-              <label><input type="checkbox" checked={form.needs_more_manpower} onChange={(event) => setForm((current) => ({ ...current, needs_more_manpower: event.target.checked }))} /> Additional responders</label>
-              <label><input type="checkbox" checked={form.needs_resources} onChange={(event) => setForm((current) => ({ ...current, needs_resources: event.target.checked }))} /> Supplies or resources</label>
-              <label><input type="checkbox" checked={form.needs_equipment} onChange={(event) => setForm((current) => ({ ...current, needs_equipment: event.target.checked }))} /> Equipment</label>
-            </div>
+            <div className="reports-text-card-v2 barangay-assistance-linked-summary"><strong>Selected incident:</strong> {incidentTitle(selectedIncident)}<span>{selectedIncident ? `${statusLabel(incidentStatus(selectedIncident))} · ${selectedIncident.address || selectedIncident.barangay_name || 'Location not provided'}` : 'Incident unavailable'}</span></div>
+            <div className="barangay-assistance-needs barangay-console-form-wide"><span>Assistance needed</span><label><input type="checkbox" checked={form.needs_more_manpower} onChange={(event) => setForm((current) => ({ ...current, needs_more_manpower: event.target.checked }))} /> Additional responders</label><label><input type="checkbox" checked={form.needs_resources} onChange={(event) => setForm((current) => ({ ...current, needs_resources: event.target.checked }))} /> Supplies or resources</label><label><input type="checkbox" checked={form.needs_equipment} onChange={(event) => setForm((current) => ({ ...current, needs_equipment: event.target.checked }))} /> Equipment</label></div>
             <label className="barangay-console-form-wide">Additional information for responders<textarea required minLength={10} rows={3} value={form.details} onChange={(event) => setForm((current) => ({ ...current, details: event.target.value }))} placeholder="Explain what is needed and how it will help…" /></label>
-            <div className="barangay-console-form-actions"><button className="btn btn-primary" type="submit" disabled={saving || activeIncidents.length === 0}>{saving ? 'Submitting…' : <><Send size={16} /> Submit request</>}</button>{activeIncidents.length === 0 && <span className="barangay-console-muted">There are no active assigned incidents to link.</span>}</div>
+            <div className="barangay-console-form-actions"><button className="btn btn-primary" type="submit" disabled={saving || !form.incident_id}>{saving ? 'Submitting…' : <><Send size={16} /> Submit request</>}</button></div>
           </form>
         </section>
       </div>}
-
       {error && <div className="workspace-message workspace-message-error" role="alert">{error}<button type="button" onClick={() => void load()}>Try again</button></div>}
-      <section className="barangay-console-panel"><header><div><h2><ClipboardList size={19} /> Request history</h2><p>Your requests and the dispatcher’s response.</p></div><span className="barangay-console-status pending">{requests.filter((request) => request.status === 'pending').length} pending</span></header>
-        {loading ? <p className="barangay-console-muted">Loading assistance requests…</p> : requests.length === 0 ? <div className="barangay-console-empty"><HandHelping size={25} /><strong>No assistance requests</strong><span>Requests submitted for your assigned incidents will appear here.</span></div> : <div className="barangay-assistance-list">{requests.map((request) => <article className="barangay-assistance-card" key={request.id}>
-          <div className="barangay-assistance-card-heading"><div><span className={`barangay-console-status ${request.status || 'pending'}`}>{statusLabel(request.status)}</span><strong>{incidentName(request.incident_id)}</strong></div><time>{request.created_at ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(request.created_at)) : 'Time unavailable'}</time></div>
-          <div className="barangay-assistance-meta"><span>{request.sub_type?.replaceAll('_', ' ') || (request.request_type === 'responders' ? 'Additional responders' : 'Resources')}</span><span>Incident {incidentName(request.incident_id)}</span></div>
-          <p className="barangay-assistance-explanation">{request.details || 'No request details provided.'}</p>
-          {request.dispatcher_notes && <div className="barangay-assistance-decision"><strong>Dispatcher response</strong><p>{request.dispatcher_notes}</p></div>}
-          {request.status === 'approved' && <footer><button type="button" onClick={() => void confirmReceived(request)} disabled={saving}><Check size={15} /> Confirm received</button></footer>}
-        </article>)}</div>}
+      <section className={`reports-split-view-v2 ${detailOpen ? 'responder-mobile-detail-v2' : 'responder-mobile-list-v2'}`}>
+        <aside className="reports-queue-v2"><div className="reports-queue-heading"><h2>Responding incidents</h2><span>{incidentQueue.length}</span></div>
+          {loading ? <div className="reports-empty-v2"><span className="spinner" /><p>Loading incidents…</p></div> : incidentQueue.length === 0 ? <div className="reports-empty-v2"><HandHelping size={22} /><strong>No active incidents</strong><p>Assigned incidents will appear here. Select an incident to request assistance.</p></div> : <div className="reports-queue-list-v2">{incidentQueue.map((incident) => {
+            const count = requests.filter((request) => request.incident_id === incident.id).length;
+            return <button key={incident.id} type="button" className={`reports-queue-item-v2 ${incidentStatusClass(incident)} ${selectedIncidentId === incident.id ? 'selected' : ''}`} onClick={() => setSelectedIncidentId(incident.id)}>
+              <span className="reports-queue-item-top"><strong>{incidentTitle(incident)}</strong><span className={`report-status-chip-v2 ${incidentStatusClass(incident)}`}>{statusLabel(incidentStatus(incident))}</span></span>
+              <span className="reports-queue-time">Incident occurred · {dateTime(incident.created_at)}</span>
+              <span className="reports-queue-meta"><span className="reports-queue-location-v2"><MapPin size={14} /><span><strong>{incident.address || incident.barangay_name || 'Location not provided'}</strong></span></span></span>
+              {incident.description && <span className="reports-queue-time assistance-request-preview">{incident.description}</span>}
+              <span className="reports-queue-time">{count} assistance {count === 1 ? 'request' : 'requests'}</span>
+            </button>;
+          })}</div>}
+        </aside>
+        <section className="reports-detail-v2">{!selectedIncident ? <div className="reports-detail-empty-v2"><div><ClipboardList size={28} /></div><strong>Select a responding incident</strong><p>Choose an incident assigned to your unit to review requests and ask for support.</p></div> : <>
+          <div className="reports-detail-scroll-v2"><header className="reports-detail-heading-v2 reports-detail-heading-responder-v2"><button type="button" className="reports-mobile-back-v2" onClick={() => setSelectedIncidentId(null)}><ArrowLeft size={16} /> Responding incidents</button><div><span className="reports-eyebrow-v2">Selected incident</span><h2>{incidentTitle(selectedIncident)}</h2><p>{statusLabel(incidentStatus(selectedIncident))} · {dateTime(selectedIncident.created_at)}</p></div><div className="reports-detail-heading-actions-v2"><span className={`report-status-chip-v2 detail ${incidentStatusClass(selectedIncident)}`}>{statusLabel(incidentStatus(selectedIncident))}</span><button className="workspace-primary-action" type="button" onClick={startRequest} disabled={!isSelectedActive}><HandHelping size={16} /> Request assistance</button></div></header>
+            <section className="reports-detail-section-v2"><h3>Incident location</h3><div className="reports-location-card-v2"><MapPin size={19} /><div><strong>{selectedIncident.address || 'Location not provided'}</strong><span>{selectedIncident.barangay_name || 'MDRRMO coverage area'}</span></div></div>{selectedIncident.description && <div className="reports-text-card-v2" style={{ marginTop: 10 }}>{selectedIncident.description}</div>}</section>
+            <section className="reports-detail-section-v2 assistance-history-section"><div className="reports-section-heading-v2"><h3>Request history</h3><span>{incidentRequests.length} requests</span></div>{incidentRequests.length ? <div className="assistance-history-list">{incidentRequests.map((request) => <article className="assistance-history-card" key={request.id}>
+              <header><div><span className="assistance-history-sos">SOS</span><strong>{mdrrmoRequestLabel(request)}</strong></div><span className={`assistance-status-chip ${statusClass(request.status)}`}>{request.status === 'fulfilled' ? 'Received' : statusLabel(request.status)}</span></header>
+              <div className="assistance-history-entry"><strong>{incidentTitle(selectedIncident)}</strong><div className="assistance-history-meta"><span>{mdrrmoRequestLabel(request)}</span><time>{dateTime(request.created_at)}</time></div><p>{request.details || 'No request details provided.'}</p></div>
+              {request.dispatcher_notes && <div className="assistance-history-entry dispatcher"><strong>Dispatcher response</strong><p>{request.dispatcher_notes}</p></div>}
+              {request.status === 'approved' && <footer className="barangay-assistance-card-footer"><button type="button" onClick={() => void confirmReceived(request)} disabled={saving}><Check size={15} /> Confirm received</button></footer>}
+            </article>)}</div> : <div className="reports-no-media-v2">No assistance requests for this incident yet.</div>}</section>
+          </div>
+        </>}</section>
       </section>
-    </div>
+    </main>
   );
 }
 

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { format, formatDistanceToNowStrict } from 'date-fns';
-import { AlertTriangle, ClipboardList, Phone, UserRound } from 'lucide-react';
+import { AlertTriangle, ClipboardList, MapPin, Phone, UserRound } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { requestAPI, socket } from '../lib/api';
 import { formatMobileNumber } from '../lib/mobileNumber';
@@ -265,6 +265,19 @@ export default function ResourceRequestsPage() {
                     <div className="reports-info-card-v2"><span>Responder</span><strong><UserRound size={17} /> {selected.requested_by_user?.full_name || 'Unknown responder'}</strong></div>
                     <div className="reports-info-card-v2"><span>Contact number</span><strong><Phone size={17} /> {formatMobileNumber(selected.requested_by_user?.phone) || 'Not provided'}</strong></div>
                   </div>
+                </section>
+
+                <section className="reports-detail-section-v2">
+                  <h3>Linked incident</h3>
+                  <div className="reports-location-card-v2">
+                    <MapPin size={19} />
+                    <div>
+                      <strong>{selected.incident_report?.title || selected.incident_report?.type || 'Assigned incident'}</strong>
+                      <span>{selected.incident_report?.address || selected.incident_report?.barangay_name || 'Location not provided'}</span>
+                      <small>Status: {statusLabel(selected.incident_report?.mdrrmo_response_status || selected.incident_report?.status)}</small>
+                    </div>
+                  </div>
+                  {selected.incident_report?.description && <div className="reports-text-card-v2" style={{ marginTop: 10 }}>{selected.incident_report.description}</div>}
                 </section>
 
                 <section className="reports-detail-section-v2 assistance-history-section">
