@@ -3,7 +3,15 @@ import { Camera, CircleStop, ImagePlus, Video, X } from 'lucide-react';
 
 const MAX_VIDEO_SECONDS = 60;
 const MAX_CAPTURE_FILES = 5;
-const MAX_VIDEO_BYTES = 8 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
+const MAX_MEDIA_BYTES = 50 * 1024 * 1024;
+const MIME_BY_EXTENSION: Record<string, string> = {
+  jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp',
+  heic: 'image/heic', heif: 'image/heif', gif: 'image/gif', avif: 'image/avif',
+  mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime',
+  '3gp': 'video/3gpp', mkv: 'video/x-matroska',
+};
+const SUPPORTED_MIME_TYPES = new Set(Object.values(MIME_BY_EXTENSION));
 
 type CameraEvidenceCaptureProps = {
   files: File[];
@@ -30,6 +38,7 @@ export default function CameraEvidenceCapture({ files, onFilesChange, required =
   const [recording, setRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const onFilesChangeRef = useRef(onFilesChange);
@@ -110,14 +119,45 @@ export default function CameraEvidenceCapture({ files, onFilesChange, required =
   };
 
   const appendEvidence = (file: File) => {
+    const extension = file.name.split('.').pop()?.toLowerCase() || '';
+    const declaredMime = file.type.toLowerCase().split(';')[0].trim();
+    const mimeType = !declaredMime || declaredMime === 'application/octet-stream'
+      ? MIME_BY_EXTENSION[extension] || declaredMime
+      : declaredMime;
+    if (!SUPPORTED_MIME_TYPES.has(mimeType)) {
+      setCameraMessage('Choose a photo or video file.');
+      return false;
+    }
+    if (file.size > MAX_MEDIA_BYTES) {
+      setCameraMessage('Each photo or video must be 50 MB or smaller.');
+      return false;
+    }
     if (filesRef.current.length >= MAX_CAPTURE_FILES) {
       setCameraMessage(`You can attach up to ${MAX_CAPTURE_FILES} photos or videos.`);
       return false;
     }
-    const nextFiles = [...filesRef.current, file];
+    const normalizedFile = file.type === mimeType
+      ? file
+      : new File([file], file.name, { type: mimeType, lastModified: file.lastModified });
+    const nextFiles = [...filesRef.current, normalizedFile];
     filesRef.current = nextFiles;
     onFilesChangeRef.current(nextFiles);
     return true;
+  };
+
+  const addSelectedFiles = (selectedFiles: FileList | null) => {
+    if (!selectedFiles?.length) return;
+    let addedCount = 0;
+    for (const file of Array.from(selectedFiles)) {
+      if (appendEvidence(file)) addedCount += 1;
+    }
+    if (addedCount > 0) {
+      const rejectedCount = selectedFiles.length - addedCount;
+      setCameraMessage(rejectedCount > 0
+        ? `${addedCount} photo or video${addedCount === 1 ? '' : 's'} added. ${rejectedCount} file${rejectedCount === 1 ? ' was' : 's were'} skipped; check file type, size, and the five-file limit.`
+        : `${addedCount} photo or video${addedCount === 1 ? '' : 's'} added to the report.`);
+    }
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const capturePhoto = () => {
@@ -169,7 +209,7 @@ export default function CameraEvidenceCapture({ files, onFilesChange, required =
         const blob = new Blob(chunksRef.current, { type });
         if (blob.size > 0) {
           if (blob.size > MAX_VIDEO_BYTES) {
-            setCameraMessage('This video is larger than 8 MB. Record a shorter clip and try again.');
+            setCameraMessage('This video is larger than 50 MB. Record a shorter clip and try again.');
           } else {
             const video = new File([blob], createCaptureName(type, 'video'), { type });
             if (appendEvidence(video)) setCameraMessage('Video added to the report.');
@@ -202,8 +242,20 @@ export default function CameraEvidenceCapture({ files, onFilesChange, required =
   return <div className="camera-evidence-control">
     <div className="camera-evidence-heading">
       <strong>Photo or video evidence {required ? <b>Required</b> : <span>Optional</span>}</strong>
-      <small>Capture it with your camera. Files and gallery uploads are not available.</small>
+      <small>Capture with your camera or choose photos and videos from this device. Up to five files, 50 MB each.</small>
     </div>
+    <input
+      ref={fileInputRef}
+      className="camera-evidence-file-input"
+      type="file"
+      accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/gif,image/avif,video/mp4,video/webm,video/quicktime,video/3gpp,video/x-matroska"
+      multiple
+      onChange={(event) => addSelectedFiles(event.currentTarget.files)}
+      aria-label="Choose photos or videos"
+    />
+    <button className="camera-evidence-open" type="button" onClick={() => fileInputRef.current?.click()}>
+      <ImagePlus size={17} aria-hidden="true" /> Choose photo or video
+    </button>
     <button className="camera-evidence-open" type="button" onClick={() => void openCamera()}>
       <Camera size={17} aria-hidden="true" /> Open camera
     </button>
@@ -213,11 +265,12 @@ export default function CameraEvidenceCapture({ files, onFilesChange, required =
         <button type="button" onClick={() => removeFile(index)} aria-label={`Remove ${file.name}`}>Remove</button>
       </li>)}
     </ul>}
+    {!cameraOpen && cameraMessage && <p className="camera-evidence-message" role="status">{cameraMessage}</p>}
 
     {cameraOpen && <div className="camera-capture-backdrop" role="presentation">
       <section className="camera-capture-dialog" role="dialog" aria-modal="true" aria-labelledby="camera-capture-title">
         <header>
-          <div><h2 id="camera-capture-title">Capture report evidence</h2><p>Take a photo or record a video. Nothing is selected from your device.</p></div>
+          <div><h2 id="camera-capture-title">Capture report evidence</h2><p>Take a photo or record a video, or choose media from your device.</p></div>
           <button type="button" className="camera-capture-close" aria-label="Close camera" onClick={closeCamera}><X size={18} /></button>
         </header>
         {stream

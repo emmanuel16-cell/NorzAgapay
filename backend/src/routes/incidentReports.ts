@@ -1141,33 +1141,46 @@ router.post('/:id/follow-up', optionalAuthenticate, parseReporterFollowUpFiles, 
 
     await ensureReporterFollowUpIsOpen(target);
 
-    const allowedMimeTypes = new Set([
-      'image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/heic', 'image/heif',
-      'video/mp4', 'video/webm', 'video/quicktime', 'video/3gpp', 'video/x-matroska',
-    ]);
-    for (const file of files) {
-      const mimeType = String(file.mimetype || '').toLowerCase().split(';')[0].trim();
-      if (!allowedMimeTypes.has(mimeType)) {
-        res.status(400).json({ error: 'Follow-up attachments must be photos or videos.' });
-        return;
-      }
+    const mimeByExtension: Record<string, string> = {
+      jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp',
+      heic: 'image/heic', heif: 'image/heif', gif: 'image/gif', avif: 'image/avif',
+      mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime',
+      '3gp': 'video/3gpp', mkv: 'video/x-matroska',
+    };
+    const extensionByMime: Record<string, string> = {
+      'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png', 'image/webp': 'webp',
+      'image/heic': 'heic', 'image/heif': 'heif', 'image/gif': 'gif', 'image/avif': 'avif',
+      'video/mp4': 'mp4', 'video/webm': 'webm', 'video/quicktime': 'mov',
+      'video/3gpp': '3gp', 'video/x-matroska': 'mkv',
+    };
+    const normalizedFiles = files.map((file) => {
+      const declaredMime = String(file.mimetype || '').toLowerCase().split(';')[0].trim();
+      const extension = file.originalname.split('.').pop()?.toLowerCase() || '';
+      const mimeType = !declaredMime || declaredMime === 'application/octet-stream'
+        ? mimeByExtension[extension] || declaredMime
+        : declaredMime;
+      return { file, mimeType, extension };
+    });
+    const allowedMimeTypes = new Set(Object.keys(extensionByMime));
+    const invalidFile = normalizedFiles.find(({ mimeType }) => !allowedMimeTypes.has(mimeType));
+    if (invalidFile) {
+      res.status(400).json({ error: `“${invalidFile.file.originalname}” is not a supported photo or video format.` });
+      return;
     }
 
-    const proofTypes = files.map((file) => file.mimetype.toLowerCase().startsWith('video/') ? 'video' : 'image');
+    const proofTypes = normalizedFiles.map(({ mimeType }) => mimeType.startsWith('video/') ? 'video' : 'image');
     const proofUrls: string[] = [];
-    for (let index = 0; index < files.length; index += 1) {
-      const file = files[index];
-      const mimeType = file.mimetype.toLowerCase().split(';')[0].trim();
-      const extensionByMime: Record<string, string> = {
-        'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png', 'image/webp': 'webp',
-        'image/heic': 'heic', 'image/heif': 'heif', 'video/mp4': 'mp4', 'video/webm': 'webm',
-        'video/quicktime': 'mov', 'video/3gpp': '3gp', 'video/x-matroska': 'mkv',
-      };
+    for (const { file, mimeType } of normalizedFiles) {
       const objectPath = `reports/${target.row.id}/follow-up/${randomUUID()}.${extensionByMime[mimeType]}`;
       const { error: uploadError } = await supabaseAdmin.storage
         .from(config.supabaseBucketName)
         .upload(objectPath, file.buffer, { contentType: mimeType, upsert: false });
-      if (uploadError) throw uploadError;
+      if (uploadError) {
+        console.error('Reporter follow-up media upload failed:', uploadError.message);
+        const mediaUploadError = new Error('Could not store reporter follow-up media.');
+        (mediaUploadError as any).code = 'FOLLOW_UP_MEDIA_UPLOAD_FAILED';
+        throw mediaUploadError;
+      }
       uploadedPaths.push(objectPath);
       const { data } = supabaseAdmin.storage.from(config.supabaseBucketName).getPublicUrl(objectPath);
       proofUrls.push(data.publicUrl);
@@ -1258,6 +1271,10 @@ router.post('/:id/follow-up', optionalAuthenticate, parseReporterFollowUpFiles, 
     }
     if (error?.code === '22023') {
       res.status(400).json({ error: error.message || 'Follow-up request details are invalid.' });
+      return;
+    }
+    if (error?.code === 'FOLLOW_UP_MEDIA_UPLOAD_FAILED') {
+      res.status(502).json({ error: 'The photo or video could not be saved. Try a smaller file or a different supported format.' });
       return;
     }
     console.error('Reporter follow-up request error:', error);

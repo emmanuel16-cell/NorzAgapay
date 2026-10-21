@@ -179,6 +179,7 @@ export default function TrackReportPage() {
   const [error, setError] = useState('');
   const [followUpOpen, setFollowUpOpen] = useState(false);
   const [followUpFiles, setFollowUpFiles] = useState<File[]>([]);
+  const followUpFilesRef = useRef<File[]>([]);
   const [followUpSubmitting, setFollowUpSubmitting] = useState(false);
   const [followUpError, setFollowUpError] = useState('');
   const [followUpSuccess, setFollowUpSuccess] = useState('');
@@ -188,6 +189,7 @@ export default function TrackReportPage() {
     setTrackingCredentials(null);
     setReport(null);
     setFollowUpOpen(false);
+    followUpFilesRef.current = [];
     setFollowUpFiles([]);
     setFollowUpError('');
     setFollowUpSuccess('');
@@ -225,7 +227,7 @@ export default function TrackReportPage() {
     setFollowUpError('');
     setFollowUpSuccess('');
     try {
-      const response = await reportAPI.submitReportFollowUp(report.id, trackingCredentials.phone, followUpFiles);
+      const response = await reportAPI.submitReportFollowUp(report.id, trackingCredentials.phone, followUpFilesRef.current);
       const updatedReport = response.data?.report || response.data;
       setReport((current) => current ? {
         ...current,
@@ -234,6 +236,7 @@ export default function TrackReportPage() {
         proof_urls: updatedReport?.proof_urls ?? current.proof_urls,
         proof_types: updatedReport?.proof_types ?? current.proof_types,
       } : current);
+      followUpFilesRef.current = [];
       setFollowUpFiles([]);
       setFollowUpOpen(false);
       setFollowUpSuccess('Follow-up request sent to dispatch.');
@@ -388,7 +391,7 @@ export default function TrackReportPage() {
             {followUpError && <p className="public-follow-up-error" role="alert"><AlertCircle size={14} /> {followUpError}</p>}
             {followUpOpen && canSendFollowUp && <form className="public-follow-up-form" onSubmit={(event) => void submitFollowUp(event)}>
               <p>Send an additional emergency update to dispatch. Photo or video evidence is optional.</p>
-              <CameraEvidenceCapture files={followUpFiles} onFilesChange={setFollowUpFiles} />
+              <CameraEvidenceCapture files={followUpFiles} onFilesChange={(files) => { followUpFilesRef.current = files; setFollowUpFiles(files); }} />
               <button className="btn btn-primary public-follow-up-submit" type="submit" disabled={followUpSubmitting}>
                 <Send size={15} aria-hidden="true" /> {followUpSubmitting ? 'Sending follow-up…' : 'Send follow-up request'}
               </button>
