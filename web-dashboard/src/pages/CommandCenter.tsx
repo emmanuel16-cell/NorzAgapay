@@ -816,7 +816,7 @@ const createResponderUnitBadge = (selected = false) => {
   });
 };
 
-const createLiveResponderBadge = (selected = false, color = '#1478f8') => {
+const createLiveResponderBadge = (selected = false, color = '#818cf8') => {
   const size = 56;
   return L.divIcon({
     html: `
@@ -833,6 +833,9 @@ const createLiveResponderBadge = (selected = false, color = '#1478f8') => {
     popupAnchor: [0, -size / 2],
   });
 };
+
+const LIVE_RESPONDER_COLOR = '#818cf8';
+const TRANSPORTING_RESPONDER_COLOR = '#ff3b3b';
 
 function getRouteBearing(from: [number, number], to: [number, number]): number {
   const radians = Math.PI / 180;
@@ -1110,7 +1113,12 @@ function LiveResponderOverlays({
         <Marker
           key={`live-responder-${location.responderKey}`}
           position={[location.latitude, location.longitude]}
-          icon={createLiveResponderBadge(selectedResponderId === location.responderKey, incidentClusterColor(targets[0], location.accountKind === 'barangay'))}
+          icon={createLiveResponderBadge(
+            selectedResponderId === location.responderKey,
+            location.assignments.some((assignment) => assignment.transportStatus === 'in_transit')
+              ? TRANSPORTING_RESPONDER_COLOR
+              : LIVE_RESPONDER_COLOR,
+          )}
           zIndexOffset={selectedResponderId === location.responderKey ? 1800 : 1400}
           eventHandlers={{ click: () => onSelectResponder(location.responderKey) }}
         >
