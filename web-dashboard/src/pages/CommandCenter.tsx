@@ -516,7 +516,7 @@ function ResponderAssessmentPanel({
                   {request.dispatcher_notes && <p>{request.dispatcher_notes}</p>}
                 </div>
               )}
-            </div>
+            </article>
           )) : <div className="assistance-request-card"><strong>Assistance Request</strong><span>No assistance request details provided.</span></div>}
           {responderAssistanceCount > 1 && <small className="assistance-request-history-count">Showing the latest of {responderAssistanceCount} requests.</small>}
           <button type="button" className="assistance-request-view-all" onClick={() => navigate('/requests')}>
