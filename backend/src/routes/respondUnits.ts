@@ -472,12 +472,29 @@ router.put('/:id/team-leader', authenticate, authorize('admin', 'logistics', 'ma
     }
 
     const officer = await ensureOfficerForResponder(account, unit.specialization);
-    const { error: assignError } = await supabaseAdmin.rpc('assign_respond_unit_team_leader_v1', {
-      p_unit_id: unit.id,
-      p_officer_id: officer.id,
-      p_responder_user_id: account.id,
-    });
-    if (assignError) throw assignError;
+    // Write the membership directly instead of calling the legacy v1 RPC.
+    // Older versions of that RPC unassign the current leader before adding a
+    // new one, so they can silently replace a leader on databases that have
+    // not yet applied the multiple-leader migration.
+    const { error: assignError } = await supabaseAdmin.from('respond_unit_members').upsert({
+      unit_id: unit.id,
+      officer_id: officer.id,
+      responder_user_id: account.id,
+      member_role: 'team_leader',
+      is_active: true,
+    }, { onConflict: 'unit_id,officer_id' });
+    if (assignError) {
+      const errorMessage = String(assignError.message || '');
+      if ((assignError.code === '23505' && errorMessage.includes('idx_respond_unit_one_active_team_leader')) ||
+          (assignError.code === '23514' && /capacity for role team_leader/i.test(errorMessage))) {
+        res.status(503).json({
+          error: 'The database still limits each response unit to one Team Leader. Apply database/migrations/20261022_multiple_respond_unit_team_leaders.sql, then try again.',
+          code: 'MULTIPLE_TEAM_LEADERS_MIGRATION_REQUIRED',
+        });
+        return;
+      }
+      throw assignError;
+    }
     await syncLegacyOfficerIds(unit.id);
     res.json({ unit: (await getUnitDetails([unit.id]))[0] });
   } catch (error: any) {
