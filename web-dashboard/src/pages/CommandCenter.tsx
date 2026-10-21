@@ -12,8 +12,10 @@ import { useAuth } from '../context/AuthContext';
 import { useMunicipalityBoundary } from '../context/MunicipalityBoundaryContext';
 import MunicipalityBoundaryMapLayer from '../components/MunicipalityBoundaryMapLayer';
 import CurrentWeatherPanel from '../components/CurrentWeatherPanel';
+import IncidentLocationCard from '../components/IncidentLocationCard';
 import { boundaryRings, isCoordinateInsideBoundary, type MunicipalityBoundary } from '../lib/municipalityBoundary';
 import { formatMobileNumber } from '../lib/mobileNumber';
+import type { IncidentLocationPreview } from '../lib/incidentLocation';
 import toast from 'react-hot-toast';
 import { AlertTriangle, Siren, Users, CheckCircle2, MapPin, X } from 'lucide-react';
 import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
@@ -144,48 +146,6 @@ interface BarangayDestination {
   id: string;
   name: string;
   distance_meters: number | null;
-}
-
-type IncidentLocationPreview = {
-  road?: string | null;
-  landmark?: string | null;
-  landmark_distance_meters?: number | null;
-  nearest_response_barangay_name?: string | null;
-};
-
-function IncidentLocationCard({
-  incident,
-  location,
-  loading,
-  error,
-}: {
-  incident: IncidentItem;
-  location: IncidentLocationPreview | null;
-  loading: boolean;
-  error: string;
-}) {
-  const fallback = dispatchLocationFallback(incident);
-  const primary = location?.road || location?.landmark || fallback || 'Pinned incident location';
-  const coordinates = `${incident.latitude.toFixed(5)}, ${incident.longitude.toFixed(5)}`;
-  const landmarkText = location?.landmark
-    ? `Near ${location.landmark}${location.landmark_distance_meters != null ? ` · ${location.landmark_distance_meters} m` : ''}`
-    : '';
-
-  return (
-    <div className="panel-details-box incident-location-card">
-      <MapPin size={18} aria-hidden="true" />
-      <div className="reporter-note-content">
-        <strong>Incident location</strong>
-        <p>{loading ? 'Looking up the road and nearby places…' : primary}</p>
-        {!loading && landmarkText && <small>{landmarkText}</small>}
-        {!loading && location?.nearest_response_barangay_name &&
-          <small>Closest response barangay: {location.nearest_response_barangay_name.replace(/^(?:barangay|brgy\.?)\s*/i, '')}</small>}
-        {!loading && error && <small className="incident-location-message">{error} · {coordinates}</small>}
-        {!loading && !error && !location?.road && !location?.landmark && !fallback &&
-          <small className="incident-location-message">{coordinates}</small>}
-      </div>
-    </div>
-  );
 }
 
 interface LiveResponderAssignment {
@@ -2283,10 +2243,11 @@ export default function CommandCenter() {
                 </div>
 
                 <IncidentLocationCard
-                  incident={selectedIncident}
                   location={selectedIncidentLocation}
+                  fallbackLabel={dispatchLocationFallback(selectedIncident)}
                   loading={selectedIncidentLocationLoading}
                   error={selectedIncidentLocationError}
+                  coordinates={`${selectedIncident.latitude.toFixed(5)}, ${selectedIncident.longitude.toFixed(5)}`}
                 />
 
                 {/* Section Title */}
@@ -2570,10 +2531,11 @@ export default function CommandCenter() {
                 </div>
 
                 <IncidentLocationCard
-                  incident={selectedIncident}
                   location={selectedIncidentLocation}
+                  fallbackLabel={dispatchLocationFallback(selectedIncident)}
                   loading={selectedIncidentLocationLoading}
                   error={selectedIncidentLocationError}
+                  coordinates={`${selectedIncident.latitude.toFixed(5)}, ${selectedIncident.longitude.toFixed(5)}`}
                 />
 
                 <div className="panel-details-box reporter-notes">

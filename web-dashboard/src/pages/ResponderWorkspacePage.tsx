@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Activity, AlertCircle, CheckCircle2, ClipboardList, MapPin, RefreshCw, ShieldAlert, Upload, X } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Activity, AlertCircle, CheckCircle2, ClipboardList, RefreshCw, ShieldAlert, Upload, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { reportAPI, respondUnitAPI } from '../lib/api';
 import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
 import { useAuth } from '../context/AuthContext';
 import { createDemoResponderReport } from '../demoResponderReport';
-import { formatIncidentLocation, incidentMapUrl } from '../lib/incidentLocation';
+import IncidentLocationCard from '../components/IncidentLocationCard';
+import { formatIncidentLocation, hasIncidentPin, incidentMapUrl, type IncidentLocationPreview } from '../lib/incidentLocation';
 
 type CrewMember = { id?: string; unit_member_id?: string; name?: string; full_name?: string; member_role: string; is_active?: boolean };
 type BarangayCrewMember = { id: string; full_name: string; account_role: 'responder' | 'staff' };
@@ -72,11 +73,33 @@ export default function ResponderWorkspacePage() {
   const [crewEditorReportId, setCrewEditorReportId] = useState<string | null>(null);
   const [barangayCrewSelections, setBarangayCrewSelections] = useState<Record<string, BarangayCrewSelection[]>>({});
   const [assessments, setAssessments] = useState<Record<string, typeof emptyAssessment>>({});
+  const [locationPreviews, setLocationPreviews] = useState<Record<string, IncidentLocationPreview>>({});
+  const [locationPreviewLoading, setLocationPreviewLoading] = useState<Record<string, boolean>>({});
+  const requestedLocationPreviews = useRef(new Set<string>());
   const [resolutionNotes, setResolutionNotes] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
+  const loadLocationPreview = useCallback(async (report: AssignedReport) => {
+    if (report.is_demo || !hasIncidentPin(report)) return;
+    const requestKey = `${report.id}:${report.latitude}:${report.longitude}`;
+    if (requestedLocationPreviews.current.has(requestKey)) return;
+    requestedLocationPreviews.current.add(requestKey);
+    setLocationPreviewLoading((current) => ({ ...current, [report.id]: true }));
+    try {
+      const response = isBarangay
+        ? await reportAPI.barangayLocationPreview(report.id)
+        : await reportAPI.mdrrmoReportLocationPreview(report.id);
+      setLocationPreviews((current) => ({ ...current, [report.id]: response.data || {} }));
+    } catch (previewError) {
+      requestedLocationPreviews.current.delete(requestKey);
+      console.warn(`Could not load location labels for response ${report.id}:`, previewError);
+    } finally {
+      setLocationPreviewLoading((current) => ({ ...current, [report.id]: false }));
+    }
+  }, [isBarangay]);
 
   const loadWorkspace = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
@@ -118,6 +141,7 @@ export default function ResponderWorkspacePage() {
   }, [isBarangay, user?.id]);
 
   useEffect(() => { void loadWorkspace(); }, [loadWorkspace]);
+  useEffect(() => { reports.forEach((report) => void loadLocationPreview(report)); }, [reports, loadLocationPreview]);
   useRealtimeRefresh(loadWorkspace, {
     events: [
       'incident:lifecycle', 'incident_report:updated', 'incident_report:reviewed', 'mdrrmo:report_updated',
@@ -286,11 +310,19 @@ export default function ResponderWorkspacePage() {
           const savedMdrrmoCrew = (assignment?.crew || []).filter((member) => member.member_role !== 'team_leader');
           const savedBarangayCrew = report.barangay_crew_members || [];
           const mapUrl = incidentMapUrl(report);
+          const locationPreview = locationPreviews[report.id];
           const displayStatus = responseStatus === 'responding' ? 'Responding' : assignmentStatus === 'active' ? 'Assigned' : assignmentStatus || 'Assigned';
           return <article className="responder-report-card" key={report.id}>
             <header><div><span className="workspace-eyebrow">{report.is_demo ? 'DEMO ASSIGNMENT · ' : ''}{report.incident_type?.replaceAll('_', ' ') || 'Incident'}{report.severity ? ` · ${report.severity}` : ''}</span><h2>{report.title || 'Incident response'}</h2></div><span className={`resident-status ${responseStatus === 'responding' ? 'responding' : ''} ${report.is_demo ? 'demo' : ''}`}>{report.is_demo ? 'Demo preview' : displayStatus}</span></header>
             <p className="responder-report-description">{report.description || 'No incident details were provided.'}</p>
-            <div className="resident-report-meta"><span><Activity size={14} /> {report.created_at ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(report.created_at)) : 'Time unavailable'}</span><span><MapPin size={14} /> {formatIncidentLocation(report)}</span>{mapUrl && <a href={mapUrl} target="_blank" rel="noreferrer">Open map</a>}</div>
+            <div className="resident-report-meta"><span><Activity size={14} /> {report.created_at ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(report.created_at)) : 'Time unavailable'}</span></div>
+            <IncidentLocationCard
+              location={locationPreview}
+              fallbackLabel={formatIncidentLocation(report)}
+              loading={Boolean(locationPreviewLoading[report.id])}
+              coordinates={hasIncidentPin(report) ? `${Number(report.latitude).toFixed(5)}, ${Number(report.longitude).toFixed(5)}` : null}
+              mapHref={mapUrl}
+            />
 
             {canManageCrew && !isBarangay && <section className="responder-action-panel">
               <h3><ClipboardList size={16} /> MDRRMO response crew</h3>

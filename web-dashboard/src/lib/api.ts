@@ -267,6 +267,7 @@ export const reportAPI = {
   verifiedBarangays: () => api.get('/barangay/list', { params: { verified_only: true } }),
   get: (id: string) => api.get(`/incident-reports/${id}`),
   mdrrmoLocationPreview: (latitude: number, longitude: number) => api.post('/incident-reports/location-preview', { latitude, longitude }),
+  mdrrmoReportLocationPreview: (reportId: string) => api.get(`/mdrrmo/reports/${encodeURIComponent(reportId)}/location-preview`),
   barangayLocationPreview: (reportId: string) => api.get(`/barangay/reports/${encodeURIComponent(reportId)}/location-preview`),
   mdrrmoQueue: () => api.get('/mdrrmo/reports/queue'),
   barangayReports: (params?: any) => api.get('/barangay/reports', { params }),

@@ -3463,6 +3463,7 @@ tbody tr:last-child td { border-bottom: none; }
 .incident-location-card .reporter-note-content p { min-height: 18px; color: #8bdcf0; font-size: 13px; font-weight: 700; overflow-wrap: anywhere; }
 .incident-location-card .reporter-note-content small { color: #9ab1d2; font-size: 11px; }
 .incident-location-card .incident-location-message { color: #f1b1ad; }
+.incident-location-map-link { width: max-content; color: #69c8e7; font-size: 11px; text-decoration: underline; text-underline-offset: 2px; }
 .resident-selection-overlay .panel-resident .incident-location-card,
 .escalated-selection-overlay .panel-resident .incident-location-card { order: 2; }
 .reporter-note-content { display: flex; height: 100%; flex-direction: column; gap: 6px; }
@@ -4322,7 +4323,6 @@ tbody tr:last-child td { border-bottom: none; }
 .resident-report-card .resident-report-other-emergency { margin-top: -5px; font-size: 12px; }
 .resident-report-meta { display: flex; flex-wrap: wrap; gap: 12px 18px; color: var(--text-muted); font-size: 11px; }
 .resident-report-meta span { display: inline-flex; align-items: center; gap: 5px; }
-.resident-report-meta a { color: var(--accent, #4dd8ee); text-decoration: underline; text-underline-offset: 2px; }
 .resident-report-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 9px 14px; margin: 12px 0; }
 .resident-report-facts > div { min-width: 0; }
 .resident-report-facts dt { margin-bottom: 3px; color: var(--text-muted); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }

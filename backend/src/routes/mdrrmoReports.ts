@@ -10,7 +10,7 @@ import { IncidentResolutionPdfService, IncompleteResolutionReportError } from '.
 import { isEscalatedForMdrrmo, isVisibleToMdrrmo } from '../services/mdrrmoReportVisibility';
 import { getDispatchableRespondUnits } from '../services/respondUnitAvailability';
 import { getBarangayCoordinates, getNearestBarangay, distanceMeters as distanceBetweenCoordinates } from '../services/nearestBarangay';
-import { getVerifiedResponseBarangays } from '../services/responseBarangay';
+import { findNearestVerifiedResponseBarangayName, getVerifiedResponseBarangays } from '../services/responseBarangay';
 import { resolveIncidentLocation } from '../services/incidentLocation';
 import { getVerifiedBarangayIds } from '../services/verifiedBarangayService';
 import { isValidLocationIcon, removeStoredLocationIcon, storeLocationIcon } from '../services/locationIconStorage';
@@ -1145,6 +1145,36 @@ router.patch('/:id/arrive', authenticate, authorize('responder'), async (req: Au
   } catch (err) {
     console.error('MDRRMO report arrival error:', err);
     res.status(500).json({ error: 'Could not record arrival.' });
+  }
+});
+
+router.get('/:id/location-preview', authenticate, authorize('responder', 'dispatcher', 'admin'), async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const report = await reportForAction(req.params.id);
+    if (!report || !isMdrrmoReport(report)) { res.status(404).json({ error: 'MDRRMO report not found.' }); return; }
+    if (req.user!.role === 'responder' && !await findAssignment(report.id, req.user!.userId)) {
+      res.status(403).json({ error: 'This report is not assigned to your responder account.' }); return;
+    }
+
+    const latitude = Number(report.latitude);
+    const longitude = Number(report.longitude);
+    if (report.latitude == null || report.longitude == null || String(report.latitude).trim() === '' ||
+        String(report.longitude).trim() === '' || !Number.isFinite(latitude) || latitude < -90 || latitude > 90 ||
+        !Number.isFinite(longitude) || longitude < -180 || longitude > 180 || (latitude === 0 && longitude === 0)) {
+      res.status(400).json({ error: 'This report does not have valid incident coordinates.' }); return;
+    }
+
+    const location = await resolveIncidentLocation(latitude, longitude, [], report.barangay_name, true);
+    const nearestResponseBarangayName = await findNearestVerifiedResponseBarangayName({ latitude, longitude });
+    res.json({
+      road: location?.road || null,
+      landmark: location?.landmark || null,
+      landmark_distance_meters: location?.landmarkDistanceMeters ?? null,
+      nearest_response_barangay_name: nearestResponseBarangayName,
+    });
+  } catch (error) {
+    console.warn(`Could not resolve responder location preview for report ${req.params.id}:`, error);
+    res.status(502).json({ error: 'Could not find nearby map labels.' });
   }
 });
 

@@ -9,9 +9,10 @@ import { INCIDENT_SEVERITY_OPTIONS, INCIDENT_TYPE_OPTIONS } from '../lib/inciden
 import { getMdrrmoReportGroup, isVisibleToMdrrmo } from '../lib/mdrrmoReportVisibility';
 import { createDemoResponderReport } from '../demoResponderReport';
 import ResponderLocationMapModal from '../components/ResponderLocationMapModal';
+import IncidentLocationCard from '../components/IncidentLocationCard';
 import { formatMobileNumber } from '../lib/mobileNumber';
 import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
-import { formatIncidentLocation, hasIncidentPin } from '../lib/incidentLocation';
+import { formatIncidentLocation, hasIncidentPin, type IncidentLocationPreview } from '../lib/incidentLocation';
 
 type ReportGroup = 'resident' | 'escalated';
 type ReportTab = 'resident' | 'assigned';
@@ -30,13 +31,6 @@ type BarangayDestination = {
   name: string;
   distance_meters?: number | null;
 };
-type IncidentLocationPreview = {
-  road?: string | null;
-  landmark?: string | null;
-  landmark_distance_meters?: number | null;
-  nearest_response_barangay_name?: string | null;
-};
-
 interface IncidentReport {
   id: string; type: string; title?: string; specifics?: string; description?: string; status: string;
   send_to?: string; is_escalated?: boolean; beyond_barangay_capability?: boolean;
@@ -254,7 +248,7 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
   const nearestDestination = destinations.find((item) => item.distance_meters != null) || null;
 
   const loadLocationPreview = useCallback(async (report: IncidentReport) => {
-    if (isReadOnlyResponder || report.is_demo || !hasPin(report)) return;
+    if (report.is_demo || !hasPin(report)) return;
     const requestKey = `${report.id}:${report.latitude}:${report.longitude}`;
     if (requestedLocationPreviews.current.has(requestKey)) return;
     requestedLocationPreviews.current.add(requestKey);
@@ -262,9 +256,12 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
     try {
       const response = isBarangay
         ? await reportAPI.barangayLocationPreview(report.id)
-        : await reportAPI.mdrrmoLocationPreview(Number(report.latitude), Number(report.longitude));
+        : isReadOnlyResponder
+          ? await reportAPI.mdrrmoReportLocationPreview(report.id)
+          : await reportAPI.mdrrmoLocationPreview(Number(report.latitude), Number(report.longitude));
       setLocationPreviews((current) => ({ ...current, [report.id]: response.data || {} }));
     } catch (error) {
+      requestedLocationPreviews.current.delete(requestKey);
       console.warn(`Could not load map labels for incident ${report.id}:`, error);
     } finally {
       setLocationPreviewLoading((current) => ({ ...current, [report.id]: false }));
@@ -277,7 +274,7 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
 
   useEffect(() => {
     const list = queueListRef.current;
-    if (!list || isReadOnlyResponder) return;
+    if (!list) return;
     const locationRows = Array.from(list.querySelectorAll<HTMLElement>('[data-report-location-id]'));
     if (!locationRows.length) return;
     if (typeof IntersectionObserver === 'undefined') {
@@ -296,7 +293,7 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
     }, { root: list, rootMargin: '120px 0px' });
     locationRows.forEach((element) => observer.observe(element));
     return () => observer.disconnect();
-  }, [visible, isReadOnlyResponder, loadLocationPreview]);
+  }, [visible, loadLocationPreview]);
 
   const clearLink = () => {
     if (!searchParams.has('id') && !searchParams.has('status')) return;
@@ -555,7 +552,14 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
                 <div className="reports-info-card-v2"><span>Priority</span><strong>{priority || 'Not classified'}</strong></div>
               </div></section>}
 
-              {!isReadOnlyBarangay && <section className="reports-detail-section-v2"><h3>Reported location</h3><div className="reports-location-card-v2"><MapPin size={20} /><div><strong>{locationName}</strong><span>{locationPreviewLoading[selected.id] && !selectedLocationPreview ? 'Looking up the road and nearby places…' : locationNote}</span>{selectedLocationPreview?.nearest_response_barangay_name && <small>Closest response barangay: {selectedLocationPreview.nearest_response_barangay_name.replace(/^(?:barangay|brgy\.?)\s*/i, '')}</small>}</div>{!isReadOnlyResponder && hasPin(selected) && ['pending', 'responding'].includes(stage) && <Link className="reports-view-map-link-v2" to={`/command-center?report_id=${encodeURIComponent(selected.id)}`}>View in map</Link>}</div></section>}
+              {!isReadOnlyBarangay && (isReadOnlyResponder
+                ? <section className="reports-detail-section-v2"><IncidentLocationCard
+                    location={selectedLocationPreview}
+                    fallbackLabel={formatIncidentLocation(selected)}
+                    loading={Boolean(locationPreviewLoading[selected.id])}
+                    coordinates={hasPin(selected) ? `${Number(selected.latitude).toFixed(5)}, ${Number(selected.longitude).toFixed(5)}` : null}
+                  /></section>
+                : <section className="reports-detail-section-v2"><h3>Reported location</h3><div className="reports-location-card-v2"><MapPin size={20} /><div><strong>{locationName}</strong><span>{locationPreviewLoading[selected.id] && !selectedLocationPreview ? 'Looking up the road and nearby places…' : locationNote}</span>{selectedLocationPreview?.nearest_response_barangay_name && <small>Closest response barangay: {selectedLocationPreview.nearest_response_barangay_name.replace(/^(?:barangay|brgy\.?)\s*/i, '')}</small>}</div>{hasPin(selected) && ['pending', 'responding'].includes(stage) && <Link className="reports-view-map-link-v2" to={`/command-center?report_id=${encodeURIComponent(selected.id)}`}>View in map</Link>}</div></section>)}
 
               {!isBarangay && Boolean(selected.barangay_assignments?.length) && <section className="reports-detail-section-v2">
                 <h3>Barangay assignment history</h3>

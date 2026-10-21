@@ -6,6 +6,13 @@ export type IncidentLocationRecord = {
   barangay_name?: string | null;
 };
 
+export type IncidentLocationPreview = {
+  road?: string | null;
+  landmark?: string | null;
+  landmark_distance_meters?: number | null;
+  nearest_response_barangay_name?: string | null;
+};
+
 export function hasIncidentPin(report: IncidentLocationRecord): boolean {
   if (report.latitude == null || report.longitude == null ||
       String(report.latitude).trim() === '' || String(report.longitude).trim() === '') return false;
