@@ -151,6 +151,7 @@ NorzAgapay/
    - `add_multiple_proof_and_field_media.sql` (Multi-photo attachments)
    - `20261010_mdrrmo_barangay_assignment_locations.sql` (Central assignments and official locations)
    - `20261010_resident_barangay_routing.sql` (Resident-selected barangay assignment audit)
+   - `20261022_invalid_report_resubmission.sql` (Inconclusive and false reporter review, report correction/resubmission, and false reporter counters)
 4. Ensure **Realtime** is enabled on the `incidents`, `incident_reports`, `alerts`, `evacuation_centers`, and `activity_feed` tables.
 5. Create a public Supabase Storage bucket matching `SUPABASE_BUCKET_NAME` (defaults to `norzagapay-files`) for report and broadcast media uploads.
 

@@ -1696,12 +1696,16 @@ router.patch('/:id/review', authenticate, async (req: AuthRequest, res: Response
       p_actor_role: role,
     });
     if (error) {
-      const status = error.code === 'P0002' ? 404
+      const missingReviewRpc = error.code === 'PGRST202';
+      const status = missingReviewRpc ? 503
+        : error.code === 'P0002' ? 404
         : error.code === '42501' ? 403
           : error.code === 'P0001' ? 409
             : error.code === '22023' ? 400
               : 500;
-      res.status(status).json({ error: error.message || 'Could not save the report review.' });
+      res.status(status).json({ error: missingReviewRpc
+        ? 'Report review is unavailable because the database migration is missing or the Supabase schema cache is stale. Apply database/migrations/20261022_invalid_report_resubmission.sql, then retry.'
+        : error.message || 'Could not save the report review.' });
       return;
     }
 

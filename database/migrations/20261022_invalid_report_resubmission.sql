@@ -211,16 +211,30 @@ BEGIN
     IF p_actor_role NOT IN ('dispatcher', 'admin', 'master_admin') THEN
       RAISE EXCEPTION 'Only dispatchers can review a pending report' USING ERRCODE = '42501';
     END IF;
-    IF (v_is_mdrrmo AND (v_mdrrmo.response_status <> 'pending'
-        OR v_mdrrmo.dispatched_at IS NOT NULL OR v_mdrrmo.accepted_at IS NOT NULL
-        OR v_mdrrmo.arrived_at IS NOT NULL OR v_mdrrmo.resolved_at IS NOT NULL
-        OR EXISTS (SELECT 1 FROM public.mdrrmo_report_assignments a
-          WHERE a.report_id = v_mdrrmo.id AND a.status IN ('assigned', 'responding'))
-        OR EXISTS (SELECT 1 FROM public.mdrrmo_report_barangay_assignments a
-          WHERE a.report_id = v_mdrrmo.id AND a.assignment_status = 'active'))
-      OR (NOT v_is_mdrrmo AND (v_barangay.response_status <> 'pending'
-        OR v_barangay.dispatched_at IS NOT NULL OR v_barangay.accepted_at IS NOT NULL
-        OR v_barangay.arrived_at IS NOT NULL OR v_barangay.resolved_at IS NOT NULL)) THEN
+    IF (
+      (v_is_mdrrmo AND (
+        v_mdrrmo.response_status <> 'pending'
+        OR v_mdrrmo.dispatched_at IS NOT NULL
+        OR v_mdrrmo.accepted_at IS NOT NULL
+        OR v_mdrrmo.arrived_at IS NOT NULL
+        OR v_mdrrmo.resolved_at IS NOT NULL
+        OR EXISTS (
+          SELECT 1 FROM public.mdrrmo_report_assignments a
+          WHERE a.report_id = v_mdrrmo.id AND a.status IN ('assigned', 'responding')
+        )
+        OR EXISTS (
+          SELECT 1 FROM public.mdrrmo_report_barangay_assignments a
+          WHERE a.report_id = v_mdrrmo.id AND a.assignment_status = 'active'
+        )
+      ))
+      OR (NOT v_is_mdrrmo AND (
+        v_barangay.response_status <> 'pending'
+        OR v_barangay.dispatched_at IS NOT NULL
+        OR v_barangay.accepted_at IS NOT NULL
+        OR v_barangay.arrived_at IS NOT NULL
+        OR v_barangay.resolved_at IS NOT NULL
+      ))
+    ) THEN
       RAISE EXCEPTION 'Only a pending, undispatched report can receive a dispatcher review' USING ERRCODE = 'P0001';
     END IF;
   END IF;
