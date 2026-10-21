@@ -41,6 +41,7 @@ type AssignedReport = {
   mdrrmo_arrived_at?: string | null;
   mdrrmo_assignments?: ResponseAssignment[];
   assigned_responder_ids?: string[];
+  responder_media?: Array<{ id?: string; url?: string; type?: string }> | string | null;
   is_demo?: boolean;
 };
 
@@ -53,8 +54,28 @@ const emptyAssessment = {
   transport_started_at: '', transport_completed_at: '',
 };
 type AssessmentField = keyof typeof emptyAssessment;
+type FieldAssessment = typeof emptyAssessment;
 const AUTO_ARRIVAL_RADIUS_METERS = 100;
 const AUTO_ARRIVAL_MAX_ACCURACY_METERS = 50;
+
+const triageSummary = (outcome: TriageOutcome | '') => outcome === 'safe'
+  ? 'Safe; no injuries reported.'
+  : outcome === 'mild_injuries'
+    ? 'Mild injuries; treated on site.'
+    : outcome === 'severe_injuries'
+      ? 'Severe injuries; transport required.'
+      : '';
+
+function parseResponderMedia(value: AssignedReport['responder_media']) {
+  let items = value;
+  if (typeof items === 'string') {
+    try { items = JSON.parse(items); } catch { return []; }
+  }
+  if (!Array.isArray(items)) return [];
+  return items.flatMap((item, index) => item && typeof item === 'object' && typeof item.url === 'string'
+    ? [{ id: item.id || item.url || String(index), url: item.url, type: item.type || 'image' }]
+    : []);
+}
 
 function distanceMeters(latitudeA: number, longitudeA: number, latitudeB: number, longitudeB: number): number {
   const radians = (degrees: number) => degrees * Math.PI / 180;
@@ -104,6 +125,7 @@ export default function ResponderWorkspacePage() {
   const [crewEditorReportId, setCrewEditorReportId] = useState<string | null>(null);
   const [barangayCrewSelections, setBarangayCrewSelections] = useState<Record<string, BarangayCrewSelection[]>>({});
   const [assessments, setAssessments] = useState<Record<string, typeof emptyAssessment>>({});
+  const assessmentBaseline = useRef<Record<string, FieldAssessment>>({});
   const [responderGps, setResponderGps] = useState<{ latitude: number; longitude: number; capturedAt: number } | null>(null);
   const [nearbyHospitals, setNearbyHospitals] = useState<Record<string, TransportHospital[]>>({});
   const [hospitalSearchResults, setHospitalSearchResults] = useState<Record<string, TransportHospital[]>>({});
@@ -114,7 +136,7 @@ export default function ResponderWorkspacePage() {
   const [locationPreviews, setLocationPreviews] = useState<Record<string, IncidentLocationPreview>>({});
   const [locationPreviewLoading, setLocationPreviewLoading] = useState<Record<string, boolean>>({});
   const requestedLocationPreviews = useRef(new Set<string>());
-  const [resolutionNotes, setResolutionNotes] = useState('');
+  const [resolutionNotes, setResolutionNotes] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -155,13 +177,27 @@ export default function ResponderWorkspacePage() {
       const items = Array.isArray(queueResponse.data) ? queueResponse.data : [];
       const members: CrewMember[] = isBarangay ? [] : Array.isArray(rosterResponse?.data?.members) ? rosterResponse.data.members : [];
       const barangayMembers: BarangayCrewMember[] = isBarangay && Array.isArray(rosterResponse?.data?.members) ? rosterResponse.data.members : [];
-      setReports(items);
-      setAssessments(Object.fromEntries(items.map((report: AssignedReport) => [
+      const nextAssessmentBaseline = Object.fromEntries(items.map((report: AssignedReport) => [
         report.id,
         parseFieldAssessment(isBarangay
           ? report.barangay_response_notes || report.response_notes
           : report.response_notes || report.barangay_response_notes, isBarangay),
-      ])));
+      ]));
+      const previousAssessmentBaseline = assessmentBaseline.current;
+      setReports(items);
+      setAssessments((current) => Object.fromEntries(items.map((report: AssignedReport) => {
+        const incoming = nextAssessmentBaseline[report.id];
+        if (!incoming) return [report.id, { ...emptyAssessment }];
+        const draft = current[report.id];
+        const previous = previousAssessmentBaseline[report.id];
+        if (!draft || !previous) return [report.id, incoming];
+        const merged = { ...incoming };
+        (Object.keys(emptyAssessment) as AssessmentField[]).forEach((field) => {
+          if (draft[field] !== previous[field]) merged[field] = draft[field];
+        });
+        return [report.id, merged];
+      })));
+      assessmentBaseline.current = nextAssessmentBaseline;
       setCrew(members);
       setBarangayRoster(barangayMembers);
       setCrewSelections(Object.fromEntries(items.map((report: AssignedReport) => {
@@ -319,7 +355,6 @@ export default function ResponderWorkspacePage() {
     try {
       await action();
       toast.success(successMessage);
-      setResolutionNotes('');
       await loadWorkspace(true);
       return true;
     } catch (actionError: any) {
@@ -481,14 +516,16 @@ export default function ResponderWorkspacePage() {
   };
 
   const setTriageOutcome = (reportId: string, outcome: TriageOutcome) => {
-    const peopleText = outcome === 'safe'
-      ? 'Safe; no injuries reported.'
-      : outcome === 'mild_injuries'
-        ? 'Mild injuries; treated on site.'
-        : 'Severe injuries; transport required.';
     setAssessments((current) => ({
       ...current,
-      [reportId]: { ...(current[reportId] || emptyAssessment), triage_outcome: outcome, affected_people: peopleText },
+      [reportId]: (() => {
+        const existing = current[reportId] || emptyAssessment;
+        const previousSummary = triageSummary(existing.triage_outcome);
+        const affectedPeople = !existing.affected_people.trim() || existing.affected_people === previousSummary
+          ? triageSummary(outcome)
+          : existing.affected_people;
+        return { ...existing, triage_outcome: outcome, affected_people: affectedPeople };
+      })(),
     }));
     setSelectedHospitals((current) => ({ ...current, [reportId]: null }));
     setTransportPickerOpen((current) => ({ ...current, [reportId]: false }));
@@ -546,6 +583,8 @@ export default function ResponderWorkspacePage() {
             : assignmentStatus === 'responding');
           const selectedCrewIds = crewDraftSelections[report.id] || [];
           const currentAssessment = assessments[report.id] || emptyAssessment;
+          const fieldMedia = parseResponderMedia(report.responder_media);
+          const resolutionSummary = resolutionNotes[report.id] || '';
           const persistedAssessment = parseFieldAssessment(savedAssessmentNotes, isBarangay);
           const assessmentSaved = hasAssessmentMarker && [
             'situation', 'affected_people', 'actions_taken', 'risks_resources', 'triage_outcome',
@@ -633,6 +672,10 @@ export default function ResponderWorkspacePage() {
               {!arrived && <small className="responder-arrival-hint">GPS records arrival automatically within 100 m when accuracy is 50 m or better. Keep this workspace open, or record arrival manually.</small>}
               {!arrived && <label className="workspace-secondary-action upload-action"><Upload size={16} /> Add field media<input type="file" accept="image/*,video/*" multiple onChange={(event) => { uploadMedia(report, event.currentTarget.files); event.currentTarget.value = ''; }} /></label>}
               {arrived ? <>
+                <div className="responder-assessment-grid responder-assessment-grid-primary">
+                  <label>Situation<textarea value={currentAssessment.situation} onChange={(event) => updateAssessment(report.id, 'situation', event.target.value)} placeholder="Describe what you found, or enter Not applicable." /></label>
+                  <label>Risks / resources<textarea value={currentAssessment.risks_resources} onChange={(event) => updateAssessment(report.id, 'risks_resources', event.target.value)} placeholder="Note remaining risks or resources, or Not applicable." /></label>
+                </div>
                 <fieldset className="responder-triage-choice">
                   <legend>People affected / urgency</legend>
                   <div className="responder-triage-options">
@@ -646,17 +689,22 @@ export default function ResponderWorkspacePage() {
                     </label>)}
                   </div>
                 </fieldset>
-                {currentAssessment.triage_outcome === 'severe_injuries' && currentAssessment.transport_status !== 'in_transit' && currentAssessment.transport_status !== 'delivered' && <button className="workspace-primary-action responder-transport-trigger" type="button" disabled={saving || !assessmentSaved} onClick={() => setTransportPickerOpen((current) => ({ ...current, [report.id]: !current[report.id] }))}>{transportPickerOpen[report.id] ? 'Hide transport destination' : 'Transport injured'}</button>}
-                <div className="responder-assessment-grid">
-                  <label>Situation<textarea value={currentAssessment.situation} onChange={(event) => updateAssessment(report.id, 'situation', event.target.value)} placeholder="Describe what you found, or enter Not applicable." /></label>
+                <div className="responder-assessment-grid responder-assessment-grid-secondary">
                   <label>People affected / urgency<textarea value={currentAssessment.affected_people} onChange={(event) => updateAssessment(report.id, 'affected_people', event.target.value)} placeholder="Describe the impact, or enter Not applicable." /></label>
                   <label>Actions taken<textarea value={currentAssessment.actions_taken} onChange={(event) => updateAssessment(report.id, 'actions_taken', event.target.value)} placeholder="Describe response actions, or enter Not applicable." /></label>
-                  <label>Risks / resources<textarea value={currentAssessment.risks_resources} onChange={(event) => updateAssessment(report.id, 'risks_resources', event.target.value)} placeholder="Note remaining risks or resources, or Not applicable." /></label>
                 </div>
                 <div className="responder-action-row">
                   <button className="workspace-secondary-action" type="button" disabled={saving || !currentAssessment.triage_outcome || [currentAssessment.situation, currentAssessment.affected_people, currentAssessment.actions_taken, currentAssessment.risks_resources].some((value) => !value.trim())} onClick={() => void perform(() => saveAssessment(report.id), 'Field assessment saved.')}><CheckCircle2 size={16} /> Save assessment</button>
-                  <label className="workspace-secondary-action upload-action"><Upload size={16} /> Add field media<input type="file" accept="image/*,video/*" multiple onChange={(event) => { uploadMedia(report, event.currentTarget.files); event.currentTarget.value = ''; }} /></label>
                 </div>
+                <section className="responder-field-media-section" aria-label="Field media">
+                  <div className="responder-field-media-preview">
+                    {fieldMedia.length === 0 ? <span>No field media yet</span> : fieldMedia.map((media, index) => media.type === 'video'
+                      ? <video key={media.id} src={media.url} controls preload="metadata" aria-label={`Field video ${index + 1}`} />
+                      : <a key={media.id} href={media.url} target="_blank" rel="noreferrer"><img src={media.url} alt={`Field attachment ${index + 1}`} loading="lazy" /></a>)}
+                  </div>
+                  <label className="workspace-secondary-action upload-action"><Upload size={16} /> Add field media<input type="file" accept="image/*,video/*" multiple onChange={(event) => { uploadMedia(report, event.currentTarget.files); event.currentTarget.value = ''; }} /></label>
+                </section>
+                {currentAssessment.triage_outcome === 'severe_injuries' && currentAssessment.transport_status !== 'in_transit' && currentAssessment.transport_status !== 'delivered' && <button className="workspace-primary-action responder-transport-trigger" type="button" disabled={saving || !assessmentSaved} onClick={() => setTransportPickerOpen((current) => ({ ...current, [report.id]: !current[report.id] }))}>{transportPickerOpen[report.id] ? 'Hide transport destination' : 'Transport injured'}</button>}
                 {currentAssessment.triage_outcome === 'severe_injuries' && (transportInProgress || currentAssessment.transport_status === 'delivered' || transportPickerOpen[report.id]) && <section className="responder-transport-panel" aria-label="Injured person transport">
                   <h4>Transport injured person</h4>
                   {transportInProgress ? <>
@@ -683,7 +731,7 @@ export default function ResponderWorkspacePage() {
                     {selectedHospitals[report.id] && <div className="responder-hospital-selection"><span>Destination selected</span><strong>{selectedHospitals[report.id]?.name}</strong><button className="workspace-primary-action" type="button" disabled={saving} onClick={() => startTransport(report.id)}>Start transport</button></div>}
                   </>}
                 </section>}
-                <div className="responder-resolution-form"><label>Resolution summary<textarea value={resolutionNotes} onChange={(event) => setResolutionNotes(event.target.value)} placeholder="Summarize the outcome and enter Not applicable where needed." /></label><button className="workspace-primary-action" type="button" disabled={saving || !resolutionNotes.trim() || !canResolve} onClick={() => void perform(() => isBarangay ? reportAPI.closeBarangayAssignment(report.id, resolutionNotes) : reportAPI.closeMdrrmoReport(report.id, resolutionNotes), 'Incident response resolved.')}>Resolve incident</button>{!assessmentSaved && <small>Save the field assessment before resolving.</small>}{currentAssessment.triage_outcome === 'severe_injuries' && currentAssessment.transport_status !== 'delivered' && <small>Mark the injured person delivered before resolving.</small>}</div>
+                <div className="responder-resolution-form"><label>Resolution summary<textarea value={resolutionSummary} onChange={(event) => setResolutionNotes((current) => ({ ...current, [report.id]: event.target.value }))} placeholder="Summarize the outcome and enter Not applicable where needed." /></label><button className="workspace-primary-action" type="button" disabled={saving || !resolutionSummary.trim() || !canResolve} onClick={() => void perform(() => isBarangay ? reportAPI.closeBarangayAssignment(report.id, resolutionSummary) : reportAPI.closeMdrrmoReport(report.id, resolutionSummary), 'Incident response resolved.').then((saved) => { if (saved) setResolutionNotes((current) => ({ ...current, [report.id]: '' })); })}>Resolve incident</button>{!assessmentSaved && <small>Save the field assessment before resolving.</small>}{currentAssessment.triage_outcome === 'severe_injuries' && currentAssessment.transport_status !== 'delivered' && <small>Mark the injured person delivered before resolving.</small>}</div>
               </> : <div className="responder-transport-guidance">After you arrive, assess the people affected and record the field response before resolving.</div>}
             </section>}
             {isBarangay && !report.is_central_assignment && <div className="workspace-message">This historical barangay-originated case remains available here for reference.</div>}
