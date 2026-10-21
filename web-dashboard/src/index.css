@@ -3572,6 +3572,7 @@ tbody tr:last-child td { border-bottom: none; }
 .resident-proof-grid .grid-thumb-item.active { border: 2px solid #38bdf8; box-shadow: 0 0 7px rgba(56, 189, 248, 0.45); }
 .resident-proof-empty { display: flex !important; min-height: 82px; grid-column: 1 / -1; align-items: center; justify-content: center; color: #9fb2d2 !important; }
 .proof-play-icon { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(2, 6, 16, 0.35); color: #fff; font-size: 20px; }
+.resident-selection-overlay .panel-resident .command-review-note-under-proof { order: 4; flex-basis: auto; margin: 0; }
 .resident-selection-overlay .panel-resident .responder-media-section { order: 5; margin: 0; }
 .resident-selection-overlay .panel-resident .selection-actions {
   order: 6;

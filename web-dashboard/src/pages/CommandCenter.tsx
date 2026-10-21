@@ -2625,6 +2625,12 @@ export default function CommandCenter() {
                   );
                 })()}
 
+                {!selectedIncident.review_outcome && Number(selectedIncident.false_report_review_count || 0) > 0 && (
+                  <p className="command-review-note command-review-note-under-proof">
+                    False Reporter marks on this report: {selectedIncident.false_report_review_count}
+                  </p>
+                )}
+
                 {/* Responder Field Media Section */}
                 {selectedIncident.responder_media && selectedIncident.responder_media.length > 0 && (
                   <div className="responder-media-section" style={{ marginTop: '8px', marginBottom: '12px' }}>
@@ -2700,7 +2706,6 @@ export default function CommandCenter() {
                     <button type="button" className="selection-dispatch-btn" onClick={() => openAssignmentPickerOnly(selectedIncident)} disabled={barangayAssignmentSaving}>Reassign</button>
                   </> : <>
                     {!isBarangayDashboard && !selectedIncident.review_outcome && <button className="selection-invalid-btn" onClick={() => setInvalidReviewOpen(true)}>Invalid Report</button>}
-                    {!selectedIncident.review_outcome && Number(selectedIncident.false_report_review_count || 0) > 0 && <p className="command-review-note">False Reporter marks on this report: {selectedIncident.false_report_review_count}</p>}
                     {selectedIncident.review_outcome === 'inconclusive' && <p className="command-review-note"><strong>Inconclusive</strong>{selectedIncident.review_reason ? `: ${selectedIncident.review_reason}` : ''} · waiting for reporter resubmission</p>}
                     {!selectedIncident.review_outcome && !selectedIncident.mdrrmo_dispatched && (!isBarangayDashboard || user?.role === 'dispatcher') && (
                       <button type="button" className="selection-dispatch-btn" onClick={() => handleDispatch()} disabled={dispatching}>
