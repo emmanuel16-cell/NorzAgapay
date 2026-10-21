@@ -5,7 +5,7 @@ import L from 'leaflet';
 import { ArrowLeft, CircleAlert, LocateFixed, MapPin, Phone, ShieldCheck, Siren, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { reportAPI } from '../lib/api';
-import { COMMUNITY_CONCERN_OPTIONS, INCIDENT_TYPE_OPTIONS } from '../lib/incidentClassification';
+import { COMMUNITY_CONCERN_INCIDENT_TYPES, COMMUNITY_CONCERN_OPTIONS, INCIDENT_TYPE_OPTIONS } from '../lib/incidentClassification';
 import { CARTO_ATTRIBUTION, CARTO_DARK_MAP_URL } from '../lib/mapConfig';
 import IncidentTimeInput from '../components/IncidentTimeInput';
 import { createInitialIncidentTime, type IncidentTimeValue } from '../lib/incidentTime';
@@ -119,7 +119,9 @@ export default function ResidentIncidentReportPage() {
           ? `${type === 'community' ? 'Other concern' : 'Other emergency'}: ${otherEmergency.trim()}`
           : type === 'community' ? selectedCategoryLabel : '', description: reportDescription,
         latitude: location.latitude, longitude: location.longitude, contact_number: normalizedPhone,
-        send_to: 'mdrrmo', incident_type: selectedCategory,
+        send_to: 'mdrrmo', incident_type: type === 'community'
+          ? COMMUNITY_CONCERN_INCIDENT_TYPES[selectedCategory] || 'other'
+          : selectedCategory,
         incident_time_choice: incidentTime.choice,
         incident_occurred_at: incidentTime.choice === 'just_now'
           ? requestStartedAtRef.current
