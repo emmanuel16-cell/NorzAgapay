@@ -283,6 +283,21 @@ function assistanceCategories(request: AssistanceRequestItem): string[] {
   return [...categories];
 }
 
+function assistanceCoordinationLabel(request: AssistanceRequestItem): string {
+  if (request.decision === 'provide_barangay_assistance') return 'Provided assistance';
+  if (request.decision === 'coordinate_mdrrmo') return 'MDRRMO coordination';
+  if (request.decision === 'dismissed' || request.status === 'rejected') return 'Rejected';
+  if (request.status === 'fulfilled') return request.source === 'mdrrmo' ? 'Received by responder' : 'Provided';
+  if (request.status === 'approved') return 'Approved';
+  return request.status.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function assistanceRequestDateTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Time not recorded';
+  return `${formatDispatcherDate(date)} · ${date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
+}
+
 const MDRRMO_DISPATCH_INCIDENT_TYPES = [
   { value: 'flash_flood', label: 'Flood / Flash Flood' },
   { value: 'fire', label: 'Fire' },
@@ -478,22 +493,29 @@ function ResponderAssessmentPanel({
       ) : (
         <div className="assistance-request-list">
           {assistanceRequestLoading ? <div className="assistance-request-card"><strong>Assistance Request</strong><span>Loading assistance requests…</span></div> : latestAssistanceRequest ? [latestAssistanceRequest].map((request) => (
-            <div className="assistance-request-card" key={request.id}>
-              <strong>Latest Assistance Request</strong>
-              <div className="assistance-request-card-facts">
-                <span><small>Status</small><b>{request.status.replaceAll('_', ' ')}</b></span>
-                {request.decision && <span><small>Decision</small><b>{request.decision.replaceAll('_', ' ')}</b></span>}
-                <span><small>Requested</small><b>{formatDispatcherTime(new Date(request.created_at))}</b></span>
+            <article className="assistance-history-card" key={request.id}>
+              <header>
+                <div><span className="assistance-history-sos">SOS</span><strong>Assistance Request</strong></div>
+                <span className={`assistance-status-chip ${request.status}`}>{assistanceCoordinationLabel(request)}</span>
+              </header>
+              <div className="assistance-history-entry">
+                <strong>From: {request.requested_by_user?.full_name || 'Responder'}</strong>
+                <div className="assistance-history-meta"><time>{assistanceRequestDateTime(request.created_at)}</time></div>
+                {(assistanceCategories(request).length > 0 || request.beyond_barangay_capability) && (
+                  <div className="assistance-history-tags" aria-label="Requested assistance categories">
+                    {assistanceCategories(request).map((category) => <span key={category}>✓ {category}</span>)}
+                    {request.beyond_barangay_capability && <span>✓ MDRRMO coordination</span>}
+                  </div>
+                )}
+                <p>{request.details || 'No additional information provided.'}</p>
               </div>
-              {assistanceCategories(request).length > 0 && (
-                <div className="assistance-request-category-checklist" aria-label="Requested assistance categories">
-                  {assistanceCategories(request).map((category) => <span key={category}>✓ {category}</span>)}
-                  {request.beyond_barangay_capability && <span>✓ MDRRMO coordination</span>}
+              {(request.dispatcher_notes || request.status !== 'pending') && (
+                <div className="assistance-history-entry dispatcher">
+                  <strong>From: Dispatcher</strong>
+                  <span className={`assistance-decision-badge ${request.status === 'rejected' ? 'rejected' : 'provided'}`}>{assistanceCoordinationLabel(request)}</span>
+                  {request.dispatcher_notes && <p>{request.dispatcher_notes}</p>}
                 </div>
               )}
-              <div className="assistance-request-explanation"><small>Additional information</small><p>{request.details || 'No additional information provided.'}</p></div>
-              {request.dispatcher_notes && <p><b>Dispatcher notes:</b> {request.dispatcher_notes}</p>}
-              {request.requested_by_user && <small>Requested by {request.requested_by_user.full_name || 'Responder'}{request.requested_by_user.phone ? ` · ${formatMobileNumber(request.requested_by_user.phone)}` : ''}</small>}
             </div>
           )) : <div className="assistance-request-card"><strong>Assistance Request</strong><span>No assistance request details provided.</span></div>}
           {responderAssistanceCount > 1 && <small className="assistance-request-history-count">Showing the latest of {responderAssistanceCount} requests.</small>}
