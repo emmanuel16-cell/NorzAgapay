@@ -18,8 +18,9 @@ export const config = {
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
 
   // Upstash Redis
-  upstashRedisUrl: process.env.UPSTASH_REDIS_URL || '',
-  upstashRedisToken: process.env.UPSTASH_REDIS_TOKEN || '',
+  // Accept both the app's canonical names and Upstash's REST names used in older deployment instructions.
+  upstashRedisUrl: process.env.UPSTASH_REDIS_URL || process.env.UPSTASH_REDIS_REST_URL || '',
+  upstashRedisToken: process.env.UPSTASH_REDIS_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN || '',
 
   // Supabase Storage
   supabaseBucketName: process.env.SUPABASE_BUCKET_NAME || 'norzagapay-files',

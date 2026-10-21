@@ -4,7 +4,7 @@ import bcrypt from 'bcryptjs';
 import { supabaseAdmin } from '../config/supabase';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth';
 import { isMobileNumberRegistryConflict, normalizeMobileNumber } from '../services/mobileNumberService';
-import { hasPasswordReuseForPhone, hasPhoneInAccountType, withPhoneAccountLock } from '../services/accountAuthService';
+import { hasPasswordReuseForPhone, hasPhoneInAccountType, PhoneAccountLockError, withPhoneAccountLock } from '../services/accountAuthService';
 
 const router = Router();
 const responderSpecializations = [
@@ -206,6 +206,10 @@ router.post('/', authenticate, authorize('admin', 'master_admin'), async (req: A
     res.status(201).json({ user: data });
   } catch (err) {
     console.error('Create dashboard user error:', err);
+    if (err instanceof PhoneAccountLockError) {
+      res.status(503).json({ error: err.message });
+      return;
+    }
     res.status(500).json({ error: 'Internal server error.' });
   }
 });

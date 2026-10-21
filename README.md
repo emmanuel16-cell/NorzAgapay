@@ -179,8 +179,8 @@ NODE_ENV=development
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
 JWT_SECRET=your-secure-jwt-secret
-UPSTASH_REDIS_REST_URL=https://your-redis.upstash.io
-UPSTASH_REDIS_REST_TOKEN=your-redis-token
+UPSTASH_REDIS_URL=https://your-redis.upstash.io
+UPSTASH_REDIS_TOKEN=your-redis-token
 CORS_ORIGIN=*
 ```
 

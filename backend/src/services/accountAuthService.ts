@@ -26,8 +26,8 @@ export class PasswordReuseError extends Error {
 }
 
 export class PhoneAccountLockError extends Error {
-  constructor() {
-    super('Account update is temporarily busy. Please try again.');
+  constructor(message = 'The shared account lock is unavailable. Check the Upstash Redis connection and try again.') {
+    super(message);
     this.name = 'PhoneAccountLockError';
   }
 }
@@ -85,7 +85,7 @@ export async function withPhoneAccountLock<T>(phone: string, action: () => Promi
       }
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
-    if (!acquired) throw new PhoneAccountLockError();
+    if (!acquired) throw new PhoneAccountLockError('Account changes are temporarily busy. Please try again.');
 
     try {
       return await action();
@@ -99,7 +99,9 @@ export async function withPhoneAccountLock<T>(phone: string, action: () => Promi
     }
   }
 
-  if (process.env.NODE_ENV === 'production') throw new PhoneAccountLockError();
+  if (process.env.NODE_ENV === 'production') {
+    throw new PhoneAccountLockError('Account changes require the shared Upstash Redis lock in production. Configure UPSTASH_REDIS_URL and UPSTASH_REDIS_TOKEN, then retry.');
+  }
   const previous = localLockTails.get(key) || Promise.resolve();
   let release!: () => void;
   const current = new Promise<void>((resolve) => { release = resolve; });
