@@ -21,6 +21,7 @@ type Assistance = {
   dispatcher_notes?: string | null; team_acknowledged?: boolean; created_at?: string;
   decided_at?: string | null; decided_by_user?: { full_name?: string };
 };
+type DispatcherAssistanceGroup = { key: string; incidentId: string | null; incident: Incident | null; requests: Assistance[] };
 type RequestForm = { incident_report_id: string; needs_more_manpower: boolean; needs_resources: boolean; needs_equipment: boolean; beyond_barangay_capability: boolean; explanation: string };
 type DecisionForm = { decision: 'provide_barangay_assistance' | 'coordinate_mdrrmo' | 'dismissed'; notes: string };
 const emptyForm: RequestForm = { incident_report_id: '', needs_more_manpower: false, needs_resources: false, needs_equipment: false, beyond_barangay_capability: false, explanation: '' };
@@ -42,6 +43,18 @@ const dateTime = (value?: string) => {
   return Number.isNaN(date.getTime()) ? 'Time unavailable' : new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
 };
 const requestLabel = (request: Assistance) => [request.needs_more_manpower && 'Additional responders', request.needs_resources && 'Supplies or resources', request.needs_equipment && 'Equipment', request.beyond_barangay_capability && 'MDRRMO coordination'].filter(Boolean).join(' · ') || 'General assistance';
+const requestDateValue = (request: Assistance) => {
+  const value = Date.parse(request.created_at || '');
+  return Number.isFinite(value) ? value : 0;
+};
+const dispatcherRequestStatus = (request: Assistance) => {
+  if (request.decision === 'coordinate_mdrrmo') return 'MDRRMO coordination';
+  if (request.decision === 'dismissed' || request.status === 'rejected') return 'Rejected';
+  if (request.status === 'fulfilled') return 'Received';
+  if (request.status === 'approved') return 'Approved';
+  if (request.decision === 'provide_barangay_assistance') return 'Provided';
+  return statusLabel(request.status);
+};
 
 function useIncidentLocationPreviews(incidents: Incident[], isBarangay: boolean) {
   const [previews, setPreviews] = useState<Record<string, IncidentLocationPreview>>({});
@@ -122,7 +135,8 @@ function BarangayAssistanceWorkspace() {
         const hasGeneralRequests = rows.some((request) => !request.incident_report_id);
         setSelectedIncidentId((current) => current && (queueIds.has(current) || (current === 'general' && hasGeneralRequests)) ? current : reports.find(isActiveIncident)?.id || (hasGeneralRequests ? 'general' : null));
       } else {
-        setSelectedRequestId((current) => current && rows.some((request) => request.id === current) ? current : rows[0]?.id || null);
+        const newestFirst = rows.slice().sort((a, b) => requestDateValue(b) - requestDateValue(a));
+        setSelectedRequestId((current) => current && rows.some((request) => request.id === current) ? current : newestFirst.find((request) => request.status === 'pending')?.id || newestFirst[0]?.id || null);
       }
     } catch (loadError: any) { setError(loadError?.response?.data?.error || 'Assistance requests could not be loaded.'); }
     finally { setLoading(false); }
@@ -151,12 +165,35 @@ function BarangayAssistanceWorkspace() {
     const linkedIds = new Set(requests.map((request) => request.incident_report_id).filter((id): id is string => Boolean(id)));
     return incidents.filter((incident) => isActiveIncident(incident) || linkedIds.has(incident.id));
   }, [incidents, requests]);
-  const incidentLocations = useIncidentLocationPreviews(isResponder ? incidentQueue : [], true);
+  const dispatcherGroups = useMemo<DispatcherAssistanceGroup[]>(() => {
+    const groups = new Map<string, DispatcherAssistanceGroup>();
+    requests.forEach((request) => {
+      const incidentId = request.incident_report_id || null;
+      const key = incidentId ? `incident:${incidentId}` : `request:${request.id}`;
+      const incident = incidentId ? incidents.find((row) => row.id === incidentId) || null : null;
+      const group = groups.get(key) || { key, incidentId, incident, requests: [] };
+      group.requests.push(request);
+      if (!group.incident && incident) group.incident = incident;
+      groups.set(key, group);
+    });
+    return [...groups.values()].map((group) => ({
+      ...group,
+      requests: group.requests.slice().sort((a, b) => requestDateValue(a) - requestDateValue(b)),
+    })).sort((a, b) => requestDateValue(b.requests[b.requests.length - 1]) - requestDateValue(a.requests[a.requests.length - 1]));
+  }, [incidents, requests]);
+  const incidentLocations = useIncidentLocationPreviews(incidentQueue, true);
   const selectedIncident = selectedIncidentId && selectedIncidentId !== 'general' ? incidents.find((incident) => incident.id === selectedIncidentId) || null : null;
   const incidentRequests = selectedIncidentId === 'general'
     ? requests.filter((request) => !request.incident_report_id)
     : requests.filter((request) => request.incident_report_id === selectedIncidentId);
-  const selectedRequest = requests.find((request) => request.id === selectedRequestId) || requests[0] || null;
+  const selectedRequest = requests.find((request) => request.id === selectedRequestId) ||
+    requests.slice().sort((a, b) => requestDateValue(b) - requestDateValue(a)).find((request) => request.status === 'pending') ||
+    requests.slice().sort((a, b) => requestDateValue(b) - requestDateValue(a))[0] || null;
+  const selectedDispatcherGroup = selectedRequest
+    ? dispatcherGroups.find((group) => group.key === (selectedRequest.incident_report_id ? `incident:${selectedRequest.incident_report_id}` : `request:${selectedRequest.id}`)) || null
+    : null;
+  const selectedDispatcherIncident = selectedDispatcherGroup?.incident || null;
+  const selectedDispatcherRequests = selectedDispatcherGroup?.requests || [];
 
   const reset = () => { setForm(emptyForm); setEditingId(null); setIsRequestModalOpen(false); };
   const startNewRequest = () => {
@@ -237,7 +274,7 @@ function BarangayAssistanceWorkspace() {
 
       <section className={`reports-split-view-v2 ${isResponder ? detailOpen ? 'responder-mobile-detail-v2' : 'responder-mobile-list-v2' : ''}`}>
         <aside className="reports-queue-v2">
-          <div className="reports-queue-heading"><h2>{isResponder ? 'Responding incidents' : 'Barangay assistance queue'}</h2><span>{isResponder ? incidentQueue.length : requests.length}</span></div>
+          <div className="reports-queue-heading"><h2>Responding incidents</h2><span>{isResponder ? incidentQueue.length : dispatcherGroups.length}</span></div>
           {loading ? <div className="reports-empty-v2"><span className="spinner" /><p>Loading assistance requests…</p></div> : isResponder ? incidentQueue.length === 0 && !requests.some((request) => !request.incident_report_id) ? (
             <div className="reports-empty-v2"><HandHelping size={22} /><strong>No active incidents</strong><p>Incidents assigned to you will appear here. Select one to request assistance.</p></div>
           ) : (
@@ -257,15 +294,23 @@ function BarangayAssistanceWorkspace() {
                 <span className="reports-queue-time">Previously submitted requests without an incident</span>
               </button>}
             </div>
-          ) : requests.length === 0 ? (
+          ) : dispatcherGroups.length === 0 ? (
             <div className="reports-empty-v2"><HandHelping size={22} /><strong>No assistance requests</strong><p>Responder requests from your barangay will appear here.</p></div>
           ) : (
-            <div className="reports-queue-list-v2">{requests.map((request) => {
-              const decision = decisions[request.id] || { decision: 'provide_barangay_assistance' as const, notes: '' };
-              return <button key={request.id} type="button" className={`reports-queue-item-v2 assistance-request-item ${selectedRequest?.id === request.id ? 'selected' : ''}`} onClick={() => setSelectedRequestId(request.id)}>
-                <span className="reports-queue-item-top"><strong>{request.incident_title || 'General barangay assistance'}</strong><span className={`assistance-status-chip ${statusClass(request.status)}`}>{statusLabel(request.status)}</span></span>
-                <span className="reports-queue-time">{request.requested_by_user?.full_name || 'Responder'} · {dateTime(request.created_at)}</span>
-                <span className="reports-queue-time assistance-request-preview">{requestLabel(request)} · {request.explanation || 'No request details provided.'}</span>
+            <div className="reports-queue-list-v2">{dispatcherGroups.map((group) => {
+              const latestRequest = group.requests[group.requests.length - 1];
+              const pendingCount = group.requests.filter((request) => request.status === 'pending').length;
+              const active = selectedDispatcherGroup?.key === group.key;
+              const location = group.incident ? incidentLocations.previews[group.incident.id] : undefined;
+              return <button key={group.key} type="button" className={`reports-queue-item-v2 ${group.incident ? incidentStatusClass(group.incident) : statusClass(latestRequest.status)} ${active ? 'selected' : ''}`} onClick={() => {
+                const reviewRequest = [...group.requests].reverse().find((request) => request.status === 'pending') || latestRequest;
+                setSelectedRequestId(reviewRequest.id);
+              }}>
+                <span className="reports-queue-item-top"><strong>{group.incident ? incidentTitle(group.incident) : latestRequest.incident_title || 'General barangay assistance'}</strong><span className={`report-status-chip-v2 ${group.incident ? incidentStatusClass(group.incident) : statusClass(latestRequest.status)}`}>{group.incident ? statusLabel(incidentStatus(group.incident)) : statusLabel(latestRequest.status)}</span></span>
+                <span className="reports-queue-time">Incident occurred · {dateTime(group.incident?.created_at || latestRequest.created_at)}</span>
+                {group.incident ? <IncidentLocationCard compact showTitle={false} showLandmarkDistance={false} location={location} fallbackLabel={formatIncidentLocation(group.incident)} loading={Boolean(incidentLocations.loading[group.incident.id])} coordinates={hasIncidentPin(group.incident) ? `${Number(group.incident.latitude).toFixed(5)}, ${Number(group.incident.longitude).toFixed(5)}` : null} /> : <span className="reports-queue-time">Location not provided</span>}
+                {(group.incident?.description || latestRequest.explanation) && <span className="reports-queue-time assistance-request-preview">{group.incident?.description || latestRequest.explanation}</span>}
+                <span className="reports-queue-time">{group.requests.length} assistance {group.requests.length === 1 ? 'request' : 'requests'}{pendingCount ? ` · ${pendingCount} pending` : ''}</span>
               </button>;
             })}</div>
           )}
@@ -273,7 +318,7 @@ function BarangayAssistanceWorkspace() {
 
         <section className="reports-detail-v2">
           {!detailOpen ? (
-            <div className="reports-detail-empty-v2"><div><ClipboardList size={28} /></div><strong>{isResponder ? 'Select a responding incident' : 'Select an assistance request'}</strong><p>{isResponder ? 'Choose one of your assigned incidents to review its assistance history.' : 'Choose a responder request from the queue to review and coordinate support.'}</p></div>
+            <div className="reports-detail-empty-v2"><div><ClipboardList size={28} /></div><strong>{isResponder ? 'Select a responding incident' : 'Select an incident'}</strong><p>{isResponder ? 'Choose one of your assigned incidents to review its assistance history.' : 'Choose an incident from the queue to review its assistance requests.'}</p></div>
           ) : isResponder ? (
             <>
               <div className="reports-detail-scroll-v2">
@@ -297,10 +342,37 @@ function BarangayAssistanceWorkspace() {
           ) : selectedRequest ? (
             <>
               <div className="reports-detail-scroll-v2">
-                <header className="reports-detail-heading-v2"><div><span className="reports-eyebrow-v2">Selected assistance request</span><h2>{selectedRequest.incident_title || 'General barangay assistance'}</h2><p>Requested by {selectedRequest.requested_by_user?.full_name || 'Responder'} · {dateTime(selectedRequest.created_at)}</p></div><span className={`assistance-status-chip detail ${statusClass(selectedRequest.status)}`}>{statusLabel(selectedRequest.status)}</span></header>
-                <section className="reports-detail-section-v2"><h3>Request details</h3><div className="reports-info-grid-v2"><div className="reports-info-card-v2"><span>Requester</span><strong><HandHelping size={17} /> {selectedRequest.requested_by_user?.full_name || 'Responder'}</strong></div><div className="reports-info-card-v2"><span>Assistance needed</span><strong>{requestLabel(selectedRequest)}</strong></div></div><div className="reports-text-card-v2" style={{ marginTop: 10 }}>{selectedRequest.explanation || 'No request details provided.'}</div></section>
-                <section className="reports-detail-section-v2"><h3>Linked incident</h3><div className="reports-location-card-v2"><MapPin size={19} /><div><strong>{selectedRequest.incident_title || 'General barangay assistance'}</strong><span>{incidents.find((incident) => incident.id === selectedRequest.incident_report_id)?.address || incidents.find((incident) => incident.id === selectedRequest.incident_report_id)?.barangay_name || user?.barangay_name || 'Your barangay'}</span></div></div></section>
-                {selectedRequest.decision && <section className="reports-detail-section-v2"><h3>Previous decision</h3><div className="reports-text-card-v2"><strong>{statusLabel(selectedRequest.decision)}</strong>{selectedRequest.dispatcher_notes && <p>{selectedRequest.dispatcher_notes}</p>}{selectedRequest.decided_by_user?.full_name && <small>Recorded by {selectedRequest.decided_by_user.full_name}</small>}</div></section>}
+                <header className="reports-detail-heading-v2 reports-detail-heading-responder-v2">
+                  <div><span className="reports-eyebrow-v2">Selected incident</span><h2>{selectedDispatcherIncident ? incidentTitle(selectedDispatcherIncident) : selectedRequest.incident_title || 'General barangay assistance'}</h2><p>{selectedDispatcherIncident ? `${statusLabel(incidentStatus(selectedDispatcherIncident))} · ${dateTime(selectedDispatcherIncident.created_at)}` : `Assistance request · ${dateTime(selectedRequest.created_at)}`}</p></div>
+                  <span className={`report-status-chip-v2 detail ${selectedDispatcherIncident ? incidentStatusClass(selectedDispatcherIncident) : 'pending'}`}>{selectedDispatcherIncident ? statusLabel(incidentStatus(selectedDispatcherIncident)) : 'Assistance'}</span>
+                </header>
+                {selectedDispatcherIncident ? <section className="reports-detail-section-v2"><h3>Incident location</h3><IncidentLocationCard showTitle={false} showLandmarkDistance={false} location={incidentLocations.previews[selectedDispatcherIncident.id]} fallbackLabel={formatIncidentLocation(selectedDispatcherIncident)} loading={Boolean(incidentLocations.loading[selectedDispatcherIncident.id])} coordinates={hasIncidentPin(selectedDispatcherIncident) ? `${Number(selectedDispatcherIncident.latitude).toFixed(5)}, ${Number(selectedDispatcherIncident.longitude).toFixed(5)}` : null} />{selectedDispatcherIncident.description && <div className="reports-text-card-v2" style={{ marginTop: 10 }}>{selectedDispatcherIncident.description}</div>}</section> : <section className="reports-detail-section-v2"><h3>Incident location</h3><div className="reports-location-card-v2"><MapPin size={19} /><div><strong>{selectedRequest.incident_title || 'General barangay assistance'}</strong><span>{user?.barangay_name || 'Location not provided'}</span></div></div></section>}
+                <section className="reports-detail-section-v2 assistance-history-section">
+                  <div className="reports-section-heading-v2"><h3>Request history</h3><span>{selectedDispatcherRequests.length} requests</span></div>
+                  {selectedDispatcherRequests.length ? <div className="assistance-history-list">{selectedDispatcherRequests.map((request) => {
+                    const isSelectedForReview = selectedRequest.id === request.id;
+                    const categories = [
+                      request.needs_more_manpower ? 'Manpower' : null,
+                      request.needs_resources ? 'Resources' : null,
+                      request.needs_equipment ? 'Equipment' : null,
+                      request.beyond_barangay_capability ? 'MDRRMO coordination' : null,
+                    ].filter((category): category is string => Boolean(category));
+                    return <article
+                      className={`assistance-history-card assistance-review-selectable ${isSelectedForReview ? 'review-selected' : ''}`}
+                      key={request.id}
+                      role="button"
+                      tabIndex={0}
+                      aria-pressed={isSelectedForReview}
+                      aria-label={`Review assistance request from ${request.requested_by_user?.full_name || 'Responder'}, ${statusLabel(request.status)}`}
+                      onClick={() => setSelectedRequestId(request.id)}
+                      onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedRequestId(request.id); } }}
+                    >
+                      <header><div><span className="assistance-history-sos">SOS</span><strong>Assistance Request</strong></div><span className={`assistance-status-chip ${statusClass(request.status)}`}>{dispatcherRequestStatus(request)}</span></header>
+                      <div className="assistance-history-entry"><strong>From: {request.requested_by_user?.full_name || 'Responder'}</strong><time>{dateTime(request.created_at)}</time>{categories.length > 0 && <div className="assistance-history-tags" aria-label="Requested assistance categories">{categories.map((category) => <span key={category}>✓ {category}</span>)}</div>}<p>{request.explanation || 'No request details provided.'}</p></div>
+                      {(request.dispatcher_notes || request.decision || request.status !== 'pending') && <div className="assistance-history-entry dispatcher"><strong>From: Dispatcher</strong><span className={`assistance-decision-badge ${request.decision === 'coordinate_mdrrmo' ? 'coordination' : request.decision === 'dismissed' || request.status === 'rejected' ? 'rejected' : 'provided'}`}>{dispatcherRequestStatus(request)}</span>{request.dispatcher_notes && <p>{request.dispatcher_notes}</p>}</div>}
+                    </article>;
+                  })}</div> : <div className="reports-no-media-v2">No assistance requests for this incident yet.</div>}
+                </section>
                 {String(selectedRequest.status || '').toLowerCase() === 'pending' && <section className="reports-detail-section-v2 barangay-assistance-review-panel"><h3>Dispatcher response</h3><label>Decision<select value={(decisions[selectedRequest.id] || { decision: 'provide_barangay_assistance', notes: '' }).decision} onChange={(event) => setDecisions((current) => ({ ...current, [selectedRequest.id]: { ...(current[selectedRequest.id] || { decision: 'provide_barangay_assistance', notes: '' }), decision: event.target.value as DecisionForm['decision'] } }))}><option value="provide_barangay_assistance">Provide barangay assistance</option><option value="coordinate_mdrrmo">Coordinate with MDRRMO</option><option value="dismissed">Dismiss request</option></select></label><label>Dispatcher note{(decisions[selectedRequest.id] || { decision: 'provide_barangay_assistance', notes: '' }).decision !== 'dismissed' ? ' (required)' : ' (optional)'}<textarea rows={3} maxLength={300} value={(decisions[selectedRequest.id] || { decision: 'provide_barangay_assistance', notes: '' }).notes} onChange={(event) => setDecisions((current) => ({ ...current, [selectedRequest.id]: { ...(current[selectedRequest.id] || { decision: 'provide_barangay_assistance', notes: '' }), notes: event.target.value } }))} placeholder="Add a brief note for the response team…" /></label></section>}
               </div>
                 {String(selectedRequest.status || '').toLowerCase() === 'pending' && <footer className="reports-detail-actions-v2 assistance-request-actions"><button type="button" className="reports-invalid-button-v2" disabled={saving} onClick={() => void decide(selectedRequest, 'dismissed')}>Dismiss</button><button type="button" className="reports-dispatch-button-v2" disabled={saving} onClick={() => void decide(selectedRequest)}><Check size={16} /> Save decision</button></footer>}

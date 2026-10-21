@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { format, formatDistanceToNowStrict } from 'date-fns';
-import { AlertTriangle, ClipboardList, Phone, UserRound } from 'lucide-react';
+import { format } from 'date-fns';
+import { AlertTriangle, ClipboardList } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { reportAPI, requestAPI, socket } from '../lib/api';
-import { formatMobileNumber } from '../lib/mobileNumber';
 import { useRealtimeRefresh } from '../hooks/useRealtimeRefresh';
 import IncidentLocationCard from '../components/IncidentLocationCard';
 import { formatIncidentLocation, hasIncidentPin, type IncidentLocationPreview } from '../lib/incidentLocation';
@@ -61,10 +60,11 @@ interface AssistanceRequest {
   incident_report?: LinkedReport | null;
 }
 
-function timeAgo(value?: string | null): string {
-  if (!value) return 'Time unavailable';
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? 'Time unavailable' : formatDistanceToNowStrict(date, { addSuffix: true });
+interface AssistanceIncidentGroup {
+  key: string;
+  incidentId: string | null;
+  incident: LinkedReport | null;
+  requests: AssistanceRequest[];
 }
 
 function dateTime(value?: string | null): string {
@@ -92,7 +92,7 @@ function coordinationLabel(request: AssistanceRequest): string {
   if (request.decision === 'provide_barangay_assistance') return 'Provided assistance';
   if (request.decision === 'coordinate_mdrrmo') return 'MDRRMO coordination';
   if (request.decision === 'dismissed' || request.status === 'rejected') return 'Rejected';
-  if (request.status === 'fulfilled') return request.source === 'mdrrmo' ? 'Received by responder' : 'Provided';
+  if (request.status === 'fulfilled') return request.source === 'mdrrmo' ? 'Received' : 'Provided';
   if (request.status === 'approved') return 'Approved';
   return statusLabel(request.status);
 }
@@ -111,6 +111,13 @@ function requestCategories(request: AssistanceRequest): string[] {
   }
 
   return [...categories];
+}
+
+function incidentStatusClass(value?: string | null): string {
+  const status = String(value || '').toLowerCase().replaceAll(' ', '_');
+  if (['resolved', 'closed', 'rejected', 'completed'].includes(status)) return 'resolved';
+  if (['responding', 'accepted', 'arrived', 'on_scene'].includes(status)) return 'responding';
+  return 'pending';
 }
 
 function isResponderAssistanceRequest(request: AssistanceRequest): boolean {
@@ -142,7 +149,7 @@ export default function ResourceRequestsPage() {
   const fetchRequests = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await requestAPI.list(incidentId ? { incident_id: incidentId } : undefined);
+      const response = await requestAPI.list();
       setRequests(Array.isArray(response.data.requests) ? response.data.requests : []);
     } catch (error) {
       console.error('Failed to fetch assistance requests', error);
@@ -151,7 +158,7 @@ export default function ResourceRequestsPage() {
     } finally {
       setLoading(false);
     }
-  }, [incidentId]);
+  }, []);
 
   useEffect(() => { void fetchRequests(); }, [fetchRequests]);
   useRealtimeRefresh(fetchRequests, { events: ['incident:new'] });
@@ -187,9 +194,35 @@ export default function ResourceRequestsPage() {
       const safeBTime = Number.isFinite(bTime) ? bTime : Number.NEGATIVE_INFINITY;
       return safeATime - safeBTime || a.id.localeCompare(b.id);
     }), [requests]);
-  const selected = visibleRequests.find((request) => request.id === selectedId) || visibleRequests[visibleRequests.length - 1] || null;
-  const selectedHistory = selected ? [selected] : [];
-  const linkedIncident = selected?.incident_report || null;
+  const incidentGroups = useMemo<AssistanceIncidentGroup[]>(() => {
+    const groups = new Map<string, AssistanceIncidentGroup>();
+    visibleRequests.forEach((request) => {
+      const incidentId = request.incident_id || null;
+      const key = incidentId ? `incident:${incidentId}` : `request:${request.id}`;
+      const group = groups.get(key) || {
+        key,
+        incidentId,
+        incident: request.incident_report || null,
+        requests: [],
+      };
+      group.requests.push(request);
+      if (!group.incident && request.incident_report) group.incident = request.incident_report;
+      groups.set(key, group);
+    });
+    return [...groups.values()].sort((a, b) => {
+      const aTime = Date.parse(a.requests[a.requests.length - 1]?.created_at || '');
+      const bTime = Date.parse(b.requests[b.requests.length - 1]?.created_at || '');
+      return (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0);
+    });
+  }, [visibleRequests]);
+  const selected = visibleRequests.find((request) => request.id === selectedId) ||
+    visibleRequests.slice().reverse().find((request) => request.status === 'pending') ||
+    visibleRequests[visibleRequests.length - 1] || null;
+  const selectedGroup = selected
+    ? incidentGroups.find((group) => group.key === (selected.incident_id ? `incident:${selected.incident_id}` : `request:${selected.id}`)) || null
+    : null;
+  const selectedHistory = selectedGroup?.requests || [];
+  const linkedIncident = selectedGroup?.incident || selected?.incident_report || null;
   const linkedIncidentId = linkedIncident?.id;
   const linkedIncidentHasPin = linkedIncident ? hasIncidentPin(linkedIncident) : false;
   const linkedLocationPreview = locationPreviewState?.incidentId === linkedIncident?.id ? locationPreviewState : null;
@@ -219,19 +252,30 @@ export default function ResourceRequestsPage() {
   }, [linkedIncidentId, linkedIncidentHasPin]);
 
   useEffect(() => {
-    if (!requests.length) return;
+    if (!visibleRequests.length) return;
+    const incidentLinkedRequests = incidentId ? visibleRequests.filter((request) => request.incident_id === incidentId) : [];
     const deepLinked = requestedId
-      ? requests.find((request) => request.id === requestedId)
-      : incidentId
-        ? requests.find((request) => request.incident_id === incidentId)
-        : null;
-    if (!deepLinked) return;
-    setSelectedId(deepLinked.id);
-  }, [incidentId, requestedId, requests]);
+      ? visibleRequests.find((request) => request.id === requestedId)
+      : incidentLinkedRequests.slice().reverse().find((request) => request.status === 'pending') || incidentLinkedRequests[incidentLinkedRequests.length - 1] || null;
+    if (deepLinked) {
+      setSelectedId(deepLinked.id);
+      return;
+    }
+    if (!selectedId || !visibleRequests.some((request) => request.id === selectedId)) {
+      const firstPending = visibleRequests.slice().reverse().find((request) => request.status === 'pending');
+      setSelectedId(firstPending?.id || visibleRequests[visibleRequests.length - 1].id);
+    }
+  }, [incidentId, requestedId, selectedId, visibleRequests]);
 
   const selectRequest = (request: AssistanceRequest) => {
     setSelectedId(request.id);
     setSearchParams({ incident_id: request.incident_id, request_id: request.id }, { replace: true });
+  };
+
+  const selectIncidentGroup = (group: AssistanceIncidentGroup) => {
+    const activeRequest = [...group.requests].reverse().find((request) => request.status === 'pending') || group.requests[group.requests.length - 1];
+    if (!activeRequest) return;
+    selectRequest(activeRequest);
   };
 
   const updateStatus = async (request: AssistanceRequest, status: RequestStatus) => {
@@ -264,25 +308,31 @@ export default function ResourceRequestsPage() {
       <section className="reports-split-view-v2">
         <aside className="reports-queue-v2">
           <div className="reports-queue-heading">
-            <h2>Responder assistance queue</h2>
-            <span>{visibleRequests.length}</span>
+            <h2>Responding incidents</h2>
+            <span>{incidentGroups.length}</span>
           </div>
           {loading ? (
             <div className="reports-empty-v2"><span className="spinner" /><p>Loading assistance requests…</p></div>
-          ) : visibleRequests.length === 0 ? (
+          ) : incidentGroups.length === 0 ? (
             <div className="reports-empty-v2"><AlertTriangle size={22} /><strong>No assistance requests</strong><p>Responder requests for support will appear here.</p></div>
           ) : (
             <div className="reports-queue-list-v2">
-              {visibleRequests.map((request) => {
-                const active = selected?.id === request.id;
+              {incidentGroups.map((group) => {
+                const active = selectedGroup?.key === group.key;
+                const latestRequest = group.requests[group.requests.length - 1];
+                const pendingCount = group.requests.filter((request) => request.status === 'pending').length;
+                const linkedReport = group.incident;
+                const groupLocationPreview = locationPreviewState?.incidentId === linkedReport?.id ? locationPreviewState : null;
                 return (
-                  <button key={request.id} type="button" className={`reports-queue-item-v2 assistance-request-item ${active ? 'selected' : ''}`} onClick={() => selectRequest(request)}>
+                  <button key={group.key} type="button" className={`reports-queue-item-v2 ${incidentStatusClass(linkedReport?.status)} ${active ? 'selected' : ''}`} onClick={() => selectIncidentGroup(group)}>
                     <span className="reports-queue-item-top">
-                      <strong>{requestTypeLabel(request.request_type, request.sub_type)}</strong>
-                      <span className={`assistance-status-chip ${request.status}`}>{requestStatusLabel(request)}</span>
+                      <strong>{linkedReport?.title || 'Incident Report'}</strong>
+                      <span className={`report-status-chip-v2 ${incidentStatusClass(linkedReport?.status)}`}>{linkedReport?.status ? statusLabel(linkedReport.status) : requestStatusLabel(latestRequest)}</span>
                     </span>
-                    <span className="reports-queue-time">{request.requested_by_user?.full_name || 'Responder'} · {timeAgo(request.created_at)}</span>
-                    <span className="reports-queue-time assistance-request-preview">{request.details || 'No request details provided.'}</span>
+                    <span className="reports-queue-time">Incident occurred · {dateTime(linkedReport?.created_at || latestRequest.created_at)}</span>
+                    {linkedReport ? <IncidentLocationCard compact showTitle={false} showLandmarkDistance={false} location={groupLocationPreview?.preview} loading={Boolean(groupLocationPreview?.loading)} fallbackLabel={formatIncidentLocation(linkedReport)} coordinates={hasIncidentPin(linkedReport) ? `${Number(linkedReport.latitude).toFixed(5)}, ${Number(linkedReport.longitude).toFixed(5)}` : null} /> : <span className="reports-queue-time">Location not provided</span>}
+                    {(linkedReport?.description || linkedReport?.specifics || latestRequest.details) && <span className="reports-queue-time assistance-request-preview">{linkedReport?.description || linkedReport?.specifics || latestRequest.details}</span>}
+                    <span className="reports-queue-time">{group.requests.length} assistance {group.requests.length === 1 ? 'request' : 'requests'}{pendingCount ? ` · ${pendingCount} pending` : ''}</span>
                   </button>
                 );
               })}
@@ -292,26 +342,18 @@ export default function ResourceRequestsPage() {
 
         <section className="reports-detail-v2">
           {!selected ? (
-            <div className="reports-detail-empty-v2"><div><ClipboardList size={28} /></div><strong>Select an assistance request</strong><p>Choose a request from the queue to review its details.</p></div>
+            <div className="reports-detail-empty-v2"><div><ClipboardList size={28} /></div><strong>Select an incident</strong><p>Choose an incident from the queue to review its assistance requests.</p></div>
           ) : (
             <>
               <div className="reports-detail-scroll-v2">
-                <header className="reports-detail-heading-v2">
+                <header className="reports-detail-heading-v2 reports-detail-heading-responder-v2">
                   <div>
-                    <span className="reports-eyebrow-v2">Selected assistance request</span>
-                    <h2>{requestTypeLabel(selected.request_type, selected.sub_type)}</h2>
-                    <p>Requested by {selected.requested_by_user?.full_name || 'Responder'} · {timeAgo(selected.created_at)}</p>
+                    <span className="reports-eyebrow-v2">Selected incident</span>
+                    <h2>{linkedIncident?.title || 'Incident Report'}</h2>
+                    <p>{statusLabel(linkedIncident?.status || 'active')} · {dateTime(linkedIncident?.created_at || selected.created_at)}</p>
                   </div>
-                  <span className={`assistance-status-chip detail ${selected.status}`}>{requestStatusLabel(selected)}</span>
+                  <span className={`report-status-chip-v2 detail ${incidentStatusClass(linkedIncident?.status)}`}>{statusLabel(linkedIncident?.status || 'Active')}</span>
                 </header>
-
-                <section className="reports-detail-section-v2">
-                  <h3>Requester details</h3>
-                  <div className="reports-info-grid-v2">
-                    <div className="reports-info-card-v2"><span>Responder</span><strong><UserRound size={17} /> {selected.requested_by_user?.full_name || 'Unknown responder'}</strong></div>
-                    <div className="reports-info-card-v2"><span>Contact number</span><strong><Phone size={17} /> {formatMobileNumber(selected.requested_by_user?.phone) || 'Not provided'}</strong></div>
-                  </div>
-                </section>
 
                 <section className="reports-detail-section-v2">
                   <h3>Incident location</h3>
@@ -327,8 +369,10 @@ export default function ResourceRequestsPage() {
                   ) : <div className="reports-location-card-v2"><div><strong>Location not provided</strong></div></div>}
                 </section>
 
+                {(linkedIncident?.description || linkedIncident?.specifics) && <div className="reports-text-card-v2 assistance-linked-report-description">{linkedIncident.description || linkedIncident.specifics}</div>}
+
                 <section className="reports-detail-section-v2 assistance-history-section">
-                  <div className="reports-section-heading-v2"><h3>Request &amp; coordination log</h3></div>
+                  <div className="reports-section-heading-v2"><h3>Request history</h3><span>{selectedHistory.length} requests</span></div>
                   {selectedHistory.length ? (
                     <div className="assistance-history-list">
                       {selectedHistory.map((request) => {
@@ -338,7 +382,21 @@ export default function ResourceRequestsPage() {
                           request.beyond_barangay_capability ? 'Needs MDRRMO' : null,
                         ].filter((tag): tag is string => Boolean(tag));
                         return (
-                          <article className="assistance-history-card" key={request.id}>
+                          <article
+                            className={`assistance-history-card assistance-review-selectable ${selected.id === request.id ? 'review-selected' : ''}`}
+                            key={request.id}
+                            role="button"
+                            tabIndex={0}
+                            aria-pressed={selected.id === request.id}
+                            aria-label={`Review ${requestTypeLabel(request.request_type, request.sub_type)} request from ${request.requested_by_user?.full_name || 'Responder'}, ${requestStatusLabel(request)}`}
+                            onClick={() => selectRequest(request)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault();
+                                selectRequest(request);
+                              }
+                            }}
+                          >
                             <header>
                               <div><span className="assistance-history-sos">SOS</span><strong>Assistance Request</strong></div>
                               <span className={`assistance-status-chip ${request.status}`}>{hasDispatcherResponse ? coordinationLabel(request) : 'Pending'}</span>
