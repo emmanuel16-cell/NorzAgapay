@@ -291,6 +291,7 @@ export const reportAPI = {
   searchBarangayTransportHospitals: (id: string, query: string, latitude: number, longitude: number) => api.get<{ hospitals: TransportHospital[] }>(`/barangay/assigned-reports/${id}/transport-hospitals/search`, { params: { q: query, latitude, longitude } }),
   updateBarangayTransport: (id: string, data: { status: 'in_transit'; hospital_name: string; hospital_address: string; hospital_latitude: number; hospital_longitude: number } | { status: 'delivered' }) => api.patch(`/barangay/assigned-reports/${id}/transport`, data),
   closeBarangayAssignment: (id: string, resolved_notes: string) => api.post(`/barangay/assigned-reports/${id}/close`, { resolved_notes }),
+  dismissResolvedBarangayAssignment: (id: string) => api.post(`/barangay/assigned-reports/${id}/dismiss`),
   uploadBarangayAssignmentMedia: (id: string, file: File) => {
     const body = new FormData();
     body.append('media', file);

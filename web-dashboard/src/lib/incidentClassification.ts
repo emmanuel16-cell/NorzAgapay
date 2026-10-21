@@ -3,6 +3,7 @@ export const INCIDENT_TYPE_OPTIONS = [
   { value: 'flash_flood', label: 'Flood / Flash Flood' },
   { value: 'fire', label: 'Fire' },
   { value: 'earthquake', label: 'Earthquake' },
+  { value: 'vehicle_incident', label: 'Vehicle Incident' },
   { value: 'medical_emergency', label: 'Medical Emergency' },
   { value: 'typhoon', label: 'Typhoon / Severe Weather' },
   { value: 'other', label: 'Other Emergency' },

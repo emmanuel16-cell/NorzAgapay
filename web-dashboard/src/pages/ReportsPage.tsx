@@ -50,7 +50,7 @@ interface IncidentReport {
   dispatched_at?: string | null; accepted_at?: string | null; arrived_at?: string | null;
   arrival_recorded_at?: string | null; resolved_at?: string | null; mdrrmo_assignments?: Assignment[];
   reporter?: { id: string; full_name: string; role: string } | null;
-  is_central_assignment?: boolean; assignment_id?: string; assignment_status?: string; assignment_notes?: string;
+  is_central_assignment?: boolean; assignment_id?: string; assignment_status?: string; assignment_closed_at?: string | null; assignment_notes?: string;
   assigned_team_leader_ids?: string[]; active_barangay_assignment?: BarangayAssignment | null; barangay_assignments?: BarangayAssignment[];
   barangay_responded_at?: string | null; barangay_resolved_notes?: string | null;
   is_demo?: boolean;
@@ -644,7 +644,19 @@ export default function ReportsPage({ readOnlyBarangay = false, readOnlyResponde
               }} disabled={saving}>Resolve incident</button>
             </footer>}
             {stage === 'resolved' && <footer className="reports-detail-actions-v2">
-              {(isReadOnlyBarangay || selected.resolved_at || selected.barangay_resolved_at || selected.mdrrmo_resolved_at) && <button type="button" className="reports-dispatch-button-v2" onClick={() => void downloadResolutionPdf(selected)} disabled={downloadingPdf}>
+              {isBarangay && user?.role === 'dispatcher' && selected.is_central_assignment && !selected.assignment_closed_at && <button type="button" className="reports-invalid-button-v2" disabled={saving} onClick={() => {
+                setSaving(true);
+                void reportAPI.dismissResolvedBarangayAssignment(selected.id)
+                  .then(async () => {
+                    setSelectedId(null);
+                    clearLink();
+                    await fetchReports();
+                    toast.success('Resolved assignment removed from the Barangay reports list.');
+                  })
+                  .catch((error: any) => toast.error(error?.response?.data?.error || 'Could not close this resolved assignment.'))
+                  .finally(() => setSaving(false));
+              }}>{saving ? 'Closing…' : 'Close assignment'}</button>}
+              {!isBarangay && (selected.resolved_at || selected.barangay_resolved_at || selected.mdrrmo_resolved_at) && <button type="button" className="reports-dispatch-button-v2" onClick={() => void downloadResolutionPdf(selected)} disabled={downloadingPdf}>
                 <Download size={17} /> {downloadingPdf ? 'Preparing document…' : 'Download resolution document'}
               </button>}
             </footer>}

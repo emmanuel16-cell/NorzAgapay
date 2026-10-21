@@ -76,6 +76,7 @@ interface IncidentItem {
   barangay_name?: string;
   barangay_response_status?: string;
   is_central_assignment?: boolean;
+  assignment_closed_at?: string | null;
   response_barangay_id?: string | null;
   response_barangay_name?: string | null;
   assignment_status?: string | null;
@@ -342,6 +343,7 @@ const MDRRMO_DISPATCH_INCIDENT_TYPES = [
   { value: 'flash_flood', label: 'Flood / Flash Flood' },
   { value: 'fire', label: 'Fire' },
   { value: 'earthquake', label: 'Earthquake' },
+  { value: 'vehicle_incident', label: 'Vehicle Incident' },
   { value: 'medical_emergency', label: 'Medical Emergency' },
   { value: 'typhoon', label: 'Typhoon / Severe Weather' },
   { value: 'other', label: 'Other Emergency' },
@@ -484,6 +486,8 @@ function ResponderAssessmentPanel({
   onPreview,
   onCloseResolvedMapMarker,
   closingResolvedMapMarker = false,
+  onDismissResolvedBarangayAssignment,
+  closingResolvedBarangayAssignment = false,
   showTitle = true,
 }: {
   incident: IncidentItem;
@@ -499,6 +503,8 @@ function ResponderAssessmentPanel({
   onPreview: (url: string) => void;
   onCloseResolvedMapMarker?: () => void;
   closingResolvedMapMarker?: boolean;
+  onDismissResolvedBarangayAssignment?: () => void;
+  closingResolvedBarangayAssignment?: boolean;
   showTitle?: boolean;
 }) {
   const navigate = useNavigate();
@@ -550,6 +556,17 @@ function ResponderAssessmentPanel({
                   title="Permanently remove this resolved report from the Command Center map"
                 >
                   {closingResolvedMapMarker ? 'Closing…' : 'Close'}
+                </button>
+              )}
+              {onDismissResolvedBarangayAssignment && incident.is_central_assignment && !incident.assignment_closed_at && (
+                <button
+                  type="button"
+                  className="resolved-close-map-marker"
+                  onClick={onDismissResolvedBarangayAssignment}
+                  disabled={closingResolvedBarangayAssignment}
+                  title="Remove this resolved assignment from the Barangay reports list"
+                >
+                  {closingResolvedBarangayAssignment ? 'Closing…' : 'Close assignment'}
                 </button>
               )}
             </>
@@ -621,6 +638,8 @@ function EscalatedResponsePanel({
   onPreview,
   onCloseResolvedMapMarker,
   closingResolvedMapMarker = false,
+  onDismissResolvedBarangayAssignment,
+  closingResolvedBarangayAssignment = false,
 }: {
   incident: IncidentItem;
   assistanceRequests: AssistanceRequestItem[];
@@ -635,6 +654,8 @@ function EscalatedResponsePanel({
   onPreview: (url: string) => void;
   onCloseResolvedMapMarker?: () => void;
   closingResolvedMapMarker?: boolean;
+  onDismissResolvedBarangayAssignment?: () => void;
+  closingResolvedBarangayAssignment?: boolean;
 }) {
   const coordinationNotes = incident.mdrrmo_coordination_notes;
   return (
@@ -662,6 +683,8 @@ function EscalatedResponsePanel({
           onPreview={onPreview}
           onCloseResolvedMapMarker={onCloseResolvedMapMarker}
           closingResolvedMapMarker={closingResolvedMapMarker}
+          onDismissResolvedBarangayAssignment={onDismissResolvedBarangayAssignment}
+          closingResolvedBarangayAssignment={closingResolvedBarangayAssignment}
           showTitle={false}
         />
       ) : (
@@ -681,6 +704,17 @@ function EscalatedResponsePanel({
               title="Permanently remove this resolved report from the Command Center map"
             >
               {closingResolvedMapMarker ? 'Closing…' : 'Close'}
+            </button>
+          )}
+          {incident.status === 'resolved' && onDismissResolvedBarangayAssignment && incident.is_central_assignment && !incident.assignment_closed_at && (
+            <button
+              type="button"
+              className="resolved-close-map-marker"
+              onClick={onDismissResolvedBarangayAssignment}
+              disabled={closingResolvedBarangayAssignment}
+              title="Remove this resolved assignment from the Barangay reports list"
+            >
+              {closingResolvedBarangayAssignment ? 'Closing…' : 'Close assignment'}
             </button>
           )}
         </div>
@@ -1141,6 +1175,7 @@ export default function CommandCenter() {
   const [invalidReason, setInvalidReason] = useState('');
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
   const [closingResolvedMapMarker, setClosingResolvedMapMarker] = useState(false);
+  const [closingResolvedBarangayAssignment, setClosingResolvedBarangayAssignment] = useState(false);
   const [dispatching, setDispatching] = useState(false);
   const [mdrrmoNotes, setMdrrmoNotes] = useState('');
   const [escalatedResponseTab, setEscalatedResponseTab] = useState<'barangay' | 'responder'>('barangay');
@@ -1284,6 +1319,7 @@ export default function CommandCenter() {
 
       if (reportsRes.status === 'fulfilled' && Array.isArray(reportsRes.value.data)) {
         reportsRes.value.data.forEach((r: any) => {
+          if (!isBarangayDashboard && r.is_central_assignment && r.barangay_dispatched_at) return;
           if (!isBarangayDashboard && !isVisibleToMdrrmo(r)) return;
           const lat = parseFloat(r.latitude);
           const lng = parseFloat(r.longitude);
@@ -1377,6 +1413,7 @@ export default function CommandCenter() {
             response_barangay_id: r.response_barangay_id || null,
             response_barangay_name: r.response_barangay_name || null,
             assignment_status: r.assignment_status || null,
+            assignment_closed_at: r.assignment_closed_at || null,
             barangay_responder_name: r.barangay_responder_name,
             mdrrmo_response_status: r.mdrrmo_response_status || 'pending',
             mdrrmo_responder_name: r.mdrrmo_responder_name,
@@ -1632,6 +1669,13 @@ export default function CommandCenter() {
       isCoordinateInsideBoundary(incident.latitude, incident.longitude, boundary.geometry);
   }), [incidents, filters, boundary, selectedIncident?.id]);
 
+  useEffect(() => {
+    if (isBarangayDashboard || !selectedIncident?.is_central_assignment) return;
+    if (incidents.some((incident) => incident.id === selectedIncident.id)) return;
+    setSelectedIncident(null);
+    setActiveModalType(null);
+  }, [incidents, isBarangayDashboard, selectedIncident?.id, selectedIncident?.is_central_assignment]);
+
   const visibleDispatchUnits = useMemo(() => dispatchUnits.filter((unit) => {
     if (boundary.enabled && !isCoordinateInsideBoundary(unit.latitude, unit.longitude, boundary.geometry)) return false;
     return !unit.target_incident_id || visibleIncidents.some((incident) => incident.id === unit.target_incident_id);
@@ -1842,6 +1886,21 @@ export default function CommandCenter() {
       toast.error(error?.response?.data?.error || 'Could not close this resolved map marker.');
     } finally {
       setClosingResolvedMapMarker(false);
+    }
+  };
+
+  const dismissResolvedBarangayAssignment = async () => {
+    if (!selectedIncident || selectedIncident.status !== 'resolved' || !selectedIncident.is_central_assignment || closingResolvedBarangayAssignment) return;
+    setClosingResolvedBarangayAssignment(true);
+    try {
+      await reportAPI.dismissResolvedBarangayAssignment(selectedIncident.id);
+      closeModal();
+      toast.success('Resolved assignment removed from the Barangay reports list.');
+      await fetchData();
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error || 'Could not close this resolved assignment.');
+    } finally {
+      setClosingResolvedBarangayAssignment(false);
     }
   };
 
@@ -2705,6 +2764,8 @@ export default function CommandCenter() {
                   onPreview={(url) => { setSelectedVisualUrl(url); setProofPreviewOpen(true); }}
                   onCloseResolvedMapMarker={!isBarangayDashboard && user?.role === 'dispatcher' ? closeResolvedMapMarker : undefined}
                   closingResolvedMapMarker={closingResolvedMapMarker}
+                  onDismissResolvedBarangayAssignment={isBarangayDashboard && user?.role === 'dispatcher' ? dismissResolvedBarangayAssignment : undefined}
+                  closingResolvedBarangayAssignment={closingResolvedBarangayAssignment}
                 />
               )}
             </div>
@@ -3035,6 +3096,8 @@ export default function CommandCenter() {
                 onPreview={(url) => { setSelectedVisualUrl(url); setProofPreviewOpen(true); }}
                 onCloseResolvedMapMarker={!isBarangayDashboard && user?.role === 'dispatcher' ? closeResolvedMapMarker : undefined}
                 closingResolvedMapMarker={closingResolvedMapMarker}
+                onDismissResolvedBarangayAssignment={isBarangayDashboard && user?.role === 'dispatcher' ? dismissResolvedBarangayAssignment : undefined}
+                closingResolvedBarangayAssignment={closingResolvedBarangayAssignment}
               />
             </div>
           </div>

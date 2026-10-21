@@ -30,7 +30,7 @@ DO $$ BEGIN
         CREATE TYPE user_status AS ENUM ('active', 'inactive', 'pending_verification', 'occupied', 'rejected');
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'incident_type') THEN
-        CREATE TYPE incident_type AS ENUM ('not_sure', 'flash_flood', 'fire', 'earthquake', 'medical_emergency', 'typhoon', 'other');
+        CREATE TYPE incident_type AS ENUM ('not_sure', 'flash_flood', 'fire', 'earthquake', 'vehicle_incident', 'medical_emergency', 'typhoon', 'other');
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'severity_level') THEN
         CREATE TYPE severity_level AS ENUM ('low', 'moderate', 'high', 'critical');
@@ -2538,7 +2538,7 @@ DECLARE
   v_dispatchable_count INTEGER;
 BEGIN
   IF p_actor_id IS NULL OR p_incident_type IS NULL
-     OR p_incident_type NOT IN ('not_sure', 'flash_flood', 'fire', 'earthquake', 'medical_emergency', 'typhoon', 'other')
+     OR p_incident_type NOT IN ('not_sure', 'flash_flood', 'fire', 'earthquake', 'vehicle_incident', 'medical_emergency', 'typhoon', 'other')
      OR p_severity IS NULL OR p_severity NOT IN ('low', 'moderate', 'high', 'critical')
      OR p_responder_ids IS NULL OR cardinality(p_responder_ids) < 1
      OR cardinality(p_responder_ids) <> (SELECT count(DISTINCT id) FROM unnest(p_responder_ids) AS ids(id)) THEN
@@ -3640,7 +3640,7 @@ DECLARE
   v_dispatchable_count INTEGER;
 BEGIN
   IF p_actor_id IS NULL OR p_incident_type IS NULL
-     OR p_incident_type NOT IN ('not_sure','flash_flood','fire','earthquake','medical_emergency','typhoon','other')
+     OR p_incident_type NOT IN ('not_sure','flash_flood','fire','earthquake','vehicle_incident','medical_emergency','typhoon','other')
      OR p_severity IS NULL OR p_severity NOT IN ('low','moderate','high','critical')
      OR p_responder_ids IS NULL OR cardinality(p_responder_ids) < 1
      OR cardinality(p_responder_ids) <> (SELECT count(DISTINCT id) FROM unnest(p_responder_ids) AS ids(id))
@@ -5548,6 +5548,8 @@ CREATE TABLE IF NOT EXISTS public.mdrrmo_report_barangay_assignments (
   resolved_by UUID REFERENCES public.barangay_users(id) ON DELETE SET NULL,
   resolved_at TIMESTAMPTZ,
   resolved_notes TEXT,
+  closed_at TIMESTAMPTZ,
+  closed_by UUID REFERENCES public.barangay_users(id) ON DELETE SET NULL,
   escalated_by UUID REFERENCES public.barangay_users(id) ON DELETE SET NULL,
   escalated_at TIMESTAMPTZ,
   escalation_notes TEXT,
@@ -5599,7 +5601,7 @@ CREATE TABLE IF NOT EXISTS public.mdrrmo_report_barangay_assignment_events (
   from_barangay_id UUID REFERENCES public.barangays(id) ON DELETE SET NULL,
   to_barangay_id UUID REFERENCES public.barangays(id) ON DELETE SET NULL,
   event_type TEXT NOT NULL CHECK (event_type IN (
-    'assigned','reassigned','recalled','dispatched','responding','arrived','resolved','escalated'
+    'assigned','reassigned','recalled','dispatched','responding','arrived','resolved','escalated','dismissed'
   )),
   actor_id UUID,
   actor_role TEXT NOT NULL,
@@ -6091,7 +6093,7 @@ DECLARE
   v_dispatchable_count INTEGER;
 BEGIN
   IF p_actor_id IS NULL OR p_incident_type IS NULL
-     OR p_incident_type NOT IN ('not_sure','flash_flood','fire','earthquake','medical_emergency','typhoon','other')
+     OR p_incident_type NOT IN ('not_sure','flash_flood','fire','earthquake','vehicle_incident','medical_emergency','typhoon','other')
      OR p_severity IS NULL OR p_severity NOT IN ('low','moderate','high','critical')
      OR p_responder_ids IS NULL OR cardinality(p_responder_ids) < 1
      OR cardinality(p_responder_ids) <> (SELECT count(DISTINCT id) FROM unnest(p_responder_ids) AS ids(id))
@@ -6820,6 +6822,57 @@ $$;
 
 REVOKE ALL ON FUNCTION public.append_reporter_follow_up_evidence(UUID, TEXT, TEXT[], TEXT[]) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.append_reporter_follow_up_evidence(UUID, TEXT, TEXT[], TEXT[]) TO service_role;
+
+CREATE OR REPLACE FUNCTION public.dismiss_resolved_mdrrmo_report_barangay_assignment_v1(
+  p_report_id UUID,
+  p_barangay_id UUID,
+  p_actor_id UUID
+) RETURNS UUID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_assignment public.mdrrmo_report_barangay_assignments%ROWTYPE;
+  v_now TIMESTAMPTZ := clock_timestamp();
+BEGIN
+  IF p_actor_id IS NULL THEN
+    RAISE EXCEPTION 'A Barangay dispatcher is required to close this assignment.' USING ERRCODE = '42501';
+  END IF;
+
+  SELECT * INTO v_assignment
+  FROM public.mdrrmo_report_barangay_assignments
+  WHERE report_id = p_report_id AND barangay_id = p_barangay_id
+  ORDER BY assigned_at DESC
+  LIMIT 1
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Resolved report assignment not found.' USING ERRCODE = 'P0002';
+  END IF;
+  IF v_assignment.assignment_status <> 'completed' OR v_assignment.response_status <> 'resolved' THEN
+    RAISE EXCEPTION 'Only a resolved Barangay assignment can be closed.' USING ERRCODE = '23514';
+  END IF;
+  IF v_assignment.closed_at IS NOT NULL THEN
+    RETURN v_assignment.id;
+  END IF;
+
+  UPDATE public.mdrrmo_report_barangay_assignments
+  SET closed_at = v_now, closed_by = p_actor_id, updated_at = v_now
+  WHERE id = v_assignment.id;
+
+  INSERT INTO public.mdrrmo_report_barangay_assignment_events (
+    report_id, assignment_id, from_barangay_id, event_type, actor_id, actor_role, created_at
+  ) VALUES (
+    p_report_id, v_assignment.id, p_barangay_id, 'dismissed', p_actor_id, 'dispatcher', v_now
+  );
+
+  RETURN v_assignment.id;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.dismiss_resolved_mdrrmo_report_barangay_assignment_v1(UUID, UUID, UUID) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.dismiss_resolved_mdrrmo_report_barangay_assignment_v1(UUID, UUID, UUID) TO service_role;
 
 NOTIFY pgrst, 'reload schema';
 

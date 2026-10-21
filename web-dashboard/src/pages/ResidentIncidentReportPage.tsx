@@ -97,7 +97,7 @@ export default function ResidentIncidentReportPage() {
     event.preventDefault(); setError(''); setMessage(''); setSubmitted(false);
     const normalizedPhone = normalizeMobile(phone);
     if (!isValidMobileNumber(normalizedPhone)) { setError('Enter exactly 11 digits starting with 09.'); return; }
-    if (reportMode === 'standard' && type !== 'community' && category === 'other' && !otherEmergency.trim()) { setError('Describe the other emergency.'); return; }
+    if (type !== 'community' && category === 'other' && !otherEmergency.trim()) { setError('Describe the other emergency.'); return; }
     if (!location) { setError('Add the incident location before submitting.'); return; }
     if (reportMode === 'standard' && description.trim().length < 8) { setError('Describe what happened in at least 8 characters.'); return; }
     if (reportMode === 'visual' && evidence.length === 0) { setError('Capture at least one photo or video for a visual report.'); return; }
@@ -113,14 +113,14 @@ export default function ResidentIncidentReportPage() {
       const incidentTimeFingerprint = type === 'emergency'
         ? [incidentTime.choice, incidentTime.choice === 'earlier' ? incidentTime.occurredAt : null, incidentTime.choice === 'earlier' ? incidentTime.precision : null]
         : null;
-      const fingerprint = JSON.stringify([type, reportMode, title, type === 'community' ? communityCategory : category, reportMode === 'standard' && category === 'other' ? otherEmergency.trim() : '', normalizedPhone, reportDescription, location.latitude, location.longitude, evidence.map((file) => [file.name, file.size, file.lastModified]), incidentTimeFingerprint]);
+      const fingerprint = JSON.stringify([type, reportMode, title, type === 'community' ? communityCategory : category, category === 'other' ? otherEmergency.trim() : '', normalizedPhone, reportDescription, location.latitude, location.longitude, evidence.map((file) => [file.name, file.size, file.lastModified]), incidentTimeFingerprint]);
       if (requestFingerprintRef.current !== fingerprint) {
         requestIdRef.current = requestId();
         requestStartedAtRef.current = new Date().toISOString();
         requestFingerprintRef.current = fingerprint;
       }
       const response = await reportAPI.guestReport({
-        type, title, specifics: type === 'community' ? communityCategory : reportMode === 'standard' && category === 'other' && otherEmergency.trim() ? `Other emergency: ${otherEmergency.trim()}` : '', description: reportDescription,
+        type, title, specifics: type === 'community' ? communityCategory : category === 'other' && otherEmergency.trim() ? `Other emergency: ${otherEmergency.trim()}` : '', description: reportDescription,
         latitude: location.latitude, longitude: location.longitude, contact_number: normalizedPhone,
         send_to: 'mdrrmo', incident_type: type === 'community'
           ? communityCategory.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
@@ -154,7 +154,7 @@ export default function ResidentIncidentReportPage() {
       <form className="resident-compose-form" onSubmit={(event) => void submit(event)}>
         {!reportMode ? <ReportModeChoices onSelect={setReportMode} trackTo="/my-reports" trackText="View your reports" /> : <>
         <button type="button" className="report-mode-back" onClick={() => setReportMode(null)}>← Change report format</button>
-        {type === 'community' ? <label>Concern category<select value={communityCategory} onChange={(event) => setCommunityCategory(event.target.value)}>{incidentTypes.map((item) => <option key={item} value={item}>{item}</option>)}</select></label> : <div className="resident-incident-time-row"><div className="resident-incident-category-column"><label>Incident category<select value={category} onChange={(event) => setCategory(event.target.value)}>{INCIDENT_TYPE_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>{category === 'other' && reportMode === 'standard' && <label><span className="required-inline-label">What kind of emergency? <b>Required</b></span><input type="text" required maxLength={120} value={otherEmergency} onChange={(event) => setOtherEmergency(event.target.value)} placeholder="Describe the emergency" /></label>}</div><IncidentTimeInput value={incidentTime} onChange={setIncidentTime} /></div>}
+        {type === 'community' ? <label>Concern category<select value={communityCategory} onChange={(event) => setCommunityCategory(event.target.value)}>{incidentTypes.map((item) => <option key={item} value={item}>{item}</option>)}</select></label> : <div className="resident-incident-time-row"><div className="resident-incident-category-column"><label>Incident category<select value={category} onChange={(event) => setCategory(event.target.value)}>{INCIDENT_TYPE_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>{category === 'other' && <label><span className="required-inline-label">What kind of emergency? <b>Required</b></span><input type="text" required maxLength={120} value={otherEmergency} onChange={(event) => setOtherEmergency(event.target.value)} placeholder="Describe the emergency" /></label>}</div><IncidentTimeInput value={incidentTime} onChange={setIncidentTime} /></div>}
         <label>Mobile number <MobileNumberInput value={phone} onValueChange={setPhone} placeholder="09XXXXXXXXX" required/><small>Responders may use this number to contact you about the report.</small></label>
         {reportMode === 'standard' && <label>Incident details<textarea rows={5} minLength={8} maxLength={2000} placeholder={type === 'community' ? 'Describe the hazard and where it is affecting the community…' : 'Describe what happened, who needs help, and any immediate danger…'} value={description} onChange={(event) => setDescription(event.target.value)} required/></label>}
         <fieldset className="resident-location-field"><legend>Incident location <b>Required</b></legend><p>Place the pin at the incident site. This helps responders find the right location.</p><div className="resident-location-actions"><button type="button" onClick={() => requestCurrentLocation()}><LocateFixed size={15}/>{locationSource === 'current' ? 'Update current location' : 'Use current location'}</button><button type="button" onClick={openMapPicker}><MapPin size={15}/>{locationSource === 'map' ? 'Change map location' : 'Choose on map'}</button></div><div className={`resident-picked-location ${location ? 'located' : ''}`}><MapPin size={15}/>{location ? `${locationSource === 'map' ? 'Map pin' : 'Current location'} · ${location.latitude.toFixed(5)}, ${location.longitude.toFixed(5)}` : 'No location selected yet'}</div></fieldset>

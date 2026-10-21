@@ -2015,14 +2015,16 @@ router.get('/reports/resolved', authenticateBarangay, requireRole(['admin', 'sta
     if (centralReportsError) throw centralReportsError;
     if (barangayError) throw barangayError;
     const centralById = new Map((centralRows || []).map((report: any) => [report.id, report]));
+    const centralSourceIds = new Set((centralRows || []).map((report: any) => report.source_barangay_report_id).filter(Boolean));
     const centralResolvedReports = scopedCentralAssignments.flatMap((assignment: any) => {
       const report: any = centralById.get(assignment.report_id);
-      if (!report) return [];
+      if (!report || assignment.closed_at) return [];
       return [formatIncidentReport({
         ...report,
         is_central_assignment: true,
         assignment_id: assignment.id,
         assignment_status: assignment.assignment_status,
+        assignment_closed_at: assignment.closed_at,
         assignment_notes: assignment.assignment_notes,
         response_status: assignment.response_status,
         barangay_response_status: assignment.response_status,
@@ -2049,7 +2051,7 @@ router.get('/reports/resolved', authenticateBarangay, requireRole(['admin', 'sta
       if (residentError) throw residentError;
       for (const resident of residentRows || []) residents.set(resident.id, resident);
     }
-    const formattedLegacyReports = resolvedReports.filter((report: any) => !centralById.has(report.id)).map((report: any) => {
+    const formattedLegacyReports = resolvedReports.filter((report: any) => !centralById.has(report.id) && !centralSourceIds.has(report.id)).map((report: any) => {
       const resident = residents.get(report.reporter_id);
       return formatIncidentReport({
         ...report,
@@ -2239,6 +2241,7 @@ router.get('/reports', authenticateBarangay, requireRole(['admin', 'dispatcher',
     if (assignedBarangayError) throw assignedBarangayError;
     const centralById = new Map((centralRows || []).map((row: any) => [row.id, row]));
     const centralIds = new Set(centralReportIds);
+    const centralSourceIds = new Set((centralRows || []).map((report: any) => report.source_barangay_report_id).filter(Boolean));
     const centralResponderIds = [...new Set((assignments || []).flatMap((row: any) => row.responder_ids || []))];
     const centralResponderNames = new Map<string, string>();
     if (centralResponderIds.length) {
@@ -2263,13 +2266,14 @@ router.get('/reports', authenticateBarangay, requireRole(['admin', 'dispatcher',
     }
     const centralReports = (assignments || []).flatMap((assignment: any) => {
       const report: any = centralById.get(assignment.report_id);
-      if (!report) return [];
+      if (!report || assignment.closed_at) return [];
       const assignedIds: string[] = assignment.responder_ids || [];
       return [formatIncidentReport({
         ...report,
         is_central_assignment: true,
         assignment_id: assignment.id,
         assignment_status: assignment.assignment_status,
+        assignment_closed_at: assignment.closed_at,
         assignment_notes: assignment.assignment_notes,
         response_status: assignment.response_status,
         barangay_response_status: assignment.response_status,
@@ -2291,7 +2295,7 @@ router.get('/reports', authenticateBarangay, requireRole(['admin', 'dispatcher',
         created_at: report.created_at,
       })];
     });
-    let scopedReports = [...legacyReports.filter((report: any) => !centralIds.has(report.id)), ...centralReports];
+    let scopedReports = [...legacyReports.filter((report: any) => !centralIds.has(report.id) && !centralSourceIds.has(report.id)), ...centralReports];
     if (req.barangayUser.role === 'responder') {
       const responderId = req.barangayUser.userId;
       scopedReports = scopedReports.filter((report: any) =>
@@ -2791,6 +2795,29 @@ router.post('/assigned-reports/:id/close', authenticateBarangay, requireRole(['d
   });
 });
 
+router.post('/assigned-reports/:id/dismiss', authenticateBarangay, requireRole(['dispatcher']), async (req: any, res: Response): Promise<void> => {
+  try {
+    const { data: assignmentId, error } = await supabaseAdmin.rpc('dismiss_resolved_mdrrmo_report_barangay_assignment_v1', {
+      p_report_id: req.params.id,
+      p_barangay_id: req.barangayUser.barangayId,
+      p_actor_id: req.barangayUser.userId,
+    });
+    if (error) throw error;
+    const { data: assignment, error: assignmentError } = await supabaseAdmin.from('mdrrmo_report_barangay_assignments')
+      .select('id, closed_at').eq('id', assignmentId).maybeSingle();
+    if (assignmentError) throw assignmentError;
+    if (!assignment) { res.status(404).json({ error: 'Resolved report assignment not found.' }); return; }
+    const result = { id: req.params.id, report_id: req.params.id, assignment_id: assignment.id, assignment_closed_at: assignment.closed_at };
+    io.to(`barangay:${req.barangayUser.barangayId}`).emit('barangay:report_updated', result);
+    res.json(result);
+  } catch (error: any) {
+    console.error('Dismiss resolved Barangay report failed:', error);
+    const code = String(error?.code || '');
+    const status = code === 'P0002' ? 404 : code === '42501' ? 403 : ['P0001', '23505', '23514'].includes(code) ? 409 : 500;
+    res.status(status).json({ error: error?.message || 'Could not close this resolved assignment.' });
+  }
+});
+
 router.patch('/assigned-reports/:id/escalate', authenticateBarangay, requireRole(['dispatcher']), async (req: any, res: Response) => {
   const notes = typeof req.body?.notes === 'string' ? req.body.notes.trim() : '';
   if (notes.length < 3) { res.status(400).json({ error: 'Escalation notes are required.' }); return; }
@@ -2970,7 +2997,7 @@ router.post('/reports/:id/field-media', authenticateBarangay, requireRole(['disp
 router.patch('/reports/:id/dispatch', authenticateBarangay, requireRole(['dispatcher']), async (req: any, res: Response) => {
   try {
     const { team_leader_id, team_leader_ids, notes } = req.body;
-    const validTypes = ['not_sure', 'flash_flood', 'fire', 'earthquake', 'medical_emergency', 'typhoon', 'other'];
+    const validTypes = ['not_sure', 'flash_flood', 'fire', 'earthquake', 'vehicle_incident', 'medical_emergency', 'typhoon', 'other'];
     const validSeverities = ['low', 'moderate', 'high', 'critical'];
     const { data: report, error: reportError } = await supabaseAdmin.from('barangay_reports')
       .select('incident_type, severity').eq('id', req.params.id).eq('barangay_id', req.barangayUser.barangayId).maybeSingle();

@@ -241,7 +241,7 @@ export default function PublicReportPage() {
     setSubmitted(false);
     const phone = normalizeMobileNumberInput(guestPhone);
     if (!isValidMobileNumber(phone)) { setMessage('Enter exactly 11 digits starting with 09.'); return; }
-    if (reportMode === 'standard' && reportType === 'emergency' && incidentCategory === 'other' && !otherEmergency.trim()) { setMessage('Describe the other emergency.'); return; }
+    if (reportType === 'emergency' && incidentCategory === 'other' && !otherEmergency.trim()) { setMessage('Describe the other emergency.'); return; }
     if (!location) { setMessage('Add the incident location before submitting.'); return; }
     if (reportMode === 'standard' && description.trim().length < 8) { setMessage('Describe the incident in at least 8 characters.'); return; }
     if (reportMode === 'visual' && evidence.length === 0) { setMessage('Capture at least one photo or video for a visual report.'); return; }
@@ -263,7 +263,7 @@ export default function PublicReportPage() {
         reportMode,
         communityCategory,
         incidentCategory,
-        reportMode === 'standard' && incidentCategory === 'other' ? otherEmergency.trim() : '',
+        incidentCategory === 'other' ? otherEmergency.trim() : '',
         reportDescription,
         location.latitude,
         location.longitude,
@@ -277,7 +277,7 @@ export default function PublicReportPage() {
       setSubmissionStartedAt(submittedAt);
       const response = await reportAPI.guestReport({
         type: reportType, title: reportTitle,
-        specifics: reportType === 'community' ? communityCategory : reportMode === 'standard' && incidentCategory === 'other' && otherEmergency.trim() ? `Other emergency: ${otherEmergency.trim()}` : '', description: reportDescription,
+        specifics: reportType === 'community' ? communityCategory : incidentCategory === 'other' && otherEmergency.trim() ? `Other emergency: ${otherEmergency.trim()}` : '', description: reportDescription,
         latitude: location.latitude, longitude: location.longitude, contact_number: phone, send_to: 'mdrrmo',
         incident_type: reportType === 'community' ? communityCategory.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') : incidentCategory,
         ...(reportType === 'emergency' ? {
@@ -330,7 +330,7 @@ export default function PublicReportPage() {
             <form className="public-report-form" onSubmit={(event) => void submitReport(event)}>
               {!reportMode ? <ReportModeChoices onSelect={setReportMode} /> : <>
               <button type="button" className="report-mode-back" onClick={() => setReportMode(null)}>← Change report format</button>
-              {reportType === 'community' ? <><label htmlFor="public-report-community-category">Concern category</label><select id="public-report-community-category" value={communityCategory} onChange={(event) => setCommunityCategory(event.target.value)}>{communityCategories.map((item) => <option key={item} value={item}>{item}</option>)}</select></> : <div className="public-incident-time-row"><div className="public-incident-category-column"><label className="public-incident-category-field" htmlFor="public-report-category">Incident category<select id="public-report-category" value={incidentCategory} onChange={(event) => setIncidentCategory(event.target.value)}>{INCIDENT_TYPE_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>{incidentCategory === 'other' && reportMode === 'standard' && <label className="public-incident-other-field" htmlFor="public-report-other-emergency"><span className="required-inline-label">What kind of emergency? <b>Required</b></span><input id="public-report-other-emergency" type="text" maxLength={120} value={otherEmergency} onChange={(event) => setOtherEmergency(event.target.value)} placeholder="Describe the emergency" required /></label>}</div><IncidentTimeInput value={incidentTime} onChange={setIncidentTime} /></div>}
+              {reportType === 'community' ? <><label htmlFor="public-report-community-category">Concern category</label><select id="public-report-community-category" value={communityCategory} onChange={(event) => setCommunityCategory(event.target.value)}>{communityCategories.map((item) => <option key={item} value={item}>{item}</option>)}</select></> : <div className="public-incident-time-row"><div className="public-incident-category-column"><label className="public-incident-category-field" htmlFor="public-report-category">Incident category<select id="public-report-category" value={incidentCategory} onChange={(event) => setIncidentCategory(event.target.value)}>{INCIDENT_TYPE_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>{incidentCategory === 'other' && <label className="public-incident-other-field" htmlFor="public-report-other-emergency"><span className="required-inline-label">What kind of emergency? <b>Required</b></span><input id="public-report-other-emergency" type="text" maxLength={120} value={otherEmergency} onChange={(event) => setOtherEmergency(event.target.value)} placeholder="Describe the emergency" required /></label>}</div><IncidentTimeInput value={incidentTime} onChange={setIncidentTime} /></div>}
               <label htmlFor="public-report-phone">Mobile number <b>Required</b></label>
               <MobileNumberInput id="public-report-phone" value={guestPhone} onValueChange={setGuestPhone} placeholder="09XXXXXXXXX" required />
               {reportMode === 'standard' && <><label htmlFor="public-report-description">Incident details <b>Required</b></label>
