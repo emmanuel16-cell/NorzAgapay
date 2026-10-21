@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Camera, CircleStop, ImagePlus, Video, X } from 'lucide-react';
 
 const MAX_VIDEO_SECONDS = 60;
+const MAX_CAPTURE_FILES = 5;
+const MAX_VIDEO_BYTES = 8 * 1024 * 1024;
 
 type CameraEvidenceCaptureProps = {
   files: File[];
@@ -108,9 +110,14 @@ export default function CameraEvidenceCapture({ files, onFilesChange, required =
   };
 
   const appendEvidence = (file: File) => {
+    if (filesRef.current.length >= MAX_CAPTURE_FILES) {
+      setCameraMessage(`You can attach up to ${MAX_CAPTURE_FILES} photos or videos.`);
+      return false;
+    }
     const nextFiles = [...filesRef.current, file];
     filesRef.current = nextFiles;
     onFilesChangeRef.current(nextFiles);
+    return true;
   };
 
   const capturePhoto = () => {
@@ -136,8 +143,7 @@ export default function CameraEvidenceCapture({ files, onFilesChange, required =
         return;
       }
       const photo = new File([blob], createCaptureName(blob.type || 'image/jpeg', 'photo'), { type: blob.type || 'image/jpeg' });
-      appendEvidence(photo);
-      setCameraMessage('Photo added to the report.');
+      if (appendEvidence(photo)) setCameraMessage('Photo added to the report.');
     }, 'image/jpeg', 0.86);
   };
 
@@ -150,16 +156,24 @@ export default function CameraEvidenceCapture({ files, onFilesChange, required =
     const supportedType = ['video/mp4', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm']
       .find((mimeType) => MediaRecorder.isTypeSupported?.(mimeType));
     try {
-      const recorder = supportedType ? new MediaRecorder(stream, { mimeType: supportedType }) : new MediaRecorder(stream);
+      const options: MediaRecorderOptions = {
+        ...(supportedType ? { mimeType: supportedType } : {}),
+        videoBitsPerSecond: 700_000,
+        audioBitsPerSecond: 64_000,
+      };
+      const recorder = new MediaRecorder(stream, options);
       chunksRef.current = [];
       recorder.ondataavailable = (event) => { if (event.data.size) chunksRef.current.push(event.data); };
       recorder.onstop = () => {
         const type = recorder.mimeType || chunksRef.current[0]?.type || 'video/webm';
         const blob = new Blob(chunksRef.current, { type });
         if (blob.size > 0) {
-          const video = new File([blob], createCaptureName(type, 'video'), { type });
-          appendEvidence(video);
-          setCameraMessage('Video added to the report.');
+          if (blob.size > MAX_VIDEO_BYTES) {
+            setCameraMessage('This video is larger than 8 MB. Record a shorter clip and try again.');
+          } else {
+            const video = new File([blob], createCaptureName(type, 'video'), { type });
+            if (appendEvidence(video)) setCameraMessage('Video added to the report.');
+          }
         }
         chunksRef.current = [];
         recorderRef.current = null;

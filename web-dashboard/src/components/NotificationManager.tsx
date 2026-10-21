@@ -177,6 +177,9 @@ export default function NotificationManager() {
       }
       const title = String(payload?.title || '').trim() || 'Emergency incident';
       const attachmentCount = Number(payload?.attachmentCount) || 0;
+      const detail = attachmentCount > 0
+        ? `A new reporter update includes ${attachmentCount} photo or video attachment${attachmentCount === 1 ? '' : 's'}. Click to review the incident.`
+        : 'A new reporter follow-up update was submitted without photo or video attachments. Click to review the incident.';
       playNotificationSound('criticalIncident');
       toast((t) => (
         <div
@@ -186,9 +189,9 @@ export default function NotificationManager() {
           }}
           style={{ width: '100%', cursor: 'pointer', padding: '10px' }}
         >
-          <div style={{ fontWeight: 'bold', color: 'white' }}>🚨 Emergency follow-up request: {title}</div>
+          <div style={{ fontWeight: 'bold', color: 'white' }}>🚨 New reporter follow-up update: {title}</div>
           <div style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.9)' }}>
-            Reporter sent an additional update{attachmentCount ? ` with ${attachmentCount} photo or video attachment${attachmentCount === 1 ? '' : 's'}` : ''}. Click to review the incident.
+            {detail}
           </div>
         </div>
       ), { duration: 60000, className: 'notification-emergency', position: 'top-right' });
