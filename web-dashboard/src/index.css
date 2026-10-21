@@ -4771,6 +4771,9 @@ body.responder-map-open { overflow: hidden; }
 .barangay-console-header-actions { display: flex; flex: 0 0 auto; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
 .barangay-console-modal-backdrop { position: fixed; inset: 0; z-index: 5400; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(2, 8, 22, .78); backdrop-filter: blur(5px); animation: fadeIn .16s ease; }
 .barangay-console-form-modal { width: min(1000px, 100%); max-height: min(92vh, 850px); overflow-y: auto; padding: 22px; box-shadow: 0 24px 70px rgba(0, 0, 0, .45); animation: slideUp .2s ease; }
+.barangay-assistance-request-modal { width: min(560px, 100%); }
+.barangay-assistance-request-modal .barangay-assistance-linked-summary,
+.barangay-assistance-request-modal .barangay-console-form-grid > label { grid-column: 1 / -1; }
 .barangay-console-form-modal > header { align-items: flex-start; }
 .barangay-console-form-modal > header > button { flex: 0 0 auto; }
 .barangay-console-header h1 { margin: 5px 0 5px; color: var(--text-primary); font-size: clamp(24px, 3vw, 32px); line-height: 1.2; }
@@ -4966,6 +4969,7 @@ body.responder-map-open { overflow: hidden; }
 .barangay-console-empty strong { color: var(--text-primary); font-size: 14px; }
 .barangay-console-empty span { font-size: 12px; }
 .barangay-assistance-needs { display: grid; grid-column: 1 / -1; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; padding: 13px; border: 1px solid var(--border-color, #345071); border-radius: 10px; background: var(--bg-primary, #09172b); }
+.barangay-assistance-request-modal .barangay-assistance-needs { grid-template-columns: 1fr; }
 .barangay-assistance-needs > span { grid-column: 1 / -1; color: var(--text-muted); }
 .barangay-assistance-needs label { display: flex; min-width: 0; min-height: 58px; align-items: center; gap: 10px; padding: 11px 12px; border: 1px solid var(--border-color, #345071); border-radius: 9px; color: var(--text-primary); background: var(--bg-secondary, #0e203d); font-size: 12px; font-weight: 550; line-height: 1.4; cursor: pointer; transition: border-color .15s ease, background .15s ease; }
 .barangay-assistance-needs label:hover { border-color: rgba(69, 209, 230, .55); background: rgba(34, 189, 211, .07); }
