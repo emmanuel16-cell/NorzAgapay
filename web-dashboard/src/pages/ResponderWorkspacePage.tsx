@@ -177,7 +177,7 @@ export default function ResponderWorkspacePage() {
       const items = Array.isArray(queueResponse.data) ? queueResponse.data : [];
       const members: CrewMember[] = isBarangay ? [] : Array.isArray(rosterResponse?.data?.members) ? rosterResponse.data.members : [];
       const barangayMembers: BarangayCrewMember[] = isBarangay && Array.isArray(rosterResponse?.data?.members) ? rosterResponse.data.members : [];
-      const nextAssessmentBaseline = Object.fromEntries(items.map((report: AssignedReport) => [
+      const nextAssessmentBaseline: Record<string, FieldAssessment> = Object.fromEntries(items.map((report: AssignedReport) => [
         report.id,
         parseFieldAssessment(isBarangay
           ? report.barangay_response_notes || report.response_notes
@@ -191,9 +191,9 @@ export default function ResponderWorkspacePage() {
         const draft = current[report.id];
         const previous = previousAssessmentBaseline[report.id];
         if (!draft || !previous) return [report.id, incoming];
-        const merged = { ...incoming };
+        const merged: FieldAssessment = { ...incoming };
         (Object.keys(emptyAssessment) as AssessmentField[]).forEach((field) => {
-          if (draft[field] !== previous[field]) merged[field] = draft[field];
+          if (draft[field] !== previous[field]) Object.assign(merged, { [field]: draft[field] });
         });
         return [report.id, merged];
       })));
