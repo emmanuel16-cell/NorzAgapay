@@ -4448,6 +4448,9 @@ tbody tr:last-child td { border-bottom: none; }
 .responder-triage-options small, .responder-transport-panel small { color: var(--text-secondary); font-size: 10px; }
 .responder-transport-panel { display: grid; gap: 10px; margin-top: 12px; padding: 12px; border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-secondary); }
 .responder-transport-panel h4 { margin: 0; color: var(--text-primary); font-size: 13px; }
+.responder-transport-panel h5 { margin: 0; color: var(--text-primary); font-size: 12px; }
+.responder-hospital-status { margin: 0; color: var(--text-secondary); font-size: 11px; }
+.responder-hospital-error { color: var(--danger-color, #ff6b6b); }
 .responder-transport-active { margin: 0; color: var(--text-secondary); font-size: 12px; }
 .responder-transport-active strong { color: var(--text-primary); }
 .responder-hospital-options { display: grid; gap: 6px; max-height: 260px; overflow-y: auto; }

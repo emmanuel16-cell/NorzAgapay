@@ -132,6 +132,8 @@ export default function ResponderWorkspacePage() {
   const [hospitalSearchQuery, setHospitalSearchQuery] = useState<Record<string, string>>({});
   const [selectedHospitals, setSelectedHospitals] = useState<Record<string, TransportHospital | null>>({});
   const [hospitalLoading, setHospitalLoading] = useState<Record<string, boolean>>({});
+  const [hospitalSearchLoading, setHospitalSearchLoading] = useState<Record<string, boolean>>({});
+  const [hospitalErrors, setHospitalErrors] = useState<Record<string, string>>({});
   const [transportPickerOpen, setTransportPickerOpen] = useState<Record<string, boolean>>({});
   const [locationPreviews, setLocationPreviews] = useState<Record<string, IncidentLocationPreview>>({});
   const [locationPreviewLoading, setLocationPreviewLoading] = useState<Record<string, boolean>>({});
@@ -144,6 +146,7 @@ export default function ResponderWorkspacePage() {
   const [locationMapReport, setLocationMapReport] = useState<AssignedReport | null>(null);
   const autoArrivalInFlight = useRef(new Set<string>());
   const autoArrivalAttemptedAt = useRef(new Map<string, number>());
+  const hospitalLookupInFlight = useRef(new Set<string>());
   const closeLocationMap = useCallback(() => setLocationMapReport(null), []);
 
   const loadLocationPreview = useCallback(async (report: AssignedReport) => {
@@ -480,18 +483,21 @@ export default function ResponderWorkspacePage() {
   };
 
   const loadNearbyHospitals = async (reportId: string) => {
+    if (hospitalLookupInFlight.current.has(reportId)) return;
+    hospitalLookupInFlight.current.add(reportId);
     setHospitalLoading((current) => ({ ...current, [reportId]: true }));
+    setHospitalErrors((current) => ({ ...current, [reportId]: '' }));
     try {
       const location = await getFreshResponderCoordinates();
       const response = isBarangay
         ? await reportAPI.barangayTransportHospitals(reportId, location.latitude, location.longitude)
         : await reportAPI.mdrrmoTransportHospitals(reportId, location.latitude, location.longitude);
-      const hospitals = response.data?.hospitals || [];
+      const hospitals = (response.data?.hospitals || []).slice(0, 5);
       setNearbyHospitals((current) => ({ ...current, [reportId]: hospitals }));
-      if (!hospitals.length) toast('No mapped hospitals were found nearby. Search by hospital name.');
     } catch (lookupError: any) {
-      toast.error(lookupError?.response?.data?.error || lookupError?.message || 'Could not find nearby hospitals.');
+      setHospitalErrors((current) => ({ ...current, [reportId]: lookupError?.response?.data?.error || lookupError?.message || 'Could not load nearby hospitals.' }));
     } finally {
+      hospitalLookupInFlight.current.delete(reportId);
       setHospitalLoading((current) => ({ ...current, [reportId]: false }));
     }
   };
@@ -499,7 +505,7 @@ export default function ResponderWorkspacePage() {
   const searchHospitalByName = async (reportId: string) => {
     const query = (hospitalSearchQuery[reportId] || '').trim();
     if (query.length < 2) { toast.error('Enter at least two characters for the hospital name.'); return; }
-    setHospitalLoading((current) => ({ ...current, [reportId]: true }));
+    setHospitalSearchLoading((current) => ({ ...current, [reportId]: true }));
     try {
       const location = await getFreshResponderCoordinates();
       const response = isBarangay
@@ -507,11 +513,11 @@ export default function ResponderWorkspacePage() {
         : await reportAPI.searchMdrrmoTransportHospitals(reportId, query, location.latitude, location.longitude);
       const hospitals = response.data?.hospitals || [];
       setHospitalSearchResults((current) => ({ ...current, [reportId]: hospitals }));
-      if (!hospitals.length) toast('No mapped result found. Try a fuller hospital name.');
+      if (!hospitals.length) toast('No hospital in the local directory matches that name.');
     } catch (lookupError: any) {
       toast.error(lookupError?.response?.data?.error || lookupError?.message || 'Could not search for that hospital.');
     } finally {
-      setHospitalLoading((current) => ({ ...current, [reportId]: false }));
+      setHospitalSearchLoading((current) => ({ ...current, [reportId]: false }));
     }
   };
 
@@ -704,7 +710,11 @@ export default function ResponderWorkspacePage() {
                   </div>
                   <label className="workspace-secondary-action upload-action"><Upload size={16} /> Add field media<input type="file" accept="image/*,video/*" multiple onChange={(event) => { uploadMedia(report, event.currentTarget.files); event.currentTarget.value = ''; }} /></label>
                 </section>
-                {currentAssessment.triage_outcome === 'severe_injuries' && currentAssessment.transport_status !== 'in_transit' && currentAssessment.transport_status !== 'delivered' && <button className="workspace-primary-action responder-transport-trigger" type="button" disabled={saving || !assessmentSaved} onClick={() => setTransportPickerOpen((current) => ({ ...current, [report.id]: !current[report.id] }))}>{transportPickerOpen[report.id] ? 'Hide transport destination' : 'Transport injured'}</button>}
+                {currentAssessment.triage_outcome === 'severe_injuries' && currentAssessment.transport_status !== 'in_transit' && currentAssessment.transport_status !== 'delivered' && <button className="workspace-primary-action responder-transport-trigger" type="button" disabled={saving || !assessmentSaved} onClick={() => {
+                  const opening = !transportPickerOpen[report.id];
+                  setTransportPickerOpen((current) => ({ ...current, [report.id]: opening }));
+                  if (opening && !nearbyHospitals[report.id]?.length) void loadNearbyHospitals(report.id);
+                }}>{transportPickerOpen[report.id] ? 'Hide transport destination' : 'Transport injured'}</button>}
                 {currentAssessment.triage_outcome === 'severe_injuries' && (transportInProgress || currentAssessment.transport_status === 'delivered' || transportPickerOpen[report.id]) && <section className="responder-transport-panel" aria-label="Injured person transport">
                   <h4>Transport injured person</h4>
                   {transportInProgress ? <>
@@ -713,7 +723,10 @@ export default function ResponderWorkspacePage() {
                     <button className="workspace-primary-action" type="button" disabled={saving} onClick={() => completeTransport(report.id)}>Mark delivered</button>
                   </> : currentAssessment.transport_status === 'delivered' ? <p className="responder-transport-active">Delivered to <strong>{currentAssessment.hospital_name}</strong>.</p> : <>
                     {!assessmentSaved && <small>Save the severe injury assessment before selecting a destination.</small>}
-                    <button className="workspace-secondary-action" type="button" disabled={saving || !assessmentSaved || Boolean(hospitalLoading[report.id])} onClick={() => void loadNearbyHospitals(report.id)}>{hospitalLoading[report.id] ? 'Finding hospitals…' : 'Show up to 10 nearest hospitals'}</button>
+                    <h5>Nearest 5 hospitals</h5>
+                    {hospitalLoading[report.id] && <p className="responder-hospital-status" role="status">Finding the nearest hospitals…</p>}
+                    {hospitalErrors[report.id] && <p className="responder-hospital-status responder-hospital-error" role="alert">{hospitalErrors[report.id]}</p>}
+                    {nearbyHospitals[report.id] && nearbyHospitals[report.id].length === 0 && !hospitalLoading[report.id] && !hospitalErrors[report.id] && <p className="responder-hospital-status">No hospitals are available in the local directory.</p>}
                     {(nearbyHospitals[report.id] || []).length > 0 && <div className="responder-hospital-options" role="list" aria-label="Nearest hospitals">
                       {(nearbyHospitals[report.id] || []).map((hospital) => <button type="button" role="listitem" className={selectedHospitals[report.id]?.name === hospital.name && selectedHospitals[report.id]?.latitude === hospital.latitude ? 'selected' : ''} key={`${hospital.name}:${hospital.latitude}:${hospital.longitude}`} onClick={() => setSelectedHospitals((current) => ({ ...current, [report.id]: hospital }))}>
                         <strong>{hospital.name}</strong><span>{hospital.address}</span><small>{hospital.distance_meters >= 1000 ? `${(hospital.distance_meters / 1000).toFixed(1)} km` : `${hospital.distance_meters} m`} away</small>
@@ -721,7 +734,7 @@ export default function ResponderWorkspacePage() {
                     </div>}
                     <div className="responder-manual-hospital">
                       <label>Or enter the hospital requested by the affected person<input value={hospitalSearchQuery[report.id] || ''} onChange={(event) => setHospitalSearchQuery((current) => ({ ...current, [report.id]: event.target.value }))} placeholder="Hospital name" /></label>
-                      <button className="workspace-secondary-action" type="button" disabled={saving || !assessmentSaved || Boolean(hospitalLoading[report.id])} onClick={() => void searchHospitalByName(report.id)}>{hospitalLoading[report.id] ? 'Searching…' : 'Find hospital on map'}</button>
+                      <button className="workspace-secondary-action" type="button" disabled={saving || !assessmentSaved || Boolean(hospitalSearchLoading[report.id])} onClick={() => void searchHospitalByName(report.id)}>{hospitalSearchLoading[report.id] ? 'Searching…' : 'Find hospital on map'}</button>
                     </div>
                     {(hospitalSearchResults[report.id] || []).length > 0 && <div className="responder-hospital-options" role="list" aria-label="Hospital name matches">
                       {(hospitalSearchResults[report.id] || []).map((hospital) => <button type="button" role="listitem" className={selectedHospitals[report.id]?.name === hospital.name && selectedHospitals[report.id]?.latitude === hospital.latitude ? 'selected' : ''} key={`${hospital.name}:${hospital.latitude}:${hospital.longitude}`} onClick={() => setSelectedHospitals((current) => ({ ...current, [report.id]: hospital }))}>

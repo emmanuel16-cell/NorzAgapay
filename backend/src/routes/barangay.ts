@@ -2595,7 +2595,7 @@ router.get('/assigned-reports/:id/transport-hospitals', authenticateBarangay, re
   } catch (error: any) {
     const status = Number(error?.status) || 502;
     if (status >= 500) console.error('Barangay nearby hospital lookup failed:', error);
-    res.status(status).json({ error: error?.message || 'Nearby OpenStreetMap hospitals could not be loaded.' });
+    res.status(status).json({ error: status >= 500 ? 'The hospital directory could not be loaded. Apply the hospital directory migration, then try again.' : error?.message || 'Could not load the hospital directory.' });
   }
 });
 
@@ -2610,7 +2610,7 @@ router.get('/assigned-reports/:id/transport-hospitals/search', authenticateBaran
   } catch (error: any) {
     const status = Number(error?.status) || 502;
     if (status >= 500) console.error('Barangay hospital search failed:', error);
-    res.status(status).json({ error: error?.message || 'OpenStreetMap could not find that hospital.' });
+    res.status(status).json({ error: status >= 500 ? 'The hospital directory could not be searched. Apply the hospital directory migration, then try again.' : error?.message || 'Could not search the hospital directory.' });
   }
 });
 

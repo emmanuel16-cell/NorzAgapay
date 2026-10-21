@@ -1021,6 +1021,20 @@ CREATE TABLE IF NOT EXISTS hospitals (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Curated hospital destinations used by the responder transport workflow.
+CREATE TABLE IF NOT EXISTS hospital_directory (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    address TEXT NOT NULL,
+    municipality TEXT NOT NULL,
+    province TEXT NOT NULL DEFAULT 'Bulacan',
+    latitude DOUBLE PRECISION NOT NULL CHECK (latitude BETWEEN -90 AND 90),
+    longitude DOUBLE PRECISION NOT NULL CHECK (longitude BETWEEN -180 AND 180),
+    source_url TEXT,
+    active BOOLEAN NOT NULL DEFAULT true,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- Schools (can be used as evacuation centers)
 CREATE TABLE IF NOT EXISTS schools (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

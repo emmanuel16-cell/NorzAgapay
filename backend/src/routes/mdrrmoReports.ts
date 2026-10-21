@@ -1047,7 +1047,7 @@ router.get('/:id/transport-hospitals', authenticate, authorize('responder'), asy
     res.json({ hospitals: await findNearbyHospitals(parsed.data.latitude, parsed.data.longitude) });
   } catch (error) {
     console.error('MDRRMO nearby hospital lookup failed:', error);
-    res.status(502).json({ error: 'Nearby OpenStreetMap hospitals could not be loaded. You can search by hospital name instead.' });
+    res.status(502).json({ error: 'The hospital directory could not be loaded. Apply the hospital directory migration, then try again.' });
   }
 });
 
@@ -1062,7 +1062,7 @@ router.get('/:id/transport-hospitals/search', authenticate, authorize('responder
     res.json({ hospitals: await searchHospitalsByName(parsed.data.q, parsed.data.latitude, parsed.data.longitude) });
   } catch (error) {
     console.error('MDRRMO hospital name search failed:', error);
-    res.status(502).json({ error: 'OpenStreetMap could not find that hospital. Check the name and try again.' });
+    res.status(502).json({ error: 'The hospital directory could not be searched. Apply the hospital directory migration, then try again.' });
   }
 });
 
