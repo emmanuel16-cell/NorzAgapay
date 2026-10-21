@@ -41,6 +41,11 @@ export interface HospitalLocation {
 const RESULT_TTL_MS = 24 * 60 * 60 * 1000;
 const FAILURE_TTL_MS = 60 * 1000;
 const MIN_REQUEST_INTERVAL_MS = 1000;
+const overpassEndpoints = [...new Set([
+  process.env.OVERPASS_API_URL,
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter',
+].filter((endpoint): endpoint is string => Boolean(endpoint)))];
 const resultCache = new Map<string, { value: ReverseGeocodeResult | null; expiresAt: number }>();
 const pendingLookups = new Map<string, Promise<ReverseGeocodeResult | null>>();
 const landmarkCache = new Map<string, { value: NearbyLandmark | null; expiresAt: number }>();
@@ -376,39 +381,45 @@ export async function findNearbyHospitals(latitude: number, longitude: number): 
   const cacheKey = `nearby-hospitals:${latitude.toFixed(3)},${longitude.toFixed(3)}`;
   const cached = hospitalCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) return cached.value;
-  const query = `[out:json][timeout:12];(nwr(around:50000,${latitude},${longitude})["amenity"="hospital"];nwr(around:50000,${latitude},${longitude})["healthcare"="hospital"];);out center tags 250;`;
-  try {
-    const response = await queuedRequest('https://overpass-api.de/api/interpreter', {
-      method: 'POST',
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
-        'User-Agent': 'NorzAgapay/1.0 (hospital lookup)',
-      },
-      body: new URLSearchParams({ data: query }),
-      signal: AbortSignal.timeout(15000),
-    });
-    if (!response.ok) throw new Error(`OpenStreetMap hospital lookup returned HTTP ${response.status}.`);
-    const payload = await response.json() as { elements?: OverpassElement[] };
-    const unique = new Map<string, HospitalLocation>();
-    for (const element of payload.elements || []) {
-      const tags = element.tags || {};
-      const name = (locationPart(tags.name) || locationPart(tags['name:en'])).slice(0, 180);
-      const pointLatitude = Number(element.lat ?? element.center?.lat);
-      const pointLongitude = Number(element.lon ?? element.center?.lon);
-      if (!name || !validCoordinates(pointLatitude, pointLongitude)) continue;
-      const distance = Math.round(distanceMeters(latitude, longitude, pointLatitude, pointLongitude));
-      const item = { name, address: hospitalAddress(tags), latitude: pointLatitude, longitude: pointLongitude, distance_meters: distance };
-      const key = `${normalizePlace(name)}:${pointLatitude.toFixed(4)},${pointLongitude.toFixed(4)}`;
-      unique.set(key, item);
+  const query = `[out:json][timeout:10];(nwr(around:50000,${latitude},${longitude})["amenity"="hospital"];nwr(around:50000,${latitude},${longitude})["healthcare"="hospital"];);out center tags 250;`;
+  const failures: string[] = [];
+  for (const endpoint of overpassEndpoints) {
+    try {
+      const response = await queuedRequest(endpoint, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+          'User-Agent': 'NorzAgapay/1.0 (hospital lookup)',
+        },
+        body: new URLSearchParams({ data: query }),
+        signal: AbortSignal.timeout(12000),
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const payload = await response.json() as { elements?: OverpassElement[] };
+      if (!Array.isArray(payload.elements)) throw new Error('The provider returned an invalid response.');
+      const unique = new Map<string, HospitalLocation>();
+      for (const element of payload.elements) {
+        const tags = element.tags || {};
+        const name = (locationPart(tags.name) || locationPart(tags['name:en'])).slice(0, 180);
+        const pointLatitude = Number(element.lat ?? element.center?.lat);
+        const pointLongitude = Number(element.lon ?? element.center?.lon);
+        if (!name || !validCoordinates(pointLatitude, pointLongitude)) continue;
+        const distance = Math.round(distanceMeters(latitude, longitude, pointLatitude, pointLongitude));
+        const item = { name, address: hospitalAddress(tags), latitude: pointLatitude, longitude: pointLongitude, distance_meters: distance };
+        const key = `${normalizePlace(name)}:${pointLatitude.toFixed(4)},${pointLongitude.toFixed(4)}`;
+        unique.set(key, item);
+      }
+      const hospitals = [...unique.values()].sort((first, second) => first.distance_meters - second.distance_meters).slice(0, 10);
+      hospitalCache.set(cacheKey, { value: hospitals, expiresAt: Date.now() + 10 * 60 * 1000 });
+      return hospitals;
+    } catch (error: any) {
+      const provider = new URL(endpoint).host;
+      failures.push(`${provider}: ${error?.message || 'request failed'}`);
+      console.warn(`Could not load nearby hospitals from ${provider}:`, error);
     }
-    const hospitals = [...unique.values()].sort((first, second) => first.distance_meters - second.distance_meters).slice(0, 10);
-    hospitalCache.set(cacheKey, { value: hospitals, expiresAt: Date.now() + 10 * 60 * 1000 });
-    return hospitals;
-  } catch (error) {
-    console.warn('Could not load nearby OpenStreetMap hospitals:', error);
-    throw error;
   }
+  throw new Error(`All nearby OpenStreetMap hospital providers failed. ${failures.join('; ')}`);
 }
 
 export async function searchHospitalsByName(queryValue: string, latitude: number, longitude: number): Promise<HospitalLocation[]> {
