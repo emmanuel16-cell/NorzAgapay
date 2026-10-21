@@ -481,8 +481,6 @@ function ResponderAssessmentPanel({
             <div className="assistance-request-card" key={request.id}>
               <strong>Latest Assistance Request</strong>
               <div className="assistance-request-card-facts">
-                <span><small>Type</small><b>{request.request_type === 'responders' ? 'Responders' : request.request_type.replaceAll('_', ' ')}</b></span>
-                {request.sub_type && <span><small>Category</small><b>{request.sub_type.replaceAll('_', ' ')}</b></span>}
                 <span><small>Status</small><b>{request.status.replaceAll('_', ' ')}</b></span>
                 {request.decision && <span><small>Decision</small><b>{request.decision.replaceAll('_', ' ')}</b></span>}
                 <span><small>Requested</small><b>{formatDispatcherTime(new Date(request.created_at))}</b></span>
